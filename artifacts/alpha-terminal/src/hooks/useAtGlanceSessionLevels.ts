@@ -17,11 +17,11 @@ import {
   type HighZoneSlotDisplay,
 } from "@/lib/active-trader/atHighZoneSlot";
 
-/** Quinn fixtures: high 7368 → high zone bottom 7333 at K=35. */
+/** Quinn fixtures: high 7368 → high zone bottom at k=0.4%. */
 export const FIXTURE_SESSION_LOW = 7288;
 export const FIXTURE_SESSION_HIGH = 7368;
-export const FIXTURE_LOW_ZONE_TOP = 7323;
-export const FIXTURE_HIGH_ZONE_BOTTOM = 7333;
+export const FIXTURE_LOW_ZONE_TOP = 7317;
+export const FIXTURE_HIGH_ZONE_BOTTOM = 7338.5;
 
 export type AtGlanceSessionLevels = {
   showRow: boolean;

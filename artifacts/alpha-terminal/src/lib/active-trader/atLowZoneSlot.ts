@@ -10,11 +10,11 @@ import {
 
 export const AT_LOW_ZONE_NUMBERS_ENABLED = true;
 
-/** Fixed 2026 YTD reference offset (not a runtime-tuned forecast). */
+/** Default percent k (same as {@link SPX_REF_ZONE_K_DEFAULT}). */
 export const SPX_LOW_ZONE_K_REF = SPX_REF_ZONE_K_DEFAULT;
 
 export const LOW_ZONE_REF_TOOLTIP =
-  "K=35 is a fixed 2026 YTD reference from final daily lows (2026 YTD $SPX daily candles, close minus same-session low: median 29.5, mean 36.6, p25 14.9, p10 7.3, n=221). Historical reference from final daily lows — not a forecast of the running intraday low. Display only — not a safe level.";
+  "Low zone top = session low × (1 + k), k = 0.4%. Percent distance is stable vs point offsets across SPX levels (~29 pts at 7,340). Historical reference from final daily lows — not a forecast of the running intraday low. Display only — not a safe level.";
 
 export type LowZoneSlotDisplay =
   | { status: "hidden" }
