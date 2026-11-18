@@ -49,7 +49,6 @@ import {
   quoteSideFromTap,
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
-import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActiveTraderSheetBrackets";
 import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded } from "./AtSettingsPanel";
