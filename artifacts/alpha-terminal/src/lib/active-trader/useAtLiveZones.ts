@@ -5,9 +5,11 @@ import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import {
   computeZoneModel,
+  chainHasOpenInterest,
   type ChainRowForZones,
   type ZoneModel,
 } from "./zonesModel";
+import { sanitizeGlanceWallStrike, type AtWallProvenance } from "./atGlanceWallStrike";
 
 export interface AtChainRowForZones {
   strike: number;
@@ -80,12 +82,16 @@ export function useAtLiveZones(
   const zones = useMemo(() => {
     if (fixtureZones) return fixtureZones;
     const uwZones = uwGlance?.zones;
-    if (
+    const uwLive =
       uwZones &&
       !uwGlance?.unavailable &&
-      (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null)
-    ) {
-      return uwZones;
+      (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null);
+    if (uwLive) {
+      return {
+        ...uwZones,
+        callWall: uwZones.callWall,
+        putWall: uwZones.putWall,
+      };
     }
     if (!chainRows?.length) return computeZoneModel([], underlyingPrice);
     const rows: ChainRowForZones[] = chainRows.map((r) => {
@@ -106,15 +112,20 @@ export function useAtLiveZones(
       };
     });
     const fallback = computeZoneModel(rows, underlyingPrice);
+    const sanitized = {
+      ...fallback,
+      callWall: sanitizeGlanceWallStrike(fallback.callWall, underlyingPrice, "chain", rows),
+      putWall: sanitizeGlanceWallStrike(fallback.putWall, underlyingPrice, "chain", rows),
+    };
     const caption = uwGlance?.glanceCaption ?? uwZones?.glanceCaption;
     if (caption || uwZones?.asOfLabel) {
       return {
-        ...fallback,
-        glanceCaption: caption ?? fallback.glanceCaption,
-        asOfLabel: uwZones?.asOfLabel ?? fallback.asOfLabel,
+        ...sanitized,
+        glanceCaption: caption ?? sanitized.glanceCaption,
+        asOfLabel: uwZones?.asOfLabel ?? sanitized.asOfLabel,
       };
     }
-    return fallback;
+    return sanitized;
   }, [chainRows, underlyingPrice, ticks, fixtureZones, uwGlance]);
 
   return {

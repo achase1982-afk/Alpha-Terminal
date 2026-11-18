@@ -96,4 +96,24 @@ export async function assertAtHeaderLayout(page, record) {
     .evaluate((el) => el.getBoundingClientRect().height <= 18)
     .catch(() => false);
   record("wall labels single-line", wallOneLine, wallOneLine ? "ok" : "stacked");
+
+  const noClip = await header.evaluate((root) => {
+    const headerRight = root.getBoundingClientRect().right;
+    const maxRight = headerRight - 8;
+    const leaves = [...root.querySelectorAll("*")].filter((n) => {
+      if (n.children.length > 0) return false;
+      const t = (n.textContent ?? "").trim();
+      if (t.length === 0) return false;
+      const r = n.getBoundingClientRect();
+      return r.width > 2 && r.height > 2;
+    });
+    for (const n of leaves) {
+      const r = n.getBoundingClientRect();
+      if (r.right > maxRight + 0.5) return false;
+      const el = /** @type {HTMLElement} */ (n);
+      if (el.scrollWidth > el.clientWidth + 1) return false;
+    }
+    return true;
+  });
+  record("header text in safe area", noClip, noClip ? "ok" : "clipped");
 }

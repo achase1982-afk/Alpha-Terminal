@@ -142,7 +142,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       style={{
         background: AT_HEADER_BG,
         borderBottom: `1px solid ${BORDER}`,
-        padding: "3px 6px 4px",
+        padding: "3px 8px 4px 6px",
         overflow: "hidden",
       }}
     >

@@ -8,8 +8,9 @@ import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
 const TRACK_H = 15;
 const SIDE_COL_W = 30;
 const FLOW_VALUE_PX = 11;
-const WALL_ROW_PX = 10;
-const WALL_VALUE_PX = 13;
+const WALL_LABEL_PX = 9;
+const WALL_VALUE_PX = 12;
+const WALL_COL_MAX = 86;
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
 
@@ -65,7 +66,7 @@ function GrossFlowTrack({
       </span>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 42 }}
+        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 38 }}
       >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
@@ -104,15 +105,23 @@ function GrossFlowTrack({
       </div>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 48, textAlign: "right" }}
+        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 44, textAlign: "right" }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
       <div aria-hidden style={{ width: 1, alignSelf: "stretch", background: `${GOLD}88`, marginLeft: 1, marginRight: 1 }} />
       <div
         data-at-flow-wall={side}
-        className="num shrink-0 text-right whitespace-nowrap"
-        style={{ width: 76, lineHeight: 1.1, fontSize: WALL_ROW_PX }}
+        className="num shrink text-right whitespace-nowrap"
+        style={{
+          flex: "0 1 auto",
+          maxWidth: WALL_COL_MAX,
+          lineHeight: 1.1,
+          fontSize: WALL_LABEL_PX,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+        title={`${wallLabel} ${wallStrike}`}
       >
         <span style={{ fontWeight: 600, color: AT_LABEL }}>{wallLabel} </span>
         <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>{wallStrike}</span>
