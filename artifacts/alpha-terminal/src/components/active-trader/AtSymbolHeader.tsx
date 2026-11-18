@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GOLD, MONO, DIM, GRAY, WHITE } from "@/components/options/optionsTheme";
+import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 
 const HEADER_BG = "#0a0a0a";
 
@@ -62,7 +63,7 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
   const changePctStr =
     rawPct != null ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtSpot(Math.abs(rawPct))}%)` : "(0.00%)";
 
-  const displaySym = (quote?.symbol ?? symbol).replace(/^\$/, "");
+  const displaySym = formatDisplaySymbol(quote?.symbol ?? symbol);
   const subtitle = formatIndexSubtitle(displaySym, quote?.description ?? undefined);
 
   if (compact) {

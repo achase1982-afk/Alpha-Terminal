@@ -33,7 +33,13 @@ const MAX_GLANCE_PX = 191;
 const FLOW_WINDOWS = ["1m", "5m", "hr"] as const;
 type FlowWindow = (typeof FLOW_WINDOWS)[number];
 
-function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
+function MoneyRow({
+  agg,
+  sessionClosed,
+}: {
+  agg: ReturnType<typeof useDeskFlowStream>;
+  sessionClosed?: boolean;
+}) {
   const [flowWindow, setFlowWindow] = useState<FlowWindow>("1m");
   const copy = formatGlanceMoneyRow(agg);
   if (copy.unsupported) {
@@ -44,6 +50,17 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
     );
   }
   if (copy.noPrints) {
+  if (sessionClosed) {
+    return (
+      <Pane
+        className="num flex items-center gap-1.5"
+        data-at-glance-flow="closed"
+        style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 500, color: AT_SECONDARY, lineHeight: 1.15 }}
+      >
+        <span style={{ fontSize: 10, fontWeight: 500, color: AT_LABEL }}>Closed</span>
+      </Pane>
+    );
+  }
     return (
       <Pane
         className="num flex items-center gap-1.5"
@@ -124,6 +141,7 @@ export type AtGlanceTopProps = {
   sessionOpen?: number | null;
   embedded?: boolean;
   glanceCaption?: string | null;
+  sessionClosed?: boolean;
 };
 
 export const AtGlanceTop = memo(function AtGlanceTop({
@@ -134,6 +152,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   keepawayCallLine,
   sessionOpen,
   glanceCaption,
+  sessionClosed,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote } = useQuote(symbol);
@@ -246,7 +265,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         ) : null}
       </Pane>
 
-      <MoneyRow agg={flow} />
+      <MoneyRow agg={flow} sessionClosed={sessionClosed} />
     </Pane>
   );
 });

@@ -23,13 +23,22 @@ export interface AtChainRowForZones {
   } | null;
 }
 
+const GAMMA_GLANCE_TICKERS = new Set(["SPX", "SPY", "QQQ", "NVDA"]);
+
 type GammaGlanceResponse = {
   zones?: ZoneModel;
   unavailable?: boolean;
+  sessionClosed?: boolean;
+  glanceCaption?: string;
+};
+
+export type AtLiveZonesState = {
+  zones: ZoneModel;
+  sessionClosed: boolean;
 };
 
 /**
- * Key levels: prefer UW `live_gamma_0dte` via `/api/market/at-gamma-glance` on indexes;
+ * Key levels: prefer UW `live_gamma_0dte` via `/api/market/at-gamma-glance`;
  * fall back to chain OI/gamma when UW snapshot is unavailable.
  */
 export function useAtLiveZones(
@@ -38,14 +47,15 @@ export function useAtLiveZones(
   underlyingPrice: number | null,
   fixtureZones: ZoneModel | undefined,
   skipNetwork?: boolean,
-): ZoneModel {
+): AtLiveZonesState {
   const ticks = useOptionsStreamStore((s) => s.ticks);
   const mode = resolveAtGlanceMode(symbol);
-  const [uwZones, setUwZones] = useState<ZoneModel | null>(null);
+  const ticker = symbol.replace(/^\$/, "").toUpperCase();
+  const [uwGlance, setUwGlance] = useState<GammaGlanceResponse | null>(null);
 
   useEffect(() => {
-    if (fixtureZones || skipNetwork || mode !== "index") {
-      setUwZones(null);
+    if (fixtureZones || skipNetwork || mode === "futures" || !GAMMA_GLANCE_TICKERS.has(ticker)) {
+      setUwGlance(null);
       return;
     }
     let cancelled = false;
@@ -53,19 +63,21 @@ export function useAtLiveZones(
     void fetchWithAuth(`/api/market/at-gamma-glance?symbol=${q}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((j: GammaGlanceResponse | null) => {
-        if (cancelled || !j?.zones || j.unavailable) return;
-        setUwZones(j.zones);
+        if (cancelled || !j) return;
+        setUwGlance(j);
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [symbol, mode, skipNetwork, fixtureZones]);
+  }, [symbol, ticker, mode, skipNetwork, fixtureZones]);
 
-  return useMemo(() => {
+  const zones = useMemo(() => {
     if (fixtureZones) return fixtureZones;
+    const uwZones = uwGlance?.zones;
     if (
       uwZones &&
+      !uwGlance?.unavailable &&
       (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null)
     ) {
       return uwZones;
@@ -89,9 +101,19 @@ export function useAtLiveZones(
       };
     });
     const fallback = computeZoneModel(rows, underlyingPrice);
-    if (uwZones?.glanceCaption) {
-      return { ...fallback, glanceCaption: uwZones.glanceCaption, asOfLabel: uwZones.asOfLabel };
+    const caption = uwGlance?.glanceCaption ?? uwZones?.glanceCaption;
+    if (caption || uwZones?.asOfLabel) {
+      return {
+        ...fallback,
+        glanceCaption: caption ?? fallback.glanceCaption,
+        asOfLabel: uwZones?.asOfLabel ?? fallback.asOfLabel,
+      };
     }
     return fallback;
-  }, [chainRows, underlyingPrice, ticks, fixtureZones, uwZones]);
+  }, [chainRows, underlyingPrice, ticks, fixtureZones, uwGlance]);
+
+  return {
+    zones,
+    sessionClosed: uwGlance?.sessionClosed ?? false,
+  };
 }
