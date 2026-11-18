@@ -76,19 +76,19 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
           type="button"
           aria-label="Decrease quantity"
           onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
-          className="w-8 h-8 flex items-center justify-center"
+          className="w-10 h-10 flex items-center justify-center"
           style={{ borderRadius: 8, border: `1px solid ${BORDER}`, color: WHITE }}
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
-        <span style={{ fontSize: 16, color: WHITE, fontWeight: 600, minWidth: 24, textAlign: "center" }}>
+        <span style={{ fontSize: 17, color: WHITE, fontWeight: 600, minWidth: 28, textAlign: "center" }}>
           {quantity}
         </span>
         <button
           type="button"
           aria-label="Increase quantity"
           onClick={() => onQuantityChange(Math.min(999, quantity + 1))}
-          className="w-8 h-8 flex items-center justify-center"
+          className="w-10 h-10 flex items-center justify-center"
           style={{ borderRadius: 8, border: `1px solid ${BORDER}`, color: WHITE }}
         >
           <Plus className="w-3.5 h-3.5" />

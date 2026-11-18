@@ -157,8 +157,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [tradeContext, setTradeContext] = useState<AtTradeContext | null>(null);
   const [selectedLegs, setSelectedLegs] = useState<Map<string, AtLadderLegPick>>(new Map());
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
-  const [chainSheetCollapsed, setChainSheetCollapsed] = useState(false);
-  const [chainSheetPeek, setChainSheetPeek] = useState(true);
+  const [chainSheetCollapsed, setChainSheetCollapsed] = useState(true);
+  const [chainSheetPeek, setChainSheetPeek] = useState(false);
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
   const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
@@ -532,6 +532,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return next;
     });
     setChainSheetCollapsed(true);
+    setChainSheetPeek(false);
   }, []);
 
   const handleQuoteTap = useCallback(

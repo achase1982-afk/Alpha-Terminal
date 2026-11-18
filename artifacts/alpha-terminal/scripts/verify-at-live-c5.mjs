@@ -11,10 +11,66 @@ function record(name, pass, detail) {
   checks.push({ name, pass, detail });
 }
 
-async function switchToAt(page) {
+async function switchView(page, value) {
   const viewSel = page.getByLabel("Options view");
-  if ((await viewSel.count()) > 0) await viewSel.selectOption("at");
-  else await page.getByRole("button", { name: "Active Trader", exact: true }).click();
+  if ((await viewSel.count()) > 0) {
+    await viewSel.selectOption(value);
+    return;
+  }
+  const label = value === "at" ? "Active Trader" : "Chain";
+  await page.getByRole("button", { name: label, exact: true }).click();
+}
+
+async function openOptionsAt(page, height) {
+  await page.setViewportSize({ width: 440, height });
+  await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await switchView(page, "at");
+  await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, { timeout: 90_000 });
+}
+
+async function atmCallAskStrike(page) {
+  return page.evaluate(() => {
+    const spot = [...document.querySelectorAll("[data-at-strike]")].find((n) => {
+      const bg = getComputedStyle(n).backgroundColor;
+      return bg.includes("251") || bg.includes("rgb(251");
+    });
+    return spot?.getAttribute("data-at-strike") ?? null;
+  });
+}
+
+async function expandChainSheetIfNeeded(page) {
+  const review = page.getByTestId("chain-sheet-review");
+  if ((await review.count()) > 0 && (await review.isVisible())) return;
+  const collapsed = page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='false']");
+  if ((await collapsed.count()) > 0) {
+    const expand = page.getByRole("button", { name: "Expand", exact: true });
+    if ((await expand.count()) > 0) await expand.click();
+    else await collapsed.first().click();
+  }
+  await review.waitFor({ state: "visible", timeout: 12_000 }).catch(() => undefined);
+}
+
+async function clickPutAsks(page, count) {
+  return page.evaluate((n) => {
+    const panel = document.querySelector('[id^="options-exp-panel-"]');
+    if (!panel) return 0;
+    const rows = [...panel.querySelectorAll("div.flex")].filter((el) =>
+      el.querySelector('[data-ui-audit="chain-strike-cell"]'),
+    );
+    let clicked = 0;
+    for (const row of rows) {
+      const putWing = row.children[row.children.length - 1];
+      const ask = putWing?.querySelector('button[aria-label^="Ask"]');
+      if (ask instanceof HTMLButtonElement) {
+        ask.click();
+        clicked += 1;
+        if (clicked >= n) break;
+      }
+    }
+    return clicked;
+  }, count);
 }
 
 await mkdir(OUT, { recursive: true });
@@ -32,30 +88,27 @@ await page.addInitScript(() => {
   );
 });
 
-async function run(height) {
-  await page.setViewportSize({ width: 440, height });
-  await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
-  await switchToAt(page);
-  await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
-  await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, { timeout: 90_000 });
+async function runViewport(height) {
+  await openOptionsAt(page, height);
 
   record(`view selector (${height}px)`, (await page.locator("[data-at-view-selector]").count()) > 0, "toolbar");
-  const strike = await page.evaluate(() => {
-    const spot = [...document.querySelectorAll("[data-at-strike]")].find((n) => {
-      const bg = getComputedStyle(n).backgroundColor;
-      return bg.includes("251") || bg.includes("rgb(251");
-    });
-    return spot?.getAttribute("data-at-strike");
-  });
+
+  const strike = await atmCallAskStrike(page);
   if (!strike) {
-    record(`leg tray build (${height}px)`, false, "no ATM");
+    record(`build mode leg tray (${height}px)`, false, "no ATM");
     return;
   }
+
   await page.locator(`[data-at-quote="call-ask-${strike}"]`).click();
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(350);
   const tray = (await page.locator("[data-at-leg-tray]").count()) > 0;
-  record(`leg tray (${height}px)`, tray, tray ? "visible" : "missing");
+  record(`AT leg tray (${height}px)`, tray, tray ? "visible" : "missing");
+
+  const sheetCollapsed =
+    (await page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='false']").count()) > 0;
+  const limitHidden = (await page.getByTestId("chain-sheet-limit").count()) === 0;
+  record(`sheet collapsed build (${height}px)`, sheetCollapsed && limitHidden, sheetCollapsed ? "collapsed" : "expanded");
+
   const next = Number(strike) + 5;
   const bidSel = `[data-at-quote="call-bid-${next}"]`;
   if ((await page.locator(bidSel).count()) > 0) {
@@ -66,16 +119,75 @@ async function run(height) {
     const stable = trayY && trayY2 && Math.abs(trayY.y - trayY2.y) < 2;
     record(`tray stable 2nd leg (${height}px)`, !!stable, stable ? "ok" : "moved");
   }
-  await page.screenshot({ path: path.join(OUT, `live-at-c5-${height}px.png`) });
+
+  await page.screenshot({ path: path.join(OUT, `live-at-c5-at-${height}px.png`) });
+}
+
+async function runChainFlows(height) {
+  await page.setViewportSize({ width: 440, height });
+  await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await switchView(page, "chain");
+  await page.waitForSelector("[data-options-chain-scroll]", { timeout: 90_000 });
+  await page.waitForSelector('[id^="options-exp-panel-"]', { timeout: 90_000 });
+
+  const noHScroll = await page.evaluate(() => {
+    const sc = document.querySelector("[data-options-chain-scroll]");
+    return sc ? sc.scrollWidth <= sc.clientWidth + 2 : false;
+  });
+  record(`chain no horizontal scroll (${height}px)`, noHScroll, noHScroll ? "ok" : "overflow");
+
+  const expiryBefore = await page.evaluate(() => {
+    const open = document.querySelector('[data-ui-audit="chain-exp-btn"][aria-expanded="true"] span');
+    return open?.textContent?.trim() ?? "";
+  });
+
+  const putsClicked = await clickPutAsks(page, 2);
+  await page.waitForTimeout(400);
+  const pressed = await page.locator('button[aria-pressed="true"]').count();
+  record(`two put cells outlined (${height}px)`, putsClicked >= 2 && pressed >= 2, `clicked=${putsClicked} pressed=${pressed}`);
+
+  const chainTray = (await page.locator("[data-at-leg-tray]").count()) > 0;
+  record(`chain leg tray (${height}px)`, chainTray, chainTray ? "visible" : "missing");
+
+  await expandChainSheetIfNeeded(page);
+  const limitVisible = (await page.getByTestId("chain-sheet-limit").isVisible().catch(() => false));
+  record(`sheet expands for edit (${height}px)`, limitVisible, limitVisible ? "limit visible" : "hidden");
+
+  await switchView(page, "at");
+  await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 60_000 });
+  const atTray = (await page.locator("[data-at-leg-tray]").count()) > 0;
+  record(`AT calls-left tray (${height}px)`, atTray, atTray ? "legs preserved" : "missing");
+
+  const expiryPill = await page
+    .locator("[data-at-expiry-pill]")
+    .first()
+    .innerText()
+    .catch(() => "");
+  record(`expiry preserved AT (${height}px)`, expiryPill.length > 0, expiryPill || "none");
+
+  await switchView(page, "chain");
+  await page.waitForTimeout(500);
+  const expiryAfter = await page.evaluate(() => {
+    const open = document.querySelector('[data-ui-audit="chain-exp-btn"][aria-expanded="true"] span');
+    return open?.textContent?.trim() ?? "";
+  });
+  const sym = await page.evaluate(() => document.body.innerText.includes("SPX"));
+  record(`symbol SPX (${height}px)`, sym, sym ? "ok" : "missing");
+  record(
+    `expiry preserved chain round-trip (${height}px)`,
+    expiryBefore && expiryAfter && expiryBefore === expiryAfter,
+    `${expiryBefore} -> ${expiryAfter}`,
+  );
+
+  await page.screenshot({ path: path.join(OUT, `live-at-c5-chain-${height}px.png`) });
 }
 
 try {
-  await run(956);
-  await run(658);
-  await switchToAt(page);
-  await page.getByLabel("Options view").selectOption("chain").catch(() => undefined);
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, "live-at-c5-chain-view.png") });
+  await runViewport(956);
+  await runViewport(658);
+  await runChainFlows(956);
+  await runChainFlows(658);
 } catch (err) {
   record("c5 capture", false, err instanceof Error ? err.message : String(err));
 }
