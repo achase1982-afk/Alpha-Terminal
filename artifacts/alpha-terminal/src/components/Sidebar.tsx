@@ -49,11 +49,11 @@ import { useAuth } from "@clerk/clerk-react";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 import { useShallow } from "zustand/react/shallow";
 
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+import { isAuthDisabled } from "@/lib/authMode";
 
 /** Prefer `useAuth().signOut` so Clerk finishes its `clerkLoaded` wait before sign out. */
 function useAuthSignOutSafe() {
-  if (devBypass) return { signOut: () => Promise.resolve() };
+  if (isAuthDisabled()) return { signOut: () => Promise.resolve() };
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useAuth();
 }

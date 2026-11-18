@@ -21,6 +21,9 @@ ENV NODE_ENV=production
 # `define` plugin. Railway passes service-level env vars as build args.
 ARG CLERK_PUBLISHABLE_KEY=""
 ENV CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+# Reviewer mode (PR #667). Keep both ARGs when merging with PR #666 Dockerfile edits.
+ARG VITE_AUTH_DISABLED=""
+ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
 
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build

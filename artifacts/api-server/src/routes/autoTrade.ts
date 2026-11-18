@@ -14,6 +14,7 @@ import { addSymbols, addChartEquitySymbols } from "../lib/schwabStreamer.js";
 import { startEngine, stopEngine, engineStatus } from "../engine/index.js";
 import { startLlmEngine, stopLlmEngine } from "../engine/llmEngine.js";
 import { writeConfigPatch, readRawConfig } from "../engine/config.js";
+import { refuseSchwabTradingJson, schwabTradingBlocked } from "../lib/schwabTradingGate.js";
 
 const router: IRouter = Router();
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
@@ -60,6 +61,7 @@ router.put("/config", async (req, res) => {
 });
 
 router.post("/start", async (req, res) => {
+  if (refuseSchwabTradingJson(res)) return;
   try {
     const userId = portfolioPrefsUserId(req);
     const token = getTokens("trader")?.accessToken;
@@ -111,10 +113,12 @@ router.post("/stop", async (req, res) => {
 
   let cancelled = 0;
   try {
-    const config = await getAutoTradeConfig(userId);
-    const token = getTokens("trader")?.accessToken;
-    if (token && config.accountHash) {
-      cancelled = await cancelWorkingOrders(config.accountHash, token);
+    if (!schwabTradingBlocked()) {
+      const config = await getAutoTradeConfig(userId);
+      const token = getTokens("trader")?.accessToken;
+      if (token && config.accountHash) {
+        cancelled = await cancelWorkingOrders(config.accountHash, token);
+      }
     }
   } catch (err) {
     logger.warn({ err, userId }, "autoTrade kill-switch: cancel working orders failed");

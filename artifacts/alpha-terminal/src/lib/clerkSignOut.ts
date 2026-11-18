@@ -1,3 +1,5 @@
+import { isAuthDisabled } from "./authMode";
+
 /**
  * Client-only `signOut` (even with `redirectUrl`) can leave a SPA on the
  * `SignedIn` tree in PWA/standalone or embedded WebViews — session is gone but
@@ -13,7 +15,7 @@ const TRANSITION_ID = "alpha-clerk-signout-transition";
  * Survives React unmounts (direct `document.body` node).
  */
 export function showClerkSignOutTransition(): void {
-  if (typeof document === "undefined" || import.meta.env.VITE_DEV_BYPASS_AUTH === "true") return;
+  if (typeof document === "undefined" || isAuthDisabled()) return;
   if (document.getElementById(TRANSITION_ID)) return;
 
   const el = document.createElement("div");
@@ -70,7 +72,7 @@ export type ClerkSignOut = (opts?: { redirectUrl?: string }) => Promise<unknown>
  * the transition layer is on screen for that work.
  */
 export async function signOutWithFullNavigation(signOut: ClerkSignOut): Promise<void> {
-  if (import.meta.env.VITE_DEV_BYPASS_AUTH === "true") return;
+  if (isAuthDisabled()) return;
   showClerkSignOutTransition();
   const target = signOutTargetUrl();
   try {

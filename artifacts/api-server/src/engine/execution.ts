@@ -8,6 +8,7 @@
 import { getTokens } from "../lib/tokenStore.js";
 import { logger } from "../lib/logger.js";
 import type { Signal, Config } from "./types.js";
+import { ORDERS_DISABLED_ERROR, schwabTradingBlocked } from "../lib/schwabTradingGate.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
@@ -67,6 +68,9 @@ function buildBracketOrder(signal: Signal, qty: number): Record<string, unknown>
 }
 
 export async function placeBracket(signal: Signal, cfg: Config): Promise<BracketResult> {
+  if (schwabTradingBlocked()) {
+    return { ok: false, entryOrderId: null, error: ORDERS_DISABLED_ERROR };
+  }
   const order = buildBracketOrder(signal, signal.size);
 
   const token = getTokens("trader")?.accessToken;
@@ -123,6 +127,9 @@ export async function placeEntryWithStop(
   stopPrice: number,
   cfg: Config,
 ): Promise<EntryWithStopResult> {
+  if (schwabTradingBlocked()) {
+    return { ok: false, entryOrderId: null, error: ORDERS_DISABLED_ERROR };
+  }
   const token = getTokens("trader")?.accessToken;
   if (!token) return { ok: false, entryOrderId: null, error: "no_trader_token" };
   if (!cfg.accountHash) return { ok: false, entryOrderId: null, error: "no_account_hash" };
@@ -188,6 +195,9 @@ export async function placeEntry(
   entryPrice: number,
   cfg: Config,
 ): Promise<EntryWithStopResult> {
+  if (schwabTradingBlocked()) {
+    return { ok: false, entryOrderId: null, error: ORDERS_DISABLED_ERROR };
+  }
   const token = getTokens("trader")?.accessToken;
   if (!token) return { ok: false, entryOrderId: null, error: "no_trader_token" };
   if (!cfg.accountHash) return { ok: false, entryOrderId: null, error: "no_account_hash" };
@@ -236,6 +246,7 @@ export async function placeStopSell(
   stopPrice: number,
   cfg: Config,
 ): Promise<{ ok: boolean; orderId: string | null }> {
+  if (schwabTradingBlocked()) return { ok: false, orderId: null };
   const token = getTokens("trader")?.accessToken;
   if (!token || !cfg.accountHash || !(qty >= 1)) return { ok: false, orderId: null };
   const order = {
@@ -311,6 +322,7 @@ export async function replaceTrailStop(
   currentStopOrderId: string | null,
   cfg: Config,
 ): Promise<string | null> {
+  if (schwabTradingBlocked()) return null;
   const stopId = currentStopOrderId ?? (await findWorkingStopOrderId(symbol, cfg));
   if (stopId) await cancelOrder(stopId, cfg);
   const placed = await placeStopSell(symbol, qty, newStopPrice, cfg);
@@ -323,6 +335,7 @@ export async function replaceTrailStop(
 }
 
 export async function cancelOrder(orderId: string, cfg: Config): Promise<boolean> {
+  if (schwabTradingBlocked()) return false;
   const token = getTokens("trader")?.accessToken;
   if (!token || !cfg.accountHash) return false;
   try {
@@ -337,6 +350,7 @@ export async function cancelOrder(orderId: string, cfg: Config): Promise<boolean
 }
 
 export async function flattenPosition(symbol: string, qty: number, cfg: Config): Promise<boolean> {
+  if (schwabTradingBlocked()) return false;
   const token = getTokens("trader")?.accessToken;
   if (!token || !cfg.accountHash) return false;
   try {

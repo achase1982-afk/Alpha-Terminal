@@ -3,12 +3,12 @@ import { getAuth } from "@clerk/express";
 import { db, terminalWatchlistsTable } from "@workspace/db";
 import { eq } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user_local";
 
 function getUserId(req: any): string {
-  if (DEV_BYPASS) return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   try {
     const auth = getAuth(req);
     return auth?.userId ?? DEV_USER_ID;

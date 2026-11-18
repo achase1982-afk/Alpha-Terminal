@@ -2,14 +2,14 @@ import { getAuth } from "@clerk/express";
 import type { Request } from "express";
 import { db, eq, sql, terminalPortfolioPrefsTable } from "@workspace/db";
 import { logger } from "./logger.js";
+import { isAuthDisabled } from "./authMode.js";
 
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const DEV_USER_ID = "dev_user_local";
 
 let tableReady = false;
 
 export function portfolioPrefsUserId(req: Request): string {
-  if (DEV_BYPASS) return DEV_USER_ID;
+  if (isAuthDisabled()) return DEV_USER_ID;
   try {
     const auth = getAuth(req);
     return auth?.userId ?? DEV_USER_ID;

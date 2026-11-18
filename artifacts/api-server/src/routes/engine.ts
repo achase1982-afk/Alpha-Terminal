@@ -3,6 +3,7 @@ import { startEngine, stopEngine, engineStatus } from "../engine/index.js";
 import { readRawConfig, writeConfigPatch, configExists } from "../engine/config.js";
 import { getTodayTrades, getTodaySignals } from "../engine/logger.js";
 import { logger } from "../lib/logger.js";
+import { refuseSchwabTradingJson } from "../lib/schwabTradingGate.js";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,7 @@ router.post("/control", async (req, res) => {
   try {
     switch (action) {
       case "start":
+        if (refuseSchwabTradingJson(res)) return;
         startEngine();
         return res.json({ ok: true, status: engineStatus() });
 

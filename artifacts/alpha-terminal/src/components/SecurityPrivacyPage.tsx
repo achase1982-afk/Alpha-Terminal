@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "@/hooks/use-toast";
 
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+import { isAuthDisabled } from "@/lib/authMode";
 
 type ClerkUser = NonNullable<Extract<ReturnType<typeof useUser>, { isLoaded: true; isSignedIn: true }>["user"]>;
 type SessionWithActivities = Awaited<ReturnType<ClerkUser["getSessions"]>>[number];
@@ -1264,7 +1264,7 @@ export function SecurityPrivacyPage() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { session } = useSession();
 
-  if (devBypass) {
+  if (isAuthDisabled()) {
     return (
       <div className="space-y-6 max-w-xl mx-auto font-mono text-xs text-zinc-400">
         <p>Security settings are unavailable while auth bypass is enabled.</p>

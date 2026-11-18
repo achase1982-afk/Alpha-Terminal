@@ -6,13 +6,14 @@ import {
   getSchwab2RedirectUri,
   schwab2ExpectedCallbackPath,
 } from "../lib/desk/deskSchwab2OAuth.js";
+import { isAuthDisabled } from "../lib/authMode.js";
 
 const router: IRouter = Router();
 
 /** JSON URL for clients that fetch the authorize link (Clerk session required). */
 router.get("/schwab2-url", (req, res) => {
   const auth = getAuth(req);
-  if (!auth?.userId && process.env.DEV_BYPASS_AUTH !== "true") {
+  if (!auth?.userId && !isAuthDisabled()) {
     return res.status(401).json({ error: "unauthorized" });
   }
   const redirectUri = getSchwab2RedirectUri();
@@ -39,7 +40,7 @@ router.get("/schwab2-url", (req, res) => {
  */
 router.get("/schwab2/connect", (req, res) => {
   const auth = getAuth(req);
-  if (!auth?.userId && process.env.DEV_BYPASS_AUTH !== "true") {
+  if (!auth?.userId && !isAuthDisabled()) {
     return res.status(401).json({ error: "unauthorized" });
   }
   const built = buildSchwab2AuthorizeUrl();

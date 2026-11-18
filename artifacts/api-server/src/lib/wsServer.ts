@@ -28,6 +28,7 @@ import {
   streamerSubReleaseByPrefix,
   streamerSubTouch,
 } from "./streamerSubscriptionManager.js";
+import { isAuthDisabled } from "./authMode.js";
 
 const WS_PATH = "/api/ws/prices";
 const HEARTBEAT_MS = 25_000;
@@ -47,7 +48,6 @@ function portfolioPositionsHoldId(ws: WebSocket): string {
   }
   return id;
 }
-const DEV_BYPASS = process.env.DEV_BYPASS_AUTH === "true";
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
 const clients = new Set<WebSocket>();
@@ -664,7 +664,7 @@ export function initWsServer(httpServer: HttpServer) {
       return;
     }
 
-    if (!DEV_BYPASS) {
+    if (!isAuthDisabled()) {
       const token = url.searchParams.get("clerk_token");
       if (!token) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");

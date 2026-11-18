@@ -12,6 +12,7 @@ import {
   getClerkToken,
 } from "@/lib/fetchWithAuth";
 import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
+import { isAuthDisabled } from "@/lib/authMode";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
 import type { LiveQuote, LiveNewsItem } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
@@ -101,7 +102,6 @@ interface StreamPortfolioStatus {
 }
 
 const API_BASE = "/api";
-const DEV_BYPASS_AUTH = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
 const WS_RECONNECT_BASE = 1_000;
 const WS_RECONNECT_MAX = 30_000;
 const REJECTED_RETRY_DELAY = 3_000;
@@ -477,7 +477,7 @@ export function useMarketStream() {
       const clerkToken = tokenResult.value;
       if (shouldAbortAfterToken(session, connectGen)) return;
 
-      if (!clerkToken && !DEV_BYPASS_AUTH) {
+      if (!clerkToken && !isAuthDisabled()) {
         setStreamStatus("connecting");
         scheduleReconnect();
         return;

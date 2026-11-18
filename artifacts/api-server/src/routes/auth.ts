@@ -22,6 +22,8 @@ import { buildSchwab2AuthorizeUrl, deskSchwab2Configured } from "../lib/desk/des
 import { getSchwab2TokenMeta } from "../lib/desk/deskSchwab2TokenStore.js";
 import { getSchwabBrokerageRedirectUri } from "../lib/desk/schwabOAuthRedirect.js";
 import { errorPage, traderSuccessPage } from "../lib/desk/schwabOAuthPages.js";
+import { isAuthDisabled } from "../lib/authMode.js";
+import { refuseAuthDisabledClientOp } from "../lib/authDisabledClientGuard.js";
 
 export { errorPage, traderSuccessPage };
 
@@ -250,6 +252,7 @@ router.get("/callback", async (req, res) => {
 });
 
 router.get("/pending-session", (_req, res) => {
+  if (refuseAuthDisabledClientOp(res)) return;
   const pending = pendingTokens.get("latest");
   if (!pending || Date.now() - pending.ts > TOKEN_TTL_MS) {
     return res.json({ found: false });
@@ -446,6 +449,7 @@ async function refreshSchwabKind(
 }
 
 router.post("/refresh", async (req, res) => {
+  if (refuseAuthDisabledClientOp(res)) return;
   const parsed = RefreshTokenBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: "validation_error", message: "Invalid request body" });
@@ -611,6 +615,7 @@ router.get("/trader-callback", async (req, res) => {
 });
 
 router.get("/trader-pending-session", (_req, res) => {
+  if (refuseAuthDisabledClientOp(res)) return;
   const pending = pendingTokens.get("trader_latest");
   if (!pending || Date.now() - pending.ts > TOKEN_TTL_MS) {
     return res.json({ found: false });
@@ -624,6 +629,7 @@ router.get("/trader-pending-session", (_req, res) => {
 });
 
 router.post("/trader-refresh", async (req, res) => {
+  if (refuseAuthDisabledClientOp(res)) return;
   const parsed = RefreshTokenBody.safeParse(req.body ?? {});
   if (!parsed.success) {
     return res.status(400).json({ error: "validation_error", message: "Invalid request body" });
@@ -637,22 +643,18 @@ router.post("/trader-refresh", async (req, res) => {
 });
 
 router.post("/disconnect", (_req, res) => {
+  if (refuseAuthDisabledClientOp(res)) return;
   clearServerTokens("market");
   clearServerTokens("trader");
   stopStreamer();
   res.json({ ok: true });
 });
 
-router.get("/server-tokens", (_req, res) => {
-  const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
-  const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
-  const anchor = trd ?? mkt;
-  const schwab2 = getSchwab2TokenMeta();
-  res.json({
-    market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
-    trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
-    // Schwab refresh-token 7-day clock (set only by an authorization_code
-    // grant; null until the first browser sign-in after this deploy).
+function schwabOAuthStatusPayload(
+  anchor: ReturnType<typeof getTokens> | undefined,
+  schwab2: ReturnType<typeof getSchwab2TokenMeta>,
+) {
+  return {
     refresh_token_issued_at: anchor?.refreshIssuedAt ?? null,
     refresh_token_expires_at: anchor?.refreshExpiresAt ?? null,
     schwab_oauth: {
@@ -670,6 +672,29 @@ router.get("/server-tokens", (_req, res) => {
         refresh_token_expires_at: schwab2.refresh_token_expires_at,
       },
     },
+  };
+}
+
+router.get("/server-tokens", (_req, res) => {
+  const mkt = hasValidTokens("market") ? getTokens("market") : undefined;
+  const trd = hasValidTokens("trader") ? getTokens("trader") : undefined;
+  const anchor = trd ?? mkt;
+  const schwab2 = getSchwab2TokenMeta();
+  const status = schwabOAuthStatusPayload(anchor, schwab2);
+
+  if (isAuthDisabled()) {
+    res.json({
+      market: mkt ? { connected: true, expiresAt: mkt.expiresAt } : null,
+      trader: trd ? { connected: true, expiresAt: trd.expiresAt } : null,
+      ...status,
+    });
+    return;
+  }
+
+  res.json({
+    market: mkt ? { accessToken: mkt.accessToken, refreshToken: mkt.refreshToken, expiresAt: mkt.expiresAt } : null,
+    trader: trd ? { accessToken: trd.accessToken, refreshToken: trd.refreshToken, expiresAt: trd.expiresAt } : null,
+    ...status,
   });
 });
 

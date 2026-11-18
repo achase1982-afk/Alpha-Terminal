@@ -6,10 +6,10 @@ import { readSecurityPrefs, updateSecurityPref, TIMEOUT_OPTIONS } from "@/lib/se
 import { queryClient } from "@/App";
 import { signOutWithFullNavigation } from "@/lib/clerkSignOut";
 
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
+import { isAuthDisabled } from "@/lib/authMode";
 
 function useAuthSignOutSafe() {
-  if (devBypass) return { signOut: () => Promise.resolve() };
+  if (isAuthDisabled()) return { signOut: () => Promise.resolve() };
   // eslint-disable-next-line react-hooks/rules-of-hooks
   return useAuth();
 }
@@ -70,7 +70,7 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
     setLocked(true);
     queryClient.clear();
     try { localStorage.removeItem(LAST_ACTIVITY_KEY); } catch {}
-    if (!devBypass) {
+    if (!isAuthDisabled()) {
       void signOutWithFullNavigation(signOut);
     }
   }, [signOut]);
@@ -204,7 +204,7 @@ export function AutoLockProvider({ children }: { children: ReactNode }) {
     stampActivity();
   }, []);
 
-  if (locked && !devBypass) {
+  if (locked && !isAuthDisabled()) {
     return null;
   }
 

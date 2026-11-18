@@ -18,6 +18,7 @@ import SchwabSessionExpiredDialog from "@/components/SchwabSessionExpiredDialog"
 import StrategistJobBackgroundSync from "@/components/StrategistJobBackgroundSync";
 import { installBrowserTelemetryCapture } from "@/lib/browserTelemetry";
 import { useShallow } from "zustand/react/shallow";
+import { isAuthDisabled } from "@/lib/authMode";
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -132,10 +133,8 @@ function PendingSessionLoader() {
   return null;
 }
 
-const devBypass = import.meta.env.VITE_DEV_BYPASS_AUTH === "true";
-
 function AuthReadyGate({ children }: { children: ReactNode }) {
-  if (devBypass) return <>{children}</>;
+  if (isAuthDisabled()) return <>{children}</>;
   return <AuthReadyGateInner>{children}</AuthReadyGateInner>;
 }
 
