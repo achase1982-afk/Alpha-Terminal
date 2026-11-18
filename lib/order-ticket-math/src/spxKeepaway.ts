@@ -67,6 +67,15 @@ export function computeSpxKeepawayFromDailyCandles(
   };
 }
 
+/** Index strike grid: floor put boundary, ceil call boundary (half-point aware). */
+export function roundKeepawayPutLine(raw: number): number {
+  return Math.floor(raw * 2) / 2;
+}
+
+export function roundKeepawayCallLine(raw: number): number {
+  return Math.ceil(raw * 2) / 2;
+}
+
 export function spxKeepawayBoundary(
   stats: SpxKeepawayStats,
   side: "put" | "call",
@@ -84,7 +93,8 @@ export function spxKeepawayBoundary(
         ? stats.highSide.mean
         : stats.highSide.median;
   if (!Number.isFinite(k)) return null;
-  return side === "put" ? sessionLow - k : sessionHigh + k;
+  const raw = side === "put" ? sessionLow - k : sessionHigh + k;
+  return side === "put" ? roundKeepawayPutLine(raw) : roundKeepawayCallLine(raw);
 }
 
 export function isSpxSymbol(sym: string): boolean {

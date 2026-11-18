@@ -1,5 +1,5 @@
 import { memo, useState } from "react";
-import { Info } from "lucide-react";
+import { ChevronDown, Info } from "lucide-react";
 import {
   BG_EXP_BAR, BORDER_ROW, DIM, WHITE, GRAY, UP, DOWN, GAMMA_SCENARIO,
   MONO, FW_LIGHT, GOLD,
@@ -10,11 +10,15 @@ import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { useFlashOnChange } from "@/hooks/useFlashOnChange";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
+import {
+  loadAtKeyLevelsExpanded,
+  saveAtKeyLevelsExpanded,
+} from "@/lib/active-trader/atKeyLevelsPanelState";
 
-const AMBER = "#FFB800";
-const PUT_TEAL = "#14b8a6";
 const LABEL_PX = 9;
 const VALUE_PX = 15;
+const K_PX = 13;
+const SPOT_ROW_VALUE_PX = 14;
 
 interface RegimeStripProps {
   accentHex: string;
@@ -45,15 +49,6 @@ function distToWall(
   return kind === "call"
     ? `${away.toFixed(1)} above`
     : `${away.toFixed(1)} below`;
-}
-
-function KeepawayValue({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div>
-      <div style={{ fontSize: LABEL_PX, color: GRAY, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: VALUE_PX, color, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{value}</div>
-    </div>
-  );
 }
 
 function LevelCell({
@@ -99,6 +94,25 @@ function LevelCell({
   );
 }
 
+function BoldSpotCell({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
+  return (
+    <div className="min-w-0">
+      <div style={{ fontSize: 9, color: GRAY, fontWeight: 600, letterSpacing: "0.08em" }}>{label}</div>
+      <div
+        className="tabular-nums leading-tight"
+        style={{ fontSize: SPOT_ROW_VALUE_PX, color, fontWeight: 700 }}
+      >
+        {value}
+      </div>
+      {sub ? (
+        <div className="tabular-nums" style={{ fontSize: K_PX, color: WHITE, fontWeight: 600, marginTop: 1 }}>
+          {sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const RegimeStrip = memo(function RegimeStrip({
   regimeLabel,
   regimeDegraded,
@@ -114,14 +128,13 @@ export const RegimeStrip = memo(function RegimeStrip({
   embedded,
   headline,
 }: RegimeStripProps) {
+  const [expanded, setExpanded] = useState(() => loadAtKeyLevelsExpanded());
   const [infoOpen, setInfoOpen] = useState(false);
   const session = sessionLabel ?? (isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended");
-  const envLabel =
-    zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "";
 
   const regimeText = regimeLabel ?? "\u2014";
   const regimeTone = regimeDegraded
-    ? { bg: "#27272a", color: GRAY, border: "#3f3f46" }
+    ? { bg: "rgba(255,255,255,0.06)", color: GRAY, border: BORDER_ROW }
     : /bear|down|put/i.test(regimeText)
       ? { bg: "rgba(242,54,69,0.18)", color: DOWN, border: "rgba(242,54,69,0.45)" }
       : /bull|up|call/i.test(regimeText)
@@ -140,6 +153,8 @@ export const RegimeStrip = memo(function RegimeStrip({
   const flip =
     zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "none in range";
   const gexVal = formatGexUsd(zones.netGexUsdPer1Pct);
+  const envLabel =
+    zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "";
 
   const kLow = keepawayStats
     ? keepawayUseMean
@@ -152,21 +167,51 @@ export const RegimeStrip = memo(function RegimeStrip({
       : keepawayStats.highSide.median
     : null;
 
+  const spotFmt =
+    underlyingPrice != null && Number.isFinite(underlyingPrice)
+      ? formatStrikeLevel(underlyingPrice)
+      : "\u2014";
+
+  const showKeepaway =
+    keepawayStats != null && keepawayPutLine != null && keepawayCallLine != null;
+
+  const toggleExpanded = () => {
+    setExpanded((v) => {
+      const next = !v;
+      saveAtKeyLevelsExpanded(next);
+      return next;
+    });
+  };
+
   return (
     <div
       data-at-key-levels
-      className={embedded ? "px-3 pt-2 pb-1.5 space-y-1.5" : "sticky z-[38] px-3 pt-2 pb-1.5 space-y-1.5"}
+      className={embedded ? "px-3 pt-1.5 pb-1" : "sticky z-[38] px-3 pt-1.5 pb-1"}
       style={{
         ...(embedded ? {} : { top: stickyTop }),
         background: BG_EXP_BAR,
         borderBottom: embedded ? undefined : `1px solid ${BORDER_ROW}`,
         fontFamily: MONO,
+        maxHeight: expanded ? 220 : undefined,
+        overflow: expanded ? "auto" : "hidden",
       }}
     >
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+      <div className="w-full flex items-center justify-between gap-2">
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex flex-1 items-center gap-2 min-w-0"
+          onClick={toggleExpanded}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              toggleExpanded();
+            }
+          }}
+          aria-expanded={expanded}
+        >
           <span
-            className="shrink-0 rounded-full px-2 py-0.5 capitalize truncate max-w-[200px]"
+            className="shrink-0 rounded-full px-2 py-0.5 capitalize truncate max-w-[160px]"
             style={{
               fontSize: 11,
               fontWeight: 600,
@@ -177,126 +222,150 @@ export const RegimeStrip = memo(function RegimeStrip({
           >
             {regimeText}
           </span>
-          <button
-            type="button"
-            aria-label="Key level conventions"
-            onClick={() => setInfoOpen((v) => !v)}
-            className="shrink-0 p-0.5 rounded"
-            style={{ color: infoOpen ? WHITE : DIM }}
-          >
-            <Info className="w-3.5 h-3.5" />
-          </button>
+          <ChevronDown
+            className="w-3.5 h-3.5 shrink-0 transition-transform"
+            style={{ color: DIM, transform: expanded ? "rotate(180deg)" : undefined }}
+          />
         </div>
+        <button
+          type="button"
+          aria-label="Key level conventions"
+          onClick={() => setInfoOpen((v) => !v)}
+          className="shrink-0 p-0.5 rounded"
+          style={{ color: infoOpen ? WHITE : DIM }}
+        >
+          <Info className="w-3.5 h-3.5" />
+        </button>
         <span className="shrink-0" style={{ fontSize: 10, color: WHITE, fontWeight: 500 }}>
           {session}
         </span>
       </div>
 
       {infoOpen ? (
-        <p className="leading-snug" style={{ fontSize: 10, color: GRAY, fontWeight: FW_LIGHT }}>
-          Modeled · OI convention · 0DTE. Walls and flip refresh with chain OI/gamma and live ticks.
-        </p>
+        <div className="mt-1 space-y-1 leading-snug" style={{ fontSize: 10, color: GRAY, fontWeight: FW_LIGHT }}>
+          <p>Modeled · OI convention · 0DTE. Walls and flip refresh with chain OI/gamma and live ticks.</p>
+          {showKeepaway && keepawayStats ? (
+            <p className="tabular-nums" style={{ color: WHITE }}>
+              Keep-away K: Schwab $SPX daily candles, YTD {keepawayStats.startYmd}–{keepawayStats.endYmd}, n=
+              {keepawayStats.n}. K_low med {keepawayStats.lowSide.median.toFixed(1)} · avg{" "}
+              {keepawayStats.lowSide.mean.toFixed(1)} · K_high med {keepawayStats.highSide.median.toFixed(1)} · avg{" "}
+              {keepawayStats.highSide.mean.toFixed(1)}.
+            </p>
+          ) : null}
+        </div>
       ) : null}
 
       <div
-        className="grid grid-cols-2 gap-x-3 gap-y-2 py-1.5"
-        style={{ borderTop: `1px solid ${BORDER_ROW}`, borderBottom: `1px solid ${BORDER_ROW}` }}
+        className="grid grid-cols-3 gap-x-2 py-1.5 mt-0.5"
+        style={{ borderTop: `1px solid ${BORDER_ROW}` }}
       >
-        <LevelCell
-          label="Call wall"
-          value={cw}
-          dist={distToWall(zones.callWall, underlyingPrice ?? null, "call")}
-          color={GOLD}
-          flash={flashCw}
-        />
-        <LevelCell
-          label="Put wall"
-          value={pw}
-          dist={distToWall(zones.putWall, underlyingPrice ?? null, "put")}
-          color={PUT_TEAL}
-          flash={flashPw}
-        />
-        <LevelCell
-          label="Flip"
-          value={flip}
-          dist={null}
-          color={GAMMA_SCENARIO}
-          flash={flashFlip}
-        />
-        <div className="min-w-0 py-1" style={{ opacity: flashGex ? 0.9 : 1 }}>
-          <div
-            className="uppercase tracking-wider"
-            style={{ fontSize: LABEL_PX, color: GRAY, fontWeight: 600, letterSpacing: "0.1em" }}
-          >
-            GEX
+        <BoldSpotCell label="SPOT" value={spotFmt} color={WHITE} />
+        {showKeepaway ? (
+          <>
+            <BoldSpotCell
+              label="PUT LINE"
+              value={formatStrikeLevel(keepawayPutLine!)}
+              sub={kLow != null ? `K ${kLow.toFixed(1)}` : undefined}
+              color={DOWN}
+            />
+            <BoldSpotCell
+              label="CALL LINE"
+              value={formatStrikeLevel(keepawayCallLine!)}
+              sub={kHigh != null ? `K ${kHigh.toFixed(1)}` : undefined}
+              color={GOLD}
+            />
+          </>
+        ) : (
+          <>
+            <BoldSpotCell label="PUT WALL" value={pw} color={DOWN} />
+            <BoldSpotCell label="CALL WALL" value={cw} color={GOLD} />
+          </>
+        )}
+        {showKeepaway && onToggleKeepawayMean ? (
+          <div className="col-span-3 flex justify-end">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleKeepawayMean();
+              }}
+              className="rounded-full px-2 py-0.5"
+              style={{
+                fontSize: K_PX,
+                color: WHITE,
+                border: `1px solid ${BORDER_ROW}`,
+                background: keepawayUseMean ? "rgba(255,255,255,0.08)" : "transparent",
+                fontWeight: 600,
+              }}
+            >
+              {keepawayUseMean ? "K: avg" : "K: med"}
+            </button>
           </div>
-          <div
-            className="tabular-nums leading-tight"
-            style={{ fontSize: VALUE_PX, color: WHITE, fontWeight: 700 }}
-          >
-            {gexVal}
-          </div>
-          {envLabel ? (
-            <div style={{ fontSize: 10, color: GRAY, fontWeight: 500, marginTop: 1 }}>{envLabel}</div>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
-      {keepawayStats && keepawayPutLine != null && keepawayCallLine != null ? (
+      {expanded ? (
         <div
-          data-at-keepaway-strip
-          className="space-y-1 py-1"
-          style={{ borderBottom: `1px solid ${BORDER_ROW}` }}
+          className="grid grid-cols-2 gap-x-3 gap-y-2 py-1.5"
+          style={{ borderTop: `1px solid ${BORDER_ROW}` }}
         >
-          <div className="flex items-center justify-between gap-2">
-            <span style={{ fontSize: 10, color: WHITE, fontWeight: 600, letterSpacing: "0.06em" }}>
-              KEEP-AWAY (SPX)
-            </span>
-            {onToggleKeepawayMean ? (
-              <button
-                type="button"
-                onClick={onToggleKeepawayMean}
-                className="rounded-full px-2 py-0.5"
-                style={{
-                  fontSize: 9,
-                  color: GRAY,
-                  border: `1px solid ${BORDER_ROW}`,
-                  background: keepawayUseMean ? "rgba(255,255,255,0.06)" : "transparent",
-                }}
-              >
-                {keepawayUseMean ? "Avg K" : "Med K"}
-              </button>
+          <LevelCell
+            label="Call wall"
+            value={cw}
+            dist={distToWall(zones.callWall, underlyingPrice ?? null, "call")}
+            color={GOLD}
+            flash={flashCw}
+          />
+          <LevelCell
+            label="Put wall"
+            value={pw}
+            dist={distToWall(zones.putWall, underlyingPrice ?? null, "put")}
+            color={DOWN}
+            flash={flashPw}
+          />
+          <LevelCell
+            label="Flip"
+            value={flip}
+            dist={null}
+            color={GAMMA_SCENARIO}
+            flash={flashFlip}
+          />
+          <button
+            type="button"
+            className="min-w-0 py-1 text-left"
+            style={{ opacity: flashGex ? 0.9 : 1 }}
+            onClick={toggleExpanded}
+          >
+            <div
+              className="uppercase tracking-wider"
+              style={{ fontSize: LABEL_PX, color: GRAY, fontWeight: 600, letterSpacing: "0.1em" }}
+            >
+              GEX
+            </div>
+            <div
+              className="tabular-nums leading-tight"
+              style={{ fontSize: VALUE_PX, color: WHITE, fontWeight: 700 }}
+            >
+              {gexVal}
+            </div>
+            {envLabel ? (
+              <div style={{ fontSize: 10, color: GRAY, fontWeight: 500, marginTop: 1 }}>{envLabel}</div>
             ) : null}
-          </div>
-          <div className="grid grid-cols-2 gap-x-2">
-            <div>
-              <KeepawayValue label="Put floor" value={formatStrikeLevel(keepawayPutLine)} color={PUT_TEAL} />
-            </div>
-            <div>
-              <KeepawayValue label="Call ceiling" value={formatStrikeLevel(keepawayCallLine)} color={GOLD} />
-            </div>
-          </div>
-          <p className="tabular-nums" style={{ fontSize: 9, color: GRAY, lineHeight: 1.35 }}>
-            K_low med {keepawayStats.lowSide.median.toFixed(1)} · avg {keepawayStats.lowSide.mean.toFixed(1)} · K_high
-            med {keepawayStats.highSide.median.toFixed(1)} · avg {keepawayStats.highSide.mean.toFixed(1)} · n=
-            {keepawayStats.n}
-            {kLow != null && kHigh != null
-              ? ` · using ${keepawayUseMean ? "avg" : "med"} ${kLow.toFixed(1)}/${kHigh.toFixed(1)}`
-              : ""}
-          </p>
+          </button>
         </div>
       ) : null}
 
-      {headline?.trim() ? (
+      {expanded && headline?.trim() ? (
         <div
           className="text-center leading-tight"
           data-at-pressure-line
           style={{
             fontSize: 11,
-            color: AMBER,
+            color: GOLD,
             fontWeight: 600,
             borderTop: `1px solid ${BORDER_ROW}`,
             paddingTop: 6,
+            paddingBottom: 4,
           }}
         >
           {headline.trim()}

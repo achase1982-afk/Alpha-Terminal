@@ -48,12 +48,7 @@ export function buildAtSettingsSummary(
     });
     const bits: string[] = [];
     if (preview.takeProfit != null) {
-      const tpLabel = `TP ${preview.takeProfit.toFixed(2)}`;
-      bits.push(
-        preview.takeProfit <= entry
-          ? `${tpLabel} (min tick bump)`
-          : tpLabel,
-      );
+      bits.push(`TP ${preview.takeProfit.toFixed(2)}`);
     }
     if (preview.stopLoss != null) bits.push(`SL ${preview.stopLoss.toFixed(2)}`);
     if (bits.length) line += ` · ${bits.join(" · ")}`;

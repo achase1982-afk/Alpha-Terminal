@@ -25,6 +25,7 @@ import { SchwabAccountHeader } from "./SchwabAccountHeader";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { resolvePortfolioDisplayAccount } from "@/lib/portfolioDisplayAccount";
 import { useShallow } from "zustand/react/shallow";
+import { findVerticalScrollParent } from "@/lib/findVerticalScrollParent";
 
 const C = {
   bg: "#0c0c0c",
@@ -1724,7 +1725,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   useEffect(() => {
     const el = portfolioRootRef.current;
     if (!el) return;
-    const scrollParent = el.closest(".app-content") as HTMLElement | null;
+    const scrollParent = findVerticalScrollParent(el);
     if (!scrollParent) return;
     let startY = 0;
     const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
@@ -1802,7 +1803,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     .map(k => metricValues[k]);
 
   return (
-    <div ref={portfolioRootRef} style={{ fontFamily: f, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16 }}>
+    <div ref={portfolioRootRef} data-pf-root style={{ fontFamily: f, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16 }}>
       {showSettings && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}

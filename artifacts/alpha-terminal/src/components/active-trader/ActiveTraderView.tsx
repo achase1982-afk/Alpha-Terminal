@@ -147,24 +147,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return fetchedKeepaway;
   }, [spxMode, presentation?.skipNetwork, fetchedKeepaway]);
   const sessionHigh = useMemo(() => {
-    const parts = [underlyingQuote?.high, underlyingPrice, underlyingQuote?.last].filter(
-      (x): x is number => x != null && Number.isFinite(x),
-    );
-    return parts.length ? Math.max(...parts) : null;
-  }, [underlyingQuote?.high, underlyingQuote?.last, underlyingPrice]);
+    const h = underlyingQuote?.high;
+    return h != null && Number.isFinite(h) ? h : null;
+  }, [underlyingQuote?.high]);
   const sessionLow = useMemo(() => {
-    const parts = [underlyingQuote?.low, underlyingPrice, underlyingQuote?.last].filter(
-      (x): x is number => x != null && Number.isFinite(x),
-    );
-    return parts.length ? Math.min(...parts) : null;
-  }, [underlyingQuote?.low, underlyingQuote?.last, underlyingPrice]);
+    const l = underlyingQuote?.low;
+    return l != null && Number.isFinite(l) ? l : null;
+  }, [underlyingQuote?.low]);
   const keepawayPutLine = useMemo(() => {
-    if (!keepawayStats || sessionLow == null) return null;
-    return spxKeepawayBoundary(keepawayStats, "put", sessionLow, sessionHigh ?? sessionLow, keepawayUseMean);
+    if (!keepawayStats || sessionLow == null || sessionHigh == null) return null;
+    return spxKeepawayBoundary(keepawayStats, "put", sessionLow, sessionHigh, keepawayUseMean);
   }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
   const keepawayCallLine = useMemo(() => {
-    if (!keepawayStats || sessionHigh == null) return null;
-    return spxKeepawayBoundary(keepawayStats, "call", sessionLow ?? sessionHigh, sessionHigh, keepawayUseMean);
+    if (!keepawayStats || sessionLow == null || sessionHigh == null) return null;
+    return spxKeepawayBoundary(keepawayStats, "call", sessionLow, sessionHigh, keepawayUseMean);
   }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
   const ladderMode = AT_VERTICAL_LADDER_ENABLED ? prefs.ladderMode : "single";

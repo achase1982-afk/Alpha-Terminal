@@ -11,7 +11,13 @@ const SPX_START_YMD = "2026-01-01";
 
 type Candle = { high: number; low: number; close: number; datetime: number };
 
-let dailyCache: { nyDate: string; stats: SpxKeepawayStats | null } | null = null;
+const NULL_RETRY_MS = 5 * 60 * 1000;
+
+let dailyCache: {
+  nyDate: string;
+  stats: SpxKeepawayStats | null;
+  retryAfterMs?: number;
+} | null = null;
 
 async function resolveMarketToken(): Promise<string | null> {
   let token = getValidAccessToken("market") ?? getValidAccessToken("trader");
@@ -50,27 +56,44 @@ async function fetchSpxDailyYtd(token: string): Promise<Candle[]> {
   return json.candles ?? [];
 }
 
+function dropPartialSessionToday(candles: Candle[]): Candle[] {
+  const nyToday = nyCalendarYmd(new Date());
+  return candles.filter((c) => {
+    const ymd = nyCalendarYmd(new Date(c.datetime));
+    return ymd < nyToday;
+  });
+}
+
 export async function getSpxKeepawayStats(): Promise<SpxKeepawayStats | null> {
   const nyDate = nyCalendarYmd(new Date());
-  if (dailyCache?.nyDate === nyDate) return dailyCache.stats;
+  if (dailyCache?.nyDate === nyDate) {
+    if (dailyCache.stats) return dailyCache.stats;
+    if (dailyCache.retryAfterMs != null && Date.now() < dailyCache.retryAfterMs) {
+      return null;
+    }
+  }
 
   const token = await resolveMarketToken();
   if (!token) {
-    dailyCache = { nyDate, stats: null };
+    dailyCache = { nyDate, stats: null, retryAfterMs: Date.now() + NULL_RETRY_MS };
     return null;
   }
 
   try {
-    const candles = await fetchSpxDailyYtd(token);
+    const candles = dropPartialSessionToday(await fetchSpxDailyYtd(token));
+    const statsEndYmd =
+      candles.length > 0
+        ? nyCalendarYmd(new Date(candles[candles.length - 1]!.datetime))
+        : nyDate;
     const stats = computeSpxKeepawayFromDailyCandles(
       candles.map((c) => ({ high: c.high, low: c.low, close: c.close })),
-      { startYmd: SPX_START_YMD, endYmd: nyDate },
+      { startYmd: SPX_START_YMD, endYmd: statsEndYmd },
     );
-    dailyCache = { nyDate, stats };
+    dailyCache = stats ? { nyDate, stats } : { nyDate, stats: null, retryAfterMs: Date.now() + NULL_RETRY_MS };
     return stats;
   } catch (err) {
     logger.debug({ err }, "SPX keepaway compute failed");
-    dailyCache = { nyDate, stats: null };
+    dailyCache = { nyDate, stats: null, retryAfterMs: Date.now() + NULL_RETRY_MS };
     return null;
   }
 }

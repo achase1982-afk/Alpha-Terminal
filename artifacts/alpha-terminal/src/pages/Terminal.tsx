@@ -833,6 +833,36 @@ export default function TerminalPage() {
     setIsScrolledRaw(el.scrollTop > COLLAPSE_PX);
   }, []);
 
+  const resolveMobileInnerScroller = useCallback((): HTMLElement | null => {
+    const main = document.querySelector("main.app-content");
+    if (!main) return null;
+    if (activeBottom === "markets") {
+      if (contextTab === "options" && !atSubViewActive) {
+        return main.querySelector("[data-options-chain-scroll]");
+      }
+      if (contextTab === "news" || contextTab === "chart") {
+        return main.querySelector(".tab-inner-scroll");
+      }
+    }
+    if (activeBottom === "ai" || activeBottom === "portfolio") {
+      return main.querySelector(":scope > .tab-inner-scroll");
+    }
+    return null;
+  }, [activeBottom, contextTab, atSubViewActive]);
+
+  useEffect(() => {
+    if (!mobileTabUsesInnerScroll && !(activeBottom === "markets" && contextTab === "options")) return;
+    const el = resolveMobileInnerScroller();
+    if (!el) {
+      setIsScrolledRaw(false);
+      return;
+    }
+    const onScroll = () => setIsScrolledRaw(el.scrollTop > COLLAPSE_PX);
+    onScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [mobileTabUsesInnerScroll, activeBottom, contextTab, atSubViewActive, resolveMobileInnerScroller]);
+
   useEffect(() => {
     const el = stickyWrapRef.current;
     if (!el) return;
@@ -846,8 +876,13 @@ export default function TerminalPage() {
   }, [activeBottom]);
 
   useEffect(() => {
+    if (mobileTabUsesInnerScroll && activeBottom === "ai") {
+      const el = document.querySelector("main.app-content > .tab-inner-scroll") as HTMLElement | null;
+      el?.scrollTo({ top: 0 });
+      return;
+    }
     scrollRef.current?.scrollTo({ top: 0 });
-  }, [aiSubTab]);
+  }, [aiSubTab, mobileTabUsesInnerScroll, activeBottom]);
 
   const { subscribeOptionSymbols, subscribeEquitySymbols, releaseOptionHold } = useMarketStream();
 
@@ -1014,8 +1049,8 @@ export default function TerminalPage() {
 
         {!isWide ? (
           <main
-            ref={scrollRef}
-            onScroll={handleScroll}
+            ref={mobileTabUsesInnerScroll ? undefined : scrollRef}
+            onScroll={mobileTabUsesInnerScroll ? undefined : handleScroll}
             className={`app-content flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${
               mobileTabUsesInnerScroll ||
               (activeBottom === "markets" && contextTab === "newsChat") ||
@@ -1160,8 +1195,8 @@ export default function TerminalPage() {
           </>
         ) : (
           <main
-            ref={scrollRef}
-            onScroll={handleScroll}
+            ref={mobileTabUsesInnerScroll ? undefined : scrollRef}
+            onScroll={mobileTabUsesInnerScroll ? undefined : handleScroll}
             className={`app-content flex min-h-0 flex-1 min-w-0 flex-col pb-4 ${
               mobileTabUsesInnerScroll ||
               (activeBottom === "markets" && contextTab === "newsChat")

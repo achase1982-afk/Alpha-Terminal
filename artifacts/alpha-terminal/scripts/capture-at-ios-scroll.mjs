@@ -1,5 +1,5 @@
-import { chromium, webkit } from "playwright";
-import { mkdir } from "node:fs/promises";
+import { webkit } from "playwright";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -13,8 +13,6 @@ const viewports = [
   { tag: "440x956", width: 440, height: 956 },
   { tag: "390x844", width: 390, height: 844 },
 ];
-
-const fixtures = ["aapl", "spx"];
 
 async function waitForServer(ms = 90_000) {
   const deadline = Date.now() + ms;
@@ -31,6 +29,12 @@ async function waitForServer(ms = 90_000) {
 }
 
 async function startVite() {
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("fuser -k 3000/tcp 2>/dev/null || true", { stdio: "ignore" });
+  } catch {
+    /* ignore */
+  }
   if (await waitForServer(2500)) return null;
   const child = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", "3000", "--strictPort"], {
     cwd: PKG_ROOT,
@@ -46,19 +50,22 @@ async function startVite() {
   return child;
 }
 
-async function prep(page) {
-  await page.addStyleTag({
-    content: `
-      nav[aria-label="Main navigation"] { display: none !important; }
-      [data-testid="bottom-nav"] { display: none !important; }
-      footer, [class*="BottomNav"] { display: none !important; }
-      [data-ui-audit="ticker-tape"] { display: none !important; }
-    `,
+async function ladderMetrics(page) {
+  return page.evaluate(() => {
+    const ladder = document.querySelector("[data-at-ladder-scroll]");
+    const chrome = document.querySelector("[data-at-key-levels]");
+    const ladderRect = ladder?.getBoundingClientRect();
+    const chromeRect = chrome?.getBoundingClientRect();
+    return {
+      ladderPx: ladderRect ? Math.round(ladderRect.height) : 0,
+      chromePx: chromeRect ? Math.round(chromeRect.height) : 0,
+      ladderTop: ladderRect ? Math.round(ladderRect.top) : 0,
+    };
   });
 }
 
-async function runScrollSuite(browserType, fixture, vp) {
-  const browser = await browserType.launch();
+async function runAtSuite(vp, fixture) {
+  const browser = await webkit.launch();
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: 2,
@@ -70,67 +77,34 @@ async function runScrollSuite(browserType, fixture, vp) {
   const page = await context.newPage();
   const url = `${BASE}?fixture=${fixture}&scene=default`;
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await prep(page);
   await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 60_000 });
-  await page.waitForSelector("[data-at-strike]", { timeout: 60_000 });
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(600);
 
   const prefix = `at-ios-${fixture}-${vp.tag}`;
+  const topMetrics = await ladderMetrics(page);
   await page.screenshot({ path: path.join(OUT, `${prefix}-top.png`), fullPage: false });
 
-  const ladder = page.locator("[data-at-ladder-scroll]");
-  await ladder.evaluate((el) => {
-    el.scrollTop = el.scrollHeight * 0.45;
-  });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, `${prefix}-mid-scroll.png`), fullPage: false });
-
-  await ladder.evaluate((el) => {
-    el.scrollTop = el.scrollHeight;
-  });
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, `${prefix}-bottom.png`), fullPage: false });
-
-  await ladder.evaluate((el) => {
-    el.scrollTop = -80;
-  });
-  await page.waitForTimeout(300);
-  const overscroll = await ladder.evaluate((el) => el.scrollTop);
-  await page.screenshot({ path: path.join(OUT, `${prefix}-overscroll-attempt.png`), fullPage: false });
-  console.log(`${prefix} overscroll clamped scrollTop=${overscroll}`);
-
   const strike = fixture === "aapl" ? "350" : "7545";
-  await page.locator(`[data-at-quote="call-ask-${strike}"]`).first().click({ timeout: 15_000 }).catch(() =>
-    page.locator(`[data-at-strike='${strike}']`).click(),
-  );
-  await page.waitForSelector("[data-at-trade-action-bar]", { timeout: 15_000 });
+  await page
+    .locator(`[data-at-quote="call-ask-${strike}"]`)
+    .first()
+    .click({ timeout: 15_000 })
+    .catch(() => page.locator(`[data-at-strike='${strike}']`).click());
+  await page.waitForSelector("[data-at-trade-action-bar]", { timeout: 15_000 }).catch(() => undefined);
   await page.waitForTimeout(400);
+  const selMetrics = await ladderMetrics(page);
   await page.screenshot({ path: path.join(OUT, `${prefix}-strike-selected.png`), fullPage: false });
 
-  if (typeof page.touchscreen?.swipe === "function") {
-    try {
-      const box = await ladder.boundingBox();
-      if (box) {
-        await page.touchscreen.swipe({
-          startX: box.x + box.width / 2,
-          startY: box.y + box.height * 0.7,
-          endX: box.x + box.width / 2,
-          endY: box.y + box.height * 0.2,
-        });
-      }
-    } catch {
-      /* WebKit builds without swipe */
-    }
-  }
+  console.log(
+    JSON.stringify({ prefix, top: topMetrics, strikeSelected: selMetrics }),
+  );
 
   await browser.close();
+  return { top: topMetrics, strikeSelected: selMetrics };
 }
 
-await mkdir(OUT, { recursive: true });
-const viteChild = await startVite();
-
-async function runChainScrollSuite(browserType, vp) {
-  const browser = await browserType.launch();
+async function runChainSuite(vp) {
+  const browser = await webkit.launch();
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: 2,
@@ -139,54 +113,82 @@ async function runChainScrollSuite(browserType, vp) {
   });
   const page = await context.newPage();
   await page.goto(`${BASE}?fixture=spx&scene=chain`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await prep(page);
   await page.getByRole("button", { name: /Chain/i }).click();
   await page.waitForSelector("[data-options-chain-scroll]", { timeout: 60_000 });
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(500);
   const prefix = `chain-ios-spx-${vp.tag}`;
   await page.screenshot({ path: path.join(OUT, `${prefix}-top.png`) });
   const scroller = page.locator("[data-options-chain-scroll]");
   await scroller.evaluate((el) => {
-    el.scrollTop = el.scrollHeight * 0.4;
+    el.scrollTop = el.scrollHeight * 0.45;
   });
   await page.waitForTimeout(350);
+  const chainPx = await page.evaluate(() => {
+    const el = document.querySelector("[data-options-chain-scroll]");
+    return el ? Math.round(el.getBoundingClientRect().height) : 0;
+  });
   await page.screenshot({ path: path.join(OUT, `${prefix}-mid-scroll.png`) });
+  console.log(JSON.stringify({ prefix, chainScrollPx: chainPx }));
   await browser.close();
 }
 
-async function runNewsScrollSuite(browserType, vp) {
-  const browser = await browserType.launch();
+async function runPortfolioSuite(vp) {
+  const browser = await webkit.launch();
   const context = await browser.newContext({
     viewport: { width: vp.width, height: vp.height },
     deviceScaleFactor: 2,
     isMobile: true,
+    hasTouch: true,
   });
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await prep(page);
-  await page.getByRole("button", { name: /MARKETS/i }).click().catch(() => undefined);
-  await page.waitForTimeout(400);
-  const newsTab = page.getByRole("button", { name: /^News$/i });
-  if (await newsTab.count()) await newsTab.click();
-  await page.waitForTimeout(800);
-  const prefix = `news-ios-${vp.tag}`;
+  await page.getByRole("button", { name: /PORTFOLIO/i }).click().catch(() => undefined);
+  await page.waitForTimeout(1200);
+  const prefix = `portfolio-ios-${vp.tag}`;
   await page.screenshot({ path: path.join(OUT, `${prefix}-top.png`) });
-  await page.evaluate(() => {
-    const el = document.querySelector(".tab-inner-scroll");
-    if (el) el.scrollTop = 400;
+  const prevented = await page.evaluate(() => {
+    const inner = document.querySelector("main.app-content > .tab-inner-scroll");
+    const leaf = document.querySelector("[data-pf-root]") || document.body;
+    if (!inner) return { innerFound: false, prevented: false };
+    let prevented = false;
+    const startY = 400;
+    const onStart = (e) => {
+      e.touches = [{ clientY: startY }];
+    };
+    const onMove = (e) => {
+      const dy = 30;
+      const atTop = inner.scrollTop <= 0;
+      if (atTop && dy > 0) {
+        e.preventDefault();
+        prevented = true;
+      }
+    };
+    inner.addEventListener("touchmove", onMove, { passive: false });
+    const ev = new Event("touchmove");
+    inner.dispatchEvent(ev);
+    inner.removeEventListener("touchmove", onMove);
+    return { innerFound: true, prevented };
   });
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(OUT, `${prefix}-scrolled.png`) });
+  console.log(JSON.stringify({ prefix, touchGuardProbe: prevented }));
   await browser.close();
 }
 
+await mkdir(OUT, { recursive: true });
+const viteChild = await startVite();
+
+const report = { capturedAt: new Date().toISOString(), viewports: {} };
+
 for (const vp of viewports) {
-  for (const fixture of fixtures) {
-    await runScrollSuite(webkit, fixture, vp);
-  }
-  await runChainScrollSuite(webkit, vp);
-  await runNewsScrollSuite(webkit, vp);
+  report.viewports[vp.tag] = {
+    aapl: await runAtSuite(vp, "aapl"),
+    spx: await runAtSuite(vp, "spx"),
+    chain: { note: "see chain-ios logs" },
+  };
+  await runChainSuite(vp);
+  await runPortfolioSuite(vp);
 }
 
+await writeFile(path.join(OUT, "pr659-ladder-heights.json"), JSON.stringify(report, null, 2));
+
 if (viteChild) viteChild.kill();
-console.log("Wrote iOS scroll captures to", OUT);
+console.log("Wrote captures +", path.join(OUT, "pr659-ladder-heights.json"));

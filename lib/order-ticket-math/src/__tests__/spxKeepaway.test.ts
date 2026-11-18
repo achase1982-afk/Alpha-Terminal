@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   computeSpxKeepawayFromDailyCandles,
+  roundKeepawayCallLine,
+  roundKeepawayPutLine,
   spxKeepawayBoundary,
   type DailyOhlc,
 } from "../spxKeepaway";
@@ -37,6 +39,12 @@ describe("computeSpxKeepawayFromDailyCandles", () => {
     expect(stats!.highSide.mean).toBeCloseTo(34.6, 1);
   });
 
+  it("rounds put line down and call line up on half-point grid", () => {
+    expect(roundKeepawayPutLine(7510.51)).toBe(7510.5);
+    expect(roundKeepawayCallLine(7510.01)).toBe(7510.5);
+    expect(roundKeepawayPutLine(7510.0)).toBe(7510);
+  });
+
   it("computes session boundaries from median vs mean", () => {
     const stats = computeSpxKeepawayFromDailyCandles(buildGolden221Candles(), {
       startYmd: "2026-01-01",
@@ -46,7 +54,7 @@ describe("computeSpxKeepawayFromDailyCandles", () => {
     const putAvg = spxKeepawayBoundary(stats, "put", 7540, 7550, true);
     const callMed = spxKeepawayBoundary(stats, "call", 7540, 7550, false);
     expect(putMed).toBeCloseTo(7540 - 29.5, 5);
-    expect(putAvg).toBeCloseTo(7540 - 36.6, 5);
-    expect(callMed).toBeCloseTo(7550 + 24.2, 5);
+    expect(putAvg).toBe(7503);
+    expect(callMed).toBeCloseTo(7574.5, 5);
   });
 });

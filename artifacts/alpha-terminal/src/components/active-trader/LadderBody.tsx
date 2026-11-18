@@ -279,6 +279,7 @@ const LadderRowView = memo(function LadderRowView({
 
   const putKeepaway = keepawayPutLine != null && row.strike < keepawayPutLine;
   const callKeepaway = keepawayCallLine != null && row.strike > keepawayCallLine;
+  const keepawayForbidden = putKeepaway || callKeepaway;
 
   const rowStyle: React.CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
@@ -286,18 +287,20 @@ const LadderRowView = memo(function LadderRowView({
     borderBottom: `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
-    background: spotRow ? `${accentHex}22` : isSelected ? "rgba(251,191,36,0.12)" : AT_LADDER_PANEL_BG,
+    background: spotRow
+      ? `${accentHex}22`
+      : keepawayForbidden
+        ? "rgba(255,255,255,0.045)"
+        : isSelected
+          ? "rgba(251,191,36,0.12)"
+          : AT_LADDER_PANEL_BG,
     boxShadow: isCallWall
       ? `inset 4px 0 0 ${UP}`
       : isPutWall
         ? `inset 4px 0 0 ${DOWN}`
-        : putKeepaway
-          ? "inset 3px 0 0 rgba(242,54,69,0.35)"
-          : callKeepaway
-            ? "inset -3px 0 0 rgba(251,191,36,0.35)"
-            : isSelected
-              ? `inset 0 0 0 1px ${accentHex}55`
-              : undefined,
+        : isSelected
+          ? `inset 0 0 0 1px ${accentHex}55`
+          : undefined,
   };
 
   const putBidPx = ladderMode === "vertical" ? putSpread.bid : putTick?.bid ?? null;
@@ -311,25 +314,34 @@ const LadderRowView = memo(function LadderRowView({
         <div
           data-at-spot-gap
           className="relative w-full grid"
-          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 10 }}
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 8 }}
         >
           <div
             className="col-span-full relative"
-            style={{ gridColumn: "1 / -1", height: 10 }}
+            style={{ gridColumn: "1 / -1", height: 8 }}
           >
             <div
               className="absolute left-0 right-0"
               style={{
-                top: Math.min(8, Math.max(0, spotFrac * 8)),
+                top: Math.min(6, Math.max(0, spotFrac * 6)),
                 borderTop: `1px dashed ${accentHex}99`,
               }}
             />
           </div>
           <div
-            className="flex items-center justify-center col-start-4 z-[1]"
-            style={{ marginTop: Math.min(4, Math.max(-4, spotFrac * 8 - 4)) }}
+            className="flex items-center justify-start col-start-1 col-end-4 z-[1] pointer-events-none"
+            style={{ paddingLeft: 2, marginTop: 1 }}
           >
-            <span style={{ fontSize: 7, color: accentHex, background: BG, padding: "0 4px" }}>
+            <span
+              className="truncate whitespace-nowrap"
+              style={{
+                fontSize: 8,
+                lineHeight: 1,
+                color: accentHex,
+                background: AT_LADDER_PANEL_BG,
+                padding: "0 3px",
+              }}
+            >
               {symbolLabel} {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
             </span>
           </div>
@@ -521,8 +533,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
         const spotBetween =
           props.underlyingPrice != null &&
           next != null &&
-          row.strike >= props.underlyingPrice &&
-          next.strike < props.underlyingPrice;
+          row.strike > props.underlyingPrice &&
+          next.strike <= props.underlyingPrice;
         const spotFrac =
           spotBetween && props.underlyingPrice != null
             ? (row.strike - props.underlyingPrice) / (row.strike - next!.strike)
