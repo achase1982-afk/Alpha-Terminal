@@ -1575,10 +1575,6 @@ export function OptionsTab({
     const selectedYmd = atExpiration?.slice(0, 10) ?? "";
     const keep = (expiration: string) => {
       const ymd = expiration.slice(0, 10);
-      if (optionsSubView === "at") {
-        if (!selectedYmd) return true;
-        return expiration === atExpiration || ymd === selectedYmd;
-      }
       if (expandedExps.size > 0) return expandedExps.has(expiration);
       return selectedYmd !== "" && ymd === selectedYmd;
     };

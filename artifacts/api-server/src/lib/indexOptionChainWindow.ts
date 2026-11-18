@@ -71,15 +71,17 @@ export function resolveIndexChainWindow(input: {
   } else if (!toDate) {
     toDate = fromDate;
   }
-  if (fromDate > toDate) {
-    const swap = fromDate;
-    fromDate = toDate;
-    toDate = swap;
+  let from = fromDate ?? nyCalendarYmd(now);
+  let to = toDate ?? addCalendarDaysNy(from, span);
+  if (from > to) {
+    const swap = from;
+    from = to;
+    to = swap;
   }
   const range = readChainRange(input.range);
   return {
-    fromDate,
-    toDate,
+    fromDate: from,
+    toDate: to,
     range,
     strikeCountPerSide: schwabStrikeCountForRange(range, input.strikeCount),
   };
