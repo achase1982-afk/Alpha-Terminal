@@ -56,12 +56,11 @@ async function runHeight(height) {
   const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
   await viewSel.first().selectOption("at").catch(() => undefined);
   await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
-  await page.waitForSelector("[data-at-day-low-zone]", { timeout: 90_000 });
+  await page.waitForSelector("[data-at-day-levels-grid], [data-at-day-low]", { timeout: 90_000 });
 
   const dayLowRow = await page.locator("[data-at-day-low]").innerText();
   const lowZoneRef = await page.locator("[data-at-low-zone-ref]").innerText();
-  const glanceText = await page.locator("[data-at-glance-top]").innerText();
-  const walls = glanceText.includes("PUT") && glanceText.includes("CALL");
+  const dayHighRow = await page.locator("[data-at-day-high]").innerText().catch(() => "");
   const flowRow = (await page.locator("[data-at-glance-flow-row]").count()) > 0;
 
   const noZeroLevel = !/\b0\.00\b/.test(dayLowRow) && !/Day low 0\b/.test(dayLowRow);
@@ -70,13 +69,13 @@ async function runHeight(height) {
   const dayLowOk = /Day low|Prev low/.test(dayLowRow);
   record(`day low label (${height}px)`, dayLowOk, dayLowRow.trim());
 
-  const zoneOk =
-    /Low zone/.test(lowZoneRef) &&
-    (lowZoneRef.includes("pending") || /\d[\d,]*\.\d{2}.*–/.test(lowZoneRef));
-  record(`low zone band or pending (${height}px)`, zoneOk, lowZoneRef.trim());
+  const zoneOk = /Low zone top/.test(lowZoneRef) && (lowZoneRef.includes("—") || /\d/.test(lowZoneRef));
+  record(`low zone top (${height}px)`, zoneOk, lowZoneRef.trim());
 
-  record(`walls present (${height}px)`, walls, walls ? "PUT/CALL" : "missing");
-  record(`flow tracks row (${height}px)`, flowRow, flowRow ? "ok" : "missing");
+  const highOk = /Day high/.test(dayHighRow) || /High zone bottom/.test(await page.locator("[data-at-high-zone-ref]").innerText().catch(() => ""));
+  record(`day high / high zone (${height}px)`, highOk, dayHighRow.trim());
+
+  record(`gross flow row (${height}px)`, flowRow, flowRow ? "ok" : "missing");
 
   const contrast = await page.evaluate(() => {
     const el = document.querySelector("[data-at-low-zone-ref]");

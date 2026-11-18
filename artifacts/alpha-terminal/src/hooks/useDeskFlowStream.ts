@@ -25,6 +25,7 @@ import {
 import { parseDeskFlowFrame } from "@/lib/active-trader/deskFlowFrameTypes";
 import { deskFlowReplayForSymbol } from "@/lib/active-trader/deskFlowReplay";
 import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 
 const API_BASE = import.meta.env.BASE_URL + "api";
 const INITIAL_BACKOFF_MS = 1_000;
@@ -170,6 +171,14 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStr
     }
 
     if (atGlanceFlowFixtureEnabled()) {
+      aggRef.current = buildFixtureInternal(symbol);
+      const agg = deskFlowAggregatorProject(aggRef.current);
+      setAggregate(agg);
+      setNetPremium(projectNet(aggRef.current, agg, flowWindowMs, scaleRef, hystRef, false));
+      return;
+    }
+
+    if (import.meta.env.DEV && getAtFixtureOverride()?.presentation?.skipNetwork) {
       aggRef.current = buildFixtureInternal(symbol);
       const agg = deskFlowAggregatorProject(aggRef.current);
       setAggregate(agg);

@@ -1,46 +1,49 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuote } from "@/hooks/useQuote";
-import { useTerminalStore } from "@/lib/store";
 import { isSpxSymbol } from "@workspace/order-ticket-math";
 import {
-  dayLowLabelText,
-  formatSessionLowDisplay,
   resolveDayLowFromStreamQuote,
   type DayLowDisplay,
 } from "@/lib/active-trader/atDayLow";
 import {
-  formatLowZoneTopDisplay,
-  isAfter1PmEt,
-  resolveLowZoneSlotDisplay,
-  type LowZoneSlotDisplay,
-} from "@/lib/active-trader/atLowZoneSlot";
+  resolveDayHighFromStreamQuote,
+  type DayHighDisplay,
+} from "@/lib/active-trader/atDayHigh";
+import { formatSessionFeedLevel } from "@/lib/active-trader/spxRefZone";
+import { isAfter1PmEt, lowZoneTopLabel, resolveLowZoneSlotDisplay, type LowZoneSlotDisplay } from "@/lib/active-trader/atLowZoneSlot";
+import {
+  highZoneBottomLabel,
+  resolveHighZoneSlotDisplay,
+  type HighZoneSlotDisplay,
+} from "@/lib/active-trader/atHighZoneSlot";
 
-const FIXTURE_DAY_LOW = 7288.12;
+/** Quinn fixtures: high 7368 → high zone bottom 7333 at K=35. */
+export const FIXTURE_SESSION_LOW = 7288;
+export const FIXTURE_SESSION_HIGH = 7368;
+export const FIXTURE_LOW_ZONE_TOP = 7323;
+export const FIXTURE_HIGH_ZONE_BOTTOM = 7333;
 
 export type AtGlanceSessionLevels = {
   showRow: boolean;
   dayLow: DayLowDisplay;
-  dayLowText: string;
+  dayHigh: DayHighDisplay;
+  dayLowValue: string;
+  dayHighValue: string;
   lowZone: LowZoneSlotDisplay;
-  lowZoneText: string;
+  highZone: HighZoneSlotDisplay;
+  lowZoneLabel: string;
+  highZoneLabel: string;
   zoneEmphasisFull: boolean;
-  quoteTsMs: number | null;
 };
 
 export function useAtGlanceSessionLevels(
   symbol: string,
-  opts?: { skipNetwork?: boolean; showLowZoneSlot?: boolean },
+  opts?: { skipNetwork?: boolean; showZoneSlots?: boolean },
 ): AtGlanceSessionLevels {
   const { data: quote } = useQuote(symbol);
-  const symU = symbol.toUpperCase();
-  const streamTs = useTerminalStore(
-    (s) =>
-      s.streamPrices[symU]?.ts ??
-      s.streamPrices[symU.startsWith("$") ? symU.slice(1) : `$${symU}`]?.ts ??
-      null,
-  );
   const spx = isSpxSymbol(symbol);
   const skipNetwork = !!opts?.skipNetwork;
+  const showZones = opts?.showZoneSlots !== false;
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const tick = window.setInterval(() => setNow(new Date()), 60_000);
@@ -53,39 +56,44 @@ export function useAtGlanceSessionLevels(
       return {
         showRow: false,
         dayLow: { kind: "unavailable", value: null },
-        dayLowText: "Day low —",
+        dayHigh: { kind: "unavailable", value: null },
+        dayLowValue: "\u2014",
+        dayHighValue: "\u2014",
         lowZone: { status: "hidden" },
-        lowZoneText: "",
+        highZone: { status: "hidden" },
+        lowZoneLabel: "",
+        highZoneLabel: "",
         zoneEmphasisFull,
-        quoteTsMs: null,
       };
     }
 
     let dayLow: DayLowDisplay;
+    let dayHigh: DayHighDisplay;
+
     if (skipNetwork) {
-      dayLow = { kind: "current", value: FIXTURE_DAY_LOW };
+      dayLow = { kind: "current", value: FIXTURE_SESSION_LOW };
+      dayHigh = { kind: "current", value: FIXTURE_SESSION_HIGH };
     } else {
       dayLow = resolveDayLowFromStreamQuote(quote, now);
+      dayHigh = resolveDayHighFromStreamQuote(quote, now);
     }
 
-    const lowZone = resolveLowZoneSlotDisplay(dayLow.value, {
-      showSlot: opts?.showLowZoneSlot !== false,
-    });
-
-    let lowZoneText = "";
-    if (lowZone.status === "pending") lowZoneText = "Low zone: pending";
-    else if (lowZone.status === "band") {
-      lowZoneText = `Low zone ${formatSessionLowDisplay(lowZone.dayLow)}–${formatLowZoneTopDisplay(lowZone.top)}`;
-    }
+    const lowZone = resolveLowZoneSlotDisplay(dayLow.value, { showSlot: showZones });
+    const highZone = resolveHighZoneSlotDisplay(dayHigh.value, { showSlot: showZones });
 
     return {
       showRow: true,
       dayLow,
-      dayLowText: dayLowLabelText(dayLow),
+      dayHigh,
+      dayLowValue:
+        dayLow.value != null ? formatSessionFeedLevel(dayLow.value) : "\u2014",
+      dayHighValue:
+        dayHigh.value != null ? formatSessionFeedLevel(dayHigh.value) : "\u2014",
       lowZone,
-      lowZoneText,
+      highZone,
+      lowZoneLabel: lowZoneTopLabel(lowZone),
+      highZoneLabel: highZoneBottomLabel(highZone),
       zoneEmphasisFull,
-      quoteTsMs: streamTs,
     };
-  }, [spx, skipNetwork, quote, streamTs, opts?.showLowZoneSlot, now]);
+  }, [spx, skipNetwork, quote, showZones, now]);
 }

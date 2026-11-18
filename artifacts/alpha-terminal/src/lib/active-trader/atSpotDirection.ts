@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { UP, WHITE, DOWN } from "@/components/options/optionsTheme";
+import { DOWN, UP, WHITE } from "@/components/options/optionsTheme";
 
 const HOLD_MS = 300;
 const REF_MS = 1500;
@@ -58,4 +58,10 @@ export function useSpotDirectionColor(price: number | null | undefined, throttle
   }, [price, throttleMs]);
 
   return color;
+}
+
+export function useSpotTickCue(price: number | null | undefined, throttleMs = 250): { color: string; glyph: string } {
+  const color = useSpotDirectionColor(price, throttleMs);
+  const glyph = color === UP ? "\u25b2" : color === DOWN ? "\u25bc" : "";
+  return { color, glyph };
 }

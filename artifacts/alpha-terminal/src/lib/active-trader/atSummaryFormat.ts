@@ -106,3 +106,22 @@ export function buildAtSettingsSummary(
 export function formatAtExitDuration(duration: ActiveTraderTemplatePrefs["exitDuration"]): string {
   return duration === "GOOD_TILL_CANCEL" ? "GTC" : "Day";
 }
+
+/** Collapsed glance footer — “Order settings · Bracket · 1 contract · Limit at mid”. */
+export function formatGlanceOrderSettingsLine(
+  prefs: ActiveTraderTemplatePrefs,
+  entry: number | null,
+  primaryInstruction: SchwabInstruction,
+): string {
+  void entry;
+  void primaryInstruction;
+  const template = abbrevAtTemplate(prefs.template);
+  const qtyLabel = prefs.qty === 1 ? "1 contract" : `${prefs.qty} contracts`;
+  const order =
+    prefs.orderType === "LIMIT"
+      ? prefs.limitAnchor === "Mid"
+        ? "Limit at mid"
+        : `Limit at ${prefs.limitAnchor.toLowerCase()}`
+      : "Market";
+  return `Order settings · ${template} · ${qtyLabel} · ${order}`;
+}
