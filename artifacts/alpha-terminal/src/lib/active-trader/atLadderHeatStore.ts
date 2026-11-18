@@ -24,10 +24,14 @@ export function createAtLadderHeatStore(): AtLadderHeatStore {
   return createStore<AtLadderHeatState>(() => ({ cells: {} }));
 }
 
+/**
+ * The count moves on almost every print for a busy contract; the shade is what
+ * is drawn. Comparing the count too would re-render every busy pair ten times
+ * a second for changes nobody can see.
+ */
 function sameShade(a: LadderHeatCellView, b: LadderHeatCellView): boolean {
   return (
     a.availability === b.availability &&
-    a.contracts30s === b.contracts30s &&
     Math.abs(a.intensity - b.intensity) <= AT_HEAT_REPAINT_EPSILON
   );
 }

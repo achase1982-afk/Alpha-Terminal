@@ -16,7 +16,6 @@ import {
   DOWN_TEXT,
   GRAY,
   WHITE,
-  MONO,
   GAMMA_SCENARIO,
   GOLD,
   PUT_WALL,
@@ -98,10 +97,19 @@ export type AtTradeContext =
       nearContract: OptionsContract;
     };
 
+/** Prices are regular weight, strikes medium, in the system font (`.at-ladder-num`). */
+const AT_LADDER_PRICE_WEIGHT = 400;
+const AT_LADDER_STRIKE_WEIGHT = 500;
+
 /** Finger travel past this many CSS px turns a press into a scroll and drops it. */
 export const AT_TAP_SLOP_PX = 8;
 /** A click that follows a handled pointer gesture within this window is the same tap. */
 const CLICK_AFTER_POINTER_MS = 700;
+/**
+ * A touch while the ladder is still moving (momentum, Recenter, a nudge) stops
+ * the scroll; it does not pick whatever cell happens to be passing under the finger.
+ */
+export const AT_TAP_AFTER_SCROLL_MS = 120;
 
 /**
  * Render counter for the isolation test: a quote must re-render one contract
@@ -116,30 +124,33 @@ function fmtPx(n: number | null | undefined): string {
   return n.toFixed(2);
 }
 
+/** Faint side tint every pair carries, so a quiet ladder is never flat black. */
+export const AT_HEAT_WASH_ALPHA = 0.1;
+/** Shade of the busiest contract on the ladder. */
+export const AT_HEAT_MAX_ALPHA = 0.66;
+
+const HEAT_RGB = { call: "16, 185, 98", put: "228, 48, 62" } as const;
+/**
+ * Fixed overlay that eases each pair's colour off toward the strike column.
+ * The heat itself is the background colour underneath, which the browser can
+ * interpolate between repaints; a gradient that changes cannot be.
+ */
+const HEAT_FADE = {
+  call: "linear-gradient(90deg, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.14) 55%, rgba(6, 7, 9, 0.32) 100%)",
+  put: "linear-gradient(270deg, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.14) 55%, rgba(6, 7, 9, 0.32) 100%)",
+} as const;
+
+/** Alpha of a pair's heat colour for a 0-1 intensity. Linear: the engine's scale already carries the curve. */
+export function atHeatAlpha(intensity: number): number {
+  const t = Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
+  return AT_HEAT_WASH_ALPHA + (AT_HEAT_MAX_ALPHA - AT_HEAT_WASH_ALPHA) * t;
+}
+
 function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSProperties {
-  const rgb = side === "call" ? "16, 185, 98" : "228, 48, 62";
-  const dir = side === "call" ? "90deg" : "270deg";
-  if (view.intensity > 0.004) {
-    const eased = Math.pow(Math.min(1, view.intensity), 0.68);
-    const alpha = 0.11 + eased * 0.52;
-    return {
-      background: `linear-gradient(${dir}, rgba(${rgb}, ${alpha}) 0%, rgba(${rgb}, ${alpha * 0.86}) 55%, rgba(${rgb}, ${alpha * 0.68}) 100%)`,
-      transition: "background 180ms ease-out",
-      willChange: "background",
-    };
-  }
-  if (view.availability === "unavailable") {
-    return { background: AT_LADDER_PANEL_BG };
-  }
-  if (view.availability === "stale") {
-    return {
-      background: `rgba(${rgb}, 0.04)`,
-      transition: "background 180ms ease-out",
-    };
-  }
   return {
-    background: `rgba(${rgb}, 0.06)`,
-    transition: "background 180ms ease-out",
+    backgroundColor: `rgba(${HEAT_RGB[side]}, ${atHeatAlpha(view.intensity).toFixed(3)})`,
+    backgroundImage: HEAT_FADE[side],
+    transition: "background-color 160ms linear",
   };
 }
 
@@ -220,7 +231,7 @@ const QuoteCell = memo(function QuoteCell({
       className="relative w-full h-full flex items-center justify-center px-1"
       style={{
         fontSize: 14,
-        fontWeight: 500,
+        fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
         background: pressed && !legSelected ? pressFill : "transparent",
@@ -251,7 +262,7 @@ const QuoteCell = memo(function QuoteCell({
             pointerEvents: "none",
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: 600, color: WHITE }}>
+          <span style={{ fontSize: 13, fontWeight: AT_LADDER_STRIKE_WEIGHT, color: WHITE }}>
             {unavailableReason ?? fmtPx(price)}
           </span>
           <span
@@ -437,7 +448,6 @@ const LadderRowView = memo(function LadderRowView({
     gridTemplateColumns: AT_LADDER_GRID,
     height: rowHeight,
     borderBottom: `1px solid ${AT_LADDER_THIN_SEP}`,
-    fontFamily: MONO,
     position: "relative",
     borderRadius: gammaFlipRow ? 4 : undefined,
     background: keepawayForbidden ? "rgba(255,255,255,0.03)" : AT_LADDER_PANEL_BG,
@@ -507,7 +517,7 @@ const LadderRowView = memo(function LadderRowView({
             borderRadius: spotRow || isWall ? 4 : 0,
             border: strikeBorder,
             fontSize: 15,
-            fontWeight: spotRow ? 700 : 500,
+            fontWeight: spotRow ? 700 : AT_LADDER_STRIKE_WEIGHT,
             lineHeight: 1.05,
           }}
         >
@@ -668,6 +678,20 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   latest.current = { cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth };
   const gestureRef = useRef<PressGesture | null>(null);
   const lastPointerHandledAtRef = useRef(-Infinity);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const lastScrollAtRef = useRef(-Infinity);
+
+  useEffect(() => {
+    const scroller = bodyRef.current?.closest<HTMLElement>("[data-at-ladder-scroll]");
+    if (!scroller) return;
+    const onScroll = () => {
+      lastScrollAtRef.current = performance.now();
+      // The row moved out from under the finger: this is a scroll, not a press.
+      gestureRef.current?.release();
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
 
   const commitCell = useCallback((cellKey: string) => {
     const cur = latest.current;
@@ -694,6 +718,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) return;
+      if (performance.now() - lastScrollAtRef.current < AT_TAP_AFTER_SCROLL_MS) return;
       const cellEl = (e.target as HTMLElement).closest<HTMLElement>("[data-at-cell]");
       const cellKey = cellEl?.dataset.atCell;
       if (!cellEl || !cellKey || cellEl.dataset.atTapable !== "1") return;
@@ -756,7 +781,9 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
 
   return (
     <div
+      ref={bodyRef}
       data-at-ladder-body
+      className="at-ladder-num"
       style={{ background: AT_LADDER_PANEL_BG }}
       onPointerDown={handlePointerDown}
       onClick={handleClick}

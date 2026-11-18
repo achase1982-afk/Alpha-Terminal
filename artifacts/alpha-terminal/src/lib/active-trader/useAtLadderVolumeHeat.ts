@@ -148,13 +148,10 @@ export function useAtLadderVolumeHeat(input: {
   /** Initial chain contract volumes so the first live tick computes a delta immediately. */
   seedContracts?: readonly AtLadderSeedContractVolume[];
 }): { heatStore: AtLadderHeatStore; source: AtLadderHeatSourceMeta } {
-  const engineRef = useRef(
-    new AtLadderVolumeHeatEngine({
-      scaleFloorContracts: 25,
-      staleAfterMs: 35_000,
-      emaAlpha: 0.28,
-    }),
-  );
+  const engineRef = useRef<AtLadderVolumeHeatEngine | null>(null);
+  if (engineRef.current == null) {
+    engineRef.current = new AtLadderVolumeHeatEngine({ staleAfterMs: 35_000 });
+  }
   const [heatStore] = useState(createAtLadderHeatStore);
   const streamKeysRef = useRef(input.streamKeys);
   streamKeysRef.current = input.streamKeys;
@@ -182,7 +179,7 @@ export function useAtLadderVolumeHeat(input: {
   const schedulePaintRef = useRef<(() => void) | null>(null);
 
   const readSource = useCallback((): AtLadderHeatSourceMeta => {
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
     const now = Date.now();
     engine.setNowMs(now);
     const lastSourceRxMs = engine.getSourceLastRxMs();
@@ -248,7 +245,7 @@ export function useAtLadderVolumeHeat(input: {
   }, [syncSource, restActive]);
 
   useEffect(() => {
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
     const live = mode === "stream" || mode === "poll" || mode === "fixture";
     engine.setSourceLive(live);
   }, [mode]);
@@ -268,8 +265,8 @@ export function useAtLadderVolumeHeat(input: {
       paintPending = false;
       lastPaintMs = rafNow;
       const keys = streamKeysRef.current;
-      engineRef.current.setNowMs(Date.now());
-      publishAtLadderHeat(heatStore, engineRef.current.snapshot(keys));
+      engineRef.current!.setNowMs(Date.now());
+      publishAtLadderHeat(heatStore, engineRef.current!.snapshot(keys));
       syncSource();
     };
 
@@ -294,7 +291,7 @@ export function useAtLadderVolumeHeat(input: {
 
   useEffect(() => {
     if (mode !== "fixture") return;
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
     const isNamedHeatScene = heatScene.startsWith("heat-");
     const samples = isNamedHeatScene
       ? ladderVolumeHeatFixtureSamples(heatScene)
@@ -334,7 +331,7 @@ export function useAtLadderVolumeHeat(input: {
 
   useEffect(() => {
     if (mode === "off" || mode === "fixture" || !input.seedContracts?.length) return;
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
     const now = Date.now();
     let seeded = false;
     for (const c of input.seedContracts) {
@@ -351,7 +348,7 @@ export function useAtLadderVolumeHeat(input: {
 
   useEffect(() => {
     if (mode !== "stream") return;
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
 
     const normalizeSampleMs = (rawMs: number | null | undefined, nowMs: number): number => {
       if (rawMs == null || !Number.isFinite(rawMs) || rawMs <= 0) return nowMs;
@@ -452,7 +449,7 @@ export function useAtLadderVolumeHeat(input: {
   useEffect(() => {
     if (mode !== "poll" || input.skipNetwork) return;
     let cancelled = false;
-    const engine = engineRef.current;
+    const engine = engineRef.current!;
     const sym = input.symbol.replace(/^\$/, "");
 
     const poll = async () => {
@@ -514,7 +511,7 @@ export function useAtLadderVolumeHeat(input: {
           calls?: RestChainLeg[];
           puts?: RestChainLeg[];
         };
-        const engine = engineRef.current;
+        const engine = engineRef.current!;
         engine.setPollChainMeta({
           fetchedAt: data.fetchedAt ?? Date.now(),
           ttlMs: data.cacheTtlMs ?? 1_000,

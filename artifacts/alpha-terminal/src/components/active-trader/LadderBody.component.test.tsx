@@ -9,7 +9,14 @@ import {
   atSelectionToggleLeg,
   createAtLadderSelectionStore,
 } from "@/lib/active-trader/atLadderSelection";
-import { LadderBody, type AtLadderRenderProbe, type LadderRowModel } from "./LadderBody";
+import {
+  AT_HEAT_MAX_ALPHA,
+  AT_HEAT_WASH_ALPHA,
+  LadderBody,
+  atHeatAlpha,
+  type AtLadderRenderProbe,
+  type LadderRowModel,
+} from "./LadderBody";
 
 /** 14:30 ET on a trading day: the ladder only arms quote cells during the options session. */
 const NOW = Date.parse("2026-11-18T19:30:00.000Z");
@@ -87,7 +94,7 @@ const resetCounts = () => {
   counts.cell = 0;
 };
 
-function setup(over: { onQuoteTap?: ReturnType<typeof vi.fn> } = {}) {
+function setup(over: { onQuoteTap?: ReturnType<typeof vi.fn>; inScroller?: boolean } = {}) {
   const rows = buildRows();
   const heat = createAtLadderHeatStore();
   const selection = createAtLadderSelectionStore();
@@ -95,7 +102,7 @@ function setup(over: { onQuoteTap?: ReturnType<typeof vi.fn> } = {}) {
   const rowByStrike = new Map(rows.map((r) => [r.strike, r]));
   const positionQtyByKey = new Map<string, number>();
   const onVerticalTap = vi.fn();
-  const view = render(
+  const ladder = (
     <LadderBody
       rows={rows}
       accentHex={GOLD}
@@ -116,8 +123,9 @@ function setup(over: { onQuoteTap?: ReturnType<typeof vi.fn> } = {}) {
       onVerticalTap={onVerticalTap}
       chainQuoteTs={NOW - 1000}
       expiryLabel="18 Nov 26"
-    />,
+    />
   );
+  const view = render(over.inScroller ? <div data-at-ladder-scroll>{ladder}</div> : ladder);
   const cell = (id: string) => view.container.querySelector<HTMLButtonElement>(`[data-at-quote="${id}"]`)!;
   resetCounts();
   return { rows, heat, selection, onQuoteTap, cell, view };
@@ -289,6 +297,77 @@ describe("LadderBody", () => {
     expect(target.hasAttribute("data-at-pressed")).toBe(false);
     fireEvent.pointerUp(target, pointer(100, 230));
     expect(onQuoteTap).not.toHaveBeenCalled();
+  });
+
+  it("a touch while the ladder is still moving stops the scroll and picks nothing", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(10_000);
+    try {
+      const { cell, onQuoteTap, view } = setup({ inScroller: true });
+      const scroller = view.container.querySelector("[data-at-ladder-scroll]")!;
+      const target = cell("call-ask-7330");
+
+      fireEvent.scroll(scroller);
+      now.mockReturnValue(10_060);
+      fireEvent.pointerDown(target, pointer(100, 200));
+      expect(target.hasAttribute("data-at-pressed")).toBe(false);
+      fireEvent.pointerUp(target, pointer(100, 200));
+      expect(onQuoteTap).not.toHaveBeenCalled();
+
+      now.mockReturnValue(10_250);
+      fireEvent.pointerDown(target, pointer(100, 200));
+      expect(target.hasAttribute("data-at-pressed")).toBe(true);
+      fireEvent.pointerUp(target, pointer(100, 200));
+      expect(onQuoteTap).toHaveBeenCalledTimes(1);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
+  it("drops a held press when the ladder scrolls under the finger", () => {
+    const { cell, onQuoteTap, view } = setup({ inScroller: true });
+    const scroller = view.container.querySelector("[data-at-ladder-scroll]")!;
+    const target = cell("put-bid-7310");
+    fireEvent.pointerDown(target, pointer(100, 200));
+    expect(target.hasAttribute("data-at-pressed")).toBe(true);
+    fireEvent.scroll(scroller);
+    expect(target.hasAttribute("data-at-pressed")).toBe(false);
+    fireEvent.pointerUp(target, pointer(100, 200));
+    expect(onQuoteTap).not.toHaveBeenCalled();
+  });
+
+  it("draws prices at regular weight and strikes at medium, with fixed-width figures", () => {
+    const { cell, view } = setup();
+    expect(view.container.querySelector("[data-at-ladder-body]")!.classList.contains("at-ladder-num")).toBe(true);
+    expect(cell("call-bid-7330").style.fontWeight).toBe("400");
+    expect(cell("call-bid-7330").style.fontVariantNumeric).toBe("tabular-nums");
+    const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
+    expect(strike.style.fontWeight).toBe("500");
+    expect(strike.style.fontSize).toBe("15px");
+    expect(cell("call-bid-7330").style.fontSize).toBe("14px");
+  });
+
+  it("gives every pair a side tint and scales it with heat", () => {
+    const { rows, heat, view } = setup();
+    const pair = (strike: number, side: "call" | "put") =>
+      view.container.querySelector<HTMLElement>(`[data-at-ladder-row="${strike}"] [data-at-quote-heat="${side}"]`)!;
+    const alpha = (el: HTMLElement) => Number(/rgba\([^)]*,\s*([0-9.]+)\)/.exec(el.style.backgroundColor)![1]);
+
+    expect(alpha(pair(7400, "call"))).toBeCloseTo(AT_HEAT_WASH_ALPHA, 3);
+    expect(pair(7400, "call").style.backgroundColor).toContain("16, 185, 98");
+    expect(pair(7400, "put").style.backgroundColor).toContain("228, 48, 62");
+
+    const hot = rows.find((r) => r.strike === 7325)!.call!;
+    const warm = rows.find((r) => r.strike === 7335)!.put!;
+    act(() => {
+      publishAtLadderHeat(heat, {
+        [hot.streamKey!]: { availability: "live", contracts30s: 1138, intensity: 1 },
+        [warm.streamKey!]: { availability: "live", contracts30s: 115, intensity: 0.5 },
+      });
+    });
+    expect(alpha(pair(7325, "call"))).toBeCloseTo(AT_HEAT_MAX_ALPHA, 3);
+    expect(alpha(pair(7335, "put"))).toBeCloseTo((AT_HEAT_WASH_ALPHA + AT_HEAT_MAX_ALPHA) / 2, 3);
+    expect(atHeatAlpha(0)).toBeCloseTo(AT_HEAT_WASH_ALPHA, 6);
+    expect(atHeatAlpha(2)).toBeCloseTo(AT_HEAT_MAX_ALPHA, 6);
   });
 
   it("commits keyboard and assistive-tech activation, which arrives as a bare click", () => {

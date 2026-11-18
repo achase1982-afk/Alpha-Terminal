@@ -338,6 +338,18 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/*
+ * Active Trader ladder numbers: the platform UI font (SF on iOS and macOS) with
+ * fixed-width figures, so prices keep their place as they tick.
+ * index.html pins every element to Inter with !important, so this needs it too.
+ */
+.at-ladder-num,
+.at-ladder-num * {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif !important;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Tight spacer above the wordmark/ticker. In regular Safari iOS handles
    the notch via its own chrome, so we only need a few pixels of breathing
    room — no inset-clearing needed. */
