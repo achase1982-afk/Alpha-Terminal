@@ -57,7 +57,13 @@ async function runHeight(height) {
 
   const dayLow = await page.locator("[data-at-day-low]").innerText();
   const zoneRef = page.locator("[data-at-low-zone-ref]");
-  const zoneText = (await zoneRef.count()) > 0 ? await zoneRef.first().innerText() : "";
+  const zoneSlot = page.locator("[data-at-low-zone-slot]");
+  const zoneText =
+    (await zoneRef.count()) > 0
+      ? await zoneRef.first().innerText()
+      : (await zoneSlot.count()) > 0
+        ? await zoneSlot.first().innerText()
+        : "";
   const asOf = await page
     .locator("[data-at-day-low-as-of]")
     .innerText()
