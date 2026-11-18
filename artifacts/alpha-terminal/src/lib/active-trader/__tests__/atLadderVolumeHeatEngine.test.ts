@@ -66,8 +66,35 @@ describe("AtLadderVolumeHeatEngine", () => {
     eng.setSourceLive(true);
     const t0 = 5_000_000;
     eng.ingestCumulative(C, 10, t0);
+    eng.ingestCumulative(C, 18, t0 + 500);
     eng.setNowMs(t0 + 1_000);
     expect(eng.isSourceFresh(t0 + 1_000)).toBe(true);
     expect(eng.isSourceFresh(t0 + 6_000)).toBe(false);
+  });
+
+  it("does not refresh badge on baseline or duplicate cache samples", () => {
+    const eng = new AtLadderVolumeHeatEngine();
+    eng.setSourceLive(true);
+    const t0 = 6_000_000;
+    eng.setNowMs(t0);
+    eng.ingestCumulative(C, 100, t0);
+    expect(eng.getSourceLastRxMs()).toBeNull();
+    eng.ingestCumulative(C, 100, t0);
+    expect(eng.getSourceLastRxMs()).toBeNull();
+    eng.ingestCumulative(C, 130, t0 + 500);
+    expect(eng.getSourceLastRxMs()).toBe(t0 + 500);
+    eng.setNowMs(t0 + 1_000);
+    expect(eng.contractsFor(C)).toBe(30);
+  });
+
+  it("quote-only tick path: identical cumulative does not advance source rx", () => {
+    const eng = new AtLadderVolumeHeatEngine();
+    eng.setSourceLive(true);
+    const t0 = 7_000_000;
+    eng.ingestCumulative(C, 80, t0);
+    eng.ingestCumulative(C, 95, t0 + 200);
+    const rx = eng.getSourceLastRxMs();
+    eng.ingestCumulative(C, 95, t0 + 9_000);
+    expect(eng.getSourceLastRxMs()).toBe(rx);
   });
 });

@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { sanitizeOptionGreek } from "@workspace/order-ticket-math";
 
+export type OptionVolumeSample = {
+  cumulativeVol: number;
+  tradeTimeMs: number;
+};
+
 export interface OptionTick {
   key: string;
   bid: number | null;
@@ -21,6 +26,8 @@ export interface OptionTick {
   underlyingPrice: number | null;
   quoteTime: number | null;
   tradeTime: number | null;
+  lastVolumeTradeTimeMs?: number | null;
+  volumeSample?: OptionVolumeSample | null;
   ts: number;
 }
 
@@ -32,7 +39,13 @@ const TICK_FIELDS: (keyof OptionTick)[] = [
 ];
 
 function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTick {
-  const next: OptionTick = { ...existing, key: incoming.key, ts: incoming.ts };
+  const next: OptionTick = {
+    ...existing,
+    key: incoming.key,
+    ts: incoming.ts,
+    volumeSample: incoming.volumeSample ?? null,
+    lastVolumeTradeTimeMs: incoming.lastVolumeTradeTimeMs ?? existing.lastVolumeTradeTimeMs ?? null,
+  };
   for (const f of TICK_FIELDS) {
     const v = incoming[f] as number | null;
     if (v == null || Number.isNaN(v)) continue;

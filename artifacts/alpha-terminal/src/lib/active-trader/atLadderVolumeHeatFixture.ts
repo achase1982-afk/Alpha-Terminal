@@ -13,12 +13,17 @@ export type AtLadderVolumeHeatFixtureScene =
   | "heat-fade"
   | "heat-reset"
   | "heat-backwards"
-  | "heat-reconnect-gap";
+  | "heat-reconnect-gap"
+  | "heat-cache-hit"
+  | "heat-zero-trade-time"
+  | "heat-quote-only-tick";
 
 export type AtVolumeFixtureSample = {
   contract: string;
   cumulativeVol: number;
   offsetMs?: number;
+  /** Explicit trade-time ms for ingest (poll/stream parity). */
+  sampleMs?: number;
 };
 
 export function ladderVolumeHeatFixtureSamples(scene: AtLadderVolumeHeatFixtureScene): AtVolumeFixtureSample[] {
@@ -63,6 +68,16 @@ export function ladderVolumeHeatFixtureSamples(scene: AtLadderVolumeHeatFixtureS
         { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 80_000, offsetMs: 600 },
         { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 80_050, offsetMs: 1_200 },
       ];
+    case "heat-cache-hit":
+      return [
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 1_000_000 },
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 1_000_000 },
+        { contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 130, sampleMs: 1_000_500 },
+      ];
+    case "heat-zero-trade-time":
+      return [{ contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 0 }];
+    case "heat-quote-only-tick":
+      return [{ contract: FIXTURE_VOL_CALL_7545, cumulativeVol: 100, sampleMs: 2_000_000 }];
     default:
       return [];
   }

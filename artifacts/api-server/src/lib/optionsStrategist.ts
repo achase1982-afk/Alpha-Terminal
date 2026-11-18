@@ -8,6 +8,8 @@ export interface OptionContract {
   ask?: number;
   last?: number;
   volume?: number;
+  /** Schwab tradeTimeInLong for totalVolume — never quoteTime. */
+  volumeSampledAt?: number;
   openInterest?: number;
   iv?: number;
   delta?: number;

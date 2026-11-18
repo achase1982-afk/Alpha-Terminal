@@ -96,6 +96,12 @@ export interface LiveQuote {
   quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
 }
 
+/** One qualifying field-8 volume sample on this stream frame (not carried across merges). */
+export type OptionVolumeSample = {
+  cumulativeVol: number;
+  tradeTimeMs: number;
+};
+
 export interface OptionTick {
   key:          string;
   bid:          number | null;
@@ -116,12 +122,20 @@ export interface OptionTick {
   underlyingPrice: number | null;
   quoteTime:    number | null;
   tradeTime:    number | null;
+  /** Trade time (field 39) tied to the last accepted cumulative volume sample. */
+  lastVolumeTradeTimeMs: number | null;
+  /** Set only when this frame delivered a new cumulative volume sample. */
+  volumeSample: OptionVolumeSample | null;
   ts:           number;
 }
 
 /** App LEVELONE_OPTIONS field list (SUBS); partial updates merge into optionCache. */
 export const APP_LEVELONE_OPTIONS_FIELDS =
   "0,2,3,4,8,9,10,16,17,18,19,28,29,30,31,35,37,38,39";
+
+function schwabFieldPresent(item: Record<string, unknown>, fieldId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(item, fieldId);
+}
 
 /** Merge a Schwab partial LEVELONE_OPTIONS row onto a cached tick. */
 export function mergeOptionTickFromSchwab(
@@ -130,6 +144,29 @@ export function mergeOptionTickFromSchwab(
   key: string,
   now: number,
 ): OptionTick {
+  let nextVolume = existing?.volume ?? null;
+  let volumeSample: OptionVolumeSample | null = null;
+  let lastVolumeTradeTimeMs = existing?.lastVolumeTradeTimeMs ?? null;
+
+  if (schwabFieldPresent(item, "8")) {
+    const field8 = numOrNull(item["8"]);
+    if (field8 != null && field8 >= 0 && Number.isFinite(field8)) {
+      nextVolume = field8;
+      const trade39 = schwabFieldPresent(item, "39") ? numOrNull(item["39"]) : null;
+      const prevVol = existing?.volume;
+      const prevTrade = existing?.lastVolumeTradeTimeMs;
+      const increased = prevVol == null || field8 > prevVol;
+      const equalResend =
+        prevVol === field8 && trade39 != null && trade39 > 0 && prevTrade != null && trade39 === prevTrade;
+      if (trade39 != null && trade39 > 0 && increased && !equalResend) {
+        volumeSample = { cumulativeVol: field8, tradeTimeMs: trade39 };
+        lastVolumeTradeTimeMs = trade39;
+      } else if (prevVol === field8 && trade39 != null && trade39 > 0) {
+        lastVolumeTradeTimeMs = prevTrade ?? trade39;
+      }
+    }
+  }
+
   return {
     key,
     bid: numOrNull(item["2"]) ?? existing?.bid ?? null,
@@ -137,7 +174,7 @@ export function mergeOptionTickFromSchwab(
     last: numOrNull(item["4"]) ?? existing?.last ?? null,
     bidSize: numOrNull(item["16"]) ?? existing?.bidSize ?? null,
     askSize: numOrNull(item["17"]) ?? existing?.askSize ?? null,
-    volume: numOrNull(item["8"]) ?? existing?.volume ?? null,
+    volume: nextVolume,
     openInterest: numOrNull(item["9"]) ?? existing?.openInterest ?? null,
     iv: numOrNull(item["10"]) ?? existing?.iv ?? null,
     delta: numOrNull(item["28"]) ?? existing?.delta ?? null,
@@ -150,6 +187,8 @@ export function mergeOptionTickFromSchwab(
     underlyingPrice: numOrNull(item["35"]) ?? existing?.underlyingPrice ?? null,
     quoteTime: numOrNull(item["38"]) ?? existing?.quoteTime ?? null,
     tradeTime: numOrNull(item["39"]) ?? existing?.tradeTime ?? null,
+    lastVolumeTradeTimeMs,
+    volumeSample,
     ts: now,
   };
 }

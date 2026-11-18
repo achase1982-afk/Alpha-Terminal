@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AtLadderVolumeHeatEngine,
+  AT_LADDER_HEAT_WINDOW_MS,
   type LadderHeatCellView,
 } from "./atLadderVolumeHeatEngine";
 import { getAtFixtureOverride } from "./atFixtureBridge";
@@ -17,17 +18,40 @@ export const AT_LADDER_HEAT_POLL_MS = 1_000;
 
 export type AtLadderHeatSourceMeta = {
   kind: "stream" | "poll" | "fixture" | "off";
-  /** Shown in glance header only while the feed is fresh (never when stale/unavailable). */
+  /** Shown in glance header only while the feed is credibly fresh. */
   label: string;
   sourceFresh: boolean;
   lastSourceRxMs: number | null;
   pollMs?: number;
 };
 
-function liveBadgeLabel(kind: AtLadderHeatSourceMeta["kind"], pollMs?: number): string {
-  if (kind === "stream") return "Live · stream";
-  if (kind === "poll") return `Live · ~${Math.round((pollMs ?? AT_LADDER_HEAT_POLL_MS) / 1000)}s poll`;
-  return "";
+function formatPollBadge(
+  engine: AtLadderVolumeHeatEngine,
+  now: number,
+  pollMs: number,
+): { label: string; sourceFresh: boolean } {
+  const chain = engine.getPollChainMeta();
+  const volRx = engine.getSourceLastRxMs();
+  const volFresh = volRx != null && now - volRx <= 12_000;
+  const cadenceMs = chain?.ttlMs ?? 25_000;
+  const coarseCadence = cadenceMs >= AT_LADDER_HEAT_WINDOW_MS - 500;
+
+  if (volFresh && !coarseCadence) {
+    return {
+      label: `Live · ~${Math.round(pollMs / 1000)}s poll`,
+      sourceFresh: true,
+    };
+  }
+  if (chain?.fetchedAt != null) {
+    const ageSec = Math.max(0, Math.round((now - chain.fetchedAt) / 1000));
+    const cadenceSec = Math.round(cadenceMs / 1000);
+    const withinTtl = now - chain.fetchedAt <= cadenceMs + 12_000;
+    return {
+      label: withinTtl ? `Snapshot · ${ageSec}s old · ~${cadenceSec}s` : "",
+      sourceFresh: withinTtl,
+    };
+  }
+  return { label: "", sourceFresh: false };
 }
 
 export function useAtLadderVolumeHeat(input: {
@@ -62,7 +86,8 @@ export function useAtLadderVolumeHeat(input: {
     const samples = ladderVolumeHeatFixtureSamples(heatScene);
     const base = Date.now();
     for (const s of samples) {
-      engine.ingestCumulative(s.contract, s.cumulativeVol, base + (s.offsetMs ?? 0));
+      const rx = s.sampleMs ?? base + (s.offsetMs ?? 0);
+      engine.ingestCumulative(s.contract, s.cumulativeVol, rx);
     }
     engine.setNowMs(Date.now());
     setTick((n) => n + 1);
@@ -79,8 +104,9 @@ export function useAtLadderVolumeHeat(input: {
     const now = Date.now();
     for (const key of input.streamKeys) {
       const t = ticks[key];
-      if (t?.volume == null) continue;
-      engine.ingestCumulative(key, t.volume, t.ts > 0 ? t.ts : now);
+      const sample = t?.volumeSample;
+      if (!sample) continue;
+      engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
     }
     engine.setNowMs(now);
     setTick((n) => n + 1);
@@ -95,23 +121,29 @@ export function useAtLadderVolumeHeat(input: {
     const poll = async () => {
       try {
         const res = await fetchWithAuth(
-          `/api/market/options?symbol=${encodeURIComponent(sym)}&strikeCount=40&contractType=ALL`,
+          `/api/market/options?symbol=${encodeURIComponent(sym)}&strikeCount=40&contractType=ALL&ladderHeat=1`,
           { clerkTokenTimeoutMs: 4_000 },
         );
         if (!res.ok || cancelled) return;
         const data = (await res.json()) as {
-          calls?: { streamKey?: string; schwabSymbol?: string; volume?: number }[];
-          puts?: { streamKey?: string; schwabSymbol?: string; volume?: number }[];
+          fetchedAt?: number;
+          cacheTtlMs?: number;
+          calls?: { streamKey?: string; schwabSymbol?: string; volume?: number; volumeSampledAt?: number }[];
+          puts?: { streamKey?: string; schwabSymbol?: string; volume?: number; volumeSampledAt?: number }[];
         };
-        const now = Date.now();
+        const chainFetchedAt = data.fetchedAt ?? Date.now();
+        const cacheTtlMs = data.cacheTtlMs ?? 25_000;
+        engine.setPollChainMeta({ fetchedAt: chainFetchedAt, ttlMs: cacheTtlMs });
         const want = new Set(input.streamKeys);
         for (const leg of [...(data.calls ?? []), ...(data.puts ?? [])]) {
           const key = (leg.streamKey ?? leg.schwabSymbol ?? "").trim();
           if (!key || !want.has(key)) continue;
+          const sampledAt = leg.volumeSampledAt;
+          if (sampledAt == null || sampledAt <= 0) continue;
           if (leg.volume == null || !Number.isFinite(leg.volume)) continue;
-          engine.ingestCumulative(key, leg.volume, now);
+          engine.ingestCumulative(key, leg.volume, sampledAt);
         }
-        engine.noteSourceRx(now);
+        const now = Date.now();
         engine.setNowMs(now);
         setTick((n) => n + 1);
       } catch {
@@ -146,18 +178,45 @@ export function useAtLadderVolumeHeat(input: {
     const engine = engineRef.current;
     const now = Date.now();
     engine.setNowMs(now);
-    const sourceFresh = engine.isSourceFresh(now);
     const lastSourceRxMs = engine.getSourceLastRxMs();
-    const showLive =
-      sourceFresh && (mode === "stream" || mode === "poll" || mode === "fixture");
-    const base: AtLadderHeatSourceMeta = {
+
+    if (mode === "stream") {
+      const sourceFresh = engine.isSourceFresh(now);
+      return {
+        kind: mode,
+        label: sourceFresh ? "Live · stream" : "",
+        sourceFresh,
+        lastSourceRxMs,
+      };
+    }
+
+    if (mode === "poll") {
+      const { label, sourceFresh } = formatPollBadge(engine, now, AT_LADDER_HEAT_POLL_MS);
+      return {
+        kind: mode,
+        label,
+        sourceFresh,
+        lastSourceRxMs,
+        pollMs: AT_LADDER_HEAT_POLL_MS,
+      };
+    }
+
+    if (mode === "fixture") {
+      const sourceFresh = engine.isSourceFresh(now);
+      return {
+        kind: mode,
+        label: sourceFresh ? "Live · stream" : "",
+        sourceFresh,
+        lastSourceRxMs,
+      };
+    }
+
+    return {
       kind: mode,
-      label: showLive ? liveBadgeLabel(mode, mode === "poll" ? AT_LADDER_HEAT_POLL_MS : undefined) : "",
-      sourceFresh,
+      label: "",
+      sourceFresh: false,
       lastSourceRxMs,
-      pollMs: mode === "poll" ? AT_LADDER_HEAT_POLL_MS : undefined,
     };
-    return base;
   }, [heatByKey, mode, tick]);
 
   return { heatByKey, source };
