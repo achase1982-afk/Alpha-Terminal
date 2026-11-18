@@ -29,6 +29,37 @@ export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPr
   container.scrollTop = Math.max(0, targetTop - centerOffset);
 }
 
+/** True when the spot/ATM row is outside the centered band (show recenter affordance). */
+export function atLadderSpotOffCenter(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+  tolerancePx = 56,
+): boolean {
+  if (!container || underlyingPrice == null || !Number.isFinite(underlyingPrice)) return false;
+  const strikes = [...container.querySelectorAll<HTMLElement>("[data-at-strike]")];
+  if (!strikes.length) return false;
+
+  let best: HTMLElement | null = null;
+  let bestDist = Infinity;
+  for (const el of strikes) {
+    const raw = el.getAttribute("data-at-strike");
+    const strike = raw != null ? Number(raw) : NaN;
+    if (!Number.isFinite(strike)) continue;
+    const d = Math.abs(strike - underlyingPrice);
+    if (d < bestDist) {
+      bestDist = d;
+      best = el;
+    }
+  }
+  if (!best) return false;
+
+  const cRect = container.getBoundingClientRect();
+  const tRect = best.getBoundingClientRect();
+  const rowCenter = tRect.top + tRect.height / 2 - cRect.top;
+  const bandCenter = container.clientHeight * 0.42;
+  return Math.abs(rowCenter - bandCenter) > tolerancePx;
+}
+
 /** Keep a selected strike row in the visible band above chrome / trade bar. */
 export function scrollAtLadderToStrike(
   container: HTMLElement | null,

@@ -29,6 +29,7 @@ import {
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
+import { AT_LADDER_STRIKE_COUNT } from "@/lib/active-trader/atLadderStrikeCount";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
@@ -1301,8 +1302,11 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const chainStrikeCount =
+    optionsSubView === "at" ? Math.max(strikeCount, AT_LADDER_STRIKE_COUNT) : strikeCount;
+
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
-    { symbol, contractType: "ALL", strikeCount },
+    { symbol, contractType: "ALL", strikeCount: chainStrikeCount },
     {
       query: {
         enabled: !!accessToken && !!symbol && !fixtureChain,

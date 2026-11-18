@@ -91,8 +91,24 @@ try {
   metrics.chromeToLadderGapPx = gapPx;
   record("no large empty gap", gapPx == null || gapPx < 120, `gap=${gapPx}px`);
 
-  const zeroQuotes = await page.locator("[data-at-quote]").filter({ hasText: "0.00" }).count();
-  record("ladder not showing 0.00", zeroQuotes === 0, `zero cells=${zeroQuotes}`);
+  const invalidZeroBids = await page.evaluate(() => {
+    let invalid = 0;
+    for (const bid of document.querySelectorAll("[data-at-quote]")) {
+      if (bid.textContent?.trim() !== "0.00") continue;
+      const key = bid.getAttribute("data-at-quote");
+      if (!key || !key.includes("bid")) continue;
+      const askKey = key.replace("bid", "ask");
+      const ask = document.querySelector(`[data-at-quote="${askKey}"]`);
+      const askN = parseFloat(String(ask?.textContent ?? "").replace(/[^\d.]/g, ""));
+      if (!(askN > 0)) invalid += 1;
+    }
+    return invalid;
+  });
+  record("ladder zero bids have positive ask", invalidZeroBids === 0, `invalid=${invalidZeroBids}`);
+
+  const ladderStrikeCount = await page.locator("[data-at-strike]").count();
+  metrics.ladderStrikeCount = ladderStrikeCount;
+  record("ladder shows many strikes", ladderStrikeCount >= 25, `strikes=${ladderStrikeCount}`);
 
   const yellowStrikes = await page.evaluate(() => {
     const nodes = [...document.querySelectorAll("[data-at-strike]")];

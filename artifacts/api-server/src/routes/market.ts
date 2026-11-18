@@ -28,6 +28,14 @@ import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 import { setBounded } from "../lib/boundedCache.js";
 import { getSpxKeepawayStats } from "../lib/activeTrader/spxKeepawayCache.js";
 import { classShareSchwabStreamKey, isClassShareSymbol } from "../lib/classShareSymbology.js";
+import {
+  deskGetCachedLiveGamma0dte,
+  deskGetCachedLiveGamma,
+  deskUwExtractRows,
+} from "../lib/desk/addons/unusualWhales/deskUwGamma.js";
+import { deskSessionDateEt } from "../lib/desk/deskEt.js";
+import { buildDeskHealthFeeds } from "../lib/desk/deskFeedFreshness.js";
+import { computeZonesFromUwGamma0dte } from "@workspace/order-ticket-math";
 
 const router: IRouter = Router();
 
@@ -1978,6 +1986,67 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
 
 export { chainCache, getOrFetchChain, CHAIN_CACHE_TTL };
 export type { CachedChain, ParsedContract };
+function formatEtTimeShort(ms: number): string {
+  return new Date(ms).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "America/New_York",
+    hour12: true,
+  });
+}
+
+router.get("/at-gamma-glance", async (req, res) => {
+  try {
+    const raw = (req.query.symbol as string | undefined) ?? "$SPX";
+    const ticker = raw.replace(/^\$/, "").toUpperCase();
+    if (ticker !== "SPX") {
+      return res.status(400).json({ error: "gamma_glance_spx_only" });
+    }
+    const sessionDate = deskSessionDateEt();
+    const snap0 = deskGetCachedLiveGamma0dte(sessionDate, ticker);
+    const snapLive = deskGetCachedLiveGamma(sessionDate, ticker);
+    const feedRow = buildDeskHealthFeeds().find((f) => f.feed === "live_gamma_0dte");
+    const sessionClosed = feedRow?.status === "session_closed";
+    if (!snap0?.data?.data?.length) {
+      return res.json({
+        zones: {
+          callWall: null,
+          putWall: null,
+          flip: null,
+          netGexUsdPer1Pct: null,
+          env: null,
+          asOfLabel: "\u2014",
+        },
+        sessionClosed,
+        glanceCaption: sessionClosed ? "Closed" : null,
+        source: "unusual_whales",
+        unavailable: true,
+      });
+    }
+    const rows = deskUwExtractRows(snap0.data);
+    const asOfMs = snap0.asOfMs;
+    const asOfEt = formatEtTimeShort(asOfMs);
+    const zones = computeZonesFromUwGamma0dte(rows, {
+      spot: null,
+      asOfLabel: asOfEt,
+    });
+    const glanceCaption = sessionClosed ? `Closed \u00b7 as of ${asOfEt}` : undefined;
+    return res.json({
+      zones: { ...zones, glanceCaption },
+      sessionClosed,
+      glanceCaption,
+      source: "unusual_whales",
+      asOfMs,
+      expiry: snap0.expiry ?? sessionDate,
+      rowCount: snap0.row_count,
+      liveGammaLastRow: snapLive ? deskUwExtractRows(snapLive.data).slice(-1)[0] ?? null : null,
+    });
+  } catch (err) {
+    req.log.error({ err }, "at-gamma-glance");
+    return res.status(500).json({ error: "at_gamma_glance_failed" });
+  }
+});
+
 router.get("/spx-keepaway-stats", async (req, res) => {
   try {
     const stats = await getSpxKeepawayStats();

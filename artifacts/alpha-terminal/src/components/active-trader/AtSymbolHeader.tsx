@@ -62,7 +62,7 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
   const changePctStr =
     rawPct != null ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtSpot(Math.abs(rawPct))}%)` : "(0.00%)";
 
-  const displaySym = quote?.symbol ?? symbol.replace(/^\$/, "");
+  const displaySym = (quote?.symbol ?? symbol).replace(/^\$/, "");
   const subtitle = formatIndexSubtitle(displaySym, quote?.description ?? undefined);
 
   if (compact) {
