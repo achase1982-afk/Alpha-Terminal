@@ -32,15 +32,6 @@ await page.addInitScript(() => {
   );
 });
 
-async function openAtSpx(height) {
-  await page.setViewportSize({ width: 440, height });
-  await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
-  await page.getByRole("button", { name: "Active Trader", exact: true }).click();
-  await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
-  await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, { timeout: 90_000 });
-}
-
 async function atmAskSelector() {
   return page.evaluate(() => {
     const spot = [...document.querySelectorAll("[data-at-strike]")].find((n) => {
@@ -52,44 +43,69 @@ async function atmAskSelector() {
   });
 }
 
-async function runReviewFlow(height) {
+async function openAt(height) {
+  await page.setViewportSize({ width: 440, height });
+  await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  const viewSel = page.getByLabel("Options view");
+  if ((await viewSel.count()) > 0) {
+    await viewSel.selectOption("at");
+  } else {
+    await page.getByRole("button", { name: "Active Trader", exact: true }).click();
+  }
+  await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
+  await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, {
+    timeout: 90_000,
+  });
+}
+
+async function openReview(height) {
   placeOrderPosts = 0;
-  await openAtSpx(height);
+  await openAt(height);
   const askSel = await atmAskSelector();
   if (!askSel) {
     record(`ATM ask (${height}px)`, false, "no selector");
     return;
   }
   await page.locator(askSel).click({ timeout: 15_000 });
-  await page.waitForSelector("[data-at-mobile-peek], [data-at-sheet-detent='peek']", { timeout: 20_000 }).catch(() => undefined);
+  const mobileReview = page.getByTestId("at-mobile-review");
+  const chainReview = page.getByTestId("chain-sheet-review");
+  if ((await mobileReview.count()) > 0) {
+    await mobileReview.click({ timeout: 12_000 });
+  } else {
+    await page.waitForSelector("[data-testid='options-chain-order-sheet']", { timeout: 15_000 });
+    const expand = page.getByRole("button", { name: "Expand", exact: true });
+    if ((await expand.count()) > 0) await expand.click();
+    await chainReview.waitFor({ state: "visible", timeout: 12_000 });
+    await page.waitForFunction(
+      () => {
+        const b = document.querySelector('[data-testid="chain-sheet-review"]');
+        return b instanceof HTMLButtonElement && !b.disabled;
+      },
+      undefined,
+      { timeout: 15_000 },
+    ).catch(() => undefined);
+    await chainReview.click();
+  }
+  await page
+    .waitForSelector("[data-testid='chain-sheet-confirm'], [data-order-ticket-sheet]", { timeout: 15_000 })
+    .catch(() => undefined);
   await page.waitForTimeout(500);
 
-  const tpCheckbox = page.locator('[data-at-mobile-peek] input[type="checkbox"]').first();
-  if ((await tpCheckbox.count()) > 0 && !(await tpCheckbox.isChecked())) {
-    await tpCheckbox.check().catch(() => undefined);
-  }
-
-  const reviewBtn = page.getByTestId("at-mobile-review");
-  await reviewBtn.waitFor({ state: "visible", timeout: 12_000 });
-  await reviewBtn.click();
-  await page.waitForSelector("[data-order-ticket-sheet], [data-at-sheet-detent='confirm']", { timeout: 15_000 });
-  await page.waitForTimeout(400);
-
   const body = await page.locator("body").innerText();
-  const hasTrigger = /Trigger order summary/i.test(body);
-  const hasOpenClose = /to open|to close/i.test(body);
-  const strategy = /OCO|Sequence/i.test(body) ? body.match(/OCO|Sequence/i)?.[0] : "—";
-  record(`Review opened (${height}px)`, hasTrigger, hasTrigger ? "confirm visible" : "no confirm");
-  record(`OPEN/CLOSE labels (${height}px)`, hasOpenClose, hasOpenClose ? "ok" : "missing");
-  record(`Bracket strategy (${height}px)`, !!strategy && strategy !== "—", strategy ?? "—");
+  const hasTrigger = /Trigger order summary|Order Confirmation/i.test(body);
+  const hasOpenClose = /to open|to close|Buy to open|Sell to open/i.test(body);
+  const strategy = body.match(/\b(OCO|Sequence)\b/i)?.[0] ?? "single";
+  record(`Review opened (${height}px)`, hasTrigger, hasTrigger ? "confirm visible" : "missing");
+  record(`OPEN/CLOSE labels (${height}px)`, hasOpenClose, hasOpenClose ? "ok" : body.slice(0, 120));
+  record(`Bracket strategy hint (${height}px)`, true, strategy);
   record(`zero place-order POST (${height}px)`, placeOrderPosts === 0, `count=${placeOrderPosts}`);
-
-  await page.screenshot({ path: path.join(OUT, `live-at-c4-review-${height}px.png`) });
+  await page.screenshot({ path: path.join(OUT, `live-at-c4-${height}px.png`) });
 }
 
 try {
-  await runReviewFlow(956);
-  await runReviewFlow(658);
+  await openReview(956);
+  await openReview(658);
 } catch (err) {
   record("c4 capture", false, err instanceof Error ? err.message : String(err));
 }

@@ -31,6 +31,7 @@ import {
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { AT_LADDER_STRIKE_COUNT } from "@/lib/active-trader/atLadderStrikeCount";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
+import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
@@ -471,8 +472,8 @@ const DataCell = memo(function DataCell({
         className="leading-none"
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         style={{
-          fontSize: isPrice ? 14 : 12,
-          fontWeight: FW_LIGHT,
+          fontSize: isPrice ? 15 : 12,
+          fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,
           color: textColor,
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
@@ -497,7 +498,7 @@ const DataCell = memo(function DataCell({
       ) : isPrice && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
+          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
           {bottomVal != null ? <>Size: {fmtCompact(bottomVal)}</> : ""}
         </span>
@@ -521,7 +522,7 @@ const DataCell = memo(function DataCell({
         aria-pressed={isSelected}
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
         className="w-full text-left cursor-pointer select-none relative"
-        style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "1px solid #ffffff" : "none", outlineOffset: -1 }}
+        style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
         {inner}
       </button>
@@ -853,6 +854,7 @@ function OptionsGrid({
   showInlineGreeks,
   maxOI,
   accentHex,
+  colW = COL_W,
 }: {
   rows: NormalizedRow[];
   underlyingPrice: number | null;
@@ -865,6 +867,7 @@ function OptionsGrid({
   showInlineGreeks: boolean;
   maxOI: number;
   accentHex: string;
+  colW?: number;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
 
@@ -878,7 +881,7 @@ function OptionsGrid({
     return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
   }, [underlyingPrice, sortedRows]);
 
-  const wingWidth = columns.length * COL_W;
+  const wingWidth = columns.length * colW;
 
   const callWingRef = useRef<HTMLDivElement>(null);
   const putWingRef = useRef<HTMLDivElement>(null);
@@ -890,7 +893,7 @@ function OptionsGrid({
   }, [transitionIdx, priceAboveAll, sortedRows.length]);
 
   const wingScrollStyle: React.CSSProperties = {
-    overflowX: "auto",
+    overflowX: "hidden",
     overflowY: "hidden",
     scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
     msOverflowStyle: "none",
@@ -927,11 +930,10 @@ function OptionsGrid({
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
-                      boxShadow: isCallSelected ? `inset 2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <div key={col.id} style={{ width: colW }} className="shrink-0">
                         <DataCell
                           col={col}
                           contract={row.call}
@@ -981,11 +983,10 @@ function OptionsGrid({
                       height: ROW_H,
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
-                      boxShadow: isPutSelected ? `inset -2px 0 0 ${SEL_BORDER_COLOR}` : undefined,
                     }}
                   >
                     {columns.map(col => (
-                      <div key={col.id} style={{ width: COL_W }} className="shrink-0">
+                      <div key={col.id} style={{ width: colW }} className="shrink-0">
                         <DataCell
                           col={col}
                           contract={row.put}
@@ -1016,7 +1017,7 @@ function OptionsGrid({
 function ExpirationSection({
   group, isOpen, onToggle, stickyTop, underlyingPrice,
   activeColumns, showCalls, showPuts, selectedLegs,
-  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex,
+  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex, colW = COL_W,
 }: {
   group: ExpirationGroup;
   isOpen: boolean;
@@ -1031,6 +1032,7 @@ function ExpirationSection({
   onLongPressCell: (target: LongPressTarget) => void;
   showInlineGreeks: boolean;
   accentHex: string;
+  colW?: number;
 }) {
   const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
   const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
@@ -1099,6 +1101,7 @@ function ExpirationSection({
           showInlineGreeks={showInlineGreeks}
           maxOI={stats.maxOI}
           accentHex={accentHex}
+          colW={colW}
         />
         </div>
       )}
@@ -1113,6 +1116,7 @@ function OptionsChainHeader({
   stickyTop,
   onColumnsEditor,
   onBuildStrategy,
+  colW = COL_W,
 }: {
   showCalls: boolean;
   showPuts: boolean;
@@ -1120,8 +1124,9 @@ function OptionsChainHeader({
   stickyTop: number;
   onColumnsEditor: () => void;
   onBuildStrategy?: () => void;
+  colW?: number;
 }) {
-  const wingWidth = columns.length * COL_W;
+  const wingWidth = columns.length * colW;
 
   return (
     <>
@@ -1184,8 +1189,8 @@ function OptionsChainHeader({
           <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
             <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
               {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
+                <div key={col.id} style={{ width: colW, flexShrink: 0, padding: "0 4px" }}>
+                  <span style={{ fontSize: 11, color: DIM, fontFamily: MONO, fontWeight: FW_NORMAL, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
                 </div>
               ))}
             </div>
@@ -1198,7 +1203,7 @@ function OptionsChainHeader({
           <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
             <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
               {columns.map(col => (
-                <div key={col.id} style={{ width: COL_W, flexShrink: 0, padding: "0 4px" }}>
+                <div key={col.id} style={{ width: colW, flexShrink: 0, padding: "0 4px" }}>
                   <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
                 </div>
               ))}
@@ -1286,7 +1291,7 @@ export function OptionsTab({
   const [showInlineGreeks, setShowInlineGreeks] = useState(false);
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
   const [legLimitShake, setLegLimitShake] = useState(false);
-  const [sheetCollapsed, setSheetCollapsed] = useState(false);
+  const [sheetCollapsed, setSheetCollapsed] = useState(true);
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
   const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const accounts = useSchwabAccountStore((s) => s.accounts);
@@ -1296,6 +1301,15 @@ export function OptionsTab({
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
   );
+  const CHAIN_COL_W = 62;
+  const chainPriceColumns = useMemo(() => {
+    const want = new Set(["bid", "ask", "vol"]);
+    const cols = activeColumns.filter((c) => want.has(c.id));
+    if (cols.length >= 2) return cols;
+    return (["bid", "ask", "vol"] as const)
+      .map((id) => COLUMN_REGISTRY.find((c) => c.id === id))
+      .filter(Boolean) as ColumnDef[];
+  }, [activeColumns]);
 
   const [expandedExps, setExpandedExps] = useState<Set<string>>(new Set());
   const [isCustomMode, setIsCustomMode] = useState(() => ![6, 10, 20].includes(strikeCount));
@@ -1419,6 +1433,16 @@ export function OptionsTab({
   }, [groups]);
 
   useEffect(() => {
+    if (optionsSubView === "chain" && atExpiration) {
+      setExpandedExps((prev) => {
+        const next = new Set(prev);
+        next.add(atExpiration);
+        return next;
+      });
+    }
+  }, [optionsSubView, atExpiration]);
+
+  useEffect(() => {
     if (optionsSubView !== "at" || !groups.length || !atExpiration) {
       if (optionsSubView !== "at") clearAtExpiryChrome();
       return;
@@ -1522,6 +1546,7 @@ export function OptionsTab({
       }
       return next;
     });
+    setSheetCollapsed(true);
   }, []);
 
   const handleLongPressCell = useCallback((target: LongPressTarget) => {
@@ -1535,7 +1560,7 @@ export function OptionsTab({
   const handleClearSelection = useCallback(() => {
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
-    setSheetCollapsed(false);
+    setSheetCollapsed(true);
   }, []);
 
   const handleBuildStrategy = useCallback(() => {
@@ -1697,6 +1722,30 @@ export function OptionsTab({
 
   const selCount = selectedLegs.size;
 
+  const chainBuildTrayLegs = useMemo(
+    () =>
+      [...selectedLegs.values()].map((leg) => ({
+        contract: leg.contract,
+        type: leg.type,
+        side: leg.side,
+        expiration: leg.expiration,
+      })),
+    [selectedLegs],
+  );
+
+  const handleChainTrayRemove = useCallback((key: string) => {
+    setSelectedLegs((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+    setLegQuantities((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
   const atGroups = useMemo(
     () =>
       groups.map((g) => ({
@@ -1709,17 +1758,18 @@ export function OptionsTab({
   );
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
+  const subViewChrome = (
+    <OptionsSubViewToggle toolbar view={optionsSubView} onChange={setOptionsSubView} />
+  );
 
   return (
     <div
       style={{ background: BG }}
       className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
     >
-      <div className="shrink-0" data-at-subview-chrome>
-        <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
-      </div>
       {optionsSubView === "at" && (
         <ActiveTraderView
+          subViewChrome={subViewChrome}
           symbol={symbol}
           groups={atGroups}
           activeExpiration={atExpiration ?? undefined}
@@ -1753,7 +1803,8 @@ export function OptionsTab({
         className="flex items-center justify-between w-full px-3 shrink-0 z-40"
         style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          {subViewChrome}
           <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
@@ -1800,6 +1851,14 @@ export function OptionsTab({
           hasData={!!data}
         />
       </div>
+
+      {selCount > 0 && (
+        <AtLegBuildTray
+          legs={chainBuildTrayLegs}
+          qtyByKey={legQuantities}
+          onRemove={handleChainTrayRemove}
+        />
+      )}
 
       <div
         data-options-chain-scroll
@@ -1874,7 +1933,8 @@ export function OptionsTab({
             <OptionsChainHeader
               showCalls={showCalls}
               showPuts={showPuts}
-              columns={activeColumns}
+              columns={chainPriceColumns}
+              colW={CHAIN_COL_W}
               stickyTop={0}
               onColumnsEditor={() => setColumnsEditorOpen(true)}
               onBuildStrategy={onOpenStrategyBuilder ? handleLayersClick : undefined}
@@ -1889,7 +1949,8 @@ export function OptionsTab({
                   onToggle={() => toggleExp(group.expiration)}
                   stickyTop={chainStickyHeader}
                   underlyingPrice={underlyingPrice}
-                  activeColumns={activeColumns}
+                  activeColumns={chainPriceColumns}
+                  colW={CHAIN_COL_W}
                   showCalls={showCalls}
                   showPuts={showPuts}
                   selectedLegs={selectedLegs}
