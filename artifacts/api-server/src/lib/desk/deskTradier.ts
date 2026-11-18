@@ -6,6 +6,7 @@ import {
   deskMarkFeedAuthError,
 } from "./deskFeedFreshness.js";
 import { logger } from "../logger.js";
+import { classShareForVendor, classShareToDot } from "../classShareSymbology.js";
 
 const TRADIER_BASE = "https://api.tradier.com/v1";
 
@@ -26,7 +27,9 @@ export async function deskTradierQuotes(symbols: string[]): Promise<{
     return { ok: false, status: 503, quotes: [], asOfMs: Date.now(), error: "not_configured" };
   }
 
-  const sym = symbols.map((s) => s.trim().toUpperCase()).filter(Boolean).join(",");
+  const requested = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))];
+  const apiSyms = requested.map((s) => classShareForVendor(s, "tradier"));
+  const sym = apiSyms.join(",");
   const url = `${TRADIER_BASE}/markets/quotes?symbols=${encodeURIComponent(sym)}&greeks=false`;
   const res = await fetch(url, {
     headers: {
@@ -50,7 +53,23 @@ export async function deskTradierQuotes(symbols: string[]): Promise<{
   const json = (await res.json()) as { quotes?: { quote?: unknown } };
   const q = json.quotes?.quote;
   const list = q == null ? [] : Array.isArray(q) ? q : [q];
+  const byApi = new Map<string, Record<string, unknown>>();
+  for (const row of list) {
+    if (!row || typeof row !== "object") continue;
+    const api = String((row as Record<string, unknown>).symbol ?? "").toUpperCase();
+    if (api) byApi.set(api, row as Record<string, unknown>);
+  }
+  const quotes: Record<string, unknown>[] = [];
+  for (let i = 0; i < requested.length; i++) {
+    const display = requested[i]!;
+    const api = apiSyms[i]!;
+    const row =
+      byApi.get(api) ??
+      byApi.get(classShareToDot(api)) ??
+      (list[i] as Record<string, unknown> | undefined);
+    if (row) quotes.push({ ...row, symbol: display });
+  }
   const asOfMs = Date.now();
   deskTouchFeed("tradier", asOfMs, "tradier");
-  return { ok: true, status: res.status, quotes: list as Record<string, unknown>[], asOfMs };
+  return { ok: true, status: res.status, quotes, asOfMs };
 }

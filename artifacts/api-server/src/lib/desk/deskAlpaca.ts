@@ -1,3 +1,4 @@
+import { classShareForVendor } from "../classShareSymbology.js";
 import { deskEnv } from "./deskEnv.js";
 import { deskTouchFeed, deskMarkFeedNotConfigured, deskMarkFeedError } from "./deskFeedFreshness.js";
 
@@ -22,9 +23,10 @@ export async function deskAlpacaQuotes(
   let latest = Date.now();
 
   for (const raw of symbols) {
-    const sym = raw.trim().toUpperCase();
-    if (!sym) continue;
-    const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(sym)}/quotes/latest`;
+    const display = raw.trim().toUpperCase();
+    if (!display) continue;
+    const apiSym = classShareForVendor(display, "alpaca");
+    const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(apiSym)}/quotes/latest`;
     const res = await fetch(url, {
       headers: {
         "APCA-API-KEY-ID": keyId,
@@ -38,7 +40,7 @@ export async function deskAlpacaQuotes(
     }
     const json = (await res.json()) as { quote?: Record<string, unknown> };
     if (json.quote) {
-      out.push({ symbol: sym, ...json.quote });
+      out.push({ symbol: display, ...json.quote });
       const t = json.quote["t"] as string | undefined;
       if (t) latest = Math.max(latest, Date.parse(t));
     }

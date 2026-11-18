@@ -26,6 +26,7 @@ import { fetchPolygonChain } from "../lib/polygonChain.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 import { setBounded } from "../lib/boundedCache.js";
 import { getSpxKeepawayStats } from "../lib/activeTrader/spxKeepawayCache.js";
+import { classShareSchwabStreamKey, isClassShareSymbol } from "../lib/classShareSymbology.js";
 
 const router: IRouter = Router();
 
@@ -97,7 +98,9 @@ function formatSchwabSymbol(symbol: string): string {
   if (upper.endsWith(".X") && upper.startsWith("$")) {
     upper = upper.slice(0, -2);
   }
-  return INDEX_SYMBOL_MAP[upper] ?? upper;
+  const mapped = INDEX_SYMBOL_MAP[upper] ?? upper;
+  if (isClassShareSymbol(mapped)) return classShareSchwabStreamKey(mapped);
+  return mapped;
 }
 
 function isIndex(symbol: string): boolean {

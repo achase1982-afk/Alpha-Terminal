@@ -5,6 +5,7 @@ import {
   deskMarkFeedNotConfigured,
   deskTouchFeed,
 } from "./deskFeedFreshness.js";
+import { classShareForVendor } from "../classShareSymbology.js";
 
 const ALPACA_DATA = "https://data.alpaca.markets";
 
@@ -30,9 +31,10 @@ export async function deskAlpacaMarketQuotes(
   let latest = Date.now();
 
   for (const raw of symbols) {
-    const sym = raw.trim().toUpperCase();
-    if (!sym) continue;
-    const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(sym)}/quotes/latest`;
+    const display = raw.trim().toUpperCase();
+    if (!display) continue;
+    const apiSym = classShareForVendor(display, "alpaca");
+    const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(apiSym)}/quotes/latest`;
     const res = await fetch(url, {
       headers: headers(keyId, secret),
       signal: AbortSignal.timeout(12_000),
@@ -48,7 +50,7 @@ export async function deskAlpacaMarketQuotes(
     }
     const json = (await res.json()) as { quote?: Record<string, unknown> };
     if (json.quote) {
-      out.push({ symbol: sym, ...json.quote });
+      out.push({ symbol: display, ...json.quote });
       const t = json.quote["t"] as string | undefined;
       if (t) latest = Math.max(latest, Date.parse(t));
     }
@@ -72,10 +74,11 @@ export async function deskAlpacaMarketBars(
     return { ok: false, bars: [], asOfMs: Date.now(), status: 503, error: "not_configured", source: "alpaca" };
   }
 
-  const sym = symbol.trim().toUpperCase();
+  const display = symbol.trim().toUpperCase();
+  const apiSym = classShareForVendor(display, "alpaca");
   const tf = timeframe === "1d" || timeframe === "daily" ? "1Day" : "1Min";
   const start = new Date(Date.now() - limit * 86_400_000).toISOString();
-  const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(sym)}/bars?timeframe=${tf}&start=${encodeURIComponent(start)}&limit=${limit}&adjustment=raw&feed=iex`;
+  const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(apiSym)}/bars?timeframe=${tf}&start=${encodeURIComponent(start)}&limit=${limit}&adjustment=raw&feed=iex`;
   const res = await fetch(url, {
     headers: headers(keyId, secret),
     signal: AbortSignal.timeout(15_000),

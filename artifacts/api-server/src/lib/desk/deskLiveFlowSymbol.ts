@@ -25,11 +25,12 @@ export function parseDeskFlowSymbol(raw: string): { ok: true; parsed: DeskFlowSy
     return { ok: true, parsed: { kind: "futures", sym: u } };
   }
 
-  if (!/^\$?[A-Z][A-Z0-9.$\-]{0,11}$/.test(u)) {
+  const equityCheck = trimmed.toUpperCase();
+  if (!/^\$?[A-Z][A-Z0-9.$\-/]{0,14}$/.test(equityCheck)) {
     return { ok: false, error: "invalid_equity_symbol" };
   }
-  u = u.replace(/^\$/, "");
-  return { ok: true, parsed: { kind: "equity", sym: u } };
+  const equitySym = equityCheck.replace(/^\$/, "");
+  return { ok: true, parsed: { kind: "equity", sym: equitySym } };
 }
 
 export function deskFlowNormalizeEquityKey(sym: string): string {
