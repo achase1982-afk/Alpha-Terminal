@@ -4,6 +4,7 @@
 import { webkit } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { assertAtHeaderLayout } from "./lib/at-header-layout-assert.mjs";
 
 const BASE = process.env.AT_VERIFY_BASE ?? "http://127.0.0.1:5173";
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-header-fixture";
@@ -24,6 +25,7 @@ try {
   const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
   await viewSel.first().selectOption("at").catch(() => undefined);
   await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
+  await assertAtHeaderLayout(page, record);
 
   const dayKind = await page.locator("[data-at-day-status]").getAttribute("data-at-day-status");
   record("DAY DOWN on fixture", dayKind === "down", dayKind ?? "missing");
@@ -44,7 +46,7 @@ try {
   const truncated = await page.locator("[data-at-glance-top]").evaluate((el) => el.scrollHeight > el.clientHeight + 2);
   record("no header truncation", !truncated, truncated ? "overflow" : "ok");
 
-  await page.screenshot({ path: path.join(OUT, "at-header-fixture-down-tick.png") });
+  await page.screenshot({ path: path.join(OUT, "at-header-fixture-full-440x956.png"), fullPage: true });
 } catch (err) {
   record("fixture run", false, err instanceof Error ? err.message : String(err));
 }

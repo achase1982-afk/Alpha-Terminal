@@ -1109,9 +1109,9 @@ export default function TerminalPage() {
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
                   {schwabLinked && !atGlanceChrome ? <SchwabAccountHeader compact /> : null}
-                  {atOptionsChrome ? (
-                    <AtSymbolHeader compact={atGlanceChrome} />
-                  ) : (
+                  {atOptionsChrome && !atGlanceChrome ? (
+                    <AtSymbolHeader compact={false} />
+                  ) : atOptionsChrome ? null : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} />
                       <VolumeBar />
@@ -1253,9 +1253,9 @@ export default function TerminalPage() {
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                  {atOptionsChrome ? (
-                    <AtSymbolHeader compact={atGlanceChrome} />
-                  ) : (
+                  {atOptionsChrome && !atGlanceChrome ? (
+                    <AtSymbolHeader compact={false} />
+                  ) : atOptionsChrome ? null : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} />
                       <VolumeBar />
