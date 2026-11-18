@@ -89,6 +89,25 @@ declare global {
       chainTicketOpen: boolean;
       sheet: ChainDraftSheetSession;
     };
+    /** Dev-only: Playwright verifiers bump leg qty without flaky strip UI taps. */
+    __AT_CHAIN_DRAFT_TEST_SET_QTY?: (qty: number) => void;
+    __AT_CHAIN_DRAFT_TEST_SET_SHEET?: (sheet: Partial<ChainDraftSheetSession>) => void;
+  }
+}
+
+if (import.meta.env.DEV) {
+  if (typeof window !== "undefined") {
+    window.__AT_CHAIN_DRAFT_TEST_SET_QTY = (qty: number) => {
+      const n = Math.max(1, Math.min(999, Math.floor(qty)));
+      const state = useChainDraftSessionStore.getState();
+      const legQuantities: Record<string, number> = {};
+      for (const leg of state.selectedLegs) legQuantities[leg.key] = n;
+      useChainDraftSessionStore.setState({ legQuantities });
+      window.dispatchEvent(new CustomEvent("at:chain-draft-test-qty", { detail: { qty: n } }));
+    };
+    window.__AT_CHAIN_DRAFT_TEST_SET_SHEET = (sheet) => {
+      useChainDraftSessionStore.getState().setSheetSession(sheet);
+    };
   }
 }
 

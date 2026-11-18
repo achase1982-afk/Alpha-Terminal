@@ -1,13 +1,16 @@
 /**
- * Case 2 — build A tab, stale chunk 404, single bounded reload into build B (mocked document build ids).
- * WebKit 440×956, clean tab (no draft).
+ * MOCKED RECOVERY TEST — not a real A→B bundle deploy.
+ * Injects document build id "mock-build-A-stale" on first navigation, then stale PortfolioView 404,
+ * bounded full reload, and asserts live build B serves Portfolio (no unsaved draft on this tab).
+ * WebKit 440×956.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createChunkRetryPage } from "./lib/chunk-retry-webkit.mjs";
+import { createChunkRetryPage, chunkVerifyTargetUrl, ensureChunkVerifyServer } from "./lib/chunk-retry-webkit.mjs";
 
-const LIVE = process.env.AT_VERIFY_LIVE ?? "https://alpha-terminal-production-f297.up.railway.app";
+const LIVE = chunkVerifyTargetUrl();
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-chunk-retry-stale-build";
+const MOCKED_RECOVERY_LABEL = "mocked-recovery-test";
 const BUILD_A = "mock-build-A-stale";
 const checks = [];
 function record(name, pass, detail) {
@@ -15,6 +18,7 @@ function record(name, pass, detail) {
 }
 
 await mkdir(OUT, { recursive: true });
+const viteChild = await ensureChunkVerifyServer();
 const { browser, page, metrics, reloadNavigations } = await createChunkRetryPage(LIVE);
 
 let documentPass = 0;
@@ -63,7 +67,8 @@ try {
   const buildAfterLoad = await page.evaluate(
     () => document.querySelector('meta[name="at-build-id"]')?.getAttribute("content") ?? "",
   );
-  record("build A on first document", buildAfterLoad === BUILD_A, buildAfterLoad);
+  record("mocked recovery (not real A→B bundle)", true, MOCKED_RECOVERY_LABEL);
+  record("build A on first document (injected)", buildAfterLoad === BUILD_A, buildAfterLoad);
 
   await page.locator("[data-bottom-nav]").getByText("PORTFOLIO", { exact: true }).click({ timeout: 30_000 });
   await page.waitForSelector('[data-lazy-view-error][data-lazy-view-name="Portfolio"]', { timeout: 25_000 });
@@ -106,10 +111,13 @@ await writeFile(
   path.join(OUT, "report.json"),
   JSON.stringify(
     {
+      mode: MOCKED_RECOVERY_LABEL,
+      note: "Document build A is injected by route mock; not two shipped production artifacts.",
       checks,
       live: LIVE,
       buildIdsSeen,
       staleChunkUrl,
+      chunkUrls: metrics.chunkStatuses.filter((r) => /PortfolioView/i.test(r.url)).map((r) => ({ url: r.url, status: r.status })),
       reloadNavigations: reloadNavigations(),
       chunkStatuses: metrics.chunkStatuses,
       brokerMutations: metrics.brokerMutations,
@@ -119,6 +127,7 @@ await writeFile(
   ),
 );
 await browser.close();
+if (viteChild?.pid) process.kill(-viteChild.pid, "SIGTERM");
 const failed = checks.filter((c) => !c.pass);
 console.log(JSON.stringify({ failed: failed.length, checks, out: OUT }, null, 2));
 process.exit(failed.length ? 1 : 0);

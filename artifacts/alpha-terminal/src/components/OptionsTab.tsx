@@ -1583,6 +1583,26 @@ export function OptionsTab({
     });
   }, [symbol, selectedLegs, legQuantities, chainTicketOpen, sheetCollapsed]);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const onTestQty = (ev: Event) => {
+      const qty = (ev as CustomEvent<{ qty: number }>).detail?.qty;
+      if (qty == null || !Number.isFinite(qty)) return;
+      const n = Math.max(1, Math.min(999, Math.floor(qty)));
+      setLegQuantities((prev) => {
+        const keys =
+          prev.size > 0
+            ? [...prev.keys()]
+            : [...selectedLegs.keys()];
+        const next = new Map<string, number>();
+        for (const k of keys) next.set(k, n);
+        return next;
+      });
+    };
+    window.addEventListener("at:chain-draft-test-qty", onTestQty);
+    return () => window.removeEventListener("at:chain-draft-test-qty", onTestQty);
+  }, [selectedLegs]);
+
   const withPreservedChainScroll = useCallback((run: () => void) => {
     const el = chainScrollRef.current;
     const scrollTop = el?.scrollTop ?? 0;
@@ -1595,6 +1615,10 @@ export function OptionsTab({
   const fixtureLegsAppliedRef = useRef(false);
   useEffect(() => {
     if (!chainFixtureOverride || groups.length === 0 || fixtureLegsAppliedRef.current) return;
+    if (import.meta.env.DEV && useChainDraftSessionStore.getState().hasActiveDraft()) {
+      fixtureLegsAppliedRef.current = true;
+      return;
+    }
     fixtureLegsAppliedRef.current = true;
     const group = groups[0];
     setExpandedExps(new Set([group.expiration]));
