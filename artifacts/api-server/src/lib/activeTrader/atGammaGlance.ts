@@ -116,7 +116,11 @@ export async function buildAtGammaGlancePayload(tickerRaw: string): Promise<AtGa
   const asOfMs = snap0.asOfMs;
   const expiryYmd = snap0.expiry ?? sessionDate;
   const asOfEt = sessionClosed ? closedSessionAsOfLabel(expiryYmd) : formatEtTimeShort(asOfMs);
-  const zones = computeZonesFromUwGamma0dte(rows, { spot: null, asOfLabel: asOfEt });
+  const spotRef = (() => {
+    const draft = computeZonesFromUwGamma0dte(rows, { asOfLabel: asOfEt });
+    return draft.callWall ?? draft.putWall ?? null;
+  })();
+  const zones = computeZonesFromUwGamma0dte(rows, { spot: spotRef, asOfLabel: asOfEt });
   const glanceCaption = sessionClosed ? `Closed \u00b7 as of ${asOfEt}` : undefined;
   const payload: AtGammaGlancePayload = {
     zones: { ...zones, glanceCaption },
