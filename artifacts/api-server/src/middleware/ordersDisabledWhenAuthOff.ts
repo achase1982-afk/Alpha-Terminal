@@ -1,7 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
 import {
   ORDERS_DISABLED_ERROR,
-  isSchwabTradingDisabled,
+  isAutomatedSchwabTradingDisabled,
+  isManualSchwabTradingDisabled,
 } from "../lib/schwabTradingGate.js";
 
 const ORDERS_DISABLED_BODY = { error: ORDERS_DISABLED_ERROR } as const;
@@ -30,12 +31,19 @@ const BLOCKED: BlockRule[] = [
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 /** Desk API is read/market-data today; fail closed on any future trade POSTs. */
+function ruleBlockedWhenAuthOff(rule: BlockRule): boolean {
+  if (rule.path === "/portfolio/place-order" || rule.path === "/portfolio/cancel-order") {
+    return isManualSchwabTradingDisabled();
+  }
+  return isAutomatedSchwabTradingDisabled();
+}
+
 export function blockDeskBrokerOrdersWhenAuthDisabled(
   req: Request,
   res: Response,
   next: NextFunction,
 ): void {
-  if (!isSchwabTradingDisabled()) {
+  if (!isManualSchwabTradingDisabled()) {
     next();
     return;
   }
@@ -55,14 +63,10 @@ export function blockBrokerOrdersWhenAuthDisabled(
   res: Response,
   next: NextFunction,
 ): void {
-  if (!isSchwabTradingDisabled()) {
-    next();
-    return;
-  }
-
   for (const rule of BLOCKED) {
     if (req.method !== rule.method || req.path !== rule.path) continue;
     if (rule.matchBody && !rule.matchBody(req.body)) continue;
+    if (!ruleBlockedWhenAuthOff(rule)) continue;
     res.status(403).json(ORDERS_DISABLED_BODY);
     return;
   }

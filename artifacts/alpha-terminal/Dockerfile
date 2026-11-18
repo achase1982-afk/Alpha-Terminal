@@ -28,6 +28,8 @@ ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
 # Active Trader live order submit (default off in production images).
 ARG VITE_AT_ORDER_SEND="0"
 ENV VITE_AT_ORDER_SEND=${VITE_AT_ORDER_SEND}
+ARG VITE_ORDERS_ALLOW_WITHOUT_AUTH=""
+ENV VITE_ORDERS_ALLOW_WITHOUT_AUTH=${VITE_ORDERS_ALLOW_WITHOUT_AUTH}
 
 # Baked into index.html + __AT_BUILD_ID__ for lazy chunk recovery verifiers.
 ARG RAILWAY_GIT_COMMIT_SHA=""

@@ -7,3 +7,9 @@ export function isAuthDisabled(): boolean {
   if (authDisabled === "true" || authDisabled === "1") return true;
   return process.env.DEV_BYPASS_AUTH === "true";
 }
+
+/** Explicit opt-in: manual Schwab orders while `AUTH_DISABLED` (reviewer / public URL). */
+export function isOrdersAllowWithoutAuth(): boolean {
+  const v = process.env.ORDERS_ALLOW_WITHOUT_AUTH;
+  return v === "true" || v === "1";
+}
