@@ -378,6 +378,7 @@ export async function startAtMockBackend(opts = {}) {
     optionUpdatesSent: 0,
     optionRequests: [],
     holdPosts: 0,
+    requests: {},
     unhandled: {},
     wsClients: 0,
     startedAt: Date.now(),
@@ -512,6 +513,7 @@ export async function startAtMockBackend(opts = {}) {
 
   async function handleApi(req, res, url) {
     const p = url.pathname;
+    counters.requests[p] = (counters.requests[p] ?? 0) + 1;
     if (p === "/api/health") return json(res, { ok: true });
     if (p === "/api/auth/server-tokens") {
       return json(res, { market: { connected: true, expiresAt: sim.now() + 3_600_000 }, trader: null });
@@ -531,13 +533,20 @@ export async function startAtMockBackend(opts = {}) {
       return json(res, sim.chain(q));
     }
     if (p === "/api/market/quote") {
-      return json(res, {
-        ...sim.underlyingQuote(),
-        description: "S&P 500 INDEX",
-        fiftyTwoWeekHigh: 7412.3,
-        fiftyTwoWeekLow: 5876.1,
-        peRatio: null,
-      });
+      const sym = (url.searchParams.get("symbol") ?? "").toUpperCase().replace(/^\$/, "");
+      if (sym === "SPX") {
+        return json(res, {
+          ...sim.underlyingQuote(),
+          description: "S&P 500 INDEX",
+          fiftyTwoWeekHigh: 7412.3,
+          fiftyTwoWeekLow: 5876.1,
+          peRatio: null,
+        });
+      }
+      if (sym === "VIX") {
+        return json(res, { symbol: "$VIX", description: "CBOE VOLATILITY INDEX", last: 16.84, close: 17.31 });
+      }
+      return json(res, { symbol: url.searchParams.get("symbol") ?? "", last: null });
     }
     if (p === "/api/market/at-gamma-glance") return json(res, glanceBody());
     if (p === "/api/market/spx-keepaway-stats") {

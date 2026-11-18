@@ -11,7 +11,19 @@
  *   - whether prices move and heat is visible
  *   - touch -> highlight time for taps on bid/ask cells
  *
- * With --assert it exits non-zero when a tap takes longer than --budget-ms (100).
+ * Tap timing starts when this process sends the touch, so it includes any wait
+ * for a busy main thread:
+ *   touch -> highlight          the first visible change for the tap is in the DOM
+ *   touch -> highlight painted  ...and a frame with it has been produced
+ *   lift  -> outline painted    finger up to a frame with the BUY/SELL outline
+ * Playwright's WebKit runs no animation frame between the touchstart and the
+ * click of a synthetic tap (about 60 ms, with or without quote load), so the
+ * painted times of a tap carry that; the held press at the end is not subject
+ * to it and measures a painted highlight while the pointer is still down.
+ *
+ * With --assert it exits non-zero when touch -> highlight or the held press's
+ * painted highlight takes longer than --budget-ms (100), a tap is dropped, the
+ * ladder leaves empty space or hides a strike, or heat is not visible.
  *
  *   node scripts/verify-at-ladder-flood.mjs --dist dist/public --label after --assert
  */
@@ -103,12 +115,24 @@ function probeInitScript() {
   }
 
   const epoch = () => performance.timeOrigin + performance.now();
-  /** Runs `cb` right after the frame that follows is produced (rAF, then a task behind its rendering). */
+  /**
+   * Runs `cb` once the next frame has been produced: a task queued behind that
+   * frame's rendering, or the start of the frame after it, whichever comes
+   * first (on a page with a backlog of queued messages the task can wait far
+   * longer than the frame did).
+   */
   const afterPaint = (cb) => {
+    let fired = false;
+    const once = () => {
+      if (fired) return;
+      fired = true;
+      cb();
+    };
     requestAnimationFrame(() => {
       const ch = new MessageChannel();
-      ch.port1.onmessage = () => cb();
+      ch.port1.onmessage = once;
       ch.port2.postMessage(0);
+      requestAnimationFrame(once);
     });
   };
 
@@ -123,8 +147,10 @@ function probeInitScript() {
       down: null,
       up: null,
       pressedCommit: null,
+      pressedCommitEpoch: null,
       pressedPaintEpoch: null,
       selCommit: null,
+      selCommitEpoch: null,
       selPaintEpoch: null,
       done: false,
     };
@@ -135,12 +161,14 @@ function probeInitScript() {
       const now = performance.now();
       if (rec.pressedCommit == null && isPressed(cell)) {
         rec.pressedCommit = now;
+        rec.pressedCommitEpoch = epoch();
         afterPaint(() => {
           rec.pressedPaintEpoch = epoch();
         });
       }
       if (rec.selCommit == null && isSelected(cell) !== rec.wasSelected) {
         rec.selCommit = now;
+        rec.selCommitEpoch = epoch();
         afterPaint(() => {
           rec.selPaintEpoch = epoch();
           rec.done = true;
@@ -245,7 +273,10 @@ async function heatSnapshot(page) {
       const row = el.closest("[data-at-ladder-row]");
       const cs = getComputedStyle(el);
       const bg = `${cs.backgroundImage} ${cs.backgroundColor}`;
-      const alphas = [...bg.matchAll(/rgba\([^)]*,\s*([0-9.]+)\)/g)].map((m) => Number(m[1]));
+      // Only the heat green / red count, not neutral overlays.
+      const alphas = [...bg.matchAll(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([0-9.]+))?\)/g)]
+        .filter((m) => (m[1] === "16" && m[2] === "185") || (m[1] === "228" && m[2] === "48"))
+        .map((m) => (m[4] == null ? 1 : Number(m[4])));
       out.push({
         strike: Number(row?.getAttribute("data-at-ladder-row")),
         side: el.getAttribute("data-at-quote-heat"),
@@ -272,6 +303,7 @@ function summarizeHeat(cells) {
   };
 }
 
+/** A point to touch on a cell: the middle of the part of it that is not under the order sheet. */
 async function cellCenter(page, selector) {
   return page.evaluate((sel) => {
     const el = document.querySelector(sel);
@@ -280,21 +312,81 @@ async function cellCenter(page, selector) {
     const r = el.getBoundingClientRect();
     const box = scroll?.getBoundingClientRect();
     const nav = document.querySelector("[data-bottom-nav]")?.getBoundingClientRect();
+    const sheet = (
+      document.querySelector("[data-at-order-sheet]") ?? document.querySelector("[data-at-docked-order-panel]")
+    )?.getBoundingClientRect();
+    const top = Math.max(r.top, box?.top ?? 0);
+    const bottom = Math.min(r.bottom, box?.bottom ?? 1e9, nav?.top ?? 1e9, sheet?.top ?? 1e9);
     const cx = r.left + r.width / 2;
-    const cy = r.top + r.height / 2;
-    const top = document.elementFromPoint(cx, cy);
+    const cy = (top + bottom) / 2;
+    const hitEl = bottom - top >= 10 ? document.elementFromPoint(cx, cy) : null;
     return {
       x: cx,
       y: cy,
-      inView: !!box && r.top >= box.top && r.bottom <= Math.min(box.bottom, nav?.top ?? 1e9),
-      hit: !!top && (top === el || el.contains(top)),
+      inView: bottom - top >= 10,
+      hit: !!hitEl && (hitEl === el || el.contains(hitEl)),
       disabled: el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true",
     };
   }, selector);
 }
 
+/**
+ * Scroll the ladder to one end the way a user would, letting each page of
+ * strikes load, until no more arrive. Returns the pages seen on the way.
+ */
+async function scrollToEnd(page, edge) {
+  const pages = [];
+  let last = -1;
+  let stable = 0;
+  for (let i = 0; i < 12 && stable < 2; i++) {
+    await page.evaluate((dir) => {
+      const el = document.querySelector("[data-at-ladder-scroll]");
+      if (!el) return;
+      // Two steps so the scroll has a direction even when already near the edge.
+      el.scrollTop += dir === "down" ? -60 : 60;
+      el.scrollTop = dir === "down" ? el.scrollHeight : 0;
+    }, edge);
+    await sleep(900);
+    const snap = await ladderSnapshot(page);
+    if (snap.rowCount === last) stable += 1;
+    else {
+      stable = 0;
+      last = snap.rowCount;
+      pages.push(`${snap.rowCount} rows (${snap.topStrike}..${snap.bottomStrike})`);
+    }
+  }
+  await page.evaluate((dir) => {
+    const el = document.querySelector("[data-at-ladder-scroll]");
+    if (el) el.scrollTop = dir === "down" ? el.scrollHeight : 0;
+  }, edge);
+  await sleep(500);
+  return pages;
+}
+
+/** Where the first and last strike rows sit relative to the ladder area and the order sheet. */
+async function endGeometry(page) {
+  return page.evaluate(() => {
+    const scroll = document.querySelector("[data-at-ladder-scroll]");
+    const rows = [...document.querySelectorAll("[data-at-ladder-row]")];
+    const sheet = document.querySelector("[data-at-order-sheet]") ?? document.querySelector("[data-at-docked-order-panel]");
+    const box = scroll.getBoundingClientRect();
+    const first = rows[0]?.getBoundingClientRect();
+    const lastRow = rows[rows.length - 1]?.getBoundingClientRect();
+    const sheetTop = sheet ? sheet.getBoundingClientRect().top : box.bottom;
+    return {
+      firstStrike: Number(rows[0]?.getAttribute("data-at-ladder-row")),
+      lastStrike: Number(rows[rows.length - 1]?.getAttribute("data-at-ladder-row")),
+      firstRowTopInLadder: first ? Math.round(first.top - box.top) : null,
+      lastRowBottomAboveSheetPx: lastRow ? Math.round(sheetTop - lastRow.bottom) : null,
+      sheetOverlapsLadderPx: Math.round(box.bottom - sheetTop),
+      ladderHeightPx: Math.round(box.height),
+    };
+  });
+}
+
 const nodeEpoch = () => performance.timeOrigin + performance.now();
-const round1 = (v) => (v == null ? null : Math.round(v * 10) / 10);
+/** One decimal, floored at 0: the two processes' clocks agree to about a millisecond. */
+const round1 = (v) => (v == null ? null : Math.max(0, Math.round(v * 10) / 10));
 
 /**
  * Tap a cell and time it end to end: from the instant this process sends the
@@ -332,17 +424,26 @@ async function tapCell(page, selector, how = "touch") {
   }
   if (!rec?.down) return { selector, error: "no pointer event reached the page", waitedMs: Date.now() - startedAt };
   const t0 = rec.down.arrive;
+  const first = (a, b) => (a == null ? b : b == null ? a : Math.min(a, b));
+  const feedbackCommit = first(rec.pressedCommitEpoch, rec.selCommitEpoch);
+  const feedbackPaint = first(rec.pressedPaintEpoch, rec.selPaintEpoch);
   return {
     selector,
     registered: !!rec.done,
-    /** Touch down -> the cell's press highlight is on screen. */
-    touchToHighlightMs: rec.pressedPaintEpoch == null ? null : round1(rec.pressedPaintEpoch - sentEpoch),
-    /** Finger lifted -> the BUY/SELL outline (or its removal) is on screen. */
-    liftToOutlineMs:
-      rec.selPaintEpoch == null || rec.up == null ? null : round1(rec.selPaintEpoch - rec.up.arriveEpoch),
-    /** Whole tap, including the time the driver holds the finger down. */
-    touchToOutlineMs: rec.selPaintEpoch == null ? null : round1(rec.selPaintEpoch - sentEpoch),
+    /** Touch sent -> the page's handler ran. Long when the main thread is busy. */
     waitForMainThreadMs: round1(rec.down.arriveEpoch - sentEpoch),
+    /**
+     * Touch sent -> the first visible change for this tap is in the DOM: the press
+     * highlight, or the BUY/SELL outline on a build that has no press highlight.
+     */
+    touchToHighlightMs: feedbackCommit == null ? null : round1(feedbackCommit - sentEpoch),
+    /** ...and a frame containing it has been produced. */
+    touchToHighlightPaintedMs: feedbackPaint == null ? null : round1(feedbackPaint - sentEpoch),
+    /** Finger lifted -> a frame with the BUY/SELL outline (or its removal) has been produced. */
+    liftToOutlinePaintedMs:
+      rec.selPaintEpoch == null || rec.up == null ? null : round1(rec.selPaintEpoch - rec.up.arriveEpoch),
+    touchToOutlinePaintedMs: rec.selPaintEpoch == null ? null : round1(rec.selPaintEpoch - sentEpoch),
+    hadPressHighlight: rec.pressedCommitEpoch != null,
     fingerDownMs: rec.up == null ? null : round1(rec.up.arrive - t0),
     events: rec.events.map((e) => `${e.type}@${Math.round(e.arrive - t0)}`).join(" "),
   };
@@ -372,7 +473,8 @@ async function pressHoldAndDrag(page, selector) {
   const held = await state();
   const rec = await page.evaluate(() => window.__atProbe.readTap());
   out.highlightWhileHeld = held.pressed;
-  out.touchToPressHighlightMs = rec?.pressedPaintEpoch == null ? null : round1(rec.pressedPaintEpoch - sentEpoch);
+  out.pressToHighlightPaintedMs =
+    rec?.pressedPaintEpoch == null ? null : round1(rec.pressedPaintEpoch - sentEpoch);
   out.committedBeforeLift = held.selected !== before.selected;
   await page.mouse.move(c.x + 14, c.y + 3, { steps: 3 });
   await sleep(60);
@@ -546,23 +648,92 @@ async function main() {
     result.taps = {
       attempted: taps.length,
       registered: taps.filter((t) => t.registered).length,
-      touchToHighlightMs: spread("touchToHighlightMs"),
-      liftToOutlineMs: spread("liftToOutlineMs"),
-      touchToOutlineMs: spread("touchToOutlineMs"),
+      withPressHighlight: taps.filter((t) => t.hadPressHighlight).length,
       waitForMainThreadMs: spread("waitForMainThreadMs"),
+      touchToHighlightMs: spread("touchToHighlightMs"),
+      touchToHighlightPaintedMs: spread("touchToHighlightPaintedMs"),
+      liftToOutlinePaintedMs: spread("liftToOutlinePaintedMs"),
+      touchToOutlinePaintedMs: spread("touchToOutlinePaintedMs"),
       detail: taps,
     };
     result.pressHold = await pressHoldAndDrag(page, `[data-at-quote="call-ask-${atm + 5}"]`);
     log("press/hold/drag", JSON.stringify(result.pressHold));
+
+    // With the ticket open: every strike must still be reachable at both ends.
+    const legsBeforeScroll = await page.evaluate(() => document.querySelectorAll("[data-at-selected-leg-chip]").length);
+    const downPages = await scrollToEnd(page, "down");
+    await sleep(600);
+    result.bottomEnd = { pages: downPages, ...(await endGeometry(page)) };
+    log("bottom end", JSON.stringify(result.bottomEnd));
+    await shot("bottom-end");
+
+    const upPages = await scrollToEnd(page, "up");
+    await sleep(600);
+    result.topEnd = { pages: upPages, ...(await endGeometry(page)) };
+    log("top end", JSON.stringify(result.topEnd));
+    await shot("top-end");
+
+    const recenter = page.locator("[data-at-ladder-recenter]");
+    result.recenter = { shownWhenSpotOffScreen: await recenter.isVisible().catch(() => false) };
+    if (result.recenter.shownWhenSpotOffScreen) {
+      await recenter.click();
+      await sleep(1200);
+      result.recenter.spotBackInView = await page.evaluate(() => {
+        const spot = document.querySelector('[data-at-spot-row="1"]');
+        const scroll = document.querySelector("[data-at-ladder-scroll]");
+        const sheet = document.querySelector("[data-at-order-sheet]");
+        if (!spot || !scroll) return false;
+        const r = spot.getBoundingClientRect();
+        const box = scroll.getBoundingClientRect();
+        const limit = sheet ? sheet.getBoundingClientRect().top : box.bottom;
+        return r.top >= box.top - 1 && r.bottom <= limit + 1;
+      });
+      result.recenter.hiddenAfter = !(await recenter.isVisible().catch(() => false));
+    }
+    result.legsKeptWhileScrolling =
+      (await page.evaluate(() => document.querySelectorAll("[data-at-selected-leg-chip]").length)) > 0 ||
+      legsBeforeScroll === 0;
+    log("recenter", JSON.stringify(result.recenter));
+
+    // Collapse the ticket to its one-line bar and bring it back.
+    const handle = page.locator("[data-at-order-sheet-handle]");
+    if (await handle.count()) {
+      const open = await endGeometry(page);
+      const hb = await handle.first().boundingBox();
+      await page.touchscreen.tap(hb.x + hb.width / 2, hb.y + 7);
+      await sleep(500);
+      const collapsed = await endGeometry(page);
+      await shot("ticket-collapsed");
+      const hb2 = await handle.first().boundingBox();
+      await page.touchscreen.tap(hb2.x + hb2.width / 2, hb2.y + 7);
+      await sleep(500);
+      const reopened = await endGeometry(page);
+      result.ticketCollapse = {
+        openOverlapPx: open.sheetOverlapsLadderPx,
+        collapsedOverlapPx: collapsed.sheetOverlapsLadderPx,
+        reopenedOverlapPx: reopened.sheetOverlapsLadderPx,
+        ladderHeightUnchanged:
+          open.ladderHeightPx === collapsed.ladderHeightPx && open.ladderHeightPx === reopened.ladderHeightPx,
+      };
+      log("ticket collapse", JSON.stringify(result.ticketCollapse));
+    }
     log(
       "taps",
       `${result.taps.registered}/${taps.length} registered`,
       "touch->highlight", JSON.stringify(result.taps.touchToHighlightMs),
-      "lift->outline", JSON.stringify(result.taps.liftToOutlineMs),
-      "touch->outline", JSON.stringify(result.taps.touchToOutlineMs),
+      "touch->highlight painted", JSON.stringify(result.taps.touchToHighlightPaintedMs),
+      "lift->outline painted", JSON.stringify(result.taps.liftToOutlinePaintedMs),
     );
 
+    result.header = await page.evaluate(() => ({
+      gammaFlip: document.querySelector("[data-at-gamma-flip]")?.textContent?.trim() ?? null,
+      flipRowStrike: document.querySelector('[data-at-gamma-flip-row="1"]')?.getAttribute("data-at-ladder-row") ?? null,
+      callWallRow: document.querySelector('[data-at-strike-wall="call"]')?.closest("[data-at-ladder-row]")?.getAttribute("data-at-ladder-row") ?? null,
+      putWallRow: document.querySelector('[data-at-strike-wall="put"]')?.closest("[data-at-ladder-row]")?.getAttribute("data-at-ladder-row") ?? null,
+    }));
+    log("header", JSON.stringify(result.header));
     result.mock = {
+      requests: backend.counters.requests,
       optionRequests: backend.counters.optionRequests,
       unhandledApi: backend.counters.unhandled,
       optionUpdatesSent: backend.counters.optionUpdatesSent,
@@ -580,14 +751,38 @@ async function main() {
     const failures = [];
     const t = result.taps;
     if (!t || t.registered !== t.attempted) failures.push(`taps registered ${t?.registered}/${t?.attempted}`);
+    if (t && t.withPressHighlight !== t.attempted) {
+      failures.push(`press highlight seen on ${t.withPressHighlight}/${t.attempted} taps`);
+    }
     if (!t?.touchToHighlightMs || t.touchToHighlightMs.n !== t.attempted) {
-      failures.push(`press highlight seen on ${t?.touchToHighlightMs?.n ?? 0}/${t?.attempted} taps`);
+      failures.push(`touch-to-highlight measured on ${t?.touchToHighlightMs?.n ?? 0}/${t?.attempted} taps`);
     } else if (t.touchToHighlightMs.max > BUDGET_MS) {
       failures.push(`touch-to-highlight max ${t.touchToHighlightMs.max}ms > ${BUDGET_MS}ms`);
     }
-    if (t?.liftToOutlineMs && t.liftToOutlineMs.max > BUDGET_MS) {
-      failures.push(`lift-to-outline max ${t.liftToOutlineMs.max}ms > ${BUDGET_MS}ms`);
+    if (!(result.pressHold?.pressToHighlightPaintedMs <= BUDGET_MS)) {
+      failures.push(`held press: highlight painted in ${result.pressHold?.pressToHighlightPaintedMs}ms > ${BUDGET_MS}ms`);
     }
+    const noLegs = result.ladderNoLegs;
+    if (!noLegs || noLegs.rowCount < 36) failures.push(`ladder loaded ${noLegs?.rowCount} strikes, wanted ~40`);
+    if (noLegs && (noLegs.gapLadderToNavPx !== 0 || noLegs.emptyBelowLastRowPx !== 0)) {
+      failures.push(`empty space under the ladder: ${noLegs.gapLadderToNavPx}px gap, ${noLegs.emptyBelowLastRowPx}px blank`);
+    }
+    if (result.switchToActiveTrader?.showedPartialStrikeList) failures.push("ladder showed a partial strike list while loading");
+    const four = result.ladderFourLegs;
+    if (four && noLegs && four.clientHeight !== noLegs.clientHeight) {
+      failures.push(`ticket resized the ladder: ${noLegs.clientHeight}px -> ${four.clientHeight}px`);
+    }
+    if (result.legCount !== 4) failures.push(`picked ${result.legCount} legs, wanted 4`);
+    for (const [name, end] of [["bottom", result.bottomEnd], ["top", result.topEnd]]) {
+      if (!end) failures.push(`${name} end not checked`);
+    }
+    if (result.bottomEnd && result.bottomEnd.lastRowBottomAboveSheetPx < 0) {
+      failures.push(`last strike hidden under the ticket by ${-result.bottomEnd.lastRowBottomAboveSheetPx}px`);
+    }
+    if (result.topEnd && result.topEnd.firstRowTopInLadder !== 0) {
+      failures.push(`first strike not reachable (top at ${result.topEnd.firstRowTopInLadder}px)`);
+    }
+    if ((result.heat?.strongCells ?? 0) < 3) failures.push(`heat not visible: ${JSON.stringify(result.heat)}`);
     const hold = result.pressHold;
     if (!hold?.highlightWhileHeld || hold.committedBeforeLift || !hold.dragCancelsHighlight || !hold.dragDoesNotCommit) {
       failures.push(`press/hold/drag rules: ${JSON.stringify(hold)}`);
