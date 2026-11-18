@@ -49,7 +49,10 @@ import {
   assertChainDraftLegCount,
   CHAIN_LEG_LIMIT_MESSAGE,
 } from "@/lib/orders/chainDraftLegLimits";
-import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import {
+  loadActiveTraderPrefs,
+  type ActiveTraderTemplatePrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
 import {
   buildChainSheetAtBracketConfirm,
   type ChainSheetAtBracketConfirm,
@@ -125,6 +128,30 @@ function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
     keys.add(leg.id.split("#")[0]);
   }
   return keys.size;
+}
+
+function atSymbolClass(symbol: string): "index" | "equity" {
+  const u = symbol.toUpperCase();
+  return u.includes("SPX") || u.startsWith("$") ? "index" : "equity";
+}
+
+/** Same draft as AT settings bar / ticket — explicit prop or localStorage when preview-only single leg. */
+function resolveAtBracketDraft(
+  explicit: OptionsChainOrderSheetProps["atBracketDraft"],
+  legs: StrategyLeg[],
+  symbol: string,
+  sendPreviewOnly?: boolean,
+): OptionsChainOrderSheetProps["atBracketDraft"] {
+  if (explicit) return explicit;
+  if (!sendPreviewOnly || legs.length !== 1) return undefined;
+  const prefs = loadActiveTraderPrefs(atSymbolClass(symbol));
+  const bracketActive =
+    prefs.template !== "Single" || prefs.takeProfit.enabled || prefs.stopLoss.enabled;
+  if (!bracketActive) return undefined;
+  return {
+    prefs,
+    primaryInstruction: legs[0]!.direction as SchwabInstruction,
+  };
 }
 
 export function OptionsChainOrderSheet({
@@ -389,15 +416,16 @@ export function OptionsChainOrderSheet({
     }
     setReviewLimitSnapped(px);
     setPriceError("");
-    if (atBracketDraft) {
+    const draft = resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly);
+    if (draft) {
       const sym = legs[0]?.schwabSymbol;
       const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
       setAtBracketConfirmSnapshot(
         sym
           ? buildChainSheetAtBracketConfirm({
-              prefs: atBracketDraft.prefs,
+              prefs: draft.prefs,
               legCount: distinctLegs,
-              primaryInstruction: atBracketDraft.primaryInstruction,
+              primaryInstruction: draft.primaryInstruction,
               limitPrice: px,
               optionSymbol: sym,
               underlyingSymbol: symbol.replace(/^\$/, ""),
@@ -408,7 +436,7 @@ export function OptionsChainOrderSheet({
       setAtBracketConfirmSnapshot(null);
     }
     setStage("review");
-  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol]);
+  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol, sendPreviewOnly]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -488,6 +516,11 @@ export function OptionsChainOrderSheet({
     submittedLimit > 0 &&
     quantity > 0 &&
     (demoFixture || !!accountHash || !!sendPreviewOnly);
+
+  const effectiveAtBracketDraft = useMemo(
+    () => resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly),
+    [atBracketDraft, legs, symbol, sendPreviewOnly],
+  );
 
   const atBracketConfirm =
     stage === "review" ? atBracketConfirmSnapshot : null;
@@ -811,7 +844,9 @@ export function OptionsChainOrderSheet({
           feeAdjustedNetCash={feeAdjustedNetCash}
           atBracketConfirm={atBracketConfirm}
           atExitDurationLabel={
-            atBracketDraft ? formatAtExitDuration(atBracketDraft.prefs.exitDuration) : undefined
+            effectiveAtBracketDraft
+              ? formatAtExitDuration(effectiveAtBracketDraft.prefs.exitDuration)
+              : undefined
           }
           onBack={() => {
             placeOrderInFlightRef.current = false;

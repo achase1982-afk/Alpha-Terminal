@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { OptionsChainOrderSheet, type OptionsChainOrderSheetProps } from "./OptionsChainOrderSheet";
 import type { StrategyLeg } from "./StrategyBuilder";
-import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import {
+  saveActiveTraderPrefs,
+  type ActiveTraderTemplatePrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
 
 vi.mock("@/lib/store", () => ({
   useTerminalStore: (sel: (s: { symbol: string; streamPrices: Record<string, { last: number }> }) => unknown) =>
@@ -58,6 +61,7 @@ function renderSheet(overrides?: Partial<OptionsChainOrderSheetProps>) {
 describe("OptionsChainOrderSheet", () => {
   afterEach(() => {
     schwabAccountMock.tradingHash = "hash-1";
+    localStorage.clear();
     cleanup();
   });
 
@@ -109,6 +113,30 @@ describe("OptionsChainOrderSheet", () => {
     renderSheet({ sendPreviewOnly: true });
     const review = screen.getByTestId("chain-sheet-review");
     await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("AT bracket draft: chain confirm uses localStorage prefs when prop omitted (preview-only)", async () => {
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "OCO",
+      qty: 1,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: { enabled: true, mode: "percent", offset: 10 },
+      stopLoss: { enabled: true, mode: "percent", offset: -10 },
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+    };
+    saveActiveTraderPrefs("equity", prefs);
+    renderSheet({ sendPreviewOnly: true });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
+    expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(3);
   });
 
   it("AT bracket draft: chain confirm shows trigger rows (Sequence)", async () => {
