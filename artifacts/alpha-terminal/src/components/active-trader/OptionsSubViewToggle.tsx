@@ -1,5 +1,6 @@
 import { memo, useCallback, useRef } from "react";
-import { BORDER, GRAY, MONO, FW_NORMAL, GOLD } from "@/components/options/optionsTheme";
+import { BG_EXP_BAR, BORDER, GRAY, MONO, FW_NORMAL, GOLD } from "@/components/options/optionsTheme";
+import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
 
 export type OptionsSubView = "chain" | "at";
 
@@ -8,14 +9,14 @@ interface OptionsSubViewToggleProps {
   onChange: (v: OptionsSubView) => void;
   /** Chain options toolbar (upper-right) vs AT glance header — same visual, shared position. */
   placement?: "chain-toolbar" | "at-header";
-  /** Active Trader accent (gold default). */
   accentHex?: string;
 }
 
-const MIN_TAP = 44;
-const SWIPE_PX = 28;
-/** Fixed width keeps Chain ↔ AT switch from shifting header layout (440px WebKit). */
-const TRACK_W_PX = 136;
+const SWIPE_PX = 24;
+/** Match legacy dropdown box (select minWidth 72 + 0 10px padding; no chevron). */
+const VIS_W_PX = 102;
+const VIS_H_PX = 26;
+const HIT_MIN_PX = 44;
 
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
@@ -23,6 +24,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   placement = "chain-toolbar",
   accentHex = GOLD,
 }: OptionsSubViewToggleProps) {
+  const chromeBg = placement === "at-header" ? AT_HEADER_BG : BG_EXP_BAR;
   const swipeHandledRef = useRef(false);
   const startXRef = useRef(0);
 
@@ -65,77 +67,90 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   return (
     <div
       data-at-subview-chrome
-      className="inline-flex items-center justify-center shrink-0"
-      style={{ minWidth: MIN_TAP, minHeight: MIN_TAP }}
+      className="relative inline-flex items-center justify-center shrink-0"
+      style={{ width: VIS_W_PX, height: VIS_H_PX }}
     >
       <button
         type="button"
         role="switch"
         aria-checked={atActive}
         aria-label="Options view"
+        data-at-subview-hit
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+        onClick={onClick}
+        className="absolute cursor-pointer border-0 p-0 m-0"
+        style={{
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          minWidth: HIT_MIN_PX,
+          minHeight: HIT_MIN_PX,
+          width: Math.max(VIS_W_PX, HIT_MIN_PX),
+          height: Math.max(VIS_H_PX, HIT_MIN_PX),
+          background: "transparent",
+          zIndex: 2,
+          touchAction: "pan-y",
+        }}
+      />
+      <div
         data-at-subview-toggle
         data-at-view-selector
         data-at-subview-value={view}
         data-at-subview-placement={placement}
-        onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onClick={onClick}
-        className="relative inline-flex items-stretch rounded-md border cursor-pointer select-none overflow-hidden"
+        data-at-subview-visual-w={VIS_W_PX}
+        data-at-subview-visual-h={VIS_H_PX}
+        className="relative flex items-stretch rounded-md border overflow-hidden pointer-events-none select-none"
         style={{
           fontFamily: MONO,
           fontWeight: FW_NORMAL,
-          background: "#000000",
+          background: chromeBg,
           borderColor: BORDER,
-          minHeight: MIN_TAP,
-          minWidth: MIN_TAP,
-          width: TRACK_W_PX,
-          padding: 2,
+          width: VIS_W_PX,
+          height: VIS_H_PX,
+          fontSize: 11,
+          color: GRAY,
           boxSizing: "border-box",
-          touchAction: "pan-y",
         }}
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute rounded-[5px]"
+          className="absolute rounded-[3px]"
           style={{
-            top: 2,
-            bottom: 2,
-            width: "calc(50% - 2px)",
-            left: 2,
+            top: 1,
+            bottom: 1,
+            width: "calc(50% - 1px)",
+            left: 1,
             transform: atActive ? "translateX(calc(100% + 0px))" : "translateX(0)",
-            transition: "transform 150ms ease-out",
-            background: `${accentHex}1f`,
-            border: `1px solid ${accentHex}66`,
-            boxShadow: atActive ? `0 0 10px ${accentHex}22` : "none",
+            transition: "transform 120ms ease-out",
+            background: `${accentHex}18`,
+            border: `1px solid ${accentHex}55`,
           }}
         />
         <span
           data-at-subview-segment="chain"
-          className="relative z-[1] flex-1 flex items-center justify-center pointer-events-none"
+          className="relative z-[1] flex-1 flex items-center justify-center"
           style={{
             fontSize: 11,
             fontWeight: 600,
             color: !atActive ? accentHex : GRAY,
-            minHeight: MIN_TAP - 4,
-            letterSpacing: "0.02em",
+            lineHeight: 1,
           }}
         >
           Chain
         </span>
         <span
           data-at-subview-segment="at"
-          className="relative z-[1] flex-1 flex items-center justify-center pointer-events-none"
+          className="relative z-[1] flex-1 flex items-center justify-center"
           style={{
             fontSize: 11,
             fontWeight: 600,
             color: atActive ? accentHex : GRAY,
-            minHeight: MIN_TAP - 4,
-            letterSpacing: "0.02em",
+            lineHeight: 1,
           }}
         >
           AT
         </span>
-        {/* Playwright / legacy: selectOption still works; visually hidden (no dropdown arrow). */}
         <select
           aria-hidden
           tabIndex={-1}
@@ -147,7 +162,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           <option value="chain">chain</option>
           <option value="at">at</option>
         </select>
-      </button>
+      </div>
     </div>
   );
 });
