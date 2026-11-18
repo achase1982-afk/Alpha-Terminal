@@ -17,6 +17,13 @@ describe("optionQuotes", () => {
     expect(midpointFromBidAsk(null, 1)).toBeNull();
   });
 
+  it("treats zero bid with positive ask as a usable two-sided quote", () => {
+    expect(quoteSideState(0, 0.2)).toBe("ok");
+    expect(midpointFromBidAsk(0, 0.2)).toBeCloseTo(0.1, 5);
+    expect(quoteSideState(null, 0.2)).toBe("incomplete");
+    expect(quoteSideState(0, 0)).toBe("incomplete");
+  });
+
   it("returns null mid when any leg quote is missing", () => {
     const agg = aggregateSpreadNBBO([
       { instruction: "BUY_TO_OPEN", bid: 3.7, ask: 3.8 },

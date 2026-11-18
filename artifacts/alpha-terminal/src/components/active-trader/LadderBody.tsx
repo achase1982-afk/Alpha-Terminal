@@ -66,7 +66,7 @@ export type AtTradeContext =
     };
 
 function fmtPx(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
+  if (n == null || !Number.isFinite(n) || n < 0) return "—";
   return n.toFixed(2);
 }
 

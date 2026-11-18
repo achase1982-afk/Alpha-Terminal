@@ -77,7 +77,7 @@ export function mergeLegStreamQuotes<
   if (!pair) {
     return {
       ...leg,
-      bid: leg.bid != null && leg.bid > 0 ? leg.bid : null,
+      bid: leg.bid != null && leg.bid >= 0 ? leg.bid : null,
       ask: leg.ask != null && leg.ask > 0 ? leg.ask : null,
       delta: greek("delta", tick?.delta ?? leg.delta) ?? null,
       gamma: greek("gamma", tick?.gamma ?? leg.gamma) ?? null,
@@ -86,7 +86,7 @@ export function mergeLegStreamQuotes<
       iv: greek("iv", tick?.iv ?? leg.iv) ?? null,
     };
   }
-  const bid = pair.crossed ? null : pair.bid > 0 ? pair.bid : null;
+  const bid = pair.crossed ? null : pair.bid >= 0 ? pair.bid : null;
   const ask = pair.crossed ? null : pair.ask > 0 ? pair.ask : null;
   return {
     ...leg,

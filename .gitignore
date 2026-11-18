@@ -55,3 +55,4 @@ artifacts/alpha-terminal/.env.development.local
 # Server-side token storage
 .data/
 autotrader/src/__pycache__/
+artifacts/alpha-terminal/test-results/
