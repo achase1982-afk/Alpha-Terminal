@@ -6,9 +6,9 @@ import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
 
 const TRACK_H = 15;
-const FLOW_LABEL_PX = 11;
+const SIDE_COL_W = 30;
 const FLOW_VALUE_PX = 11;
-const WALL_LABEL_PX = 10;
+const WALL_ROW_PX = 10;
 const WALL_VALUE_PX = 13;
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
@@ -47,17 +47,25 @@ function GrossFlowTrack({
   const buyFill = grossBarFill(boughtUsd, sharedScale);
   const sideTag = side === "calls" ? "CALL" : "PUT";
 
+  const wallStrike = wallValue != null ? formatStrikeLevel(wallValue) : "\u2014";
+
   return (
-    <div data-at-gross-flow-row={side} className="flex items-center gap-0.5 min-w-0" style={{ height: TRACK_H }}>
+    <div data-at-gross-flow-row={side} className="flex items-center min-w-0" style={{ height: TRACK_H, gap: 4 }}>
       <span
-        className="shrink-0"
-        style={{ width: 26, fontSize: FLOW_LABEL_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.03em" }}
+        className="shrink-0 inline-block text-left"
+        style={{
+          width: SIDE_COL_W,
+          fontSize: FLOW_VALUE_PX,
+          fontWeight: 600,
+          color: AT_LABEL,
+          letterSpacing: "0.04em",
+        }}
       >
         {sideTag}
       </span>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ ...{ fontFeatureSettings: '"tnum" 1' }, fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 44 }}
+        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 42 }}
       >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
@@ -96,16 +104,18 @@ function GrossFlowTrack({
       </div>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 52, textAlign: "right" }}
+        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 48, textAlign: "right" }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
       <div aria-hidden style={{ width: 1, alignSelf: "stretch", background: `${GOLD}88`, marginLeft: 1, marginRight: 1 }} />
-      <div className="num shrink-0 flex flex-col items-end" data-at-flow-wall={side} style={{ width: 52, lineHeight: 1.05 }}>
-        <span style={{ fontSize: WALL_LABEL_PX, fontWeight: 600, color: AT_LABEL }}>{wallLabel}</span>
-        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>
-          {wallValue != null ? formatStrikeLevel(wallValue) : "\u2014"}
-        </span>
+      <div
+        data-at-flow-wall={side}
+        className="num shrink-0 text-right whitespace-nowrap"
+        style={{ width: 76, lineHeight: 1.1, fontSize: WALL_ROW_PX }}
+      >
+        <span style={{ fontWeight: 600, color: AT_LABEL }}>{wallLabel} </span>
+        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>{wallStrike}</span>
       </div>
     </div>
   );
