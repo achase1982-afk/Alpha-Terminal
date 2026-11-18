@@ -10,9 +10,10 @@ vi.mock("@/lib/store", () => ({
     sel({ symbol: "SPY", streamPrices: { SPY: { last: 600 } } }),
 }));
 
+const schwabAccountMock = { tradingHash: "hash-1" as string | null };
 vi.mock("@/lib/schwab-account-store", () => ({
-  useSchwabAccountStore: (sel: (s: { accounts: unknown[]; tradingAccountHash: () => string }) => unknown) =>
-    sel({ accounts: [], tradingAccountHash: () => "hash-1" }),
+  useSchwabAccountStore: (sel: (s: { accounts: unknown[]; tradingAccountHash: () => string | null }) => unknown) =>
+    sel({ accounts: [], tradingAccountHash: () => schwabAccountMock.tradingHash }),
 }));
 
 vi.mock("@/lib/options-stream-store", () => ({
@@ -54,7 +55,10 @@ function renderSheet(overrides?: Partial<OptionsChainOrderSheetProps>) {
 }
 
 describe("OptionsChainOrderSheet", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    schwabAccountMock.tradingHash = "hash-1";
+    cleanup();
+  });
 
   it("renders live summary and opens in-sheet confirm on Review", async () => {
     renderSheet();
@@ -97,5 +101,12 @@ describe("OptionsChainOrderSheet", () => {
     expect((send as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(send);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sendPreviewOnly: Review enabled without trading account hash", async () => {
+    schwabAccountMock.tradingHash = null;
+    renderSheet({ sendPreviewOnly: true });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
   });
 });
