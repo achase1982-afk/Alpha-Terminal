@@ -63,4 +63,37 @@ export async function assertAtHeaderLayout(page, record) {
   const putWall = await page.locator('[data-at-flow-wall="puts"]').count();
   record("call flow row + wall", callWall > 0, String(callWall));
   record("put flow row + wall", putWall > 0, String(putWall));
+
+  const headerTextOverlap = await header.evaluate((root) => {
+    const eps = 0.5;
+    const leaves = [...root.querySelectorAll("*")].filter((n) => {
+      if (n.children.length > 0) return false;
+      const t = (n.textContent ?? "").trim();
+      if (t.length === 0) return false;
+      const r = n.getBoundingClientRect();
+      return r.width > 2 && r.height > 2;
+    });
+    const boxes = leaves.map((n) => {
+      const r = n.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, el: n };
+    });
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i];
+        const b = boxes[j];
+        if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+        const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (ox > eps && oy > eps) return true;
+      }
+    }
+    return false;
+  });
+  record("header text nodes no overlap", !headerTextOverlap, headerTextOverlap ? "intersect" : "ok");
+
+  const wallOneLine = await page
+    .locator('[data-at-flow-wall="calls"]')
+    .evaluate((el) => el.getBoundingClientRect().height <= 18)
+    .catch(() => false);
+  record("wall labels single-line", wallOneLine, wallOneLine ? "ok" : "stacked");
 }
