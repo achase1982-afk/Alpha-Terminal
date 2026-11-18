@@ -7,12 +7,12 @@ export interface TwoSidedQuote {
 
 export function quoteSideState(bid: number | null | undefined, ask: number | null | undefined): QuoteSideState {
   if (bid == null || ask == null || !Number.isFinite(bid) || !Number.isFinite(ask)) return "incomplete";
-  if (bid <= 0 || ask <= 0) return "incomplete";
+  if (bid < 0 || ask <= 0) return "incomplete";
   if (bid > ask) return "crossed";
   return "ok";
 }
 
-/** Midpoint only when bid ≤ ask and both sides are positive; never normalizes crossed books. */
+/** Midpoint when ask > 0, bid ≥ 0, and bid ≤ ask; never normalizes crossed books. */
 export function midpointFromBidAsk(bid: number | null | undefined, ask: number | null | undefined): number | null {
   if (quoteSideState(bid, ask) !== "ok") return null;
   return (bid! + ask!) / 2;
@@ -41,12 +41,17 @@ function pairComplete(bid?: number, ask?: number): bid is number {
     ask != null &&
     Number.isFinite(bid) &&
     Number.isFinite(ask) &&
-    bid > 0 &&
-    ask > 0
+    bid >= 0 &&
+    ask > 0 &&
+    bid <= ask
   );
 }
 
-function positiveQuoteSide(v?: number | null): number | null {
+function quoteSideBid(v?: number | null): number | null {
+  return v != null && Number.isFinite(v) && v >= 0 ? v : null;
+}
+
+function quoteSideAsk(v?: number | null): number | null {
   return v != null && Number.isFinite(v) && v > 0 ? v : null;
 }
 
@@ -56,7 +61,10 @@ function pickSidePrice(
   prefer: "stream" | "contract",
 ): number | null {
   const streamKey = field.startsWith("stream") ? (field === "streamBid" ? "streamBid" : "streamAsk") : null;
-  const streamVal = positiveQuoteSide(streamKey ? source[streamKey] : undefined);
+  const pickBid = field.includes("Bid");
+  const streamVal = pickBid
+    ? quoteSideBid(streamKey ? source[streamKey] : undefined)
+    : quoteSideAsk(streamKey ? source[streamKey] : undefined);
   const contractKey = field.startsWith("contract")
     ? field === "contractBid"
       ? "contractBid"
@@ -64,7 +72,7 @@ function pickSidePrice(
     : field === "streamBid"
       ? "contractBid"
       : "contractAsk";
-  const contractVal = positiveQuoteSide(source[contractKey]);
+  const contractVal = pickBid ? quoteSideBid(source[contractKey]) : quoteSideAsk(source[contractKey]);
   if (streamVal != null && contractVal != null) {
     const streamTs = source.streamTs ?? 0;
     const contractTs = source.contractTs ?? 0;
@@ -106,7 +114,7 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
   if (bid == null && ask == null) return null;
   const resolvedBid = bid ?? 0;
   const resolvedAsk = ask ?? 0;
-  const fromStream = bid != null && positiveQuoteSide(source.streamBid) === bid;
+  const fromStream = bid != null && quoteSideBid(source.streamBid) === bid;
   return {
     bid: resolvedBid,
     ask: resolvedAsk,

@@ -49,7 +49,7 @@ export function mergeChainContractWithStream(
   const greek = (kind: "delta" | "gamma" | "theta" | "vega" | "iv", tickVal?: number | null, contractVal?: number) =>
     sanitizeOptionGreek(kind, tickVal ?? contractVal ?? undefined) ?? undefined;
   return {
-    bid: merged.bid != null && merged.bid > 0 ? merged.bid : undefined,
+    bid: merged.bid != null && merged.bid >= 0 ? merged.bid : undefined,
     ask: merged.ask != null && merged.ask > 0 ? merged.ask : undefined,
     delta: greek("delta", tick?.delta, contract.delta),
     gamma: greek("gamma", tick?.gamma, contract.gamma),

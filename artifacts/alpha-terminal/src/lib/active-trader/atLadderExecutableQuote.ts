@@ -17,7 +17,7 @@ export function atLadderExecutableQuote(
     contractTs: chainTs,
   });
   if (!pair || pair.crossed) return { bid: null, ask: null };
-  const bid = pair.bid > 0 ? pair.bid : null;
+  const bid = pair.bid >= 0 ? pair.bid : null;
   const ask = pair.ask > 0 ? pair.ask : null;
   return { bid, ask };
 }

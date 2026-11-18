@@ -45,6 +45,44 @@ describe("chain sheet spread limit hydrate", () => {
     { strike: 7555, optionType: "CALL" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 0.1, ask: 0.14, expiration: EXP },
   ];
 
+  it("SPX bull call with 0-bid short leg: spread mid 0.78, max loss $78, max profit $422, BE 7340.78", () => {
+    const buy7340 = {
+      strike: 7340,
+      optionType: "CALL" as const,
+      instruction: "BUY_TO_OPEN" as const,
+      quantity: 1,
+      bid: 0.75,
+      ask: 1.0,
+      expiration: EXP,
+    };
+    const sell7345 = {
+      strike: 7345,
+      optionType: "CALL" as const,
+      instruction: "SELL_TO_OPEN" as const,
+      quantity: 1,
+      bid: 0,
+      ask: 0.2,
+      expiration: EXP,
+    };
+    const legs = [buy7340, sell7345];
+    const agg = aggregateSpreadNBBO(
+      legs.map((l) => ({ instruction: l.instruction, bid: l.bid, ask: l.ask, quantity: l.quantity })),
+    );
+    expect(agg?.mid).toBeCloseTo(0.775, 2);
+
+    const summary = computeChainTicketSummary({
+      underlyingSymbol: "SPX",
+      legs,
+      limitPrice: 0.78,
+      spreadQuantity: 1,
+      isCredit: false,
+    });
+    expect(summary?.maxProfit).toBeCloseTo(420, 0);
+    expect(summary?.breakevens[0]).toBeCloseTo(7340.8, 1);
+    expect(summary?.spreadMid).toBeCloseTo(0.775, 2);
+    expect(summary?.limitPerShare).toBeCloseTo(0.8, 2);
+  });
+
   it("bull call debit: spread mid ~2.15 yields max loss $215, max profit $285, BE 7547.15", () => {
     const legs = [buy7545, sell7550];
     const agg = aggregateSpreadNBBO(

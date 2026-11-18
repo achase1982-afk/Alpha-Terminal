@@ -568,7 +568,7 @@ export function OptionsChainOrderSheet({
                       </span>
                       <span className="text-[11px] tabular-nums shrink-0" style={{ color: quoteOk ? MUTED : DOWN }}>
                         {quoteOk
-                          ? `${leg.bid != null && leg.bid > 0 ? fmt(leg.bid) : "—"} / ${leg.ask != null && leg.ask > 0 ? fmt(leg.ask) : "—"}${mid != null ? ` · ${fmt(mid)}` : ""}`
+                          ? `${leg.bid != null && leg.bid >= 0 ? fmt(leg.bid) : "—"} / ${leg.ask != null && leg.ask > 0 ? fmt(leg.ask) : "—"}${mid != null ? ` · ${fmt(mid)}` : ""}`
                           : "No quote"}
                       </span>
                       <LegQtyStepper
