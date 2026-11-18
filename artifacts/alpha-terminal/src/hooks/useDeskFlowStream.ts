@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback, type MutableRefObject } from "react";
+import { loadAtFlowWindowMs } from "@/lib/active-trader/atFlowWindowSec";
+import {
+  buildDeskNetPremiumGlance,
+  DEFAULT_NET_PREMIUM_WINDOW_MS,
+  EMPTY_HYSTERESIS,
+  type DeskNetPremiumGlance,
+} from "@/lib/active-trader/deskFlowNetPremium";
 import { atGlanceFlowFixtureEnabled, atGlanceFlowReplayEnabled } from "@/lib/active-trader/atGlanceFeature";
 import {
   buildNvdaTapeFixture,
@@ -22,8 +29,9 @@ import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWith
 const API_BASE = import.meta.env.BASE_URL + "api";
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
+const FLOW_RENDER_MS = 220;
 
-function fixtureAggregate(symbol: string): DeskFlowAggregate {
+function buildFixtureInternal(symbol: string) {
   const mode = resolveAtGlanceMode(symbol);
   let internal = createDeskFlowAggregatorInternal(mode);
   internal = deskFlowAggregatorMarkConnected(internal, true);
@@ -65,59 +73,112 @@ function fixtureAggregate(symbol: string): DeskFlowAggregate {
       rx_ts_ms: now,
     });
   }
-  return deskFlowAggregatorProject(internal);
+  return internal;
 }
 
-function replayAggregate(symbol: string): DeskFlowAggregate {
+function buildReplayInternal(symbol: string) {
   const mode = resolveAtGlanceMode(symbol);
   let internal = createDeskFlowAggregatorInternal(mode);
   internal = deskFlowAggregatorMarkConnected(internal, true);
   const frames = deskFlowReplayForSymbol(symbol);
   const base = Date.now() - 120_000;
   for (const f of frames) {
-    const shifted = { ...f, bucket_ms: "bucket_ms" in f ? base + (f.bucket_ms as number) : undefined, bar_start_ms: "bar_start_ms" in f ? base + (f.bar_start_ms as number) : undefined, rx_ts_ms: base + (f.rx_ts_ms ?? 0) };
+    const shifted = {
+      ...f,
+      bucket_ms: "bucket_ms" in f ? base + (f.bucket_ms as number) : undefined,
+      bar_start_ms: "bar_start_ms" in f ? base + (f.bar_start_ms as number) : undefined,
+      rx_ts_ms: base + (f.rx_ts_ms ?? 0),
+    };
     internal = reduceDeskFlowFrame(internal, shifted);
   }
-  return deskFlowAggregatorProject(internal);
+  return internal;
 }
 
 export type DeskFlowStreamState = {
   aggregate: DeskFlowAggregate;
   /** From at-flow-stream `meta` when desk reports session_closed. */
   sessionClosed: boolean;
+  netPremium: DeskNetPremiumGlance;
+  flowWindowMs: number;
 };
+
+function projectNet(
+  aggRef: ReturnType<typeof createDeskFlowAggregatorInternal>,
+  aggregate: DeskFlowAggregate,
+  windowMs: number,
+  scaleRef: MutableRefObject<number>,
+  hystRef: MutableRefObject<typeof EMPTY_HYSTERESIS>,
+  sessionClosed: boolean,
+): DeskNetPremiumGlance {
+  const built = buildDeskNetPremiumGlance(aggRef, aggregate, windowMs, scaleRef.current, hystRef.current, Date.now(), {
+    sessionClosed,
+  });
+  scaleRef.current = built.scaleMax;
+  hystRef.current = built.hysteresis;
+  return built.glance;
+}
 
 export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStreamState {
   const mode = resolveAtGlanceMode(symbol);
+  const flowWindowMs = loadAtFlowWindowMs() || DEFAULT_NET_PREMIUM_WINDOW_MS;
   const [aggregate, setAggregate] = useState<DeskFlowAggregate>(() =>
     deskFlowAggregatorProject(createDeskFlowAggregatorInternal(mode)),
   );
   const [sessionClosed, setSessionClosed] = useState(false);
   const aggRef = useRef(createDeskFlowAggregatorInternal(mode));
+  const scaleRef = useRef(400_000);
+  const hystRef = useRef({ ...EMPTY_HYSTERESIS });
+  const [netPremium, setNetPremium] = useState<DeskNetPremiumGlance>(() =>
+    projectNet(aggRef.current, aggregate, flowWindowMs, scaleRef, hystRef, false),
+  );
+  const paintTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionClosedRef = useRef(false);
+
+  const schedulePaint = useCallback(() => {
+    if (paintTimer.current) return;
+    paintTimer.current = setTimeout(() => {
+      paintTimer.current = null;
+      const agg = deskFlowAggregatorProject(aggRef.current);
+      setAggregate(agg);
+      setNetPremium(projectNet(aggRef.current, agg, flowWindowMs, scaleRef, hystRef, sessionClosedRef.current));
+    }, FLOW_RENDER_MS);
+  }, [flowWindowMs]);
 
   useEffect(() => {
     aggRef.current = createDeskFlowAggregatorInternal(mode);
-    setAggregate(deskFlowAggregatorProject(aggRef.current));
+    scaleRef.current = 400_000;
+    hystRef.current = { ...EMPTY_HYSTERESIS };
+    const agg = deskFlowAggregatorProject(aggRef.current);
+    setAggregate(agg);
+    setNetPremium(projectNet(aggRef.current, agg, flowWindowMs, scaleRef, hystRef, false));
     setSessionClosed(false);
-  }, [symbol, mode]);
+    sessionClosedRef.current = false;
+  }, [symbol, mode, flowWindowMs]);
 
   useEffect(() => {
     if (!enabled) {
-      setAggregate(deskFlowAggregatorProject(aggRef.current));
+      schedulePaint();
       return;
     }
 
     if (atGlanceFlowReplayEnabled()) {
-      setAggregate(replayAggregate(symbol));
+      aggRef.current = buildReplayInternal(symbol);
+      const agg = deskFlowAggregatorProject(aggRef.current);
+      setAggregate(agg);
+      setNetPremium(projectNet(aggRef.current, agg, flowWindowMs, scaleRef, hystRef, false));
       return;
     }
 
     if (atGlanceFlowFixtureEnabled()) {
-      setAggregate(fixtureAggregate(symbol));
+      aggRef.current = buildFixtureInternal(symbol);
+      const agg = deskFlowAggregatorProject(aggRef.current);
+      setAggregate(agg);
+      setNetPremium(projectNet(aggRef.current, agg, flowWindowMs, scaleRef, hystRef, false));
       return;
     }
 
     setSessionClosed(false);
+    sessionClosedRef.current = false;
     let cancelled = false;
     let es: EventSource | null = null;
     let backoff = INITIAL_BACKOFF_MS;
@@ -125,7 +186,7 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStr
 
     const bump = () => {
       if (cancelled) return;
-      setAggregate(deskFlowAggregatorProject(aggRef.current));
+      schedulePaint();
     };
 
     const open = async () => {
@@ -143,7 +204,10 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStr
         if (cancelled) return;
         try {
           const j = JSON.parse((ev as MessageEvent).data) as { sessionClosed?: boolean };
-          if (j.sessionClosed === true) setSessionClosed(true);
+          if (j.sessionClosed === true) {
+            setSessionClosed(true);
+            sessionClosedRef.current = true;
+          }
         } catch {
           /* ignore */
         }
@@ -199,7 +263,12 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStr
       }
       es = null;
     };
-  }, [symbol, enabled, mode]);
+  }, [symbol, enabled, mode, flowWindowMs, schedulePaint]);
 
-  return { aggregate, sessionClosed };
+  useEffect(() => {
+    const tick = window.setInterval(() => schedulePaint(), flowWindowMs > 30_000 ? 500 : 350);
+    return () => window.clearInterval(tick);
+  }, [flowWindowMs, schedulePaint]);
+
+  return { aggregate, sessionClosed, netPremium, flowWindowMs };
 }
