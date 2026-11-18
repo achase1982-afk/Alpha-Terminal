@@ -27,17 +27,25 @@ async function capture(url, name, fixture) {
     });
   }
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
-  await page.waitForTimeout(fixture ? 1500 : 800);
-  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
-  await viewSel.first().selectOption("at").catch(() => undefined);
-  await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
-  if (fixture) await page.waitForTimeout(2500);
+  if (fixture) {
+    await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
+    await page.waitForTimeout(2500);
+  } else {
+    await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+    await page.waitForTimeout(800);
+    const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+    await viewSel.first().selectOption("at").catch(() => undefined);
+    await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
+  }
   await page.screenshot({ path: path.join(OUT, name), fullPage: true });
   await context.close();
 }
 
 await capture(LIVE, "at-header-live-closed-440x956.png", false);
-await capture(`${FIXTURE}/?fixture=spx&scene=header-down`, "at-header-fixture-full-440x956.png", true);
+await capture(
+  `${FIXTURE}/dev/active-trader?fixture=spx&scene=header-down`,
+  "at-header-fixture-full-440x956.png",
+  true,
+);
 await browser.close();
 console.log(JSON.stringify({ out: OUT }, null, 2));

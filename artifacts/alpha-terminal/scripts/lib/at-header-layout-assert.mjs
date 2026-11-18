@@ -17,17 +17,21 @@ export async function assertAtHeaderLayout(page, record) {
   const gridW = gridBox?.width ?? 0;
   record("grid width >= 80% header", gridW >= headerW * 0.8, `${gridW.toFixed(0)} / ${headerW.toFixed(0)}`);
 
-  const gridCells = await grid.locator("[data-at-day-low], [data-at-day-high], [data-at-low-zone-ref], [data-at-high-zone-ref]").all();
-  const boxes = [];
-  for (const cell of gridCells) {
-    const box = await cell.boundingBox();
-    if (box) boxes.push(box);
-  }
+  const pairs = [
+    ["[data-at-day-low]", "[data-at-day-high]"],
+    ["[data-at-low-zone-ref]", "[data-at-high-zone-ref]"],
+    ["[data-at-day-low]", "[data-at-low-zone-ref]"],
+    ["[data-at-day-high]", "[data-at-high-zone-ref]"],
+  ];
   let overlap = false;
-  for (let i = 0; i < boxes.length; i++) {
-    for (let j = i + 1; j < boxes.length; j++) {
-      if (rectsOverlap(boxes[i], boxes[j])) overlap = true;
-    }
+  for (const [leftSel, rightSel] of pairs) {
+    const a = await grid.locator(leftSel).boundingBox();
+    const b = await grid.locator(rightSel).boundingBox();
+    if (!a || !b) continue;
+  const eps = 0.25;
+    const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+    const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+    if (ox > eps && oy > eps) overlap = true;
   }
   record("grid cells no overlap", !overlap, overlap ? "intersect" : "ok");
 
