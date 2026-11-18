@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveDayLowFromStreamQuote } from "../atDayLow";
+import { formatDayLowLevel, resolveDayLowFromStreamQuote } from "../atDayLow";
 
 const baseQuote = {
   symbol: "$SPX",
@@ -40,5 +40,14 @@ describe("resolveDayLowFromStreamQuote", () => {
     const d = resolveDayLowFromStreamQuote(baseQuote, pre);
     expect(d.kind).toBe("prior");
     expect(d.value).toBe(7488);
+  });
+
+  it("updates day low when stream reports a fresh lower value", () => {
+    const noonEt = new Date("2026-11-18T17:00:00.000Z");
+    const first = resolveDayLowFromStreamQuote({ ...baseQuote, low: 7290.5 }, noonEt);
+    const lower = resolveDayLowFromStreamQuote({ ...baseQuote, low: 7288.12 }, noonEt);
+    expect(first.value).toBe(7290.5);
+    expect(lower.value).toBe(7288.12);
+    expect(formatDayLowLevel(7288.12)).toBe("7,288.12");
   });
 });

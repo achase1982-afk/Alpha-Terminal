@@ -1,4 +1,5 @@
 import { memo, useState, type CSSProperties, type PropsWithChildren } from "react";
+import { Info } from "lucide-react";
 import {
   BG_EXP_BAR,
   BORDER,
@@ -22,8 +23,9 @@ import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
-import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
+import { AT_LABEL, AT_SECONDARY, AT_INTERACTIVE } from "@/lib/active-trader/atChromeContrast";
 import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
+import { SPX_LOW_ZONE_TOOLTIP } from "@/lib/active-trader/spxLowZone";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -179,6 +181,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       : null;
 
   const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
+  const [lowZoneInfo, setLowZoneInfo] = useState(false);
+  const lowZoneTone = sessionLevels.emphasisFull ? AT_INTERACTIVE : AT_SECONDARY;
 
   return (
     <Pane
@@ -270,31 +274,66 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       {sessionLevels.showRow ? (
         <Pane
           data-at-day-low-zone
-          className="flex flex-wrap items-center gap-x-1.5 px-0.5"
-          style={{ minHeight: 14, lineHeight: 1.2, marginTop: 2 }}
+          className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-0.5"
+          style={{ minHeight: 14, lineHeight: 1.15, marginTop: 2 }}
         >
           <Pane
             className="num shrink-0"
             data-at-day-low
             data-at-day-low-kind={sessionLevels.dayLow.kind}
-            style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}
+            style={{
+              ...NUM_FEAT,
+              fontSize: 10,
+              fontWeight: 500,
+              color: sessionLevels.emphasisFull ? WHITE : lowZoneTone,
+            }}
           >
             {sessionLevels.dayLowText}
           </Pane>
+          {sessionLevels.asOfLabel ? (
+            <Pane
+              data-at-day-low-as-of
+              className="num shrink-0"
+              style={{ ...NUM_FEAT, fontSize: 9, fontWeight: 400, color: AT_SECONDARY }}
+            >
+              {sessionLevels.asOfLabel}
+            </Pane>
+          ) : null}
           {sessionLevels.lowZone.status !== "hidden" ? (
-            <>
-              <span style={{ color: AT_LABEL, fontSize: 10 }} aria-hidden>
-                ·
-              </span>
+            <Pane className="shrink-0 inline-flex items-center gap-0.5" style={{ fontSize: 10 }}>
               <Pane
                 className="num shrink-0"
                 data-at-low-zone-slot
+                data-at-low-zone-ref={sessionLevels.lowZone.status === "ref" ? true : undefined}
                 data-at-low-zone-status={sessionLevels.lowZone.status}
-                style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: AT_SECONDARY }}
+                style={{
+                  ...NUM_FEAT,
+                  fontWeight: sessionLevels.emphasisFull ? 600 : 500,
+                  color: lowZoneTone,
+                }}
               >
                 {sessionLevels.lowZoneText}
               </Pane>
-            </>
+              {sessionLevels.lowZone.status === "ref" ? (
+                <button
+                  type="button"
+                  aria-label="Low zone reference info"
+                  onClick={() => setLowZoneInfo((v) => !v)}
+                  className="p-0.5 rounded shrink-0"
+                  style={{ color: lowZoneInfo ? WHITE : AT_SECONDARY }}
+                >
+                  <Info className="w-3 h-3" aria-hidden />
+                </button>
+              ) : null}
+            </Pane>
+          ) : null}
+          {lowZoneInfo ? (
+            <Pane
+              data-at-low-zone-tooltip
+              style={{ flexBasis: "100%", fontSize: 9, lineHeight: 1.25, color: AT_SECONDARY, fontWeight: 400 }}
+            >
+              {SPX_LOW_ZONE_TOOLTIP}
+            </Pane>
           ) : null}
         </Pane>
       ) : null}

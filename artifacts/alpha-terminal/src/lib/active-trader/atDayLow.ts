@@ -52,11 +52,11 @@ export function resolveDayLowFromStreamQuote(
   return { kind: "current", value: low };
 }
 
+/** Session low at Schwab L1 feed precision (no half-point rounding). */
 export function formatDayLowLevel(n: number): string {
-  const frac = Math.abs(n * 2) % 2 === 1;
   return n.toLocaleString("en-US", {
-    minimumFractionDigits: frac ? 1 : 0,
-    maximumFractionDigits: frac ? 1 : 0,
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   });
 }
 
