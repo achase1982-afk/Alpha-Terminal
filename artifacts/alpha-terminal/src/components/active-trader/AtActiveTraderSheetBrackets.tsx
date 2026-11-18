@@ -11,6 +11,9 @@ type Props = {
   entryPrice: number | null;
   underlyingSymbol: string;
   primaryInstruction: SchwabInstruction;
+  /** Multi-leg chain sheet — bracket in spread premium terms. */
+  isSpread?: boolean;
+  isCredit?: boolean;
 };
 
 export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrackets({
@@ -19,8 +22,12 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
   entryPrice,
   underlyingSymbol,
   primaryInstruction,
+  isSpread = false,
+  isCredit = false,
 }: Props) {
   const qty = prefs.qty;
+  const bracketInstruction: SchwabInstruction =
+    isSpread && isCredit ? "SELL_TO_OPEN" : isSpread ? "BUY_TO_OPEN" : primaryInstruction;
   const tp =
     entryPrice != null && prefs.takeProfit.enabled
       ? atBracketLegPreviewPrice(
@@ -29,7 +36,7 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
             assetType: "OPTION",
             symbol: "",
             underlyingSymbol,
-            primaryInstruction,
+            primaryInstruction: bracketInstruction,
             quantity: qty,
             limitPrice: entryPrice,
             takeProfit: prefs.takeProfit,
@@ -46,7 +53,7 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
             assetType: "OPTION",
             symbol: "",
             underlyingSymbol,
-            primaryInstruction,
+            primaryInstruction: bracketInstruction,
             quantity: qty,
             limitPrice: entryPrice,
             takeProfit: { enabled: false, mode: "percent", offset: 10 },

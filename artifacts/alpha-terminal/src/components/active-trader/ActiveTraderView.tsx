@@ -49,7 +49,6 @@ import {
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
 import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActiveTraderSheetBrackets";
-import { midpointFromBidAsk } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
 import { RegimeStrip } from "./RegimeStrip";
@@ -578,6 +577,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         if (tick.bid != null) merged.bid = tick.bid;
         if (tick.ask != null) merged.ask = tick.ask;
         if (tick.delta != null) merged.delta = tick.delta;
+        if (tick.gamma != null) merged.gamma = tick.gamma;
+        if (tick.theta != null) merged.theta = tick.theta;
+        if (tick.vega != null) merged.vega = tick.vega;
+        if (tick.iv != null) merged.iv = tick.iv;
       }
       const qty = legQuantities.get(key) ?? 1;
       return {
@@ -636,19 +639,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return next;
     });
   }, []);
-
-  const sheetBracketEntry = useMemo(() => {
-    if (templateLimitMid != null) return templateLimitMid;
-    if (ticketLegs.length === 0) return null;
-    let net = 0;
-    for (const leg of ticketLegs) {
-      const mid = midpointFromBidAsk(leg.bid, leg.ask);
-      if (mid == null) continue;
-      const sign = leg.direction.startsWith("BUY") ? 1 : -1;
-      net += sign * mid;
-    }
-    return Math.abs(net) > 0 ? Math.abs(net) : null;
-  }, [templateLimitMid, ticketLegs]);
 
   const atAddLegFromLadder = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT") => {
@@ -916,15 +906,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
           demoFixture={blockLiveSend}
           sendPreviewOnly={!AT_ORDER_SEND_ENABLED || blockLiveSend}
-          extrasAfterLimit={
+          extrasAfterLimit={({ limitPerShare, isCredit, legCount }) => (
             <AtActiveTraderSheetBrackets
               prefs={prefs}
               onPrefsChange={onPrefsChange}
-              entryPrice={sheetBracketEntry}
+              entryPrice={limitPerShare}
               underlyingSymbol={underlyingSymbol}
+              isSpread={legCount > 1}
+              isCredit={isCredit}
               primaryInstruction={templatePrimaryInstruction}
             />
-          }
+          )}
         />
       ) : tradeContext ? (
         <AtTradeActionBar

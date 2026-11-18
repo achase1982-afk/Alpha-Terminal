@@ -40,6 +40,32 @@ function tapQuote(page, sel) {
   return page.locator(`[data-at-quote="${sel}"]`).click({ timeout: 15_000 });
 }
 
+function parseMoney(text) {
+  const m = text.match(/\$?([\d,]+\.\d{2})/);
+  return m ? parseFloat(m[1].replace(/,/g, "")) : null;
+}
+
+async function assertSpxTwoLeg(page) {
+  const limit = await page.locator("[data-testid='chain-sheet-limit']").inputValue();
+  const mid = parseFloat(limit);
+  if (!Number.isFinite(mid) || mid < 1.5 || mid > 3) {
+    throw new Error(`expected spread limit ~2.15, got ${limit}`);
+  }
+  const body = await page.locator("[data-testid='options-chain-order-sheet']").innerText();
+  const maxLoss = parseMoney(body.match(/Max loss[\s\S]*?(\$[\d,.]+)/i)?.[1] ?? "");
+  const maxProfit = parseMoney(body.match(/Max profit[\s\S]*?(\$[\d,.]+)/i)?.[1] ?? "");
+  if (maxLoss != null && (maxLoss < 150 || maxLoss > 350)) {
+    throw new Error(`max loss out of range: ${maxLoss} (text snippet: ${body.slice(0, 200)})`);
+  }
+  if (maxProfit != null && (maxProfit < 200 || maxProfit > 400)) {
+    throw new Error(`max profit out of range: ${maxProfit}`);
+  }
+  if (body.includes("1,360") || body.includes("1360")) {
+    throw new Error("stale single-leg max loss still visible");
+  }
+  return { limit: mid, maxLoss, maxProfit };
+}
+
 await mkdir(OUT, { recursive: true });
 const vite = await startVite();
 const browser = await webkit.launch();
@@ -50,6 +76,8 @@ const page = await browser.newPage({
   hasTouch: true,
 });
 await installSafeAreaInsets(page, 62, 34);
+
+const checks = {};
 
 for (const fx of ["spx", "nvda"]) {
   await page.goto(`${BASE}?fixture=${fx}`, { waitUntil: "domcontentloaded", timeout: 90_000 });
@@ -62,12 +90,26 @@ for (const fx of ["spx", "nvda"]) {
 
   const strike2 = fx === "spx" ? "7550" : "185";
   await tapQuote(page, `call-bid-${strike2}`);
-  await page.waitForTimeout(400);
-  const legs = await page.locator("[data-testid='options-chain-order-sheet']").innerText();
-  if (!legs.includes("2 legs") && !legs.includes("2 leg")) {
-    console.warn(`warn: expected 2 legs on ${fx}, got: ${legs.slice(0, 80)}`);
-  }
+  await page.waitForTimeout(500);
   await page.screenshot({ path: path.join(OUT, `at-phase-a-${fx}-2leg-440x956@3x.png`) });
+  if (fx === "spx") {
+    checks.spx2leg = await assertSpxTwoLeg(page);
+  }
+
+  if (fx === "spx") {
+    await page.locator("button", { hasText: "CLEAR" }).click();
+    await page.waitForTimeout(300);
+    await tapQuote(page, "put-bid-7530");
+    await tapQuote(page, "put-ask-7525");
+    await tapQuote(page, "call-bid-7550");
+    await tapQuote(page, "call-ask-7555");
+    await page.waitForTimeout(500);
+    const icText = await page.locator("[data-testid='options-chain-order-sheet']").innerText();
+    if (!icText.match(/4\s*leg/i)) {
+      console.warn("warn: expected 4 legs iron condor", icText.slice(0, 120));
+    }
+    await page.screenshot({ path: path.join(OUT, `at-phase-a-spx-4leg-440x956@3x.png`) });
+  }
 
   await page.locator("[data-testid='options-chain-order-sheet']").click();
   await page.waitForTimeout(300);
@@ -76,4 +118,4 @@ for (const fx of ["spx", "nvda"]) {
 
 await browser.close();
 vite.kill();
-console.log(JSON.stringify({ ok: true, out: OUT }, null, 2));
+console.log(JSON.stringify({ ok: true, out: OUT, checks }, null, 2));

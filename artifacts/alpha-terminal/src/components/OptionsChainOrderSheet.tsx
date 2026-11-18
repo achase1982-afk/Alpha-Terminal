@@ -12,6 +12,7 @@ import {
   inferNetCreditFromLegStructure,
   inferSchwabComplexOrderStrategyType,
   midpointFromBidAsk,
+  chainLegHydrateKey,
   type LimitTickContext,
 } from "@workspace/order-ticket-math";
 import {
@@ -83,8 +84,10 @@ export interface OptionsChainOrderSheetProps {
   demoFixture?: boolean;
   /** Dev fixture: open in-sheet confirm on mount (after quotes/limit hydrate). */
   openReviewOnMount?: boolean;
-  /** TP/SL or other rows below limit (Active Trader). */
-  extrasAfterLimit?: React.ReactNode;
+  /** TP/SL or other rows below limit (Active Trader). Receives spread limit + credit flag. */
+  extrasAfterLimit?:
+    | React.ReactNode
+    | ((ctx: { limitPerShare: number | null; isCredit: boolean; legCount: number }) => React.ReactNode);
   /** Show preview send label instead of live Schwab send. */
   sendPreviewOnly?: boolean;
 }
@@ -121,6 +124,8 @@ export function OptionsChainOrderSheet({
   const [errorMsg, setErrorMsg] = useState("");
   const [priceError, setPriceError] = useState("");
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
+  const limitUserEditedRef = useRef(false);
+  const legsHydrateKeyRef = useRef("");
 
   const pricedLegs = useMemo(
     () => legs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol])),
@@ -139,8 +144,24 @@ export function OptionsChainOrderSheet({
       setStage("form");
       setLimitPrice("");
       setQuantity(1);
+      limitUserEditedRef.current = false;
+      legsHydrateKeyRef.current = "";
     }
   }, [legs.length]);
+
+  const legsHydrateKey = useMemo(
+    () =>
+      chainLegHydrateKey(
+        legs.map((l) => ({
+          id: l.id,
+          direction: l.direction,
+          strike: l.strike,
+          quantity: l.quantity,
+          schwabSymbol: l.schwabSymbol,
+        })),
+      ),
+    [legs],
+  );
 
   const limitTickCtx = useMemo((): LimitTickContext => ({ underlyingSymbol: symbol, isOption: true }), [symbol]);
 
@@ -230,10 +251,18 @@ export function OptionsChainOrderSheet({
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
 
   useEffect(() => {
-    if (spreadPrices?.spreadMid != null && !limitPrice && stage === "form") {
+    if (legs.length === 0 || stage !== "form" || spreadPrices?.spreadMid == null) return;
+    const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
+    if (keyChanged) {
+      legsHydrateKeyRef.current = legsHydrateKey;
+      limitUserEditedRef.current = false;
+      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+      return;
+    }
+    if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [spreadPrices, limitPrice, limitTickCtx, stage]);
+  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -519,17 +548,13 @@ export function OptionsChainOrderSheet({
               <div className="mt-3 grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
                   <span style={LABEL_STYLE}>Order type</span>
-                  <Select value="LIMIT" disabled>
-                    <SelectTrigger
-                      className="h-7 px-2 border rounded-md text-white"
-                      style={{ fontSize: 14, background: "#111", borderColor: BORDER, fontFamily: SYS_FONT }}
-                    >
-                      <SelectValue placeholder="Limit" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="LIMIT">Limit</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div
+                    className="h-7 px-2 flex items-center rounded-md"
+                    style={{ fontSize: 14, background: "#111", border: `1px solid ${BORDER}`, color: WHITE, fontFamily: SYS_FONT }}
+                    aria-label="Order type Limit"
+                  >
+                    Limit
+                  </div>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span style={LABEL_STYLE}>Time in force</span>
@@ -559,6 +584,7 @@ export function OptionsChainOrderSheet({
                     inputMode="decimal"
                     value={limitPrice}
                     onChange={(e) => {
+                      limitUserEditedRef.current = true;
                       setLimitPrice(e.target.value);
                       setPriceError("");
                     }}
@@ -579,7 +605,10 @@ export function OptionsChainOrderSheet({
                     type="button"
                     onClick={() => {
                       const px = spreadPrices?.spreadMid;
-                      if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+                      if (px != null) {
+                        limitUserEditedRef.current = false;
+                        setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+                      }
                     }}
                     style={{ color: GOLD }}
                   >
@@ -590,7 +619,10 @@ export function OptionsChainOrderSheet({
                     onClick={() => {
                       const raw = isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk;
                       const px = raw != null ? parseCanonicalLimit(raw, limitTickCtx) : null;
-                      if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+                      if (px != null) {
+                        limitUserEditedRef.current = false;
+                        setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
+                      }
                     }}
                     style={{ color: GRAY }}
                   >
@@ -612,7 +644,13 @@ export function OptionsChainOrderSheet({
                 </div>
               </div>
 
-              {extrasAfterLimit}
+              {typeof extrasAfterLimit === "function"
+                ? extrasAfterLimit({
+                    limitPerShare: submittedLimit ?? summary?.limitPerShare ?? spreadPrices?.spreadMid ?? null,
+                    isCredit,
+                    legCount: legs.length,
+                  })
+                : extrasAfterLimit}
 
               {priceError && (
                 <p className="mt-2 text-[10px]" style={{ color: DOWN }}>{priceError}</p>
