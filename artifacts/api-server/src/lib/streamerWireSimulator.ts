@@ -6,7 +6,7 @@
 type WireReq = {
   service?: string;
   command?: string;
-  parameters?: { keys?: string };
+  parameters?: { keys?: string; fields?: string };
 };
 
 const liveAppL1Options = new Set<string>();
@@ -40,7 +40,11 @@ function applyLevelOneOptions(req: WireReq): void {
   }
   if (cmd === "ADD") {
     levelOneOptionsAddPressure += keys.length;
-    for (const k of keys) liveDeskL1Options.add(k);
+    // App quotes use the short LEVELONE field list. Desk adds request every field.
+    // Schwab ADD does not replace the service list, so neither set is cleared.
+    const nFields = (req.parameters?.fields ?? "").split(",").filter(Boolean).length;
+    const dest = nFields > 0 && nFields <= 24 ? liveAppL1Options : liveDeskL1Options;
+    for (const k of keys) dest.add(k);
   }
 }
 

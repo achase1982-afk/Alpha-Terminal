@@ -14,7 +14,14 @@ import {
   schwabFuturesKey,
   type OptionTick,
 } from "../lib/schwabStreamer.js";
-import { streamerSubHold, streamerSubRelease, streamerSubTouch } from "../lib/streamerSubscriptionManager.js";
+import {
+  expirationInWindow,
+  indexChainCacheKey,
+  readChainRange,
+  readQueryDate,
+  resolveIndexChainWindow,
+  type IndexChainWindow,
+} from "../lib/indexOptionChainWindow.js";
 import { getIBCachedQuote, subscribeQuoteForSymbol, isIBConnected } from "../lib/ibStreamer.js";
 import { getNextEarningsDate } from "../lib/earningsService.js";
 import { emitTelemetry } from "../lib/telemetryStore.js";
@@ -642,7 +649,15 @@ function centerStrikesAroundATM(
 
 const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI"]);
 
-async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any, strikeCount?: number): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
+async function fetchChainSide(
+  chainSymbol: string,
+  contractType: "CALL" | "PUT",
+  token: string,
+  isFuturesSymbol: boolean,
+  log: any,
+  strikeCount?: number,
+  dates?: { fromDate?: string; toDate?: string; range?: "NTM" | "SAK" | "SBK" },
+): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
   if (isFuturesSymbol || chainSymbol.startsWith("/")) {
     return null;
   }
@@ -651,11 +666,19 @@ async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT",
     contractType,
   });
   // Schwab's /chains gateway returns HTTP 502 "Body buffer overflow" for very
-  // large chains (SPX, NDX, RUT, SPY, QQQ) when range=ALL is requested. Use
-  // strikeCount to cap per-expiration strikes around ATM, which keeps the
-  // response within Schwab's response-buffer limit.
-  if (strikeCount && strikeCount > 0) {
+  // large chains (SPX, NDX, RUT, SPY, QQQ) when range=ALL is requested.
+  // strikeCount is Schwab's per-side count (strikes above AND below ATM).
+  // fromDate/toDate bound expirations — required for index underlyings.
+  if (dates?.fromDate) params.set("fromDate", dates.fromDate);
+  if (dates?.toDate) params.set("toDate", dates.toDate);
+  const range = dates?.range;
+  if (range === "SAK" || range === "SBK" || range === "NTM") {
+    params.set("range", range);
+    if (strikeCount && strikeCount > 0) params.set("strikeCount", String(strikeCount));
+  } else if (strikeCount && strikeCount > 0) {
     params.set("strikeCount", String(strikeCount));
+    params.set("range", "NTM");
+  } else if (dates?.fromDate || dates?.toDate) {
     params.set("range", "NTM");
   } else {
     params.set("range", "ALL");
@@ -701,7 +724,12 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
   }
 
   if (isIndexSymbol) {
-    const structure = await fetchIndexChainStructure(displaySymbol, token, log);
+    const structure = await fetchIndexChainStructure(
+      displaySymbol,
+      token,
+      log,
+      resolveIndexChainWindow({ strikeCount: 40 }),
+    );
     if (structure) {
       const chain = buildIndexChainFromStreaming(structure, log);
       if (chain.calls.length + chain.puts.length > 0) {
@@ -886,20 +914,29 @@ async function fetchIndexChainStructure(
   displaySymbol: string,
   accessToken: string,
   log: { info: (...a: any[]) => void; warn: (...a: any[]) => void; error: (...a: any[]) => void },
+  requested?: IndexChainWindow,
 ): Promise<IndexChainCache | null> {
-  const cached = indexChainStructureCache.get(displaySymbol);
+  const w = requested ?? resolveIndexChainWindow({ strikeCount: 40 });
+  const cacheKey = indexChainCacheKey(displaySymbol, w);
+  const cached = indexChainStructureCache.get(cacheKey);
   if (cached && (Date.now() - cached.fetchedAt) < INDEX_STRUCTURE_TTL) {
     return cached;
   }
 
   const chainSymbol = formatSchwabSymbol(displaySymbol);
-  log.info({ symbol: displaySymbol, chainSymbol }, "Index chain: fetching structure from Schwab REST (split CALL+PUT)");
+  log.info(
+    { symbol: displaySymbol, chainSymbol, fromDate: w.fromDate, toDate: w.toDate, strikeCountPerSide: w.strikeCountPerSide },
+    "Index chain: fetching a strike and expiration window from Schwab (not the full book)",
+  );
 
-  // Index chains (SPX/NDX/RUT) are huge — request only ~50 strikes per
-  // expiration around ATM; otherwise Schwab returns HTTP 502 buffer overflow.
+  // Index chains (SPX/NDX/RUT) overflow Schwab's response buffer if every
+  // expiration and strike is requested. strikeCount is per side. The client
+  // widens the window as the ladder scrolls; this process does not subscribe
+  // the book onto LEVELONE_OPTIONS — the visible ladder holds its own keys.
+  const dates = { fromDate: w.fromDate, toDate: w.toDate, range: w.range };
   const [callResult, putResult] = await Promise.all([
-    fetchChainSide(chainSymbol, "CALL", accessToken, false, log, 50),
-    fetchChainSide(chainSymbol, "PUT", accessToken, false, log, 50),
+    fetchChainSide(chainSymbol, "CALL", accessToken, false, log, w.strikeCountPerSide, dates),
+    fetchChainSide(chainSymbol, "PUT", accessToken, false, log, w.strikeCountPerSide, dates),
   ]);
 
   if (!callResult && !putResult) {
@@ -915,7 +952,7 @@ async function fetchIndexChainStructure(
   const schwabKeys: string[] = [];
 
   for (const c of parsedCalls) {
-    if (c.schwabSymbol) {
+    if (c.schwabSymbol && expirationInWindow(c.expiration, w)) {
       contracts.push({
         strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol,
         dte: c.dte ?? 0, type: "call",
@@ -926,7 +963,7 @@ async function fetchIndexChainStructure(
     }
   }
   for (const p of parsedPuts) {
-    if (p.schwabSymbol) {
+    if (p.schwabSymbol && expirationInWindow(p.expiration, w)) {
       contracts.push({
         strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol,
         dte: p.dte ?? 0, type: "put",
@@ -937,14 +974,19 @@ async function fetchIndexChainStructure(
     }
   }
 
-  const holderId = `chain:index:${displaySymbol}`;
-  streamerSubHold(holderId, "user_visible", "LEVELONE_OPTIONS", schwabKeys);
-  streamerSubTouch(holderId);
-  const { streamerSubApplyManagedOptionsSubscriptions } = await import(
-    "../lib/streamerSubscriptionManager.js"
+  log.info(
+    {
+      symbol: displaySymbol,
+      calls: contracts.filter((c) => c.type === "call").length,
+      puts: contracts.filter((c) => c.type === "put").length,
+      contracts: schwabKeys.length,
+      fromDate: w.fromDate,
+      toDate: w.toDate,
+      strikeCountPerSide: w.strikeCountPerSide,
+      underlyingPrice,
+    },
+    "Index chain: window fetched; stream subscribe is left to the visible ladder",
   );
-  await streamerSubApplyManagedOptionsSubscriptions();
-  log.info({ symbol: displaySymbol, calls: parsedCalls.length, puts: parsedPuts.length, schwabKeys: schwabKeys.length, underlyingPrice }, "Index chain: Schwab REST structure fetched, subscribed to streamer");
 
   const entry: IndexChainCache = {
     symbol: displaySymbol,
@@ -953,9 +995,7 @@ async function fetchIndexChainStructure(
     fetchedAt: Date.now(),
     underlyingPrice,
   };
-  setBounded(indexChainStructureCache, displaySymbol, entry, 50, (evictedKey) => {
-    void streamerSubRelease(`chain:index:${String(evictedKey)}`);
-  });
+  setBounded(indexChainStructureCache, cacheKey, entry, 50);
   return entry;
 }
 
@@ -1007,6 +1047,7 @@ router.get("/options", async (req, res) => {
   const accessToken = schwabAccessTokenFromRequest(req, true);
   const contractType = (req.query["contractType"] as string) ?? "ALL";
   const strikeCount = parseInt(req.query["strikeCount"] as string) || 10;
+  const requestedRange = readChainRange(req.query["range"]);
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", calls: [], puts: [], error: "symbol and accessToken are required" });
@@ -1028,7 +1069,7 @@ router.get("/options", async (req, res) => {
     const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close ?? entry.underlyingPrice;
     const centerPrice = livePrice ?? entry.underlyingPrice;
-    if (centerPrice != null && strikeCount < 100) {
+    if (requestedRange === "NTM" && centerPrice != null && strikeCount < 100) {
       const centered = centerStrikesAroundATM(calls, puts, centerPrice, strikeCount);
       calls = centered.calls;
       puts = centered.puts;
@@ -1048,26 +1089,34 @@ router.get("/options", async (req, res) => {
   }
 
   try {
-    const ntmCached = optionsNtmCache.get(displaySymbol);
+    const isFuturesSymbol = isFutures(displaySymbol);
+    const isIndexSymbol = isIndex(displaySymbol);
+    const indexWindow = isIndexSymbol
+      ? resolveIndexChainWindow({
+          fromDate: readQueryDate(req.query["fromDate"]),
+          toDate: readQueryDate(req.query["toDate"]),
+          strikeCount,
+          range: requestedRange,
+        })
+      : null;
+    const ntmKey = indexWindow ? indexChainCacheKey(displaySymbol, indexWindow) : displaySymbol;
+    const ntmCached = optionsNtmCache.get(ntmKey);
     if (ntmCached && (Date.now() - ntmCached.fetchedAt) < optionsTtlMs) {
       return res.json(sliceAndReturn(ntmCached, "ntm-cache"));
     }
 
-    const isFuturesSymbol = isFutures(displaySymbol);
-    const isIndexSymbol = isIndex(displaySymbol);
-
     if (isIndexSymbol) {
-      const structure = await fetchIndexChainStructure(displaySymbol, accessToken, req.log);
+      const structure = await fetchIndexChainStructure(displaySymbol, accessToken, req.log, indexWindow ?? undefined);
       if (structure) {
         const chain = buildIndexChainFromStreaming(structure, req.log);
         if (chain.calls.length + chain.puts.length > 0) {
           const entry = { ...chain, fetchedAt: Date.now() };
-          optionsNtmCache.set(displaySymbol, entry);
+          optionsNtmCache.set(ntmKey, entry);
           if (optionsNtmCache.size > 100) {
             const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
             optionsNtmCache.delete(oldest[0]);
           }
-          return res.json(sliceAndReturn(entry, "index-streaming"));
+          return res.json(sliceAndReturn(entry, "index-window"));
         }
       }
     }
@@ -1131,9 +1180,13 @@ router.get("/options", async (req, res) => {
     let underlyingPrice: number | undefined;
 
     if (useSplit) {
+      const splitDates = indexWindow
+        ? { fromDate: indexWindow.fromDate, toDate: indexWindow.toDate, range: indexWindow.range }
+        : undefined;
+      const splitStrikes = indexWindow?.strikeCountPerSide;
       const [callResult, putResult] = await Promise.all([
-        fetchChainSide(chainSymbol, "CALL", accessToken, isFuturesSymbol, req.log),
-        fetchChainSide(chainSymbol, "PUT", accessToken, isFuturesSymbol, req.log),
+        fetchChainSide(chainSymbol, "CALL", accessToken, isFuturesSymbol, req.log, splitStrikes, splitDates),
+        fetchChainSide(chainSymbol, "PUT", accessToken, isFuturesSymbol, req.log, splitStrikes, splitDates),
       ]);
 
       if (!callResult && !putResult) {
@@ -1187,12 +1240,18 @@ router.get("/options", async (req, res) => {
     }
 
     const MAX_DTE = 400;
-    const filteredCalls = allCalls.filter(c => (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE);
-    const filteredPuts = allPuts.filter(c => (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE);
+    const filteredCalls = allCalls.filter(c =>
+      (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE &&
+      (!indexWindow || expirationInWindow(c.expiration, indexWindow)),
+    );
+    const filteredPuts = allPuts.filter(c =>
+      (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE &&
+      (!indexWindow || expirationInWindow(c.expiration, indexWindow)),
+    );
     req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice, useSplit }, "Options chain Schwab result");
 
     const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice, fetchedAt: Date.now() };
-    optionsNtmCache.set(displaySymbol, entry);
+    optionsNtmCache.set(ntmKey, entry);
     if (optionsNtmCache.size > 100) {
       const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
       optionsNtmCache.delete(oldest[0]);

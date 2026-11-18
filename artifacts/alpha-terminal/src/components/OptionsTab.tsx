@@ -29,7 +29,15 @@ import {
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
-import { AT_LADDER_STRIKE_COUNT } from "@/lib/active-trader/atLadderStrikeCount";
+import {
+  AT_LADDER_STRIKE_CAP,
+  atChainDateWindow,
+} from "@/lib/active-trader/atLadderStrikeCount";
+import {
+  atLadderRestQuery,
+  growAtLadderSide,
+  mergeAtChainLegs,
+} from "@/lib/active-trader/atLadderWindow";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
   ChainDraftStrip,
@@ -1400,8 +1408,28 @@ export function OptionsTab({
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const chainStrikeCount =
-    optionsSubView === "at" ? Math.max(strikeCount, AT_LADDER_STRIKE_COUNT) : strikeCount;
+  const [atDepth, setAtDepth] = useState({ above: 20, below: 20 });
+  const atBookRef = useRef<{ symbol: string; ymd: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
+  useEffect(() => {
+    setAtDepth({ above: 20, below: 20 });
+    atBookRef.current = null;
+  }, [symbol, atExpiration]);
+  const atGrowAtRef = useRef({ up: 0, down: 0 });
+  const growAtStrikeWindow = useCallback((edge: "up" | "down") => {
+    const now = Date.now();
+    if (now - atGrowAtRef.current[edge] < 700) return;
+    atGrowAtRef.current[edge] = now;
+    setAtDepth((d) => growAtLadderSide(d.above, d.below, edge));
+  }, []);
+
+  const atRest = useMemo(
+    () => atLadderRestQuery(atDepth.above, atDepth.below),
+    [atDepth.above, atDepth.below],
+  );
+  const atDates = useMemo(
+    () => (optionsSubView === "at" ? atChainDateWindow(atExpiration) : null),
+    [optionsSubView, atExpiration],
+  );
 
   const schwabLinked =
     hasSchwabBrokerageLinked(accessToken, traderAccessToken) ||
@@ -1413,12 +1441,14 @@ export function OptionsTab({
     () => ({
       symbol,
       contractType: "ALL" as const,
-      strikeCount: chainStrikeCount,
+      strikeCount: optionsSubView === "at" ? atRest.strikeCount : strikeCount,
+      ...(optionsSubView === "at" ? { range: atRest.range } : {}),
+      ...(atDates ?? {}),
       ...(schwabAccessTokenForRequest(accessToken)
         ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
         : {}),
     }),
-    [symbol, chainStrikeCount, accessToken],
+    [symbol, strikeCount, accessToken, atDates, atRest.range, atRest.strikeCount, optionsSubView],
   );
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
@@ -1428,6 +1458,7 @@ export function OptionsTab({
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
+        placeholderData: (previous: OptionChainResponse | undefined) => previous,
       },
     });
 
@@ -1457,10 +1488,31 @@ export function OptionsTab({
     }
     let calls = (rawData.calls ?? []) as Contract[];
     let puts = (rawData.puts ?? []) as Contract[];
+    if (optionsSubView === "at") {
+      const ymd = atExpiration?.slice(0, 10) || null;
+      const pageOk =
+        !ymd ||
+        [...calls, ...puts].some((c) => (c.expiration ?? "").slice(0, 10) === ymd);
+      const prev = atBookRef.current;
+      const same = !!prev && prev.symbol === symbol && prev.ymd === ymd;
+      const mergedCalls = pageOk
+        ? mergeAtChainLegs(same ? prev!.calls : [], calls, ymd)
+        : same
+          ? prev!.calls
+          : [];
+      const mergedPuts = pageOk
+        ? mergeAtChainLegs(same ? prev!.puts : [], puts, ymd)
+        : same
+          ? prev!.puts
+          : [];
+      atBookRef.current = { symbol, ymd, calls: mergedCalls, puts: mergedPuts };
+      calls = mergedCalls;
+      puts = mergedPuts;
+    }
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol]);
+  }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol, optionsSubView, atExpiration]);
 
   const isLoadingEffective = fixtureChain ? false : isLoading;
 
@@ -1512,22 +1564,35 @@ export function OptionsTab({
   }, [underlyingPrice, chainAnchorPx, fixtureChain, refetchOptionChain]);
 
   const chainHoldSig = useMemo(() => {
+    // Active Trader owns a viewport hold. Subscribing the loaded book here
+    // would put every scrolled-in strike on the stream.
+    if (optionsSubView === "at") return null;
     if (!data) return null;
     const calls = (data.calls ?? []) as Contract[];
     const puts = (data.puts ?? []) as Contract[];
     const streamKeys: string[] = [];
     const expirations: string[] = [];
-    for (const c of calls) {
+    const selectedYmd = atExpiration?.slice(0, 10) ?? "";
+    const keep = (expiration: string) => {
+      const ymd = expiration.slice(0, 10);
+      if (optionsSubView === "at") {
+        if (!selectedYmd) return true;
+        return expiration === atExpiration || ymd === selectedYmd;
+      }
+      if (expandedExps.size > 0) return expandedExps.has(expiration);
+      return selectedYmd !== "" && ymd === selectedYmd;
+    };
+    const push = (c: Contract, right: "C" | "P") => {
+      if (!keep(c.expiration)) return;
       expirations.push(c.expiration);
-      streamKeys.push(c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"));
-    }
-    for (const p of puts) {
-      expirations.push(p.expiration);
-      streamKeys.push(p.schwabSymbol || buildSchwabOptionKey(symbol, p.expiration, p.strike, "P"));
-    }
+      streamKeys.push(c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, right));
+    };
+    for (const c of calls) push(c, "C");
+    for (const p of puts) push(p, "P");
     if (streamKeys.length === 0) return null;
-    return buildChainHoldSignature(symbol, expirations, streamKeys);
-  }, [data, symbol]);
+    const cap = AT_LADDER_STRIKE_CAP * 2;
+    return buildChainHoldSignature(symbol, expirations.slice(0, cap), streamKeys.slice(0, cap));
+  }, [data, symbol, optionsSubView, atExpiration, expandedExps]);
 
   const groups = useMemo(() => {
     if (!data) return [];
@@ -1537,6 +1602,16 @@ export function OptionsTab({
     puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
+
+  const atLadderHasRows = useMemo(() => {
+    if (optionsSubView !== "at" || !groups.length) return false;
+    const ymd = atExpiration?.slice(0, 10) ?? "";
+    return groups.some((g) => {
+      if (!g.rows.length) return false;
+      if (!ymd) return true;
+      return g.expiration === atExpiration || g.expiration.slice(0, 10) === ymd;
+    });
+  }, [optionsSubView, groups, atExpiration]);
 
   useEffect(() => {
     if (!groups.length) return;
@@ -1986,11 +2061,22 @@ export function OptionsTab({
           accentHex={accentHex}
           chainQuoteTs={chainFetchedAt}
           ladderPlug={{
-            chainLoading: isLoadingEffective || isFetching,
+            chainLoading: !atLadderHasRows && (isLoadingEffective || isFetching),
             chainError: error ? "Option chain request failed" : rawData?.error ?? null,
             brokerLinked: schwabLinked || isAuthDisabled(),
           }}
+          ladderRestWindow={
+            atDates
+              ? {
+                  fromDate: atDates.fromDate,
+                  toDate: atDates.toDate,
+                  strikeCount: atRest.strikeCount,
+                  range: atRest.range,
+                }
+              : undefined
+          }
           holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
+          onReachEdge={growAtStrikeWindow}
           onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
           onOpenReview={
             onActiveTraderReview ??

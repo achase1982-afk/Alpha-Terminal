@@ -73,10 +73,82 @@ function heatMapsEqual(
   return true;
 }
 
+type RestChainLeg = {
+  streamKey?: string;
+  schwabSymbol?: string;
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+  volume?: number | null;
+  volumeSampledAt?: number;
+  openInterest?: number | null;
+  iv?: number | null;
+  delta?: number | null;
+  gamma?: number | null;
+  theta?: number | null;
+  vega?: number | null;
+};
+
+function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[], want: Set<string>, now: number): void {
+  for (const leg of legs) {
+    const key = (leg.streamKey ?? leg.schwabSymbol ?? "").trim();
+    if (!key || (want.size > 0 && !want.has(key))) continue;
+    useOptionsStreamStore.getState().mergeTick({
+      key,
+      bid: leg.bid ?? null,
+      ask: leg.ask ?? null,
+      last: leg.last ?? null,
+      bidSize: null,
+      askSize: null,
+      volume: leg.volume ?? null,
+      openInterest: leg.openInterest ?? null,
+      iv: leg.iv ?? null,
+      delta: leg.delta ?? null,
+      gamma: leg.gamma ?? null,
+      theta: leg.theta ?? null,
+      vega: leg.vega ?? null,
+      mark: null,
+      change: null,
+      lastSize: null,
+      underlyingPrice: null,
+      quoteTime: now,
+      tradeTime: null,
+      ts: now,
+      volumeSample: null,
+    });
+    if (
+      leg.volume != null &&
+      Number.isFinite(leg.volume) &&
+      leg.volumeSampledAt != null &&
+      leg.volumeSampledAt > 0
+    ) {
+      engine.ingestCumulative(key, leg.volume, leg.volumeSampledAt);
+    }
+  }
+}
+
+function restWindowPath(
+  symbol: string,
+  window: { fromDate: string; toDate: string; strikeCount: number; range: string },
+): string {
+  const q = new URLSearchParams({
+    symbol: symbol.replace(/^\$/, ""),
+    strikeCount: String(window.strikeCount),
+    contractType: "ALL",
+    range: window.range,
+    fromDate: window.fromDate,
+    toDate: window.toDate,
+    ladderHeat: "1",
+  });
+  return `/api/market/options?${q.toString()}`;
+}
+
 export function useAtLadderVolumeHeat(input: {
   symbol: string;
   streamKeys: string[];
   skipNetwork?: boolean;
+  /** Visible expiry window. Polled about once a second only when the stream goes quiet. */
+  restWindow?: { fromDate: string; toDate: string; strikeCount: number; range: string };
 }): { heatByKey: Record<string, LadderHeatCellView>; source: AtLadderHeatSourceMeta } {
   const engineRef = useRef(new AtLadderVolumeHeatEngine({ scaleFloorContracts: 150 }));
   const [heatByKey, setHeatByKey] = useState<Record<string, LadderHeatCellView>>({});
@@ -84,6 +156,11 @@ export function useAtLadderVolumeHeat(input: {
   const streamKeysRef = useRef(input.streamKeys);
   streamKeysRef.current = input.streamKeys;
   const volumeSigRef = useRef(new Map<string, string>());
+  const streamRxRef = useRef<number | null>(null);
+  const restWriteRef = useRef(false);
+  const restWindowRef = useRef(input.restWindow);
+  restWindowRef.current = input.restWindow;
+  const [restActive, setRestActive] = useState(false);
 
   const fx = getAtFixtureOverride();
   const scene =
@@ -181,9 +258,26 @@ export function useAtLadderVolumeHeat(input: {
     };
 
     ingestVolumeSamples();
+    const now = Date.now();
+    const ticksNow = useOptionsStreamStore.getState().ticks;
+    for (const key of streamKeysRef.current) {
+      const ts = ticksNow[key]?.ts;
+      if (ts && now - ts <= 12_000) {
+        streamRxRef.current = ts;
+        break;
+      }
+    }
 
     const unsub = useOptionsStreamStore.subscribe((state, prev) => {
+      if (restWriteRef.current) return;
       const keys = streamKeysRef.current;
+      for (const key of keys) {
+        const ts = state.ticks[key]?.ts;
+        if (ts && ts !== prev.ticks[key]?.ts) {
+          streamRxRef.current = Date.now();
+          break;
+        }
+      }
       let ingested = false;
       for (const key of keys) {
         const sample = state.ticks[key]?.volumeSample;
@@ -222,20 +316,18 @@ export function useAtLadderVolumeHeat(input: {
         const data = (await res.json()) as {
           fetchedAt?: number;
           cacheTtlMs?: number;
-          calls?: { streamKey?: string; schwabSymbol?: string; volume?: number; volumeSampledAt?: number }[];
-          puts?: { streamKey?: string; schwabSymbol?: string; volume?: number; volumeSampledAt?: number }[];
+          calls?: RestChainLeg[];
+          puts?: RestChainLeg[];
         };
         const chainFetchedAt = data.fetchedAt ?? Date.now();
         const cacheTtlMs = data.cacheTtlMs ?? 25_000;
         engine.setPollChainMeta({ fetchedAt: chainFetchedAt, ttlMs: cacheTtlMs });
         const want = new Set(input.streamKeys);
-        for (const leg of [...(data.calls ?? []), ...(data.puts ?? [])]) {
-          const key = (leg.streamKey ?? leg.schwabSymbol ?? "").trim();
-          if (!key || !want.has(key)) continue;
-          const sampledAt = leg.volumeSampledAt;
-          if (sampledAt == null || sampledAt <= 0) continue;
-          if (leg.volume == null || !Number.isFinite(leg.volume)) continue;
-          engine.ingestCumulative(key, leg.volume, sampledAt);
+        restWriteRef.current = true;
+        try {
+          applyRestQuotes(engine, [...(data.calls ?? []), ...(data.puts ?? [])], want, Date.now());
+        } finally {
+          restWriteRef.current = false;
         }
         schedulePaintRef.current?.();
       } catch {
@@ -251,6 +343,78 @@ export function useAtLadderVolumeHeat(input: {
     };
   }, [mode, input.skipNetwork, input.symbol, input.streamKeys.join("|")]);
 
+  useEffect(() => {
+    if (mode !== "stream" || input.skipNetwork) {
+      setRestActive(false);
+      return;
+    }
+    let cancelled = false;
+    const armedAt = Date.now();
+
+    const poll = async () => {
+      const windowQuery = restWindowRef.current;
+      if (!windowQuery) return;
+      try {
+        const res = await fetchWithAuth(restWindowPath(input.symbol, windowQuery), {
+          clerkTokenTimeoutMs: 4_000,
+        });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as {
+          fetchedAt?: number;
+          cacheTtlMs?: number;
+          calls?: RestChainLeg[];
+          puts?: RestChainLeg[];
+        };
+        const engine = engineRef.current;
+        engine.setPollChainMeta({
+          fetchedAt: data.fetchedAt ?? Date.now(),
+          ttlMs: data.cacheTtlMs ?? 1_000,
+        });
+        restWriteRef.current = true;
+        try {
+          applyRestQuotes(
+            engine,
+            [...(data.calls ?? []), ...(data.puts ?? [])],
+            new Set(streamKeysRef.current),
+            Date.now(),
+          );
+        } finally {
+          restWriteRef.current = false;
+        }
+        if (!cancelled) setRestActive(true);
+        schedulePaintRef.current?.();
+      } catch {
+        /* next poll */
+      }
+    };
+
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      const rx = streamRxRef.current;
+      const wsFresh = rx != null && now - rx <= 12_000;
+      if (wsFresh) {
+        setRestActive(false);
+        return;
+      }
+      if (rx == null && now - armedAt < 4_000) return;
+      void poll();
+    }, AT_LADDER_HEAT_POLL_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    mode,
+    input.skipNetwork,
+    input.symbol,
+    input.streamKeys.join("|"),
+    input.restWindow?.fromDate,
+    input.restWindow?.toDate,
+    input.restWindow?.range,
+    input.restWindow?.strikeCount,
+  ]);
+
   const source: AtLadderHeatSourceMeta = useMemo(() => {
     const engine = engineRef.current;
     const now = Date.now();
@@ -258,20 +422,23 @@ export function useAtLadderVolumeHeat(input: {
     const lastSourceRxMs = engine.getSourceLastRxMs();
 
     if (mode === "stream") {
-      const sourceFresh = engine.isSourceFresh(now);
+      const rx = streamRxRef.current;
+      const wsFresh = rx != null && now - rx <= 12_000;
+      const usingRest = !wsFresh && restActive;
       return {
-        kind: mode,
-        label: sourceFresh ? "Live · stream" : "",
-        sourceFresh,
+        kind: usingRest ? "poll" : "stream",
+        label: usingRest ? "REST" : "WS",
+        sourceFresh: wsFresh || usingRest || rx == null,
         lastSourceRxMs,
+        pollMs: usingRest ? AT_LADDER_HEAT_POLL_MS : undefined,
       };
     }
 
     if (mode === "poll") {
-      const { label, sourceFresh } = formatPollBadge(engine, now, AT_LADDER_HEAT_POLL_MS);
+      const { sourceFresh } = formatPollBadge(engine, now, AT_LADDER_HEAT_POLL_MS);
       return {
         kind: mode,
-        label,
+        label: sourceFresh ? "REST" : "",
         sourceFresh,
         lastSourceRxMs,
         pollMs: AT_LADDER_HEAT_POLL_MS,
@@ -294,7 +461,7 @@ export function useAtLadderVolumeHeat(input: {
       sourceFresh: false,
       lastSourceRxMs,
     };
-  }, [heatByKey, mode, tick]);
+  }, [heatByKey, mode, tick, restActive]);
 
   return { heatByKey, source };
 }
