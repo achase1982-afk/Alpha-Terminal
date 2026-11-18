@@ -85,6 +85,7 @@ interface Contract {
   vega?: number;
   dte?: number;
   streamKey?: string;
+  quoteTimeMs?: number;
 }
 
 interface NormalizedRow {
@@ -416,10 +417,16 @@ const DataCell = memo(function DataCell({
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
   const priceReason =
-    isPrice && paired?.displayState && paired.displayState !== "ok"
+    isPrice && paired?.displayState && paired.displayState !== "ok" && paired.displayState !== "prior_session"
       ? chainQuoteReasonLabel(paired.displayState)
       : null;
-  const topStr = priceReason ?? fmtNum(topVal, col.topDecimals);
+  const priceDimmed = isPrice && paired?.dimmed;
+  const asOfLabel = isPrice && isBid ? paired?.asOfLabel : null;
+  const topStr =
+    priceReason ??
+    (isPrice && paired?.displayState === "prior_session"
+      ? fmtNum(col.id === "bid" ? paired.bid : paired.ask, col.topDecimals)
+      : fmtNum(topVal, col.topDecimals));
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
@@ -484,6 +491,7 @@ const DataCell = memo(function DataCell({
 
   let textColor: string;
   if (topStr === "\u2014") textColor = MUTED;
+  else if (priceDimmed) textColor = MUTED;
   else if (isBid) textColor = "#f23645";
   else textColor = WHITE;
 
@@ -499,14 +507,19 @@ const DataCell = memo(function DataCell({
           fontSize: isPrice ? 15 : 12,
           fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,
           color: textColor,
+          opacity: priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
           letterSpacing: "0.01em",
         }}
+        data-chain-quote-as-of={asOfLabel ?? undefined}
       >
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
+      {asOfLabel ? (
+        <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{asOfLabel}</span>
+      ) : null}
 
       {isVol && oiVal != null && (
         <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
@@ -1368,6 +1381,13 @@ export function OptionsTab({
       },
     );
 
+  const chainFetchedAt =
+    rawData?.fetchedAt && rawData.fetchedAt > 0
+      ? rawData.fetchedAt
+      : dataUpdatedAt > 0
+        ? dataUpdatedAt
+        : Date.now();
+
   const data = useMemo(() => {
     if (fixtureChain) {
       let calls = (fixtureChain.chain.calls ?? []) as Contract[];
@@ -1634,7 +1654,7 @@ export function OptionsTab({
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
     const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
-    const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
+    const chainTs = chainFetchedAt;
     const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
       if (!expLabels.some((e) => e.value === g.expiration)) {
@@ -1676,7 +1696,7 @@ export function OptionsTab({
     onOpenStrategyBuilder([...allStrikes].sort((a, b) => a - b), expLabels, cMap, preSelected);
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
-  }, [onOpenStrategyBuilder, groups, selectedLegs, dataUpdatedAt]);
+  }, [onOpenStrategyBuilder, groups, selectedLegs, chainFetchedAt]);
 
   const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
 
@@ -1684,7 +1704,7 @@ export function OptionsTab({
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
       const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
-      const chainTs = dataUpdatedAt > 0 ? dataUpdatedAt : Date.now();
+      const chainTs = chainFetchedAt;
       const q = mergeChainContractWithStream(l.contract, tick, chainTs);
       const merged: Contract = {
         ...l.contract,
@@ -1716,7 +1736,7 @@ export function OptionsTab({
       return legs.slice(0, MAX_OPTION_LEGS);
     }
     return legs;
-  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash, dataUpdatedAt]);
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash, chainFetchedAt]);
 
   const handleLayersClick = useCallback(() => {
     if (selectedLegs.size > 0) {
@@ -1884,7 +1904,7 @@ export function OptionsTab({
           underlyingPrice={underlyingPrice}
           stickyOffset={stickyOffset + 36}
           accentHex={accentHex}
-          chainQuoteTs={dataUpdatedAt > 0 ? dataUpdatedAt : Date.now()}
+          chainQuoteTs={chainFetchedAt}
           holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
           onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
           onOpenReview={
@@ -2057,7 +2077,7 @@ export function OptionsTab({
                   onLongPressCell={handleLongPressCell}
                   showInlineGreeks={showInlineGreeks}
                   accentHex={accentHex}
-                  chainQuoteTs={dataUpdatedAt > 0 ? dataUpdatedAt : Date.now()}
+                  chainQuoteTs={chainFetchedAt}
                 />
               );
             })}

@@ -15,6 +15,8 @@ export interface OptionContract {
   askSize?: number;
   last?: number;
   volume?: number;
+  /** Schwab quoteTimeInLong (ms since epoch). */
+  quoteTimeMs?: number;
   openInterest?: number;
   iv?: number;
   delta?: number;

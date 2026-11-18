@@ -130,6 +130,9 @@ function quoteAriaLabel(input: {
 function QuoteCell({
   price,
   unavailableReason,
+  dimmed,
+  asOfLabel,
+  tapable = true,
   tint,
   strike,
   leg,
@@ -144,6 +147,9 @@ function QuoteCell({
 }: {
   price: number | null;
   unavailableReason?: string | null;
+  dimmed?: boolean;
+  asOfLabel?: string | null;
+  tapable?: boolean;
   tint: "bid" | "ask";
   strike: number;
   leg: OptionsContract | null;
@@ -177,9 +183,11 @@ function QuoteCell({
         borderRight: legSelected ? `2px solid ${selectColor}` : dividerLeft ? `1px solid ${BORDER_ROW}` : `1px solid ${BORDER_ROW}`,
         boxSizing: "border-box",
       }}
+      disabled={!tapable && !onClick}
       onClick={() => {
+        if (!tapable && !onClick) return;
         if (onClick) onClick();
-        else if (leg) onQuoteTap(leg, type, side);
+        else if (leg && tapable) onQuoteTap(leg, type, side);
       }}
     >
       {legSelected ? (
@@ -194,11 +202,16 @@ function QuoteCell({
         style={
           unavailableReason
             ? { fontSize: 9, fontWeight: 600, color: GRAY, letterSpacing: "0.02em", textTransform: "none" }
-            : undefined
+            : { color: dimmed ? GRAY : WHITE, opacity: dimmed ? 0.72 : 1 }
         }
       >
         {unavailableReason ?? fmtPx(price)}
       </span>
+      {asOfLabel ? (
+        <span style={{ fontSize: 7, fontWeight: 500, color: GRAY, lineHeight: 1.1, marginTop: 1, maxWidth: "100%", textAlign: "right" }}>
+          {asOfLabel}
+        </span>
+      ) : null}
     </button>
   );
 }
@@ -371,6 +384,8 @@ const LadderRowView = memo(function LadderRowView({
   const putAskReason = putAskPx == null ? putSingle.reason : null;
   const callBidReason = callBidPx == null ? callSingle.reason : null;
   const callAskReason = callAskPx == null ? callSingle.reason : null;
+  const putTapable = putSingle.tapable;
+  const callTapable = callSingle.tapable;
 
   const callHeat = mergeLegHeat(
     ladderMode,
@@ -408,6 +423,9 @@ const LadderRowView = memo(function LadderRowView({
             <QuoteCell
               price={callBidPx}
               unavailableReason={callBidReason}
+              dimmed={callSingle.dimmed}
+              asOfLabel={callSingle.asOfLabel}
+              tapable={callTapable}
               tint="bid"
               strike={row.strike}
               leg={row.call}
@@ -435,6 +453,8 @@ const LadderRowView = memo(function LadderRowView({
             <QuoteCell
               price={callAskPx}
               unavailableReason={callAskReason}
+              dimmed={callSingle.dimmed}
+              tapable={callTapable}
               tint="ask"
               strike={row.strike}
               leg={row.call}
@@ -507,6 +527,9 @@ const LadderRowView = memo(function LadderRowView({
             <QuoteCell
               price={putBidPx}
               unavailableReason={putBidReason}
+              dimmed={putSingle.dimmed}
+              asOfLabel={putSingle.asOfLabel}
+              tapable={putTapable}
               tint="bid"
               strike={row.strike}
               leg={row.put}
@@ -534,6 +557,8 @@ const LadderRowView = memo(function LadderRowView({
             <QuoteCell
               price={putAskPx}
               unavailableReason={putAskReason}
+              dimmed={putSingle.dimmed}
+              tapable={putTapable}
               tint="ask"
               strike={row.strike}
               leg={row.put}
