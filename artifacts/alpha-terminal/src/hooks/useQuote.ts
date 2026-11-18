@@ -9,8 +9,10 @@
  * and never touches price fields.
  */
 
+import { useMemo } from "react";
 import { useTerminalStore, type LiveQuote } from "@/lib/store";
-import { useGetQuote }                      from "@workspace/api-client-react";
+import { useGetQuote } from "@workspace/api-client-react";
+import { resolveSessionChangeDisplay } from "@/lib/atQuoteSessionChange";
 
 export interface QuoteData {
   symbol:           string;
@@ -99,10 +101,18 @@ export function useQuote(symbol: string) {
   const hasAnyPrice = data.last !== null || data.bid !== null;
   const hasAnyData = hasAnyPrice || description !== null;
 
+  const restQuote = restMatchesSymbol ? restData : undefined;
+  const sessionChange = useMemo(
+    () => resolveSessionChangeDisplay(hasAnyData ? data : null, restQuote),
+    [data, hasAnyData, restQuote],
+  );
+
   return {
     data:      hasAnyData ? data : null,
     isLoading: !hasAnyData && !!accessToken,
     error:     null,
     source:    "stream" as const,
+    restQuote,
+    sessionChange,
   };
 }

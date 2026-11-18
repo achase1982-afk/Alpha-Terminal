@@ -35,7 +35,7 @@ function formatIndexSubtitle(symbol: string, description?: string): string {
 
 export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compact?: boolean }) {
   const symbol = useActiveSymbol();
-  const { data: quote } = useQuote(symbol);
+  const { data: quote, sessionChange } = useQuote(symbol);
 
   const expiryOptions = useAtChromeStore((s) => s.atExpiryOptions);
   const selectedExpiration = useAtChromeStore((s) => s.atSelectedExpiration);
@@ -46,8 +46,8 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
     return expiryOptions.find((o) => o.expiration === selectedExpiration)?.pillLabel ?? "\u2014";
   }, [expiryOptions, selectedExpiration]);
 
-  const rawChange = quote?.change ?? null;
-  const rawPct = quote?.changePct ?? null;
+  const rawChange = sessionChange.change;
+  const rawPct = sessionChange.changePct;
   const isUp = rawChange !== null && rawChange > 0;
   const isDown = rawChange !== null && rawChange < 0;
 
@@ -56,12 +56,14 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
     rawChange != null
       ? isUp
         ? `+$${fmtSpot(rawChange)}`
-        : rawChange === 0
-          ? "$0.00"
-          : `\u2212$${fmtSpot(Math.abs(rawChange))}`
+        : rawChange < 0
+          ? `\u2212$${fmtSpot(Math.abs(rawChange))}`
+          : "$0.00"
       : "\u2014";
   const changePctStr =
-    rawPct != null ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtSpot(Math.abs(rawPct))}%)` : "(0.00%)";
+    rawPct != null
+      ? `(${isUp ? "+" : isDown ? "\u2212" : ""}${fmtSpot(Math.abs(rawPct))}%)`
+      : "";
 
   const displaySym = formatDisplaySymbol(quote?.symbol ?? symbol);
   const subtitle = formatIndexSubtitle(displaySym, quote?.description ?? undefined);

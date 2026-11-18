@@ -18,6 +18,7 @@ import { useSpotDirectionColor } from "@/lib/active-trader/atSpotDirection";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
+import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
@@ -155,7 +156,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   sessionClosed,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const { data: quote } = useQuote(symbol);
+  const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed } = useDeskFlowStream(symbol, true);
   const flowClosed = sessionClosed || flowSessionClosed;
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
@@ -163,13 +164,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS);
   const spotLabel = formatAtGlanceSpot(symbol, spotShown);
 
-  const open = sessionOpen ?? quote?.close ?? null;
-  const fromOpen =
-    quote?.change != null && Number.isFinite(quote.change)
-      ? quote.change
-      : spotShown != null && open != null && Number.isFinite(open)
-        ? spotShown - open
-        : null;
+  const fromOpen = resolveGlanceFromOpenChange(quote, spotShown, sessionOpen, restQuote);
 
   const gexStr = mode === "futures" ? null : formatGexUsd(zones.netGexUsdPer1Pct);
   const gexDisplay = gexStr && gexStr !== "\u2014" ? gexStr.replace(/^GEX\s*/, "") : "\u2014";
@@ -205,11 +200,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             <>
               {fromOpen >= 0 ? "▲" : "▼"}
               {Math.abs(fromOpen).toFixed(2)}
+              <span style={{ fontSize: 9, fontWeight: 500, color: AT_LABEL, marginLeft: 3 }}>OPEN</span>
             </>
           ) : (
             "—"
           )}
-          <span style={{ fontSize: 9, fontWeight: 500, color: AT_LABEL, marginLeft: 3 }}>OPEN</span>
         </Pane>
         {gexStr != null ? (
           <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 600, color: WHITE }}>
