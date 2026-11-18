@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { OptionsChainOrderSheet, type OptionsChainOrderSheetProps } from "./OptionsChainOrderSheet";
 import type { StrategyLeg } from "./StrategyBuilder";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 
 vi.mock("@/lib/store", () => ({
   useTerminalStore: (sel: (s: { symbol: string; streamPrices: Record<string, { last: number }> }) => unknown) =>
@@ -108,5 +109,32 @@ describe("OptionsChainOrderSheet", () => {
     renderSheet({ sendPreviewOnly: true });
     const review = screen.getByTestId("chain-sheet-review");
     await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it("AT bracket draft: chain confirm shows trigger rows (Sequence)", async () => {
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "TRG w/ bracket",
+      qty: 2,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: { enabled: true, mode: "percent", offset: 10 },
+      stopLoss: { enabled: false, mode: "percent", offset: -10 },
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+    };
+    renderSheet({
+      sendPreviewOnly: true,
+      atBracketDraft: { prefs, primaryInstruction: "SELL_TO_OPEN" },
+    });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
+    expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);
+    expect(screen.queryByText(/Bracket review not supported/i)).toBeNull();
   });
 });

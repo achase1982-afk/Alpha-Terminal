@@ -49,6 +49,14 @@ import {
   assertChainDraftLegCount,
   CHAIN_LEG_LIMIT_MESSAGE,
 } from "@/lib/orders/chainDraftLegLimits";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import {
+  buildChainSheetAtBracketConfirm,
+  type ChainSheetAtBracketConfirm,
+} from "@/lib/active-trader/chainSheetAtBracketConfirm";
+import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
+import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -104,6 +112,11 @@ export interface OptionsChainOrderSheetProps {
   onSheetPeekChange?: (peek: boolean) => void;
   /** Distinct chain draft legs (pre-ticket builder guard). */
   draftDistinctLegCount?: number;
+  /** Active Trader bracket draft — chain confirm shows entry + attached exits (or explicit unsupported). */
+  atBracketDraft?: {
+    prefs: ActiveTraderTemplatePrefs;
+    primaryInstruction: SchwabInstruction;
+  };
 }
 
 function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
@@ -129,6 +142,7 @@ export function OptionsChainOrderSheet({
   sheetPeek = true,
   onSheetPeekChange,
   draftDistinctLegCount,
+  atBracketDraft,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -454,6 +468,31 @@ export function OptionsChainOrderSheet({
     quantity > 0 &&
     (demoFixture || !!accountHash || !!sendPreviewOnly);
 
+  const atBracketConfirm = useMemo((): ChainSheetAtBracketConfirm | null => {
+    if (!atBracketDraft || stage !== "review") return null;
+    const px = reviewLimitSnapped ?? submittedLimit;
+    if (px == null || px <= 0) return null;
+    const sym = legs[0]?.schwabSymbol;
+    if (!sym) return null;
+    const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
+    return buildChainSheetAtBracketConfirm({
+      prefs: atBracketDraft.prefs,
+      legCount: distinctLegs,
+      primaryInstruction: atBracketDraft.primaryInstruction,
+      limitPrice: px,
+      optionSymbol: sym,
+      underlyingSymbol: symbol.replace(/^\$/, ""),
+    });
+  }, [
+    atBracketDraft,
+    stage,
+    reviewLimitSnapped,
+    submittedLimit,
+    legs,
+    symbol,
+    draftDistinctLegCount,
+  ]);
+
   if (legs.length === 0) return null;
 
   const sheetHeight = collapsed ? 52 : sheetPeek ? AT_SHEET_PEEK_VH : AT_SHEET_FULL_VH;
@@ -771,6 +810,10 @@ export function OptionsChainOrderSheet({
           submittedLimit={submittedLimit}
           summary={summary}
           feeAdjustedNetCash={feeAdjustedNetCash}
+          atBracketConfirm={atBracketConfirm}
+          atExitDurationLabel={
+            atBracketDraft ? formatAtExitDuration(atBracketDraft.prefs.exitDuration) : undefined
+          }
           onBack={() => {
             placeOrderInFlightRef.current = false;
             setSendLocked(false);
@@ -830,6 +873,8 @@ function ConfirmPanel({
   onSend,
   sendDisabled,
   sendLabel = "Send to Schwab",
+  atBracketConfirm,
+  atExitDurationLabel,
 }: {
   strategyName: string;
   strategyColor: string;
@@ -847,6 +892,8 @@ function ConfirmPanel({
   onSend: () => void;
   sendDisabled?: boolean;
   sendLabel?: string;
+  atBracketConfirm?: ChainSheetAtBracketConfirm | null;
+  atExitDurationLabel?: string;
 }) {
   const px = reviewLimitSnapped ?? submittedLimit ?? 0;
   const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
@@ -876,6 +923,9 @@ function ConfirmPanel({
   const bpEffect = summary?.buyingPowerEffect ?? reviewEcon?.buyingPowerEffect ?? null;
   const bpKind = summary?.buyingPowerEffectKind ?? reviewEcon?.buyingPowerEffectKind ?? "estimated";
 
+  const hidePlainSingleLegConfirm =
+    atBracketConfirm?.mode === "trigger" || atBracketConfirm?.mode === "unsupported";
+
   return (
     <div
       className="absolute inset-0 flex flex-col justify-end z-10"
@@ -894,61 +944,104 @@ function ConfirmPanel({
             <X className="w-4 h-4" style={{ color: MUTED }} />
           </button>
         </div>
-        <div className="space-y-1 p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
-          <ButtonRow label="Strategy" value={strategyName} valueColor={strategyColor} />
-          <ButtonRow label="Order type" value="Limit" />
-          {legs.map((leg, i) => (
-            <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
-              {formatLegLine(leg, symbol, quantity)}
+        {atBracketConfirm?.mode === "unsupported" ? (
+          <div
+            className="p-3 rounded-lg space-y-2"
+            style={{ background: `${DOWN}12`, border: `1px solid ${DOWN}44` }}
+            data-testid="at-chain-bracket-unsupported"
+          >
+            <p className="text-[13px] font-semibold" style={{ color: DOWN }}>
+              Bracket review not supported here
             </p>
-          ))}
-          <ButtonRow
-            label={`Net ${isCredit ? "credit" : "debit"}`}
-            value={fmtCurrency(gross)}
-          />
-          <ButtonRow
-            label={`Est. commissions (${totalContracts} × $0.65)`}
-            value={fmtCurrency(fees.commission)}
-          />
-          <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
-          <ButtonRow
-            label={isCredit ? "Net credit (after est. fees)" : "Net debit (after est. fees)"}
-            value={`${netCashAfterFees >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(netCashAfterFees))}`}
-            valueColor={netCashAfterFees >= 0 ? UP : DOWN}
-            emphasize
-          />
-          <ButtonRow label="Time in force" value={timeInForce} />
-          <ButtonRow
-            label="Limit price"
-            value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
-          />
-          {maxLoss != null && (
-            <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
-          )}
-          {bpEffect != null && (
+            <p className="text-[12px] leading-snug" style={{ color: GRAY }}>
+              {atBracketConfirm.message}
+            </p>
+          </div>
+        ) : null}
+        {atBracketConfirm?.mode === "trigger" ? (
+          <div className="p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
             <ButtonRow
-              label={
-                bpKind === "cash_secured"
-                  ? "Cash-secured collateral (est.)"
-                  : "Buying power (est.)"
-              }
-              value={`−${fmtCurrency(Math.abs(bpEffect))}`}
-              valueColor={DOWN}
+              label="Entry"
+              value={humanInstruction(atBracketConfirm.primaryInstruction)}
             />
-          )}
-          {bpEffect == null && bpKind === "not_estimated" && (
-            <ButtonRow label="Buying power" value="Not estimated" />
-          )}
-        </div>
-        <div
-          className="px-2 py-1.5 flex items-center gap-1.5"
-          style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}33` }}
-        >
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
-          <p className="text-[12px] leading-tight" style={{ color: `${GOLD}dd` }}>
-            Live order via Schwab. Verify all details.
+            <ButtonRow label="Template qty" value={String(atBracketConfirm.quantity)} />
+            <ButtonRow
+              label="Limit price"
+              value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
+            />
+            <ButtonRow label="Time in force" value={timeInForce} />
+            <TriggerOrderConfirmSummary
+              summary={atBracketConfirm.summary}
+              ocoPairNote={
+                atBracketConfirm.summary.orders.length >= 3
+                  ? "Orders #2 and #3: one cancels other (OCO)."
+                  : undefined
+              }
+              exitDurationLabel={atExitDurationLabel}
+            />
+          </div>
+        ) : null}
+        {!hidePlainSingleLegConfirm ? (
+          <div className="space-y-1 p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
+            <ButtonRow label="Strategy" value={strategyName} valueColor={strategyColor} />
+            <ButtonRow label="Order type" value="Limit" />
+            {legs.map((leg, i) => (
+              <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
+                {formatLegLine(leg, symbol, quantity)}
+              </p>
+            ))}
+            <ButtonRow label={`Net ${isCredit ? "credit" : "debit"}`} value={fmtCurrency(gross)} />
+            <ButtonRow
+              label={`Est. commissions (${totalContracts} × $0.65)`}
+              value={fmtCurrency(fees.commission)}
+            />
+            <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
+            <ButtonRow
+              label={isCredit ? "Net credit (after est. fees)" : "Net debit (after est. fees)"}
+              value={`${netCashAfterFees >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(netCashAfterFees))}`}
+              valueColor={netCashAfterFees >= 0 ? UP : DOWN}
+              emphasize
+            />
+            <ButtonRow label="Time in force" value={timeInForce} />
+            <ButtonRow
+              label="Limit price"
+              value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
+            />
+            {maxLoss != null && (
+              <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
+            )}
+            {bpEffect != null && (
+              <ButtonRow
+                label={
+                  bpKind === "cash_secured"
+                    ? "Cash-secured collateral (est.)"
+                    : "Buying power (est.)"
+                }
+                value={`−${fmtCurrency(Math.abs(bpEffect))}`}
+                valueColor={DOWN}
+              />
+            )}
+            {bpEffect == null && bpKind === "not_estimated" && (
+              <ButtonRow label="Buying power" value="Not estimated" />
+            )}
+          </div>
+        ) : null}
+        {!hidePlainSingleLegConfirm ? (
+          <div
+            className="px-2 py-1.5 flex items-center gap-1.5"
+            style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}33` }}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
+            <p className="text-[12px] leading-tight" style={{ color: `${GOLD}dd` }}>
+              Live order via Schwab. Verify all details.
+            </p>
+          </div>
+        ) : null}
+        {hidePlainSingleLegConfirm && atBracketConfirm?.mode === "trigger" ? (
+          <p className="text-[11px] px-1" style={{ color: MUTED }}>
+            Preview only — order sending is off. Attached exits match your Active Trader template draft.
           </p>
-        </div>
+        ) : null}
         <div className="flex gap-2 pt-1">
           <button
             type="button"
