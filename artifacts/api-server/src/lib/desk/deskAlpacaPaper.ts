@@ -125,7 +125,9 @@ export async function deskAlpacaPaperBars(
     return { ok: false, bars: [], asOfMs: Date.now(), status: res.status, error: `alpaca_paper_http_${res.status}` };
   }
   const json = (await res.json()) as { bars?: unknown[] };
-  const bars = json.bars ?? [];
+  const bars = (json.bars ?? []).map((bar) =>
+    bar && typeof bar === "object" ? { ...(bar as Record<string, unknown>), symbol: display } : bar,
+  );
   const touch = Date.now();
   deskTouchFeed("alpaca_paper", touch, SOURCE);
   return { ok: true, bars, asOfMs: touch };

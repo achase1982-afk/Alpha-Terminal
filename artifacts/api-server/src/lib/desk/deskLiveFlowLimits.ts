@@ -72,7 +72,8 @@ export function deskLiveFlowRejectSymbol(sym: string, kind: string): DeskLiveFlo
     return null;
   }
   if (kind === "equity" || kind === "spx") {
-    if (!/^\$?[A-Z][A-Z0-9.$\-]{0,11}$/.test(u)) return { error: "invalid_symbol" };
+    if (u.startsWith("./")) return { error: "invalid_symbol" };
+    if (!/^\$?[A-Z][A-Z0-9.$\-/]{0,14}$/.test(u)) return { error: "invalid_symbol" };
     if (isGarbageEquityTicker(u)) return { error: "invalid_symbol" };
   }
   return null;

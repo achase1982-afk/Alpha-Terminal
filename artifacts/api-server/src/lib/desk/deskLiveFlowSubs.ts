@@ -1,5 +1,5 @@
 import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
-import { deskFlowNormalizeEquityKey } from "./deskLiveFlowSymbol.js";
+import { deskFlowCanonicalEquityWireKey, deskFlowNormalizeEquityKey } from "./deskLiveFlowSymbol.js";
 import {
   deskFlowStreamerEnsureEquityL1,
   deskFlowStreamerEnsureFuturesL1,
@@ -26,8 +26,18 @@ export function deskLiveFlowSubsLastFuturesDisplay(): string | null {
   return pendingFuturesDisplay.at(-1) ?? null;
 }
 
+function displayForKey(sym: string, kind: DeskFlowAssetKind): string {
+  if (kind === "futures") {
+    return sym.trim().toUpperCase().startsWith("/") ? sym.trim().toUpperCase() : `/${sym.trim().toUpperCase()}`;
+  }
+  if (kind === "equity") return deskFlowNormalizeEquityKey(sym);
+  return sym.trim().toUpperCase().replace(/^\$/, "");
+}
+
 function keyFor(sym: string, kind: DeskFlowAssetKind): string {
-  return `${kind}:${sym.toUpperCase()}`;
+  if (kind === "equity") return `equity:${deskFlowCanonicalEquityWireKey(sym)}`;
+  if (kind === "futures") return `futures:${displayForKey(sym, kind)}`;
+  return `spx:${displayForKey(sym, kind)}`;
 }
 
 export function deskLiveFlowSubsAcquire(sym: string, kind: DeskFlowAssetKind): void {
@@ -40,9 +50,8 @@ export function deskLiveFlowSubsAcquire(sym: string, kind: DeskFlowAssetKind): v
   if (h.refs === 0 && kind !== "spx") {
     try {
       if (kind === "equity") {
-        const eq = deskFlowNormalizeEquityKey(sym);
-        h.addedL1 = deskFlowStreamerEnsureEquityL1(eq);
-        h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(eq);
+        h.addedL1 = deskFlowStreamerEnsureEquityL1(sym);
+        h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(sym);
       } else       if (kind === "futures") {
         const ds = sym.trim().toUpperCase().startsWith("/") ? sym.trim().toUpperCase() : null;
         if (!ds) throw new Error("futures_requires_slash_prefix");
@@ -68,9 +77,8 @@ export function deskLiveFlowSubsRelease(sym: string, kind: DeskFlowAssetKind): v
   if (kind === "spx") return;
   try {
     if (kind === "equity") {
-      const eq = deskFlowNormalizeEquityKey(sym);
-      deskFlowStreamerReleaseTimesaleEquity(eq);
-      deskFlowStreamerReleaseEquityL1(eq);
+      deskFlowStreamerReleaseTimesaleEquity(sym);
+      deskFlowStreamerReleaseEquityL1(sym);
     } else if (kind === "futures") {
       const ds = sym.trim().toUpperCase();
       deskFlowStreamerReleaseTimesaleFutures(ds);
@@ -82,15 +90,7 @@ export function deskLiveFlowSubsRelease(sym: string, kind: DeskFlowAssetKind): v
 }
 
 export function deskLiveFlowSubsSymbolActive(sym: string, kind: DeskFlowAssetKind): boolean {
-  const normalized =
-    kind === "futures"
-      ? sym.trim().toUpperCase().startsWith("/")
-        ? sym.trim().toUpperCase()
-        : `/${sym.trim().toUpperCase()}`
-      : kind === "equity"
-        ? deskFlowNormalizeEquityKey(sym)
-        : sym.trim().toUpperCase().replace(/^\$/, "");
-  const k = keyFor(normalized, kind);
+  const k = keyFor(sym, kind);
   return (held.get(k)?.refs ?? 0) > 0;
 }
 
@@ -127,9 +127,9 @@ export function deskLiveFlowSubsRewireHeld(): void {
     if (h.refs <= 0 || h.kind === "spx") continue;
     try {
       if (h.kind === "equity") {
-        const eq = k.slice("equity:".length);
-        h.addedL1 = deskFlowStreamerEnsureEquityL1(eq);
-        h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(eq);
+        const wire = k.slice("equity:".length);
+        h.addedL1 = deskFlowStreamerEnsureEquityL1(wire);
+        h.addedTimesale = deskFlowStreamerEnsureTimesaleEquity(wire);
       } else if (h.kind === "futures") {
         const ds = k.slice("futures:".length);
         h.addedL1 = deskFlowStreamerEnsureFuturesL1(ds);

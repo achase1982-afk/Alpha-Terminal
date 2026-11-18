@@ -1,4 +1,5 @@
 import { schwabFuturesKey } from "../schwabStreamer.js";
+import { deskFormatSchwabSymbol } from "./deskSchwabSymbol.js";
 
 export type DeskFlowAssetKind = "spx" | "equity" | "futures";
 
@@ -35,4 +36,13 @@ export function parseDeskFlowSymbol(raw: string): { ok: true; parsed: DeskFlowSy
 
 export function deskFlowNormalizeEquityKey(sym: string): string {
   return sym.trim().toUpperCase().replace(/^\$/, "");
+}
+
+/** Schwab LEVELONE/TIMESALE wire key — shared with streamer (class shares → slash). */
+export function deskFlowCanonicalEquityWireKey(sym: string): string {
+  return deskFormatSchwabSymbol(deskFlowNormalizeEquityKey(sym));
+}
+
+export function deskFlowEquityWireKeysMatch(displayA: string, displayB: string): boolean {
+  return deskFlowCanonicalEquityWireKey(displayA) === deskFlowCanonicalEquityWireKey(displayB);
 }

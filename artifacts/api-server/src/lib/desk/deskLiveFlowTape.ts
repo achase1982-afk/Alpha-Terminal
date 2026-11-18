@@ -11,6 +11,7 @@ import {
   deskLiveFlowEnabled,
 } from "./deskLiveFlowConfig.js";
 import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
+import { deskFlowCanonicalEquityWireKey } from "./deskLiveFlowSymbol.js";
 import { deskLiveFlowSubsSymbolActive } from "./deskLiveFlowSubs.js";
 import {
   bucketDueToClose,
@@ -88,7 +89,8 @@ function recordFrame(frame: DeskLiveFlowFrame): void {
   deskLiveFlowBroadcastFrame(frame);
 }
 
-function symKey(sym: string): string {
+function symKey(sym: string, kind: DeskFlowAssetKind): string {
+  if (kind === "equity") return deskFlowCanonicalEquityWireKey(sym);
   return sym.toUpperCase();
 }
 
@@ -118,7 +120,7 @@ function fresh60s(ms: number, src: TapeBucket1s["src"]): TapeBucket60s {
 }
 
 function stateFor(sym: string, kind: DeskFlowAssetKind): SymbolState {
-  const k = symKey(sym);
+  const k = symKey(sym, kind);
   let s = states.get(k);
   if (!s) {
     s = {
@@ -228,8 +230,9 @@ export function deskLiveFlowTapeOnSessionReset(): void {
   }
 }
 
-export function deskLiveFlowTapeDropSymbol(sym: string): void {
-  states.delete(symKey(sym));
+export function deskLiveFlowTapeDropSymbol(sym: string, kind: DeskFlowAssetKind = "equity"): void {
+  if (states.size === 0) return;
+  states.delete(symKey(sym, kind));
 }
 
 function closeOpen1s(sym: string, st: SymbolState, rxMs: number): void {
@@ -439,7 +442,7 @@ export function deskLiveFlowTapeOnTimesaleEquity(
 ): void {
   if (!deskLiveFlowEnabled()) return;
   if (!deskLiveFlowSubsSymbolActive(symbol, "equity")) return;
-  const sym = symKey(symbol);
+  const sym = symKey(symbol, "equity");
   const st = stateFor(sym, "equity");
   const rxMs = Date.now();
   const clockMs = eventClockMs(tradeTimeMs, rxMs, sequence ?? null, st);
@@ -559,8 +562,8 @@ export function deskLiveFlowTapeEmitNotice(sym: string, code: string, message: s
   recordFrame(wrapDeskLiveFlowFrame(payload, rxMs, rxMs));
 }
 
-export function deskLiveFlowTapeFlush(sym: string, rxMs: number): void {
-  const st = states.get(symKey(sym));
+export function deskLiveFlowTapeFlush(sym: string, rxMs: number, kind: DeskFlowAssetKind = "equity"): void {
+  const st = states.get(symKey(sym, kind));
   if (!st) return;
   if (st.open1s) {
     emitTape1s(sym, st, st.open1s, rxMs);
@@ -592,7 +595,7 @@ export function deskLiveFlowTapeReplayPrints(
     if (clock == null) continue;
     const side = classifyFlowAgainstPriorQuote(p.price, p.bid, p.ask);
     if (!side) continue;
-    addPrint(st, symKey(sym), side, p.size, p.price, clock, p.rxMs, "schwab_timesale");
+    addPrint(st, symKey(sym, kind), side, p.size, p.price, clock, p.rxMs, "schwab_timesale");
   }
   deskLiveFlowTapeFlush(sym, prints.at(-1)?.rxMs ?? Date.now());
   return deskLiveFlowTestSliceFrames(before);
