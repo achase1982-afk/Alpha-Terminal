@@ -6,6 +6,7 @@ import { setFuturesActiveSymbolForRoot } from "../futuresFrontMonth.js";
 import {
   addFuturesDisplay,
   addFuturesSymbols,
+  deskFlowStreamerEnsureFuturesL1,
   getQuoteBySymbol,
   registerWsBroadcast,
   __schwabFuturesProcessTickForTests,
@@ -53,5 +54,18 @@ describe("schwab futures display registry", () => {
     __schwabFuturesProcessTickForTests([{ key: "/ESZ26", "3": 100, "14": 99 }]);
     expect(getQuoteBySymbol("/ES")?.last).toBe(100);
     expect(getQuoteBySymbol("/ESZ26")?.last).toBe(100);
+  });
+
+  it("desk ensure on contract keeps root quotes when app already holds root", () => {
+    setFuturesActiveSymbolForRoot("/ES", "/ESZ26");
+    addFuturesSymbols(["/ES"]);
+    deskFlowStreamerEnsureFuturesL1("/ESZ26");
+
+    __schwabFuturesProcessTickForTests([
+      { key: "/ESZ26", "3": 6125.5, "14": 6120, "1": 6125.25, "2": 6125.75 },
+    ]);
+
+    expect(getQuoteBySymbol("/ES")?.last).toBe(6125.5);
+    expect(getQuoteBySymbol("/ESZ26")?.last).toBe(6125.5);
   });
 });
