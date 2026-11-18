@@ -424,7 +424,7 @@ export function OptionsChainOrderSheet({
     submittedLimit != null &&
     submittedLimit > 0 &&
     quantity > 0 &&
-    (demoFixture || !!accountHash);
+    (demoFixture || !!accountHash || !!sendPreviewOnly);
 
   if (legs.length === 0) return null;
 
