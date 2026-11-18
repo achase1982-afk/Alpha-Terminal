@@ -62,6 +62,7 @@ import {
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import {
+  atLadderSpotOffCenter,
   scrollAtLadderToSpot,
   scrollAtLadderToStrike,
   scrollAtLadderToStrikeAboveSheet,
@@ -114,8 +115,6 @@ interface ActiveTraderViewProps {
   /** REST chain fetch timestamp — used when stream quotes are empty or zero. */
   chainQuoteTs?: number;
 }
-
-const LADDER_RADIUS = 20;
 
 export const ActiveTraderView = memo(function ActiveTraderView({
   symbol,
@@ -199,6 +198,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   );
   const chromeRef = useRef<HTMLDivElement>(null);
   const ladderScrollRef = useRef<HTMLDivElement>(null);
+  const [ladderOffCenter, setLadderOffCenter] = useState(false);
 
   useEffect(() => {
     if (presentation?.skipNetwork) {
@@ -228,16 +228,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const ladderRows: LadderRowModel[] = useMemo(() => {
     if (!primary?.rows?.length) return [];
-    const strikes = primary.rows.map((r) => r.strike);
-    const atm = findAtmStrikeIndex(strikes, underlyingPrice);
-    const center = atm >= 0 ? atm : Math.floor(strikes.length / 2);
-    const start = Math.max(0, center - LADDER_RADIUS);
-    const end = Math.min(primary.rows.length, center + LADDER_RADIUS + 1);
-    const slice = primary.rows.slice(start, end);
-    return slice
+    return [...primary.rows]
       .map((r) => ({ strike: r.strike, call: r.call, put: r.put }))
       .sort((a, b) => b.strike - a.strike);
-  }, [primary, underlyingPrice]);
+  }, [primary]);
 
   const streamKeys = useMemo(() => {
     const keys: string[] = [];
@@ -263,7 +257,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const flowByKey = useFlowByKey(streamKeys, windowSec * 1000);
 
-  const zones = useAtLiveZones(primary?.rows, underlyingPrice, presentation?.zones);
+  const zones = useAtLiveZones(
+    symbol,
+    primary?.rows,
+    underlyingPrice,
+    presentation?.zones,
+    presentation?.skipNetwork,
+  );
 
   const rowByStrike = useMemo(() => {
     const m = new Map<number, LadderRowModel>();
@@ -721,7 +721,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   useEffect(() => {
     scrollLadderToSpot();
-  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot]);
+  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot, ladderRows.length]);
+
+  useEffect(() => {
+    const el = ladderScrollRef.current;
+    if (!el) return;
+    const sync = () => setLadderOffCenter(atLadderSpotOffCenter(el, underlyingPrice));
+    sync();
+    el.addEventListener("scroll", sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      ro.disconnect();
+    };
+  }, [underlyingPrice, ladderRows.length, ladderDataReady]);
 
   useEffect(() => {
     if (underlyingPrice == null) return;
@@ -747,6 +761,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           symbol={symbol}
           underlyingPrice={underlyingPrice}
           zones={zones}
+          glanceCaption={zones.glanceCaption}
           keepawayPutLine={keepawayPutLine}
           keepawayCallLine={keepawayCallLine}
           keepawayStats={keepawayStats}
@@ -844,11 +859,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         </div>
       </div>
 
+      <div className="relative flex-1 min-h-0">
       <div
         ref={ladderScrollRef}
         data-at-ladder-scroll
         data-selected-strike={tradeStripStrike ?? undefined}
-        className="at-ladder-scroll flex-1 min-h-0"
+        className="at-ladder-scroll h-full min-h-0"
         style={{
           ...noScrollbar,
           overflowY: "auto",
@@ -860,14 +876,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         {ladderDataReady ? (
-          <div
-            style={{
-              minHeight: "100%",
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: ladderRows.length <= 14 ? "center" : "flex-start",
-            }}
-          >
+          <div style={{ display: "flex", flexDirection: "column" }}>
           <LadderBody
             rows={ladderRows}
             accentHex={accentHex}
@@ -901,6 +910,30 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             <AtLadderSkeleton accentHex={accentHex} />
           </>
         )}
+      </div>
+      {ladderOffCenter ? (
+        <button
+          type="button"
+          data-at-ladder-recenter
+          onClick={scrollLadderToSpot}
+          style={{
+            position: "absolute",
+            right: 8,
+            bottom: 12 + sheetScrollPad,
+            zIndex: 40,
+            fontFamily: MONO,
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "6px 10px",
+            borderRadius: 999,
+            border: `1px solid ${BORDER_ROW}`,
+            background: "rgba(12,12,12,0.92)",
+            color: WHITE,
+          }}
+        >
+          Recenter
+        </button>
+      ) : null}
       </div>
 
       {selectedLegs.size > 0 ? (

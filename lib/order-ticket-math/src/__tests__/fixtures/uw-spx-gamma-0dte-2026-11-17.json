@@ -1,0 +1,14 @@
+{
+  "data": [
+    { "strike": "6600", "call_gamma_oi": "0", "put_gamma_oi": "0", "expiry": "2026-11-17" },
+    { "strike": "6620", "call_gamma_oi": "0", "put_gamma_oi": "0", "expiry": "2026-11-17" },
+    { "strike": "7280", "call_gamma_oi": "-200000000", "put_gamma_oi": "-2800000000", "expiry": "2026-11-17" },
+    { "strike": "7285", "call_gamma_oi": "-100000000", "put_gamma_oi": "-1900000000", "expiry": "2026-11-17" },
+    { "strike": "7290", "call_gamma_oi": "250000000", "put_gamma_oi": "-80000000", "expiry": "2026-11-17" },
+    { "strike": "7295", "call_gamma_oi": "80000000", "put_gamma_oi": "-2200000000", "expiry": "2026-11-17" },
+    { "strike": "7300", "call_gamma_oi": "90000000", "put_gamma_oi": "-3500000000", "expiry": "2026-11-17" },
+    { "strike": "7320", "call_gamma_oi": "120000000", "put_gamma_oi": "-2500000000", "expiry": "2026-11-17" },
+    { "strike": "7340", "call_gamma_oi": "382000000", "put_gamma_oi": "-7270000000", "expiry": "2026-11-17" },
+    { "strike": "7360", "call_gamma_oi": "50000000", "put_gamma_oi": "-900000000", "expiry": "2026-11-17" }
+  ]
+}

@@ -16,6 +16,8 @@ export * from "./chainOrderSheetHydrate.js";
 export * from "./optionPop.js";
 export * from "./schwabComplexStrategy.js";
 export * from "./futuresOrderGuard.js";
+export * from "./uwGammaZones.js";
+export * from "./uwGammaZonesTypes.js";
 export {
   computeSpxKeepawayFromDailyCandles,
   roundKeepawayCallLine,

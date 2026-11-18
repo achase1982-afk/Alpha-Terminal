@@ -7,6 +7,8 @@ export interface ZoneModel {
   netGexUsdPer1Pct: number | null;
   env: GammaEnv;
   asOfLabel: string;
+  /** e.g. `Closed · as of 4:15 PM` when session is closed. */
+  glanceCaption?: string;
 }
 
 export interface ChainRowForZones {
@@ -17,10 +19,14 @@ export interface ChainRowForZones {
   putGamma: number | null;
 }
 
-function gexPerContract(gamma: number, oi: number, spot: number, isCall: boolean): number {
-  if (!gamma || !oi || !spot) return 0;
-  const raw = gamma * oi * 100 * spot * spot * 0.01;
+function gexPerContract(gamma: number, oi: number, spot: number, spotForScale: number, isCall: boolean): number {
+  if (!gamma || !oi || !spotForScale) return 0;
+  const raw = gamma * oi * 100 * spotForScale * spotForScale * 0.01;
   return isCall ? raw : -raw;
+}
+
+export function chainHasOpenInterest(rows: ChainRowForZones[]): boolean {
+  return rows.some((r) => r.callOi > 0 || r.putOi > 0);
 }
 
 export function computeZoneModel(rows: ChainRowForZones[], spot: number | null): ZoneModel {
@@ -31,6 +37,10 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
     hour12: false,
   });
   if (!spot || rows.length === 0) {
+    return { callWall: null, putWall: null, flip: null, netGexUsdPer1Pct: null, env: null, asOfLabel };
+  }
+
+  if (!chainHasOpenInterest(rows)) {
     return { callWall: null, putWall: null, flip: null, netGexUsdPer1Pct: null, env: null, asOfLabel };
   }
 
@@ -50,16 +60,16 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
       if (r.strike < low || r.strike > high) continue;
       const cg = r.callGamma ?? 0;
       const pg = r.putGamma ?? 0;
-      n += gexPerContract(cg * (s / spot), r.callOi, s, true);
-      n += gexPerContract(pg * (s / spot), r.putOi, s, false);
+      n += gexPerContract(cg * (s / spot), r.callOi, s, s, true);
+      n += gexPerContract(pg * (s / spot), r.putOi, s, s, false);
     }
     return n;
   });
 
   for (const r of rows) {
     if (r.strike < low || r.strike > high) continue;
-    const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, true);
-    const putG = gexPerContract(r.putGamma ?? 0, r.putOi, spot, false);
+    const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true);
+    const putG = gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false);
     netGex += callG + putG;
     if (callG > maxCallGex) {
       maxCallGex = callG;
@@ -75,7 +85,8 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
   for (let i = 1; i < netBySpot.length; i++) {
     const a = netBySpot[i - 1];
     const b = netBySpot[i];
-    if ((a <= 0 && b >= 0) || (a >= 0 && b <= 0)) {
+    const crossed = (a < 0 && b > 0) || (a > 0 && b < 0);
+    if (crossed) {
       flip = gridSpots[i];
       break;
     }
@@ -99,7 +110,7 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
 }
 
 export function formatGexUsd(v: number | null): string {
-  if (v == null) return "\u2014";
+  if (v == null || !Number.isFinite(v)) return "\u2014";
   const sign = v >= 0 ? "+" : "\u2212";
   const abs = Math.abs(v);
   if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(2)}B`;
