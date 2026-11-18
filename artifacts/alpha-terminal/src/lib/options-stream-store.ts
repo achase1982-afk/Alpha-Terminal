@@ -101,34 +101,57 @@ function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTic
 interface OptionsStreamState {
   ticks: Record<string, OptionTick>;
   mergeTick: (tick: OptionTick) => void;
+  /** Apply a batch of ticks as ONE store write, so subscribers run once per batch instead of once per quote. */
+  mergeTicks: (ticks: readonly OptionTick[]) => void;
   clearTicks: () => void;
+}
+
+/** Returns the merged tick, or null when `incoming` changes nothing. */
+function mergeIncomingTick(current: Record<string, OptionTick>, incoming: OptionTick): OptionTick | null {
+  const cleaned = { ...incoming };
+  if (cleaned.iv != null && cleaned.iv <= -999) cleaned.iv = null;
+  const existing = current[incoming.key];
+  if (!existing) return cleaned;
+  const merged = mergeOptionTicks(existing, cleaned);
+  for (const f of TICK_FIELDS) {
+    if (merged[f] !== existing[f]) return merged;
+  }
+  if (merged.ts !== existing.ts) return merged;
+  const vs = merged.volumeSample;
+  const evs = existing.volumeSample;
+  if (vs?.cumulativeVol !== evs?.cumulativeVol || vs?.tradeTimeMs !== evs?.tradeTimeMs) return merged;
+  return null;
 }
 
 export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
   ticks: {},
   mergeTick: (tick) =>
     set((state) => {
-      const cleaned = { ...tick };
-      if (cleaned.iv != null && cleaned.iv <= -999) cleaned.iv = null;
-      const existing = state.ticks[tick.key];
-      const merged = existing ? mergeOptionTicks(existing, cleaned) : cleaned;
-      if (existing) {
-        let changed = false;
-        for (const f of TICK_FIELDS) {
-          if (merged[f] !== existing[f]) { changed = true; break; }
-        }
-        if (merged.ts !== existing.ts) changed = true;
-        const vs = merged.volumeSample;
-        const evs = existing.volumeSample;
-        if (
-          vs?.cumulativeVol !== evs?.cumulativeVol ||
-          vs?.tradeTimeMs !== evs?.tradeTimeMs
-        ) {
-          changed = true;
-        }
-        if (!changed) return state;
-      }
+      const merged = mergeIncomingTick(state.ticks, tick);
+      if (!merged) return state;
       return { ticks: { ...state.ticks, [tick.key]: merged } };
+    }),
+  mergeTicks: (batch) =>
+    set((state) => {
+      if (batch.length === 0) return state;
+      let next: Record<string, OptionTick> | null = null;
+      let samples: Map<string, OptionVolumeSample> | null = null;
+      for (const tick of batch) {
+        if (tick.volumeSample) (samples ??= new Map()).set(tick.key, tick.volumeSample);
+        const merged = mergeIncomingTick(next ?? state.ticks, tick);
+        if (!merged) continue;
+        next ??= { ...state.ticks };
+        next[tick.key] = merged;
+      }
+      // A volume sample rides on one frame only. Keep the newest one from this
+      // batch so a later quote-only frame for the same contract does not hide it.
+      if (next && samples) {
+        for (const [key, sample] of samples) {
+          const merged = next[key];
+          if (merged && !merged.volumeSample) next[key] = { ...merged, volumeSample: sample };
+        }
+      }
+      return next ? { ticks: next } : state;
     }),
   clearTicks: () => set({ ticks: {} }),
 }));

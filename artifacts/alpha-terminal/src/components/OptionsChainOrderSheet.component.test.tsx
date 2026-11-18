@@ -25,9 +25,15 @@ vi.mock("@/lib/schwab-account-store", () => ({
     sel({ accounts: [], tradingAccountHash: () => schwabAccountMock.tradingHash }),
 }));
 
-vi.mock("@/lib/options-stream-store", () => ({
-  useOptionsStreamStore: (sel: (s: { ticks: Record<string, never> }) => unknown) => sel({ ticks: {} }),
-}));
+vi.mock("@/lib/options-stream-store", () => {
+  const state = { ticks: {} as Record<string, never> };
+  return {
+    useOptionsStreamStore: Object.assign((sel: (s: typeof state) => unknown) => sel(state), {
+      getState: () => state,
+      subscribe: () => () => {},
+    }),
+  };
+});
 
 vi.mock("@/lib/fetchWithAuth", () => ({
   fetchWithAuth: vi.fn(() =>

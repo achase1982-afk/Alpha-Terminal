@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
+import { createOptionTickBatcher, type OptionTickBatcher } from "@/lib/optionTickBatcher";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -195,8 +196,16 @@ export function useMarketStream() {
     })),
   );
 
-  const mergeTick = useOptionsStreamStore((s) => s.mergeTick);
-  const clearOptionTicks = useOptionsStreamStore((s) => s.clearTicks);
+  const mergeTicks = useOptionsStreamStore((s) => s.mergeTicks);
+  const clearOptionTicksInStore = useOptionsStreamStore((s) => s.clearTicks);
+  const optionTickBatcherRef = useRef<OptionTickBatcher | null>(null);
+  if (optionTickBatcherRef.current == null) {
+    optionTickBatcherRef.current = createOptionTickBatcher((batch) => mergeTicks(batch));
+  }
+  const clearOptionTicks = useCallback(() => {
+    optionTickBatcherRef.current?.cancel();
+    clearOptionTicksInStore();
+  }, [clearOptionTicksInStore]);
   const setDepthBook = useDepthStore((s) => s.setBook);
   const setDepthBooks = useDepthStore((s) => s.setBooks);
   const setPortfolioAccount = usePortfolioStreamStore((s) => s.setAccount);
@@ -338,7 +347,7 @@ export function useMarketStream() {
       rejectedRetries.current = 0;
       queueStreamQuote(data as LiveQuote);
     } else if (event === "optionQuote") {
-      mergeTick(data as OptionTick);
+      optionTickBatcherRef.current?.push(data as OptionTick);
     } else if (event === "depth") {
       setDepthBook(data as DepthBook);
     } else if (event === "depthSnapshot") {
@@ -392,7 +401,6 @@ export function useMarketStream() {
     }
   }, [
     addLiveNews,
-    mergeTick,
     setDepthBook,
     setDepthBooks,
     setPortfolioAccount,
@@ -639,6 +647,7 @@ export function useMarketStream() {
         quoteFlushTimerRef.current = null;
       }
       pendingQuotesRef.current.clear();
+      optionTickBatcherRef.current?.cancel();
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

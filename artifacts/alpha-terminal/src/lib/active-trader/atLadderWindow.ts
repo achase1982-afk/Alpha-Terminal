@@ -150,3 +150,29 @@ export function selectAtStreamKeys(input: {
   }
   return out;
 }
+
+export type AtChainQueryParams = {
+  symbol?: string;
+  fromDate?: string;
+  toDate?: string;
+  range?: string;
+};
+
+/**
+ * While a strike window loads, the ladder may keep showing the previous
+ * response only when that response was itself a ladder window for the same
+ * symbol covering the same expiry (the next page of strikes, or the first
+ * load before an expiry was picked).
+ *
+ * The Chain view's response has a handful of strikes across many expirations.
+ * As a stand-in for the ladder window it would be a 10-strike ladder with an
+ * empty screen below it, so it is never accepted.
+ */
+export function atLadderPlaceholderOk(
+  previous: AtChainQueryParams | undefined,
+  next: { symbol: string; fromDate: string; toDate: string },
+): boolean {
+  if (!previous?.fromDate || !previous.toDate || !previous.range) return false;
+  if ((previous.symbol ?? "") !== next.symbol) return false;
+  return previous.fromDate <= next.fromDate && previous.toDate >= next.toDate;
+}

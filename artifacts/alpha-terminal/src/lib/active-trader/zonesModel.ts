@@ -1,3 +1,5 @@
+import { computeZonesFromUwGamma0dte } from "@workspace/order-ticket-math";
+
 export type GammaEnv = "damping" | "amplifying" | "near_flip" | null;
 
 export interface ZoneModel {
@@ -35,6 +37,27 @@ export function chainHasOpenInterest(rows: ChainRowForZones[]): boolean {
   return rows.some((r) => r.callOi > 0 || r.putOi > 0);
 }
 
+/**
+ * Gamma flip from chain rows: the strike nearest spot where net gamma exposure
+ * (call gamma x OI minus put gamma x OI) changes sign.
+ *
+ * It applies the rule the server applies to Unusual Whales' per-strike gamma,
+ * to the strikes loaded here, so the header and the ladder still have a flip
+ * level when that feed has none.
+ */
+export function chainGammaFlip(rows: ChainRowForZones[], spot: number | null): number | null {
+  if (spot == null || !Number.isFinite(spot) || spot <= 0) return null;
+  const perStrike = rows
+    .map((r) => ({
+      strike: r.strike,
+      call_gamma_oi: gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true),
+      put_gamma_oi: gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false),
+    }))
+    .filter((r) => r.call_gamma_oi !== 0 || r.put_gamma_oi !== 0);
+  if (perStrike.length < 2) return null;
+  return computeZonesFromUwGamma0dte(perStrike, { spot }).flip;
+}
+
 export function computeZoneModel(rows: ChainRowForZones[], spot: number | null): ZoneModel {
   const asOfLabel = new Date().toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -58,20 +81,6 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
   let maxPutAbs = 0;
   let netGex = 0;
 
-  const gridSpots: number[] = [];
-  for (let s = low; s <= high; s += spot * 0.002) gridSpots.push(s);
-  const netBySpot: number[] = gridSpots.map((s) => {
-    let n = 0;
-    for (const r of rows) {
-      if (r.strike < low || r.strike > high) continue;
-      const cg = r.callGamma ?? 0;
-      const pg = r.putGamma ?? 0;
-      n += gexPerContract(cg * (s / spot), r.callOi, s, s, true);
-      n += gexPerContract(pg * (s / spot), r.putOi, s, s, false);
-    }
-    return n;
-  });
-
   for (const r of rows) {
     if (r.strike < low || r.strike > high) continue;
     const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true);
@@ -87,16 +96,10 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
     }
   }
 
-  let flip: number | null = null;
-  for (let i = 1; i < netBySpot.length; i++) {
-    const a = netBySpot[i - 1];
-    const b = netBySpot[i];
-    const crossed = (a < 0 && b > 0) || (a > 0 && b < 0);
-    if (crossed) {
-      flip = gridSpots[i];
-      break;
-    }
-  }
+  const flip = chainGammaFlip(
+    rows.filter((r) => r.strike >= low && r.strike <= high),
+    spot,
+  );
 
   let env: GammaEnv = null;
   if (netGex !== 0) {

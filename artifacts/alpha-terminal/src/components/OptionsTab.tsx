@@ -6,6 +6,7 @@ import { useOptionsSettingsStore } from "@/lib/options-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsColumnsStore, COLUMN_REGISTRY, type ColumnDef } from "@/lib/options-columns-store";
 import { useOptionTick, useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
+import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
 import { useUICustomizationStore, ACCENT_COLORS } from "@/lib/ui-customization-store";
 
 import { useGetQuote, useGetOptionChain } from "@workspace/api-client-react";
@@ -28,7 +29,7 @@ import {
   UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, OTM_PURPLE, SEL_BORDER_COLOR,
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
-import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
+import { ActiveTraderView, type AtExpirationGroup } from "@/components/active-trader/ActiveTraderView";
 import {
   AT_LADDER_STRIKE_CAP,
   atChainDateWindow,
@@ -38,6 +39,8 @@ import {
   growAtLadderSide,
   mergeAtChainLegs,
   trimAtChainLegsToDepth,
+  atLadderPlaceholderOk,
+  type AtChainQueryParams,
 } from "@/lib/active-trader/atLadderWindow";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
@@ -261,6 +264,42 @@ function buildExpirationGroups(
       rows: normalizedRows, totalStrikes,
       expType: getExpType(exp), atmIV, expectedMove,
       maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, ivSkew,
+    });
+  }
+  groups.sort((a, b) => a.dte - b.dte);
+  return groups;
+}
+
+/**
+ * Expiration groups for the Active Trader ladder: strikes and contracts only.
+ * `buildExpirationGroups` also derives ATM stats from the last price, so its
+ * rows are new objects on every underlying tick; these are rebuilt only when
+ * the chain itself changes, which lets the ladder skip those ticks entirely.
+ */
+function buildAtLadderGroups(calls: Contract[], puts: Contract[]): AtExpirationGroup[] {
+  const expMap = new Map<string, { calls: Map<string, Contract>; puts: Map<string, Contract>; dte: number }>();
+  for (const c of calls) {
+    if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
+    expMap.get(c.expiration)!.calls.set(strikeKey(c.strike), c);
+  }
+  for (const p of puts) {
+    if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
+    expMap.get(p.expiration)!.puts.set(strikeKey(p.strike), p);
+  }
+  const groups: AtExpirationGroup[] = [];
+  for (const [exp, { calls: callMap, puts: putMap, dte }] of expMap) {
+    const strikes = [...new Set([...callMap.keys(), ...putMap.keys()])]
+      .map((k) => parseFloat(k))
+      .sort((a, b) => a - b);
+    groups.push({
+      expiration: exp,
+      dte,
+      dateLabel: formatExpDate(exp),
+      rows: strikes.map((strike) => ({
+        strike,
+        call: callMap.get(strikeKey(strike)) ?? null,
+        put: putMap.get(strikeKey(strike)) ?? null,
+      })),
     });
   }
   groups.sort((a, b) => a.dte - b.dte);
@@ -1291,6 +1330,12 @@ function buildSchwabOptionKey(underlying: string, expiration: string, strike: nu
   return `${sym}${yy}${mm}${dd}${type}${strikePadded}`;
 }
 
+/** Least time between re-centering fetches when the underlying has run away from the loaded strikes. */
+const CHAIN_REANCHOR_MIN_MS = 5_000;
+
+/** The chain order sheet re-prices from its legs' live quotes at most this often. */
+const CHAIN_TICKET_TICK_MS = 150;
+
 interface OptionsTabProps {
   subscribeOptionSymbols?: (
     symbols: string[],
@@ -1459,11 +1504,15 @@ export function OptionsTab({
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
-        placeholderData: (previous: OptionChainResponse | undefined) => {
+        placeholderData: (
+          previous: OptionChainResponse | undefined,
+          previousQuery?: { queryKey: readonly unknown[] },
+        ) => {
           if (!previous) return undefined;
           if (optionsSubView === "at") {
-            const count = Math.max(previous.calls?.length ?? 0, previous.puts?.length ?? 0);
-            if (count < 20) return undefined;
+            // The ladder shows its own strike window or a loading state, never the Chain view's list.
+            const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
+            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates })) return undefined;
           }
           return previous;
         },
@@ -1472,7 +1521,8 @@ export function OptionsTab({
 
   useEffect(() => {
     if (optionsSubView !== "at" || fixtureChain || !chainApiEnabled) return;
-    void refetchOptionChain();
+    // Join a request that is already in flight for this window instead of cancelling and re-sending it.
+    void refetchOptionChain({ cancelRefetch: false });
   }, [optionsSubView, fixtureChain, chainApiEnabled, refetchOptionChain]);
 
   const chainFetchedAt =
@@ -1566,10 +1616,16 @@ export function OptionsTab({
     null;
 
   const chainAnchorPx = rawData?.underlyingPrice ?? null;
+  const lastReanchorAtRef = useRef(0);
   useEffect(() => {
     if (fixtureChain || underlyingPrice == null || chainAnchorPx == null) return;
     if (Math.abs(chainAnchorPx - underlyingPrice) < 25) return;
-    void refetchOptionChain();
+    // This runs on every underlying tick while the chain is off-center. A plain
+    // refetch() cancels the request in flight; called per tick, none would finish.
+    const now = Date.now();
+    if (now - lastReanchorAtRef.current < CHAIN_REANCHOR_MIN_MS) return;
+    lastReanchorAtRef.current = now;
+    void refetchOptionChain({ cancelRefetch: false });
   }, [underlyingPrice, chainAnchorPx, fixtureChain, refetchOptionChain]);
 
   const chainHoldSig = useMemo(() => {
@@ -1608,24 +1664,33 @@ export function OptionsTab({
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
 
+  const atGroups = useMemo(() => {
+    if (!data) return [];
+    const calls = (data.calls ?? []) as Contract[];
+    const puts = (data.puts ?? []) as Contract[];
+    calls.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
+    puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
+    return buildAtLadderGroups(calls, puts);
+  }, [data, symbol]);
+
   const atLadderHasRows = useMemo(() => {
-    if (optionsSubView !== "at" || !groups.length) return false;
+    if (optionsSubView !== "at" || !atGroups.length) return false;
     const ymd = atExpiration?.slice(0, 10) ?? "";
-    return groups.some((g) => {
+    return atGroups.some((g) => {
       if (!g.rows.length) return false;
       if (!ymd) return true;
       return g.expiration === atExpiration || g.expiration.slice(0, 10) === ymd;
     });
-  }, [optionsSubView, groups, atExpiration]);
+  }, [optionsSubView, atGroups, atExpiration]);
 
   useEffect(() => {
-    if (!groups.length) return;
+    if (!atGroups.length) return;
     setAtExpiration((prev) => {
-      const tradable = filterAtExpiryPillGroups(groups);
+      const tradable = filterAtExpiryPillGroups(atGroups);
       if (prev && tradable.some((g) => g.expiration === prev)) return prev;
-      return nearestTradableExpiration(groups)?.expiration ?? null;
+      return nearestTradableExpiration(atGroups)?.expiration ?? null;
     });
-  }, [groups]);
+  }, [atGroups]);
 
   useEffect(() => {
     if (optionsSubView === "chain" && atExpiration) {
@@ -1638,11 +1703,11 @@ export function OptionsTab({
   }, [optionsSubView, atExpiration]);
 
   useEffect(() => {
-    if (optionsSubView !== "at" || !groups.length || !atExpiration) {
+    if (optionsSubView !== "at" || !atGroups.length || !atExpiration) {
       if (optionsSubView !== "at") clearAtExpiryChrome();
       return;
     }
-    const atPillGroups = filterAtExpiryPillGroups(groups);
+    const atPillGroups = filterAtExpiryPillGroups(atGroups);
     setAtExpiryChrome({
       options: atPillGroups.map((g) => ({
         expiration: g.expiration,
@@ -1651,7 +1716,7 @@ export function OptionsTab({
       selectedExpiration: atExpiration,
       onSelect: setAtExpiration,
     });
-  }, [optionsSubView, groups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
+  }, [optionsSubView, atGroups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
 
   useChainOptionHold(
     chainHoldSig?.holdSig,
@@ -1855,7 +1920,20 @@ export function OptionsTab({
     setLegQuantities(new Map());
   }, [onOpenStrategyBuilder, groups, selectedLegs, chainFetchedAt]);
 
-  const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
+  /**
+   * Live quotes for the picked legs only. Reading the whole tick map here
+   * re-rendered this entire tab (chain, Active Trader and all) on every option
+   * quote for any contract.
+   */
+  const selectedLegStreamKeys = useMemo(
+    () =>
+      [...selectedLegs.values()]
+        .map((l) => l.contract.streamKey)
+        .filter((k): k is string => !!k)
+        .sort(),
+    [selectedLegs],
+  );
+  const streamTicksForLegs = useOptionTicksForKeys(selectedLegStreamKeys, CHAIN_TICKET_TICK_MS);
 
   const ticketLegs = useMemo(() => {
     if (selectedLegs.size === 0) return [];
@@ -2031,23 +2109,59 @@ export function OptionsTab({
     [selectedLegs],
   );
 
-  const atGroups = useMemo(
-    () =>
-      groups.map((g) => ({
-        expiration: g.expiration,
-        dte: g.dte,
-        dateLabel: g.dateLabel,
-        rows: g.rows,
-      })),
-    [groups],
-  );
-
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
   const chainViewChrome = (
     <OptionsSubViewToggle placement="chain-toolbar" view={optionsSubView} onChange={setOptionsSubView} />
   );
-  const atViewChrome = (
-    <OptionsSubViewToggle placement="at-header" view={optionsSubView} onChange={setOptionsSubView} />
+  /*
+   * Active Trader is memoized. These keep their identity between renders so an
+   * underlying tick here does not re-render it through a fresh object or closure.
+   */
+  const atViewChrome = useMemo(
+    () => <OptionsSubViewToggle placement="at-header" view={optionsSubView} onChange={setOptionsSubView} />,
+    [optionsSubView],
+  );
+  const atChainLoading = !atLadderHasRows && (isLoadingEffective || isFetching);
+  const atChainError = error ? "Option chain request failed" : rawData?.error ?? null;
+  const atBrokerLinked = schwabLinked || isAuthDisabled();
+  const atLadderPlug = useMemo(
+    () => ({ chainLoading: atChainLoading, chainError: atChainError, brokerLinked: atBrokerLinked }),
+    [atChainLoading, atChainError, atBrokerLinked],
+  );
+  const atLadderRestWindow = useMemo(
+    () =>
+      atDates
+        ? {
+            fromDate: atDates.fromDate,
+            toDate: atDates.toDate,
+            strikeCount: atRest.strikeCount,
+            range: atRest.range,
+          }
+        : undefined,
+    [atDates, atRest.strikeCount, atRest.range],
+  );
+  const atHoldSubs = useMemo(
+    () => ({ subscribeOptionSymbols, releaseOptionHold }),
+    [subscribeOptionSymbols, releaseOptionHold],
+  );
+  const handleAtAddLeg = useCallback(
+    (contract: Contract, type: "CALL" | "PUT") => handleToggleLeg(contract, type, "ask"),
+    [handleToggleLeg],
+  );
+  const handleAtOpenReview = useCallback(
+    (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+      if (onActiveTraderReview) onActiveTraderReview(contract, side, type);
+      else if (onTradeSingle) onTradeSingle(contract, side, type);
+    },
+    [onActiveTraderReview, onTradeSingle],
+  );
+  const atInitialTradeSelection = useMemo(
+    () =>
+      atFixtureOverride?.tapStrike != null &&
+      (atFixtureOverride.scene === "strip" || atFixtureOverride.scene === "confirm")
+        ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
+        : undefined,
+    [atFixtureOverride?.tapStrike, atFixtureOverride?.scene],
   );
 
   return (
@@ -2065,38 +2179,15 @@ export function OptionsTab({
           stickyOffset={stickyOffset + 36}
           accentHex={accentHex}
           chainQuoteTs={chainFetchedAt}
-          ladderPlug={{
-            chainLoading: !atLadderHasRows && (isLoadingEffective || isFetching),
-            chainError: error ? "Option chain request failed" : rawData?.error ?? null,
-            brokerLinked: schwabLinked || isAuthDisabled(),
-          }}
-          ladderRestWindow={
-            atDates
-              ? {
-                  fromDate: atDates.fromDate,
-                  toDate: atDates.toDate,
-                  strikeCount: atRest.strikeCount,
-                  range: atRest.range,
-                }
-              : undefined
-          }
-          holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
+          ladderPlug={atLadderPlug}
+          ladderRestWindow={atLadderRestWindow}
+          holdSubs={atHoldSubs}
           onReachEdge={growAtStrikeWindow}
-          onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
-          onOpenReview={
-            onActiveTraderReview ??
-            ((contract, side, type) => {
-              if (onTradeSingle) onTradeSingle(contract, side, type);
-            })
-          }
+          onAddLeg={handleAtAddLeg}
+          onOpenReview={handleAtOpenReview}
           presentation={atFixtureOverride?.presentation}
           settingsPanelInitiallyOpen={atFixtureOverride?.settingsPanelOpen}
-          initialTradeSelection={
-            atFixtureOverride?.tapStrike != null &&
-            (atFixtureOverride.scene === "strip" || atFixtureOverride.scene === "confirm")
-              ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
-              : undefined
-          }
+          initialTradeSelection={atInitialTradeSelection}
           buildLegsFromChain={atSyncLegsFromChain}
           buildLegQtyFromChain={legQuantities}
         />
