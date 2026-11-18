@@ -18,10 +18,12 @@ const browser = await webkit.launch();
 const page = await browser.newPage({ viewport: { width: 440, height: 956 } });
 
 try {
-  await page.goto(`${BASE}/?fixture=spx&scene=header-down`, { waitUntil: "networkidle", timeout: 120_000 });
-  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 30_000 }).catch(() => undefined);
-  await page.waitForTimeout(1200);
-  await page.waitForSelector("[data-at-glance-top]", { timeout: 60_000 });
+  await page.goto(`${BASE}/?fixture=spx&scene=header-down`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await page.waitForTimeout(800);
+  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+  await viewSel.first().selectOption("at").catch(() => undefined);
+  await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
 
   const dayKind = await page.locator("[data-at-day-status]").getAttribute("data-at-day-status");
   record("DAY DOWN on fixture", dayKind === "down", dayKind ?? "missing");
