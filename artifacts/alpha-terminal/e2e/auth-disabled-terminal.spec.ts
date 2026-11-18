@@ -164,12 +164,12 @@ test("auth-disabled with server-connected hydrates chain and active trader (mock
   await expect(page.getByText("CONNECT BROKERAGE TO VIEW OPTIONS")).toHaveCount(0, { timeout: 20_000 });
   await expect(page.getByText("FAILED TO LOAD OPTIONS")).toHaveCount(0, { timeout: 20_000 });
 
-  const viewSel = page.locator('select[aria-label="Options view"]');
-  await expect(viewSel).toBeVisible({ timeout: 15_000 });
-  await expect(viewSel).toHaveValue("chain");
+  const viewHit = page.locator("[data-at-subview-hit]");
+  await expect(viewHit).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('[data-at-subview-value="chain"]').first()).toBeVisible();
 
-  await viewSel.selectOption("at");
-  await expect(viewSel).toHaveValue("at");
+  await viewHit.click();
+  await expect(page.locator('[data-at-subview-value="at"]').first()).toBeVisible({ timeout: 10_000 });
   await expect(page.locator("[data-at-root]")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("CONNECT BROKERAGE TO VIEW OPTIONS")).toHaveCount(0);
 });

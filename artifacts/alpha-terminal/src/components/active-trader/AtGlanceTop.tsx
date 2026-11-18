@@ -15,6 +15,7 @@ import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
 import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
+import { isSpxSymbol } from "@workspace/order-ticket-math";
 import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
@@ -100,7 +101,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   ladderHeatSource,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
+  const spxHeader = isSpxSymbol(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
+  const { data: vixQuote } = useQuote("$VIX");
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
@@ -149,7 +152,20 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         overflow: "hidden",
       }}
     >
-      <span data-at-glance-chrome-version="anthony-v3" className="sr-only" aria-hidden />
+      <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
+
+      {spxHeader && vixQuote?.last != null ? (
+        <div
+          data-at-vix-strip
+          className="flex items-baseline gap-1 num"
+          style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 600, color: AT_SECONDARY, lineHeight: 1.1, marginBottom: 1 }}
+        >
+          <span style={{ color: AT_LABEL, fontWeight: 500 }}>VIX</span>
+          <span data-at-vix-last style={{ color: WHITE }}>
+            {vixQuote.last.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 16, lineHeight: 1.1 }}>
         <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">

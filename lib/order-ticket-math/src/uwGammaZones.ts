@@ -23,6 +23,36 @@ export function parseUwStrikeRow(raw: unknown): { strike: number; callGammaOi: n
   return { strike, callGammaOi, putGammaOi };
 }
 
+function splitCoincidentUwWalls(
+  rows: { strike: number; callGammaOi: number; putGammaOi: number }[],
+  wall: number,
+  spot: number | null,
+): { callWall: number | null; putWall: number | null } {
+  const others = rows.filter((r) => r.strike !== wall);
+  if (!others.length) return { callWall: wall, putWall: wall };
+
+  const byPutOi = [...others].sort((a, b) => a.putGammaOi - b.putGammaOi);
+  const putCandidate = byPutOi[0]?.strike ?? wall;
+  if (putCandidate !== wall) return { callWall: wall, putWall: putCandidate };
+
+  if (spot != null && Number.isFinite(spot)) {
+    const below = others
+      .filter((r) => r.strike < spot)
+      .sort((a, b) => a.putGammaOi - b.putGammaOi)[0];
+    const above = others
+      .filter((r) => r.strike > spot)
+      .sort((a, b) => b.callGammaOi - a.callGammaOi)[0];
+    if (below && above) {
+      return { callWall: above.strike, putWall: below.strike };
+    }
+    if (below) return { callWall: wall, putWall: below.strike };
+    if (above) return { callWall: above.strike, putWall: wall };
+  }
+
+  const altCall = [...others].sort((a, b) => b.callGammaOi - a.callGammaOi)[0]?.strike;
+  return { callWall: altCall ?? wall, putWall: wall };
+}
+
 function gammaEnv(netGex: number, flip: number | null, spot: number | null): GammaEnv {
   if (!Number.isFinite(netGex) || netGex === 0) return null;
   const nearFlip = flip != null && spot != null && Math.abs(spot - flip) <= spot * 0.002;
@@ -132,9 +162,17 @@ export function computeZonesFromUwGamma0dte(
     return { callWall: null, putWall: null, flip: null, netGexUsdPer1Pct: null, env: null, asOfLabel };
   }
 
+  let callWall = maxCallStrike;
+  let putWall = minPutStrike;
+  if (callWall != null && putWall != null && callWall === putWall) {
+    const distinct = splitCoincidentUwWalls(active, callWall, spotHint);
+    callWall = distinct.callWall;
+    putWall = distinct.putWall;
+  }
+
   return {
-    callWall: maxCallStrike,
-    putWall: minPutStrike,
+    callWall,
+    putWall,
     flip,
     netGexUsdPer1Pct: netGex,
     env: gammaEnv(netGex, flip, spot),

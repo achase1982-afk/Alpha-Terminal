@@ -16,6 +16,9 @@ import {
 /** Single-name chain poll — ~1 Hz (Schwab-safe while AT ladder is open). */
 export const AT_LADDER_HEAT_POLL_MS = 1_000;
 
+/** Cap React paints so quote ticks do not thrash the ladder (~10 Hz). */
+const HEAT_PAINT_MIN_MS = 100;
+
 export type AtLadderHeatSourceMeta = {
   kind: "stream" | "poll" | "fixture" | "off";
   /** Shown in glance header only while the feed is credibly fresh. */
@@ -54,13 +57,34 @@ function formatPollBadge(
   return { label: "", sourceFresh: false };
 }
 
+function heatMapsEqual(
+  a: Record<string, LadderHeatCellView>,
+  b: Record<string, LadderHeatCellView>,
+): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const k of keys) {
+    const x = a[k];
+    const y = b[k];
+    if (!x || !y) return false;
+    if (x.availability !== y.availability) return false;
+    if (Math.abs(x.intensity - y.intensity) > 0.015) return false;
+    if (x.contracts30s !== y.contracts30s) return false;
+  }
+  return true;
+}
+
 export function useAtLadderVolumeHeat(input: {
   symbol: string;
   streamKeys: string[];
   skipNetwork?: boolean;
 }): { heatByKey: Record<string, LadderHeatCellView>; source: AtLadderHeatSourceMeta } {
   const engineRef = useRef(new AtLadderVolumeHeatEngine({ scaleFloorContracts: 150 }));
+  const [heatByKey, setHeatByKey] = useState<Record<string, LadderHeatCellView>>({});
   const [tick, setTick] = useState(0);
+  const streamKeysRef = useRef(input.streamKeys);
+  streamKeysRef.current = input.streamKeys;
+  const volumeSigRef = useRef(new Map<string, string>());
+
   const fx = getAtFixtureOverride();
   const scene =
     typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("scene") : null;
@@ -72,12 +96,52 @@ export function useAtLadderVolumeHeat(input: {
     return isIndexSymbol(input.symbol) ? "stream" : "poll";
   }, [fx, heatScene, input.skipNetwork, input.symbol]);
 
-  const ticks = useOptionsStreamStore((s) => s.ticks);
+  const schedulePaintRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const engine = engineRef.current;
     const live = mode === "stream" || mode === "poll" || mode === "fixture";
     engine.setSourceLive(live);
+  }, [mode]);
+
+  useEffect(() => {
+    let raf = 0;
+    let paintPending = false;
+    let lastPaintMs = 0;
+
+    const flushPaint = (now: number) => {
+      raf = 0;
+      if (!paintPending) return;
+      if (now - lastPaintMs < HEAT_PAINT_MIN_MS) {
+        raf = requestAnimationFrame(flushPaint);
+        return;
+      }
+      paintPending = false;
+      lastPaintMs = now;
+      const keys = streamKeysRef.current;
+      engineRef.current.setNowMs(now);
+      const next = engineRef.current.snapshot(keys);
+      setHeatByKey((prev) => (heatMapsEqual(prev, next) ? prev : next));
+      setTick((n) => n + 1);
+    };
+
+    const requestPaint = () => {
+      paintPending = true;
+      if (!raf) raf = requestAnimationFrame(flushPaint);
+    };
+
+    schedulePaintRef.current = requestPaint;
+
+    const decay = window.setInterval(() => {
+      if (mode === "off") return;
+      requestPaint();
+    }, HEAT_PAINT_MIN_MS);
+
+    return () => {
+      schedulePaintRef.current = null;
+      if (raf) cancelAnimationFrame(raf);
+      window.clearInterval(decay);
+    };
   }, [mode]);
 
   useEffect(() => {
@@ -93,27 +157,54 @@ export function useAtLadderVolumeHeat(input: {
       engine.ingestCumulative(s.contract, s.cumulativeVol, rx);
     }
     engine.setNowMs(Math.max(Date.now(), lastRx + 50));
-    setTick((n) => n + 1);
-    const id = window.setInterval(() => {
-      engine.setNowMs(Date.now());
-      setTick((n) => n + 1);
-    }, 2_000);
-    return () => window.clearInterval(id);
+    schedulePaintRef.current?.();
   }, [mode, heatScene]);
 
   useEffect(() => {
     if (mode !== "stream") return;
     const engine = engineRef.current;
-    const now = Date.now();
-    for (const key of input.streamKeys) {
-      const t = ticks[key];
-      const sample = t?.volumeSample;
-      if (!sample) continue;
-      engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
-    }
-    engine.setNowMs(now);
-    setTick((n) => n + 1);
-  }, [mode, ticks, input.streamKeys.join("|")]);
+
+    const ingestVolumeSamples = () => {
+      const ticks = useOptionsStreamStore.getState().ticks;
+      const keys = streamKeysRef.current;
+      let ingested = false;
+      for (const key of keys) {
+        const sample = ticks[key]?.volumeSample;
+        if (!sample) continue;
+        const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
+        if (volumeSigRef.current.get(key) === sig) continue;
+        volumeSigRef.current.set(key, sig);
+        engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
+        ingested = true;
+      }
+      return ingested;
+    };
+
+    ingestVolumeSamples();
+
+    const unsub = useOptionsStreamStore.subscribe((state, prev) => {
+      const keys = streamKeysRef.current;
+      let ingested = false;
+      for (const key of keys) {
+        const sample = state.ticks[key]?.volumeSample;
+        const prevSample = prev.ticks[key]?.volumeSample;
+        if (
+          !sample ||
+          (prevSample?.cumulativeVol === sample.cumulativeVol &&
+            prevSample?.tradeTimeMs === sample.tradeTimeMs)
+        ) {
+          continue;
+        }
+        const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
+        volumeSigRef.current.set(key, sig);
+        engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
+        ingested = true;
+      }
+      if (ingested) schedulePaintRef.current?.();
+    });
+
+    return () => unsub();
+  }, [mode, input.streamKeys.join("|")]);
 
   useEffect(() => {
     if (mode !== "poll" || input.skipNetwork) return;
@@ -146,9 +237,7 @@ export function useAtLadderVolumeHeat(input: {
           if (leg.volume == null || !Number.isFinite(leg.volume)) continue;
           engine.ingestCumulative(key, leg.volume, sampledAt);
         }
-        const now = Date.now();
-        engine.setNowMs(now);
-        setTick((n) => n + 1);
+        schedulePaintRef.current?.();
       } catch {
         /* next poll */
       }
@@ -161,21 +250,6 @@ export function useAtLadderVolumeHeat(input: {
       window.clearInterval(id);
     };
   }, [mode, input.skipNetwork, input.symbol, input.streamKeys.join("|")]);
-
-  useEffect(() => {
-    const step = 2_000;
-    const id = window.setInterval(() => {
-      engineRef.current.setNowMs(Date.now());
-      setTick((n) => n + 1);
-    }, step);
-    return () => window.clearInterval(id);
-  }, []);
-
-  const heatByKey = useMemo(() => {
-    void tick;
-    engineRef.current.setNowMs(Date.now());
-    return engineRef.current.snapshot(input.streamKeys);
-  }, [input.streamKeys, tick]);
 
   const source: AtLadderHeatSourceMeta = useMemo(() => {
     const engine = engineRef.current;

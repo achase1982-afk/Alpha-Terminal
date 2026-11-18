@@ -105,6 +105,29 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
     else env = netGex > 0 ? "damping" : "amplifying";
   }
 
+  if (callWall != null && putWall != null && callWall === putWall) {
+    let altCall: number | null = null;
+    let altPut: number | null = null;
+    let altCallG = 0;
+    let altPutAbs = 0;
+    for (const r of rows) {
+      if (r.strike < low || r.strike > high) continue;
+      if (r.strike === callWall) continue;
+      const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true);
+      const putG = gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false);
+      if (callG > altCallG) {
+        altCallG = callG;
+        altCall = r.strike;
+      }
+      if (Math.abs(putG) > altPutAbs) {
+        altPutAbs = Math.abs(putG);
+        altPut = r.strike;
+      }
+    }
+    if (altCall != null) callWall = altCall;
+    else if (altPut != null) putWall = altPut;
+  }
+
   return {
     callWall,
     putWall,

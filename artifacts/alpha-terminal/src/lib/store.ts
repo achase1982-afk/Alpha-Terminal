@@ -133,6 +133,32 @@ export async function loadWatchlistsFromServer(): Promise<void> {
   }
 }
 
+/** Preserve session high/low when L1 ticks omit range fields. */
+export function mergeStreamLiveQuote(prev: LiveQuote | undefined, q: LiveQuote): LiveQuote {
+  if (!prev) return q;
+  const low =
+    q.low != null && prev.low != null
+      ? Math.min(q.low, prev.low)
+      : q.low ?? prev.low ?? null;
+  const high =
+    q.high != null && prev.high != null
+      ? Math.max(q.high, prev.high)
+      : q.high ?? prev.high ?? null;
+  return {
+    ...prev,
+    ...q,
+    high,
+    low,
+    last: q.last ?? prev.last,
+    bid: q.bid ?? prev.bid,
+    ask: q.ask ?? prev.ask,
+    volume: q.volume ?? prev.volume,
+    change: q.change ?? prev.change,
+    changePct: q.changePct ?? prev.changePct,
+    close: q.close ?? prev.close,
+  };
+}
+
 export interface LiveQuote {
   symbol:       string;
   last:         number | null;
@@ -981,14 +1007,20 @@ export const useTerminalStore = create<TerminalState>()(
       streamPrices: {},
       streamConnected: false,
       streamStatus: "offline" as const,
-      setStreamQuote: (q) => set((state) => ({
-        streamPrices: { ...state.streamPrices, [q.symbol]: q },
-      })),
-      setStreamQuotes: (quotes) => set((state) => {
-        const next = { ...state.streamPrices };
-        for (const q of quotes) next[q.symbol] = q;
-        return { streamPrices: next };
-      }),
+      setStreamQuote: (q) =>
+        set((state) => {
+          const prev = state.streamPrices[q.symbol];
+          const merged = mergeStreamLiveQuote(prev, q);
+          return { streamPrices: { ...state.streamPrices, [q.symbol]: merged } };
+        }),
+      setStreamQuotes: (quotes) =>
+        set((state) => {
+          const next = { ...state.streamPrices };
+          for (const q of quotes) {
+            next[q.symbol] = mergeStreamLiveQuote(next[q.symbol], q);
+          }
+          return { streamPrices: next };
+        }),
       setStreamConnected: (v) => set({ streamConnected: v, streamStatus: v ? "live" : "offline" }),
       setStreamStatus: (s) => set({ streamStatus: s, streamConnected: s === "live" }),
     }),

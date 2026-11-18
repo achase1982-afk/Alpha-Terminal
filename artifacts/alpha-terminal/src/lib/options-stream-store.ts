@@ -118,6 +118,14 @@ export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
           if (merged[f] !== existing[f]) { changed = true; break; }
         }
         if (merged.ts !== existing.ts) changed = true;
+        const vs = merged.volumeSample;
+        const evs = existing.volumeSample;
+        if (
+          vs?.cumulativeVol !== evs?.cumulativeVol ||
+          vs?.tradeTimeMs !== evs?.tradeTimeMs
+        ) {
+          changed = true;
+        }
         if (!changed) return state;
       }
       return { ticks: { ...state.ticks, [tick.key]: merged } };

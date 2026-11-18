@@ -26,7 +26,7 @@ describe("uwGammaZones", () => {
     const rows = fixture().data;
     const zones = computeZonesFromUwGamma0dte(rows, { spot: 7340, asOfLabel: "4:15 PM" });
     expect(zones.callWall).toBe(7340);
-    expect(zones.putWall).toBe(7340);
+    expect(zones.putWall).not.toBe(zones.callWall);
     expect(zones.flip).toBeGreaterThanOrEqual(7285);
     expect(zones.flip).toBeLessThanOrEqual(7295);
     expect(zones.netGexUsdPer1Pct).toBeLessThan(0);
