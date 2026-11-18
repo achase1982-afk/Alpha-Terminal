@@ -1251,7 +1251,8 @@ export function legsFromChainSelection(
   const rows: StrategyLeg[] = [];
   for (const l of entries) {
     const schwabSymbol =
-      l.contract.schwabSymbol ||
+      l.contract.schwabSymbol?.trim() ||
+      l.contract.streamKey?.trim() ||
       buildSchwabOptionKey(symbol, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P");
     const qty = l.quantity ?? 1;
     const { slices } = resolveChainLegInstructions(
