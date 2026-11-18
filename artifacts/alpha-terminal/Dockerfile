@@ -22,6 +22,10 @@ ENV NODE_ENV=production
 ARG CLERK_PUBLISHABLE_KEY=""
 ENV CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
 
+# Feature flags baked into the Vite bundle (Railway service vars → build args).
+ARG VITE_AT_GLANCE_TOP=""
+ENV VITE_AT_GLANCE_TOP=${VITE_AT_GLANCE_TOP}
+
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build
 
