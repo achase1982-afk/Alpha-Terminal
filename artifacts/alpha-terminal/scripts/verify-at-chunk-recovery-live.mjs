@@ -60,11 +60,16 @@ try {
 
   blockPortfolio = false;
   await page.locator('[data-lazy-view-name="Portfolio"] [data-lazy-view-retry]').click({ timeout: 10_000 });
-  await page.waitForTimeout(2500);
-  const recovered = await page.evaluate(
-    () => !document.querySelector("[data-lazy-view-error]") && document.body.innerText.length > 200,
-  );
-  record("retry recovers portfolio", recovered, recovered ? "ok" : "still error");
+  await page.waitForTimeout(3500);
+  const recovered = await page.evaluate(() => ({
+    ok: !document.querySelector('[data-lazy-view-error][data-lazy-view-name="Portfolio"]'),
+    log: window.__AT_CHUNK_IMPORT_LOG ?? [],
+    buildId: window.__AT_BUILD_ID ?? document.querySelector('meta[name="at-build-id"]')?.getAttribute("content"),
+  }));
+  const retryImport = recovered.log.some((e) => e.viewName === "Portfolio" && e.attempt >= 1);
+  record("retry recovers portfolio", recovered.ok, recovered.ok ? "ok" : JSON.stringify(recovered.log));
+  record("retry uses fresh import log", retryImport, JSON.stringify(recovered.log));
+  record("build id on page", !!recovered.buildId, recovered.buildId ?? "missing");
 
   let blockNews = true;
   await page.unroute("**/*").catch(() => undefined);
@@ -89,9 +94,13 @@ try {
 
   blockNews = false;
   await page.locator('[data-lazy-view-name="News"] [data-lazy-view-retry]').click({ timeout: 10_000 }).catch(() => undefined);
-  await page.waitForTimeout(2500);
-  const newsOk = await page.evaluate(() => !document.querySelector('[data-lazy-view-name="News"]'));
-  record("news retry", newsOk, newsOk ? "ok" : "still error");
+  await page.waitForTimeout(3500);
+  const newsOk = await page.evaluate(() => ({
+    ok: !document.querySelector('[data-lazy-view-error][data-lazy-view-name="News"]'),
+    log: window.__AT_CHUNK_IMPORT_LOG ?? [],
+  }));
+  record("news retry", newsOk.ok, newsOk.ok ? "ok" : JSON.stringify(newsOk.log));
+  record("news fresh import attempt", newsOk.log.some((e) => e.viewName === "News" && e.attempt >= 1), JSON.stringify(newsOk.log));
 } catch (err) {
   record("chunk recovery live", false, err instanceof Error ? err.message : String(err));
 }

@@ -26,9 +26,17 @@ if (Number.isNaN(port) || port <= 0) {
 
 const basePath = process.env.BASE_PATH ?? "/";
 
+const atBuildId = (
+  process.env.RAILWAY_GIT_COMMIT_SHA ??
+  process.env.GITHUB_SHA ??
+  process.env.VERCEL_GIT_COMMIT_SHA ??
+  "dev"
+).slice(0, 12);
+
 export default defineConfig({
   base: basePath,
   define: {
+    __AT_BUILD_ID__: JSON.stringify(atBuildId),
     "import.meta.env.VITE_CLERK_PUBLISHABLE_KEY": JSON.stringify(
       process.env.CLERK_PUBLISHABLE_KEY ?? "",
     ),
@@ -47,6 +55,18 @@ export default defineConfig({
     "process.env.DRAGGABLE_DEBUG": "false",
   },
   plugins: [
+    {
+      name: "at-build-id-meta",
+      transformIndexHtml() {
+        return [
+          {
+            tag: "meta",
+            attrs: { name: "at-build-id", content: atBuildId },
+            injectTo: "head",
+          },
+        ];
+      },
+    },
     react(),
     tailwindcss(),
     ...(process.env.NODE_ENV !== "production" &&
