@@ -43,7 +43,7 @@ async function openChain(height) {
 }
 
 let putAskRowCursor = 0;
-async function clickNextPutAsk(force = false) {
+async function clickNextPutAsk(force = true) {
   const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
   const idx = putAskRowCursor * 2 + 1;
   if (idx >= (await asks.count())) throw new Error("no more put ask rows");
