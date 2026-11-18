@@ -105,17 +105,36 @@ async function runSpreadFlow(height) {
   record(`spread limit (${height}px)`, limit2.trim().length > 0 && Number(limit2) > 0, limit2 || "empty");
 
   await ensureSheetOpen();
+  if (height <= 658) {
+    await page.evaluate(() => {
+      const sheet = document.querySelector("[data-testid='options-chain-order-sheet']");
+      if (sheet instanceof HTMLElement) sheet.style.height = "min(85vh, 520px)";
+    });
+    await page.waitForTimeout(250);
+  }
   const reviewBtn = page.locator("[data-testid='chain-sheet-review']");
   await reviewBtn.scrollIntoViewIfNeeded();
   await reviewBtn.waitFor({ state: "visible", timeout: 12_000 });
+  await page.waitForFunction(
+    () => {
+      const b = document.querySelector('[data-testid="chain-sheet-review"]');
+      return b instanceof HTMLButtonElement && !b.disabled;
+    },
+    undefined,
+    { timeout: 12_000 },
+  ).catch(() => undefined);
   const reviewDisabled = await reviewBtn.isDisabled();
   record(`Review enabled (${height}px)`, !reviewDisabled, (await reviewBtn.textContent()) ?? "");
   if (reviewDisabled) record(`hard-fail review (${height}px)`, false, "Review disabled");
 
   if (height <= 658) {
-    const hdr = page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='true']");
-    if ((await hdr.count()) > 0) await hdr.first().click();
-    await page.waitForTimeout(350);
+    await page.evaluate(() => {
+      const el = document.querySelector(
+        '[data-testid="options-chain-order-sheet"] [aria-expanded="true"]',
+      );
+      el?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await page.waitForTimeout(400);
     const addLeg = page.locator("[data-at-collapsed-action-bar] button", { hasText: "+ Leg" });
     const visible = (await addLeg.count()) > 0 && (await addLeg.first().isVisible());
     record(`+Leg tappable collapsed (${height}px)`, visible, `visible=${visible}`);
