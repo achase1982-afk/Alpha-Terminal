@@ -31,7 +31,16 @@ import {
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { AT_LADDER_STRIKE_COUNT } from "@/lib/active-trader/atLadderStrikeCount";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
-import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
+import {
+  ChainDraftStrip,
+  CHAIN_DRAFT_STRIP_HEIGHT_PX,
+  type ChainDraftStripLeg,
+} from "@/components/options/ChainDraftStrip";
+import { MOBILE_BOTTOM_NAV_RESERVE_PX } from "@/hooks/useVisualViewportKeyboardInset";
+import {
+  canAddChainDraftLeg,
+  CHAIN_MAX_DRAFT_LEGS,
+} from "@/lib/orders/chainDraftLegLimits";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
@@ -1290,13 +1299,15 @@ export function OptionsTab({
   const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(new Map());
   const [showInlineGreeks, setShowInlineGreeks] = useState(false);
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
-  const [legLimitShake, setLegLimitShake] = useState(false);
+  const [legLimitRejected, setLegLimitRejected] = useState(false);
+  const [chainTicketOpen, setChainTicketOpen] = useState(false);
   const [sheetCollapsed, setSheetCollapsed] = useState(true);
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
-  const shakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const legLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chainScrollRef = useRef<HTMLDivElement>(null);
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const tradingAccountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
-  const MAX_OPTION_LEGS = 4;
+  const MAX_OPTION_LEGS = CHAIN_MAX_DRAFT_LEGS;
   const activeColumns = useMemo(
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
@@ -1471,11 +1482,18 @@ export function OptionsTab({
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
     setSheetCollapsed(false);
+    setChainTicketOpen(false);
+    setLegLimitRejected(false);
   }, [symbol]);
 
-  useEffect(() => {
-    if (selectedLegs.size > 0) setSheetCollapsed(false);
-  }, [selectedLegs.size]);
+  const withPreservedChainScroll = useCallback((run: () => void) => {
+    const el = chainScrollRef.current;
+    const scrollTop = el?.scrollTop ?? 0;
+    run();
+    requestAnimationFrame(() => {
+      if (el) el.scrollTop = scrollTop;
+    });
+  }, []);
 
   const fixtureLegsAppliedRef = useRef(false);
   useEffect(() => {
@@ -1496,7 +1514,11 @@ export function OptionsTab({
       });
     }
     setSelectedLegs(next);
-    if (chainFixtureOverride.sheetCollapsed === false) setSheetCollapsed(false);
+    if (chainFixtureOverride.sheetCollapsed === false) {
+      setSheetCollapsed(false);
+      setChainTicketOpen(true);
+    }
+    if (chainFixtureOverride.openReviewOnMount) setChainTicketOpen(true);
   }, [chainFixtureOverride, groups]);
 
   useEffect(() => {
@@ -1526,28 +1548,41 @@ export function OptionsTab({
     });
   };
 
+  const rejectLegLimit = useCallback(() => {
+    setLegLimitRejected(true);
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([35, 40, 35]);
+    }
+    if (legLimitTimerRef.current) clearTimeout(legLimitTimerRef.current);
+    legLimitTimerRef.current = setTimeout(() => setLegLimitRejected(false), 800);
+  }, []);
+
   const handleToggleLeg = useCallback((contract: Contract, type: "CALL" | "PUT", side: "bid" | "ask") => {
     const key = makeLegKey(contract, type);
-    setSelectedLegs(prev => {
-      const next = new Map(prev);
-      const existing = next.get(key);
-      if (existing && existing.side === side) {
-        next.delete(key);
-      } else if (existing) {
-        next.set(key, { contract, type, expiration: contract.expiration, side });
-      } else {
-        if (prev.size >= MAX_OPTION_LEGS) {
-          if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
-          setLegLimitShake(true);
-          shakeTimerRef.current = setTimeout(() => setLegLimitShake(false), 600);
-          return prev;
+    withPreservedChainScroll(() => {
+      setSelectedLegs((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(key);
+        if (existing && existing.side === side) {
+          next.delete(key);
+          setLegLimitRejected(false);
+        } else if (existing) {
+          next.set(key, { contract, type, expiration: contract.expiration, side });
+          setLegLimitRejected(false);
+        } else {
+          if (!canAddChainDraftLeg(prev.size)) {
+            rejectLegLimit();
+            return prev;
+          }
+          next.set(key, { contract, type, expiration: contract.expiration, side });
+          setLegLimitRejected(false);
         }
-        next.set(key, { contract, type, expiration: contract.expiration, side });
-      }
-      return next;
+        return next;
+      });
     });
+    setChainTicketOpen(false);
     setSheetCollapsed(true);
-  }, []);
+  }, [withPreservedChainScroll, rejectLegLimit]);
 
   const handleLongPressCell = useCallback((target: LongPressTarget) => {
     setLongPressTarget(target);
@@ -1561,6 +1596,8 @@ export function OptionsTab({
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
     setSheetCollapsed(true);
+    setChainTicketOpen(false);
+    setLegLimitRejected(false);
   }, []);
 
   const handleBuildStrategy = useCallback(() => {
@@ -1644,46 +1681,66 @@ export function OptionsTab({
       buildSchwabOptionKey,
       tradingAccountHash,
     );
-    if (legs.length > MAX_OPTION_LEGS) {
-      if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);
-      setLegLimitShake(true);
-      shakeTimerRef.current = setTimeout(() => setLegLimitShake(false), 600);
+    if (selectedLegs.size > MAX_OPTION_LEGS) {
+      return legs.slice(0, MAX_OPTION_LEGS);
     }
-    return legs.slice(0, MAX_OPTION_LEGS);
+    return legs;
   }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingAccountHash]);
 
   const handleLayersClick = useCallback(() => {
     if (selectedLegs.size > 0) {
+      setChainTicketOpen(true);
       setSheetCollapsed(false);
       return;
     }
     handleBuildStrategy();
   }, [selectedLegs.size, handleBuildStrategy]);
 
+  const handleChainDraftNext = useCallback(() => {
+    if (selectedLegs.size === 0) return;
+    setChainTicketOpen(true);
+    setSheetCollapsed(false);
+  }, [selectedLegs.size]);
+
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
     const key = selectionKeyFromLegId(legId);
-    setLegQuantities((prev) => {
-      const next = new Map(prev);
-      next.set(key, Math.max(1, quantity));
-      return next;
+    withPreservedChainScroll(() => {
+      setLegQuantities((prev) => {
+        const next = new Map(prev);
+        next.set(key, Math.max(1, quantity));
+        return next;
+      });
     });
-  }, []);
+  }, [withPreservedChainScroll]);
 
   const handleSheetRemoveLeg = useCallback((legId: string) => {
     const key = selectionKeyFromLegId(legId);
-    setSelectedLegs((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
+    withPreservedChainScroll(() => {
+      setSelectedLegs((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+      setLegQuantities((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
     });
-    setLegQuantities((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
+    if (selectedLegs.size <= 1) setChainTicketOpen(false);
+  }, [withPreservedChainScroll, selectedLegs.size]);
+
+  const handleChainDraftQty = useCallback((key: string, quantity: number) => {
+    withPreservedChainScroll(() => {
+      setLegQuantities((prev) => {
+        const next = new Map(prev);
+        next.set(key, Math.max(1, quantity));
+        return next;
+      });
     });
-  }, []);
+  }, [withPreservedChainScroll]);
 
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
@@ -1722,7 +1779,40 @@ export function OptionsTab({
 
   const selCount = selectedLegs.size;
 
-  const chainBuildTrayLegs = useMemo(
+  const chainDraftStripLegs = useMemo((): ChainDraftStripLeg[] => {
+    return [...selectedLegs.entries()].map(([key, leg]) => ({
+      key,
+      strike: leg.contract.strike,
+      type: leg.type,
+      side: leg.side,
+      quantity: legQuantities.get(key) ?? 1,
+    }));
+  }, [selectedLegs, legQuantities]);
+
+  const handleChainTrayRemove = useCallback((key: string) => {
+    withPreservedChainScroll(() => {
+      setSelectedLegs((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+      setLegQuantities((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    });
+    setLegLimitRejected(false);
+    setChainTicketOpen(false);
+    setSheetCollapsed(true);
+  }, [withPreservedChainScroll]);
+
+  const chainScrollBottomPad =
+    selCount > 0 && !chainTicketOpen
+      ? CHAIN_DRAFT_STRIP_HEIGHT_PX + MOBILE_BOTTOM_NAV_RESERVE_PX + 8
+      : 0;
+
+  const atSyncLegsFromChain = useMemo(
     () =>
       [...selectedLegs.values()].map((leg) => ({
         contract: leg.contract,
@@ -1732,19 +1822,6 @@ export function OptionsTab({
       })),
     [selectedLegs],
   );
-
-  const handleChainTrayRemove = useCallback((key: string) => {
-    setSelectedLegs((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-    setLegQuantities((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  }, []);
 
   const atGroups = useMemo(
     () =>
@@ -1793,7 +1870,7 @@ export function OptionsTab({
               ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
               : undefined
           }
-          buildLegsFromChain={chainBuildTrayLegs}
+          buildLegsFromChain={atSyncLegsFromChain}
           buildLegQtyFromChain={legQuantities}
         />
       )}
@@ -1854,18 +1931,11 @@ export function OptionsTab({
         />
       </div>
 
-      {selCount > 0 && (
-        <AtLegBuildTray
-          legs={chainBuildTrayLegs}
-          qtyByKey={legQuantities}
-          onRemove={handleChainTrayRemove}
-        />
-      )}
-
       <div
+        ref={chainScrollRef}
         data-options-chain-scroll
         className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
-        style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0, WebkitOverflowScrolling: "touch" }}
+        style={{ background: BG, paddingBottom: chainScrollBottomPad, WebkitOverflowScrolling: "touch" }}
       >
         {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
@@ -1927,11 +1997,7 @@ export function OptionsTab({
         )}
 
         {hasData && (
-          <div
-            style={{
-              paddingBottom: selCount > 0 ? (sheetCollapsed ? 150 : Math.min(480, 360 + selCount * 28)) : 0,
-            }}
-          >
+          <div>
             <OptionsChainHeader
               showCalls={showCalls}
               showPuts={showPuts}
@@ -2003,26 +2069,31 @@ export function OptionsTab({
       </>
       )}
 
-      {legLimitShake && (
-        <div
-          className="fixed left-0 right-0 z-[105] px-4 py-2 text-center animate-[shake_0.4s_ease-in-out]"
-          style={{ bottom: 140, fontFamily: MONO, fontSize: 11, color: "#ff4b5c" }}
-        >
-          Max 4 legs
-        </div>
+      {selCount > 0 && !chainTicketOpen && optionsSubView === "chain" && (
+        <ChainDraftStrip
+          legs={chainDraftStripLegs}
+          limitRejected={legLimitRejected}
+          onQtyChange={handleChainDraftQty}
+          onRemove={handleChainTrayRemove}
+          onNext={handleChainDraftNext}
+        />
       )}
 
-      {selCount > 0 && (
+      {selCount > 0 && chainTicketOpen && (
         <OptionsChainOrderSheet
           legs={ticketLegs}
           collapsed={sheetCollapsed}
-          onCollapsedChange={setSheetCollapsed}
+          onCollapsedChange={(collapsed) => {
+            setSheetCollapsed(collapsed);
+            if (collapsed) setChainTicketOpen(false);
+          }}
           onClearAll={handleClearSelection}
           onLegQuantityChange={handleSheetLegQty}
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={subscribeOptionSymbols}
           openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
           demoFixture={!!chainFixtureOverride}
+          draftDistinctLegCount={selectedLegs.size}
         />
       )}
 
