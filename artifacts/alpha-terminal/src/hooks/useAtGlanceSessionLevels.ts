@@ -1,14 +1,9 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuote } from "@/hooks/useQuote";
 import { isSpxSymbol } from "@workspace/order-ticket-math";
-import {
-  resolveDayLowFromStreamQuote,
-  type DayLowDisplay,
-} from "@/lib/active-trader/atDayLow";
-import {
-  resolveDayHighFromStreamQuote,
-  type DayHighDisplay,
-} from "@/lib/active-trader/atDayHigh";
+import type { DayLowDisplay } from "@/lib/active-trader/atDayLow";
+import type { DayHighDisplay } from "@/lib/active-trader/atDayHigh";
+import { resolveSessionLowHighFromQuote } from "@/lib/active-trader/atSessionRangeRollup";
 import { formatSessionFeedLevel } from "@/lib/active-trader/spxRefZone";
 import { isAfter1PmEt, lowZoneTopLabel, resolveLowZoneSlotDisplay, type LowZoneSlotDisplay } from "@/lib/active-trader/atLowZoneSlot";
 import {
@@ -74,8 +69,9 @@ export function useAtGlanceSessionLevels(
       dayLow = { kind: "current", value: FIXTURE_SESSION_LOW };
       dayHigh = { kind: "current", value: FIXTURE_SESSION_HIGH };
     } else {
-      dayLow = resolveDayLowFromStreamQuote(quote, now);
-      dayHigh = resolveDayHighFromStreamQuote(quote, now);
+      const rolled = resolveSessionLowHighFromQuote(symbol, quote, now);
+      dayLow = rolled.dayLow;
+      dayHigh = rolled.dayHigh;
     }
 
     const lowZone = resolveLowZoneSlotDisplay(dayLow.value, { showSlot: showZones });
@@ -95,5 +91,5 @@ export function useAtGlanceSessionLevels(
       highZoneLabel: highZoneBottomLabel(highZone),
       zoneEmphasisFull,
     };
-  }, [spx, skipNetwork, quote, showZones, now]);
+  }, [spx, skipNetwork, quote, quote?.last, quote?.low, quote?.high, showZones, now, symbol]);
 }
