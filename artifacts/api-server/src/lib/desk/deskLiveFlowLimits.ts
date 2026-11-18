@@ -8,6 +8,7 @@ import {
 import {
   deskLiveFlowFuturesContractMultiplier,
   deskLiveFlowFuturesRoot,
+  deskLiveFlowFuturesSupportedRoots,
   DESK_LIVE_FLOW_FUTURES_ROOTS,
 } from "./deskLiveFlowFuturesMult.js";
 import { deskFlowNormalizeEquityKey } from "./deskLiveFlowSymbol.js";
@@ -17,7 +18,7 @@ export const DESK_LIVE_FLOW_MAX_SSE_CLIENTS = 32;
 
 export type DeskLiveFlowSubscribeReject =
   | { ok: true }
-  | { ok: false; status: number; error: string };
+  | { ok: false; status: number; error: string; supported?: string[] };
 
 const KNOWN_EQUITY = new Set([
   "SPX",
@@ -34,8 +35,7 @@ const KNOWN_EQUITY = new Set([
   "DIA",
 ]);
 
-/** Schwab-style month code + 2-digit year (e.g. /ESZ26). */
-const FUTURES_CONTRACT_RE = /^\/[A-Z]{2,4}[FGHJKMNQUVXZ]\d{2}$/;
+const FUTURES_DISPLAY_RE = /^\/([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ]\d{2})?$/;
 
 function isGarbageEquityTicker(sym: string): boolean {
   const s = deskFlowNormalizeEquityKey(sym);
@@ -46,20 +46,34 @@ function isGarbageEquityTicker(sym: string): boolean {
   return false;
 }
 
-export function deskLiveFlowRejectSymbol(sym: string, kind: string): string | null {
+export type DeskLiveFlowRejectReason = {
+  error: string;
+  supported?: string[];
+};
+
+export function deskLiveFlowRejectSymbol(sym: string, kind: string): DeskLiveFlowRejectReason | null {
   const u = sym.trim().toUpperCase();
   if (kind === "futures") {
-    if (!u.startsWith("/")) return "futures_requires_slash_prefix";
+    if (!u.startsWith("/")) return { error: "futures_requires_slash_prefix" };
+    if (!FUTURES_DISPLAY_RE.test(u)) return { error: "invalid_futures_symbol" };
     const root = deskLiveFlowFuturesRoot(u);
-    const knownRoot = DESK_LIVE_FLOW_FUTURES_ROOTS.has(root);
-    const isContract = FUTURES_CONTRACT_RE.test(u);
-    if (knownRoot && u === root) return null;
-    if (isContract && deskLiveFlowFuturesContractMultiplier(u) != null) return null;
-    return "invalid_futures_symbol";
+    if (!DESK_LIVE_FLOW_FUTURES_ROOTS.has(root)) {
+      return {
+        error: "futures_flow_unsupported",
+        supported: deskLiveFlowFuturesSupportedRoots(),
+      };
+    }
+    if (deskLiveFlowFuturesContractMultiplier(u) == null) {
+      return {
+        error: "futures_flow_unsupported",
+        supported: deskLiveFlowFuturesSupportedRoots(),
+      };
+    }
+    return null;
   }
   if (kind === "equity" || kind === "spx") {
-    if (!/^\$?[A-Z][A-Z0-9.$\-]{0,11}$/.test(u)) return "invalid_symbol";
-    if (isGarbageEquityTicker(u)) return "invalid_symbol";
+    if (!/^\$?[A-Z][A-Z0-9.$\-]{0,11}$/.test(u)) return { error: "invalid_symbol" };
+    if (isGarbageEquityTicker(u)) return { error: "invalid_symbol" };
   }
   return null;
 }
@@ -69,7 +83,14 @@ export function deskLiveFlowCanSubscribe(
   kind: "spx" | "equity" | "futures",
 ): DeskLiveFlowSubscribeReject {
   const symReject = deskLiveFlowRejectSymbol(sym, kind);
-  if (symReject) return { ok: false, status: 400, error: symReject };
+  if (symReject) {
+    return {
+      ok: false,
+      status: 400,
+      error: symReject.error,
+      ...(symReject.supported ? { supported: symReject.supported } : {}),
+    };
+  }
 
   const clients = typeof deskLiveFlowSseClientCount === "function"
     ? deskLiveFlowSseClientCount()

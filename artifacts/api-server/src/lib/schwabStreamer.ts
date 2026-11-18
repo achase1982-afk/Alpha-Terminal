@@ -297,8 +297,6 @@ function deskOwnerRelease(map: Map<string, Set<DeskWireOwner>>, key: string, own
 
 export function deskStreamerReplayDeskFlowAdds(): void {
   if (connectionState !== "connected") return;
-  const eq = [...deskEquityL1Owners.keys()].filter((k) => !subscribedSymbols.has(k));
-  if (eq.length > 0) batchDeskAdd(sendDeskEquityAdd, eq);
   const fut = [...deskFuturesL1WireOwners.keys()].filter((k) => !subscribedFuturesSymbols.has(k));
   if (fut.length > 0) batchDeskAdd(sendDeskFuturesAdd, fut);
   const tse = [...deskTimesaleEquityOwners.keys()].filter((k) => !subscribedTimesaleEquitySymbols.has(k));

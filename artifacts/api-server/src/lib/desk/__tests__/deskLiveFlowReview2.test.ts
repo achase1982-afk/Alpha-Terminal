@@ -9,6 +9,7 @@ import {
 import { deskLiveFlowBucketsResetForTests } from "../deskLiveFlowBuckets.js";
 import {
   deskLiveFlowTapeFlush,
+  deskLiveFlowTapeReplayPrints,
   deskLiveFlowTapeOnEquityL1,
   deskLiveFlowTapeOnFuturesL1,
   deskLiveFlowTapeOnSessionReset,
@@ -103,23 +104,48 @@ describe("deskLiveFlow review round 2", () => {
     expect(deskLiveFlowSubsWouldBeNewSymbol("SYM0", "equity")).toBe(false);
   });
 
-  it("rejects junk tickers and unknown futures roots", () => {
-    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")).toBe("invalid_symbol");
-    expect(deskLiveFlowRejectSymbol("/QQQQQ", "futures")).toBe("invalid_futures_symbol");
+  it("rejects junk tickers and unsupported futures roots with supported list", () => {
+    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")?.error).toBe("invalid_symbol");
+    const cl = deskLiveFlowRejectSymbol("/CL", "futures");
+    expect(cl?.error).toBe("futures_flow_unsupported");
+    expect(cl?.supported).toContain("/ES");
     expect(deskLiveFlowRejectSymbol("/ES", "futures")).toBeNull();
+    expect(deskLiveFlowRejectSymbol("/ESZ26", "futures")).toBeNull();
   });
 
-  it("never emits px with older src_ts after a newer one", () => {
-    deskLiveFlowEmitPx("$SPX", { 3: 7350, 1: 7349, 2: 7351, 34: 10_000 }, 10_000);
-    deskLiveFlowEmitPx("$SPX", { 3: 7344, 1: 7343, 2: 7345, 34: 9_900 }, 10_050);
-    deskLiveFlowEmitPx("$SPX", { 3: 7352, 1: 7351, 2: 7353, 34: 10_100 }, 10_100);
+  it("emits trade px on direct path when trade srcTs is older than quote srcTs", () => {
+    deskLiveFlowEmitPx("$SPX", { 1: 7349, 2: 7351, 3: 7350, 34: 10_000 }, 10_000);
+    deskLiveFlowEmitPx("$SPX", { 3: 7353, 35: 9_950 }, 10_050);
+    const px = deskLiveFlowTestSliceFrames(0).filter((f) => f.type === "px");
+    expect(px.some((f) => f.last === 7353)).toBe(true);
+    expect(px.at(-1)?.last).toBe(7353);
+  });
+
+  it("drops stale trailing px with older src_ts after a newer direct send", () => {
+    for (let i = 0; i < 5; i++) {
+      deskLiveFlowEmitPx(
+        "$SPX",
+        { 3: 7350 + i, 1: 7349, 2: 7351, 34: 10_000 + i * 10 },
+        10_000 + i * 5,
+      );
+    }
+    deskLiveFlowEmitPx("$SPX", { 3: 7360, 1: 7359, 2: 7361, 34: 10_100 }, 10_100);
     vi.advanceTimersByTime(300);
     const px = deskLiveFlowTestSliceFrames(0).filter((f) => f.type === "px");
-    const srcTs = px.map((f) => f.src_ts_ms as number);
-    for (let i = 1; i < srcTs.length; i++) {
-      expect(srcTs[i]).toBeGreaterThanOrEqual(srcTs[i - 1]!);
-    }
-    expect(px.some((f) => f.last === 7344)).toBe(false);
+    expect(px.some((f) => f.last === 7353 && (f.src_ts_ms as number) < 10_090)).toBe(false);
+  });
+
+  it("counts late prints into the open 1s bucket", () => {
+    deskLiveFlowSubsAcquire("NVDA", "equity");
+    const frames = deskLiveFlowTapeReplayPrints("NVDA", "equity", [
+      { price: 100, size: 1600, rxMs: 5_000, bid: 99.5, ask: 100, tradeMs: 5_000, seq: 1 },
+      { price: 100.5, size: 300, rxMs: 5_900, bid: 99.5, ask: 100, tradeMs: 5_100, seq: 2 },
+    ]);
+    const tape = frames.find((f) => f.type === "tape_1s");
+    expect(tape).toBeDefined();
+    const vol =
+      Number(tape!.buy_vol ?? 0) + Number(tape!.sell_vol ?? 0) + Number(tape!.mid_vol ?? 0);
+    expect(vol).toBe(1900);
   });
 
   it("resets futures tape session state on reconnect", () => {

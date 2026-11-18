@@ -193,7 +193,11 @@ router.get("/stream/flow", (req, res) => {
   }
   const gate = deskLiveFlowCanSubscribe(parsed.parsed.sym, parsed.parsed.kind);
   if (!gate.ok) {
-    res.status(gate.status).json({ error: gate.error, source: "desk" });
+    res.status(gate.status).json({
+      error: gate.error,
+      source: "desk",
+      ...(gate.supported ? { supported: gate.supported } : {}),
+    });
     return;
   }
   registerDeskLiveFlowSse(res as Response, parsed.parsed.sym, parsed.parsed.kind);

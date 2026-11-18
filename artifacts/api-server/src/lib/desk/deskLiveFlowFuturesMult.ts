@@ -10,22 +10,21 @@ const ROOT_MULTIPLIER: Record<string, number> = {
 
 export const DESK_LIVE_FLOW_FUTURES_ROOTS = new Set(Object.keys(ROOT_MULTIPLIER));
 
-const FUTURES_CONTRACT_RE = /^\/[A-Z]{2,4}[FGHJKMNQUVXZ]\d{2}$/;
+const FUTURES_DISPLAY_RE = /^\/([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ]\d{2})?$/;
 
 export function deskLiveFlowFuturesRoot(displaySym: string): string {
   const u = displaySym.trim().toUpperCase();
-  const withSlash = u.startsWith("/") ? u : `/${u}`;
-  const root = withSlash.match(/^\/[A-Z]+/)?.[0];
-  return root ?? withSlash;
+  if (!u.startsWith("/")) return `/${u}`;
+  const m = u.match(FUTURES_DISPLAY_RE);
+  if (!m?.[1]) return u;
+  const root = `/${m[1]}`;
+  if (ROOT_MULTIPLIER[root] != null) return root;
+  return u;
 }
 
 export function deskLiveFlowFuturesContractMultiplier(displaySym: string): number | null {
   const root = deskLiveFlowFuturesRoot(displaySym);
-  if (ROOT_MULTIPLIER[root] != null) return ROOT_MULTIPLIER[root]!;
-  const m = displaySym.trim().toUpperCase().match(FUTURES_CONTRACT_RE);
-  if (!m) return null;
-  const contractRoot = deskLiveFlowFuturesRoot(m[0] ?? displaySym);
-  return ROOT_MULTIPLIER[contractRoot] ?? null;
+  return ROOT_MULTIPLIER[root] ?? null;
 }
 
 export function deskLiveFlowFuturesNotionalDollars(
@@ -36,4 +35,8 @@ export function deskLiveFlowFuturesNotionalDollars(
   const mult = deskLiveFlowFuturesContractMultiplier(displaySym);
   if (mult == null) return null;
   return price * contracts * mult;
+}
+
+export function deskLiveFlowFuturesSupportedRoots(): string[] {
+  return [...DESK_LIVE_FLOW_FUTURES_ROOTS].sort();
 }

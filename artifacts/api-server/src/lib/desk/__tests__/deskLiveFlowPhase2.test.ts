@@ -72,8 +72,10 @@ describe("desk live flow phase 2 hardening", () => {
     deskLiveFlowSubsAcquire("NVDA", "equity");
   });
 
-  it("applies ES notional multiplier", () => {
+  it("applies ES notional multiplier for root and contract month codes", () => {
     expect(deskLiveFlowFuturesNotionalDollars("/ES", 6800.25, 50)).toBe(6800.25 * 50 * 50);
+    expect(deskLiveFlowFuturesNotionalDollars("/ESZ26", 6800, 1)).toBe(6800 * 50);
+    expect(deskLiveFlowFuturesNotionalDollars("/MESZ26", 100, 2)).toBe(100 * 2 * 5);
   });
 
   it("classifies lift against prior quote snapshot", () => {
@@ -108,8 +110,8 @@ describe("desk live flow phase 2 hardening", () => {
   });
 
   it("rejects garbage symbols", () => {
-    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")).toBe("invalid_symbol");
-    expect(deskLiveFlowRejectSymbol("/QQQQQ", "futures")).toBe("invalid_futures_symbol");
+    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")?.error).toBe("invalid_symbol");
+    expect(deskLiveFlowRejectSymbol("/CL", "futures")?.error).toBe("futures_flow_unsupported");
   });
 
   it("keeps desk equity when flow releases but universe still holds", () => {

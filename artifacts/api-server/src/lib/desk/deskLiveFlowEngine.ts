@@ -291,9 +291,8 @@ export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>
     pxTrailingTimer = null;
   }
   pxTrailing = null;
-  if (srcTs < lastEmittedPxSrcTs) return;
   pxEmitsInWindow += 1;
-  lastEmittedPxSrcTs = srcTs;
+  lastEmittedPxSrcTs = Math.max(lastEmittedPxSrcTs, srcTs);
   const payload = { type: "px", sym: "$SPX", last, bid, ask };
   recordFrame(wrapDeskLiveFlowFrame(payload, srcTs, rxMs));
 }

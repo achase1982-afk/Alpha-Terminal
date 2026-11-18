@@ -173,12 +173,20 @@ function eventClockMs(
   if (tradeMs != null && tradeMs <= rxMs && rxMs - tradeMs <= DESK_LIVE_FLOW_TAPE_REORDER_MS) {
     clock = tradeMs;
   }
-  const bucket = bucketMs1s(clock);
+  let bucket = bucketMs1s(clock);
   if (st.lastEmitted1sBucketMs != null && bucket < st.lastEmitted1sBucketMs) {
-    clock = Math.max(rxMs, st.lastEmitted1sBucketMs);
+    if (st.open1s && st.open1s.bucket_ms >= st.lastEmitted1sBucketMs) {
+      bucket = st.open1s.bucket_ms;
+      clock = Math.max(clock, bucket);
+    } else {
+      clock = Math.max(rxMs, st.lastEmitted1sBucketMs + 1);
+      bucket = bucketMs1s(clock);
+    }
   }
-  if (clock < st.lastPrintClockMs) return null;
-  st.lastPrintClockMs = clock;
+  if (clock < st.lastPrintClockMs && st.open1s && bucketMs1s(clock) === st.open1s.bucket_ms) {
+    clock = Math.max(clock, st.lastPrintClockMs);
+  }
+  st.lastPrintClockMs = Math.max(st.lastPrintClockMs, clock);
   return clock;
 }
 
@@ -243,7 +251,13 @@ function addPrint(
   ensureBucketTimer();
   let bms = bucketMs1s(clockMs);
   if (st.lastEmitted1sBucketMs != null && bms < st.lastEmitted1sBucketMs) {
-    bms = bucketMs1s(Math.max(clockMs, st.lastEmitted1sBucketMs + 1));
+    if (st.open1s && st.open1s.bucket_ms >= st.lastEmitted1sBucketMs) {
+      bms = st.open1s.bucket_ms;
+    } else {
+      bms = bucketMs1s(Math.max(clockMs, st.lastEmitted1sBucketMs + 1));
+    }
+  } else if (st.open1s && bms === st.open1s.bucket_ms) {
+    bms = st.open1s.bucket_ms;
   }
 
   if (!st.open1s || st.open1s.bucket_ms !== bms) {
