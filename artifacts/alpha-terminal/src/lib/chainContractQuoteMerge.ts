@@ -1,4 +1,4 @@
-import { mergeLegStreamQuotes } from "@workspace/order-ticket-math";
+import { mergeLegStreamQuotes, sanitizeOptionGreek } from "@workspace/order-ticket-math";
 
 type ChainStreamTick = {
   bid?: number | null;
@@ -46,14 +46,16 @@ export function mergeChainContractWithStream(
     },
     tick ?? undefined,
   );
+  const greek = (kind: "delta" | "gamma" | "theta" | "vega" | "iv", tickVal?: number | null, contractVal?: number) =>
+    sanitizeOptionGreek(kind, tickVal ?? contractVal ?? undefined) ?? undefined;
   return {
-    bid: merged.bid ?? undefined,
-    ask: merged.ask ?? undefined,
-    delta: tick?.delta != null ? tick.delta : contract.delta,
-    gamma: tick?.gamma != null ? tick.gamma : contract.gamma,
-    theta: tick?.theta != null ? tick.theta : contract.theta,
-    vega: tick?.vega != null ? tick.vega : contract.vega,
-    iv: tick?.iv != null ? tick.iv : contract.iv,
+    bid: merged.bid != null && merged.bid > 0 ? merged.bid : undefined,
+    ask: merged.ask != null && merged.ask > 0 ? merged.ask : undefined,
+    delta: greek("delta", tick?.delta, contract.delta),
+    gamma: greek("gamma", tick?.gamma, contract.gamma),
+    theta: greek("theta", tick?.theta, contract.theta),
+    vega: greek("vega", tick?.vega, contract.vega),
+    iv: greek("iv", tick?.iv, contract.iv),
     contractTs: chainTs,
   };
 }

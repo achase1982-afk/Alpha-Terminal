@@ -15,6 +15,7 @@ import {
   computeOptionPopFromPayoff,
   yearsToExpiration,
 } from "./optionPop.js";
+import { sanitizeOptionGreek } from "./optionGreeks.js";
 
 export interface ChainTicketLegQuote extends EconomicsLeg {
   bid?: number | null;
@@ -64,6 +65,10 @@ export interface ChainTicketSummary {
 
 function tickCtx(symbol: string): LimitTickContext {
   return { underlyingSymbol: symbol, isOption: true };
+}
+
+function legGreek(kind: "delta" | "gamma" | "theta" | "vega", leg: ChainTicketLegQuote): number | null {
+  return sanitizeOptionGreek(kind, leg[kind] ?? undefined);
 }
 
 function midFromLeg(bid?: number | null, ask?: number | null): number | null {
@@ -120,10 +125,14 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
     for (const leg of input.legs) {
       const sign = leg.instruction.startsWith("BUY") ? 1 : -1;
       const lq = (leg.quantity ?? 1) * qty;
-      if (leg.delta != null) netDelta += leg.delta * lq * sign;
-      if (leg.gamma != null) netGamma += leg.gamma * lq * sign;
-      if (leg.theta != null) netTheta += leg.theta * lq * sign;
-      if (leg.vega != null) netVega += leg.vega * lq * sign;
+      const d = legGreek("delta", leg);
+      const g = legGreek("gamma", leg);
+      const t = legGreek("theta", leg);
+      const v = legGreek("vega", leg);
+      if (d != null) netDelta += d * lq * sign;
+      if (g != null) netGamma += g * lq * sign;
+      if (t != null) netTheta += t * lq * sign;
+      if (v != null) netVega += v * lq * sign;
     }
     const pop: number | null = null;
     return {
@@ -166,10 +175,14 @@ export function computeChainTicketSummary(input: ChainTicketSummaryInput): Chain
   for (const leg of input.legs) {
     const sign = leg.instruction.startsWith("BUY") ? 1 : -1;
     const lq = (leg.quantity ?? 1) * qty;
-    if (leg.delta != null) netDelta += leg.delta * lq * sign;
-    if (leg.gamma != null) netGamma += leg.gamma * lq * sign;
-    if (leg.theta != null) netTheta += leg.theta * lq * sign;
-    if (leg.vega != null) netVega += leg.vega * lq * sign;
+    const d = legGreek("delta", leg);
+    const g = legGreek("gamma", leg);
+    const t = legGreek("theta", leg);
+    const v = legGreek("vega", leg);
+    if (d != null) netDelta += d * lq * sign;
+    if (g != null) netGamma += g * lq * sign;
+    if (t != null) netTheta += t * lq * sign;
+    if (v != null) netVega += v * lq * sign;
   }
   const exp =
     input.legs.map((l) => l.expiration).find((e) => e && e.trim().length > 0) ?? "";

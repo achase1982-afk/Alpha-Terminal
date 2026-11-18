@@ -16,6 +16,7 @@ import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTr
 import { aggregateSpreadNBBO, verticalStrikes } from "@/lib/active-trader/aggregateSpreadNBBO";
 import { aggregateVerticalFlow } from "@/lib/active-trader/atVerticalFlow";
 import { atLadderLegKey } from "@/lib/active-trader/atLadderLegKeys";
+import { atLadderExecutableQuote } from "@/lib/active-trader/atLadderExecutableQuote";
 
 export interface LadderRowModel {
   strike: number;
@@ -50,6 +51,7 @@ interface LadderBodyProps {
     nearContract: OptionsContract;
   }) => void;
   selectedLegKeys?: ReadonlySet<string>;
+  chainQuoteTs?: number;
 }
 
 export type AtTradeContext =
@@ -64,7 +66,7 @@ export type AtTradeContext =
     };
 
 function fmtPx(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(n)) return "—";
+  if (n == null || !Number.isFinite(n) || n <= 0) return "—";
   return n.toFixed(2);
 }
 
@@ -195,6 +197,7 @@ type LadderRowViewProps = {
   keepawayPutLine?: number | null;
   keepawayCallLine?: number | null;
   selectedLegKeys?: ReadonlySet<string>;
+  chainQuoteTs?: number;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -222,6 +225,7 @@ const LadderRowView = memo(function LadderRowView({
   keepawayPutLine,
   keepawayCallLine,
   selectedLegKeys,
+  chainQuoteTs = 0,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
@@ -232,22 +236,22 @@ const LadderRowView = memo(function LadderRowView({
   const putFarTick = useOptionTick(putFarRow?.put?.streamKey);
   const callFarTick = useOptionTick(callFarRow?.call?.streamKey);
 
-  const putSpread = useMemo(
-    () =>
-      aggregateSpreadNBBO(
-        { bid: putTick?.bid ?? null, ask: putTick?.ask ?? null },
-        { bid: putFarTick?.bid ?? null, ask: putFarTick?.ask ?? null },
-      ),
-    [putTick, putFarTick],
-  );
-  const callSpread = useMemo(
-    () =>
-      aggregateSpreadNBBO(
-        { bid: callTick?.bid ?? null, ask: callTick?.ask ?? null },
-        { bid: callFarTick?.bid ?? null, ask: callFarTick?.ask ?? null },
-      ),
-    [callTick, callFarTick],
-  );
+  const putSpread = useMemo(() => {
+    const near = atLadderExecutableQuote(row.put, putTick, chainQuoteTs);
+    const far = atLadderExecutableQuote(putFarRow?.put ?? null, putFarTick, chainQuoteTs);
+    return aggregateSpreadNBBO(
+      { bid: near.bid, ask: near.ask },
+      { bid: far.bid, ask: far.ask },
+    );
+  }, [row.put, putTick, putFarRow?.put, putFarTick, chainQuoteTs]);
+  const callSpread = useMemo(() => {
+    const near = atLadderExecutableQuote(row.call, callTick, chainQuoteTs);
+    const far = atLadderExecutableQuote(callFarRow?.call ?? null, callFarTick, chainQuoteTs);
+    return aggregateSpreadNBBO(
+      { bid: near.bid, ask: near.ask },
+      { bid: far.bid, ask: far.ask },
+    );
+  }, [row.call, callTick, callFarRow?.call, callFarTick, chainQuoteTs]);
 
   const putLegFlow = row.put?.streamKey ? flowByKey[row.put.streamKey] ?? { buy: 0, sell: 0, even: 0, unknown: 0 } : { buy: 0, sell: 0, even: 0, unknown: 0 };
   const callLegFlow = row.call?.streamKey ? flowByKey[row.call.streamKey] ?? { buy: 0, sell: 0, even: 0, unknown: 0 } : { buy: 0, sell: 0, even: 0, unknown: 0 };
@@ -313,10 +317,12 @@ const LadderRowView = memo(function LadderRowView({
 
   const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
   const callKey = row.call ? atLadderLegKey(row.call, "CALL") : null;
-  const putBidPx = ladderMode === "vertical" ? putSpread.bid : putTick?.bid ?? null;
-  const putAskPx = ladderMode === "vertical" ? putSpread.ask : putTick?.ask ?? null;
-  const callBidPx = ladderMode === "vertical" ? callSpread.bid : callTick?.bid ?? null;
-  const callAskPx = ladderMode === "vertical" ? callSpread.ask : callTick?.ask ?? null;
+  const putSingle = atLadderExecutableQuote(row.put, putTick, chainQuoteTs);
+  const callSingle = atLadderExecutableQuote(row.call, callTick, chainQuoteTs);
+  const putBidPx = ladderMode === "vertical" ? putSpread.bid : putSingle.bid;
+  const putAskPx = ladderMode === "vertical" ? putSpread.ask : putSingle.ask;
+  const callBidPx = ladderMode === "vertical" ? callSpread.bid : callSingle.bid;
+  const callAskPx = ladderMode === "vertical" ? callSpread.ask : callSingle.ask;
 
   return (
     <>
@@ -392,11 +398,11 @@ const LadderRowView = memo(function LadderRowView({
           className="relative flex flex-col items-center justify-center h-full"
           style={{
             width: STRIKE_W,
-            background: accentHex,
-            color: "#080808",
+            background: spotRow ? accentHex : AT_LADDER_PANEL_BG,
+            color: spotRow ? "#080808" : WHITE,
             fontSize: 13,
-            fontWeight: 600,
-            border: `1px solid ${accentHex}`,
+            fontWeight: spotRow ? 600 : 500,
+            border: spotRow ? `1px solid ${accentHex}` : `1px solid ${BORDER_ROW}`,
             fontVariantNumeric: "tabular-nums",
           }}
           data-at-strike={row.strike}
@@ -575,6 +581,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             workingOrderChips={props.workingOrderChips}
             flowByKey={props.flowByKey}
             selectedLegKeys={props.selectedLegKeys}
+            chainQuoteTs={props.chainQuoteTs}
           />
         );
       })}

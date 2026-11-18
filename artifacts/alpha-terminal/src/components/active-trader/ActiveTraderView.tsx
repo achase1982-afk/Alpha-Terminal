@@ -52,10 +52,9 @@ import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActive
 import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
-import { RegimeStrip } from "./RegimeStrip";
 import { AtGlanceTop } from "./AtGlanceTop";
-import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
-import { FilterStrip } from "./FilterStrip";
+import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
+import { atSheetPeekHeightPx } from "@/lib/active-trader/atSheetLayout";
 import {
   loadAtSettingsPanelOpen,
   saveAtSettingsPanelOpen,
@@ -112,6 +111,8 @@ interface ActiveTraderViewProps {
   initialTradeSelection?: { strike: number; type: "CALL" | "PUT" };
   /** Dev/screenshot: force settings panel expanded on mount. */
   settingsPanelInitiallyOpen?: boolean;
+  /** REST chain fetch timestamp — used when stream quotes are empty or zero. */
+  chainQuoteTs?: number;
 }
 
 const LADDER_RADIUS = 20;
@@ -129,6 +130,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   presentation,
   initialTradeSelection,
   settingsPanelInitiallyOpen,
+  chainQuoteTs: chainQuoteTsProp,
 }: ActiveTraderViewProps) {
   const primary =
     groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
@@ -147,6 +149,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [selectedLegs, setSelectedLegs] = useState<Map<string, AtLadderLegPick>>(new Map());
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
   const [chainSheetCollapsed, setChainSheetCollapsed] = useState(false);
+  const [chainSheetPeek, setChainSheetPeek] = useState(true);
+  const chainQuoteTs = chainQuoteTsProp ?? Date.now();
   const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
@@ -486,6 +490,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return next;
     });
     setChainSheetCollapsed(false);
+    setChainSheetPeek(true);
   }, []);
 
   const handleQuoteTap = useCallback(
@@ -495,14 +500,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       setTradeContext(null);
       handleToggleLeg(contract, type, quoteSideFromTap(side));
       requestAnimationFrame(() => {
-        scrollAtLadderToStrikeAboveSheet(
-          ladderScrollRef.current,
-          contract.strike,
-          chainSheetCollapsed ? 52 : 280,
-        );
+        const sheetPx = chainSheetCollapsed ? 52 : chainSheetPeek ? atSheetPeekHeightPx() : 280;
+        scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, contract.strike, sheetPx);
       });
     },
-    [chainSheetCollapsed, handleToggleLeg],
+    [chainSheetCollapsed, chainSheetPeek, handleToggleLeg],
   );
 
   useEffect(() => {
@@ -573,16 +575,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
       const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
-      const merged: OptionsContract = { ...l.contract };
-      if (tick) {
-        if (tick.bid != null) merged.bid = tick.bid;
-        if (tick.ask != null) merged.ask = tick.ask;
-        if (tick.delta != null) merged.delta = tick.delta;
-        if (tick.gamma != null) merged.gamma = tick.gamma;
-        if (tick.theta != null) merged.theta = tick.theta;
-        if (tick.vega != null) merged.vega = tick.vega;
-        if (tick.iv != null) merged.iv = tick.iv;
-      }
+      const q = mergeChainContractWithStream(l.contract, tick, chainQuoteTs);
+      const merged: OptionsContract = {
+        ...l.contract,
+        bid: q.bid,
+        ask: q.ask,
+        delta: q.delta,
+        gamma: q.gamma,
+        theta: q.theta,
+        vega: q.vega,
+        iv: q.iv,
+        contractTs: chainQuoteTs,
+      } as OptionsContract & { contractTs?: number };
       const qty = legQuantities.get(key) ?? 1;
       return {
         key,
@@ -599,7 +603,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       buildSchwabOptionKey,
       tradingHash,
     );
-  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingHash]);
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingHash, chainQuoteTs]);
 
   const ladderOrderSummary = useMemo(() => {
     if (ticketLegs.length === 0) return null;
@@ -695,15 +699,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
-  const glanceTop = atGlanceTopEnabled();
   const fixtureTight = !!presentation?.skipNetwork;
+  const sheetScrollPad =
+    selectedLegs.size > 0
+      ? chainSheetCollapsed
+        ? 64
+        : chainSheetPeek
+          ? atSheetPeekHeightPx()
+          : 300
+      : 0;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
   const symbolLabel = underlyingSymbol;
-  const pressureHeadline = presentation?.headline?.trim() ? presentation.headline : "";
-
   const scrollLadderToSpot = useCallback(() => {
     requestAnimationFrame(() => {
       scrollAtLadderToSpot(ladderScrollRef.current, underlyingPrice);
@@ -734,44 +743,16 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       style={{ background: BG, overscrollBehavior: "none" }}
     >
       <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
-        {glanceTop ? (
-          <AtGlanceTop
-            symbol={symbol}
-            underlyingPrice={underlyingPrice}
-            zones={zones}
-            keepawayPutLine={keepawayPutLine}
-            keepawayCallLine={keepawayCallLine}
-            keepawayStats={keepawayStats}
-            sessionOpen={underlyingQuote?.close ?? null}
-            embedded
-          />
-        ) : (
-          <RegimeStrip
-            embedded
-            accentHex={accentHex}
-            zones={zones}
-            underlyingPrice={underlyingPrice}
-            keepawayStats={keepawayStats}
-            keepawayPutLine={keepawayPutLine}
-            keepawayCallLine={keepawayCallLine}
-            keepawayUseMean={keepawayUseMean}
-            onToggleKeepawayMean={() => setKeepawayUseMean(!keepawayUseMean)}
-            regimeLabel={presentation?.regimeLabel ?? regimeLabel}
-            regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
-            sessionLabel={presentation?.sessionLabel}
-            headline={pressureHeadline}
-          />
-        )}
-        {!glanceTop ? (
-          <FilterStrip
-            embedded
-            accentHex={accentHex}
-            filters={laneFilters}
-            onToggle={toggleLane}
-            classifiedPct={classifiedPct}
-            windowLabel={`last ${windowSec}s`}
-          />
-        ) : null}
+        <AtGlanceTop
+          symbol={symbol}
+          underlyingPrice={underlyingPrice}
+          zones={zones}
+          keepawayPutLine={keepawayPutLine}
+          keepawayCallLine={keepawayCallLine}
+          keepawayStats={keepawayStats}
+          sessionOpen={underlyingQuote?.close ?? null}
+          embedded
+        />
         <AtSettingsExpanded
           open={settingsOpen}
           accentHex={accentHex}
@@ -800,8 +781,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         <AtSettingsSummary
-          slim={!glanceTop}
-          glanceSlim={glanceTop}
+          slim={false}
+          glanceSlim
           open={settingsOpen}
           onToggle={toggleSettings}
           prefs={prefs}
@@ -875,7 +856,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
           background: AT_LADDER_PANEL_BG,
-          paddingBottom: selectedLegs.size > 0 ? (chainSheetCollapsed ? 64 : 200) : 0,
+          paddingBottom: sheetScrollPad,
         }}
       >
         {ladderDataReady ? (
@@ -907,6 +888,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             symbolLabel={symbolLabel}
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
+            chainQuoteTs={chainQuoteTs}
           />
           </div>
         ) : (
@@ -931,6 +913,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           legs={ticketLegs}
           collapsed={chainSheetCollapsed}
           onCollapsedChange={setChainSheetCollapsed}
+          sheetPeek={chainSheetPeek}
+          onSheetPeekChange={setChainSheetPeek}
           onClearAll={handleClearLegs}
           onLegQuantityChange={handleSheetLegQty}
           onRemoveLeg={handleSheetRemoveLeg}

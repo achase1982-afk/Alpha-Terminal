@@ -1719,6 +1719,7 @@ export function OptionsTab({
           underlyingPrice={underlyingPrice}
           stickyOffset={stickyOffset + 36}
           accentHex={accentHex}
+          chainQuoteTs={dataUpdatedAt > 0 ? dataUpdatedAt : Date.now()}
           holdSubs={{ subscribeOptionSymbols, releaseOptionHold }}
           onAddLeg={(contract, type) => handleToggleLeg(contract, type, "ask")}
           onOpenReview={
