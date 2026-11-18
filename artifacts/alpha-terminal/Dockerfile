@@ -29,6 +29,12 @@ ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
 ARG VITE_AT_ORDER_SEND="0"
 ENV VITE_AT_ORDER_SEND=${VITE_AT_ORDER_SEND}
 
+# Baked into index.html + __AT_BUILD_ID__ for lazy chunk recovery verifiers.
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
+ARG GITHUB_SHA=""
+ENV GITHUB_SHA=${GITHUB_SHA}
+
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build
 

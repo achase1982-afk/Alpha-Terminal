@@ -156,7 +156,8 @@ export function createFreshViewImportRunner(
         appendChunkImportLog({ viewName, attempt, mode: "primary", ok: true });
         return mod;
       } catch (err) {
-        const url = inferChunkUrlFromFailure(viewName, err);
+        const url =
+          inferChunkUrlFromFailure(viewName, err) ?? inferChunkUrlFromFailure(viewName);
         if (url) lastFailedChunkUrl.set(viewName, url);
         appendChunkImportLog({ viewName, attempt, mode: "primary", url: url ?? undefined, ok: false });
         throw err;
