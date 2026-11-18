@@ -32,13 +32,21 @@ export const TriggerOrderConfirmSummary = memo(function TriggerOrderConfirmSumma
         marginTop: 8,
       }}
       data-at-trigger-confirm
+      data-testid="at-trigger-confirm"
     >
       <p style={{ fontSize: S.label, color: DIM, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>
         Trigger order summary (est.)
       </p>
       <div className="space-y-3">
         {summary.orders.map((block) => (
-          <div key={block.orderNumber} className="space-y-1">
+          <div
+            key={block.orderNumber}
+            className="space-y-1"
+            data-testid="at-trigger-confirm-row"
+            data-position-effect={block.positionEffect.replace(/^\[|\]$/g, "")}
+            data-order-kind={block.isTriggerParent ? "TRIGGER" : block.orderKind}
+            data-order-parent={block.isTriggerParent ? "true" : "false"}
+          >
             <p style={{ fontSize: S.heading, color: WHITE, fontWeight: FW_NORMAL }}>{block.header}</p>
             <p style={{ fontSize: S.body, color: GRAY, fontWeight: FW_LIGHT, lineHeight: 1.4 }}>
               {block.instructionLine}

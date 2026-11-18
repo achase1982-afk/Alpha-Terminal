@@ -38,6 +38,8 @@ export interface TriggerConfirmOrderBlock {
   costLine: string;
   cashFlow: OrderNetCashFlow;
   positionEffect: string;
+  isTriggerParent: boolean;
+  orderKind: "LIMIT" | "STOP" | "MARKET";
 }
 
 export interface TriggerConfirmSummaryInput {
@@ -101,6 +103,8 @@ export function buildTriggerOrderConfirmSummary(input: TriggerConfirmSummaryInpu
       costLine,
       cashFlow,
       positionEffect: positionEffectTag(o.instruction),
+      isTriggerParent: !!o.isTriggerParent,
+      orderKind: o.orderType === "STOP" ? "STOP" : o.orderType === "MARKET" ? "MARKET" : "LIMIT",
     };
   });
 
