@@ -31,66 +31,75 @@ await page.addInitScript(() => {
   );
 });
 
-async function openChain() {
+async function openChain(height) {
+  await page.setViewportSize({ width: 440, height });
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
   await page.waitForTimeout(600);
-  const viewSel = page.getByLabel("Options view");
-  if ((await viewSel.count()) > 0) await viewSel.selectOption("chain");
+  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+  await viewSel.first().selectOption("chain");
   await page.waitForSelector("[data-options-chain-scroll]", { timeout: 90_000 });
   await page.waitForSelector('[id^="options-exp-panel-"]', { timeout: 90_000 });
 }
 
 let putAskRowCursor = 0;
-async function clickNextPutAsk() {
+async function clickNextPutAsk(force = false) {
   const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
   const idx = putAskRowCursor * 2 + 1;
   if (idx >= (await asks.count())) throw new Error("no more put ask rows");
-  await asks.nth(idx).click({ timeout: 10_000, force: true });
+  await asks.nth(idx).click({ timeout: 10_000, force });
   putAskRowCursor += 1;
   await page.waitForTimeout(300);
 }
 
-try {
+async function runHeight(height) {
   placeOrderPosts = 0;
-  await openChain();
+  putAskRowCursor = 0;
+  const tag = `${height}px`;
+
+  await openChain(height);
   const scrollY0 = await page.evaluate(() => document.querySelector("[data-options-chain-scroll]")?.scrollTop ?? 0);
-  await clickNextPutAsk();
+  await clickNextPutAsk(height <= 700);
   const sheetClosed = (await page.getByTestId("options-chain-order-sheet").count()) === 0;
   const strip = (await page.locator("[data-chain-draft-strip]").count()) > 0;
-  const pressed = await page.locator('button[aria-pressed="true"]').count();
-  record("first tap no ticket", sheetClosed && strip, sheetClosed ? "strip only" : "sheet opened");
-  record("first cell outlined", pressed === 1, `pressed=${pressed}`);
-  await page.screenshot({ path: path.join(OUT, "chain-draft-first-tap-956.png") });
+  const pressed = await page.locator('[id^="options-exp-panel-"] button[aria-pressed="true"]').count();
+  record(`first tap no ticket (${tag})`, sheetClosed && strip, sheetClosed ? "strip only" : "sheet opened");
+  record(`first cell outlined (${tag})`, pressed === 1, `pressed=${pressed}`);
+  await page.screenshot({ path: path.join(OUT, `chain-draft-first-tap-${height}.png`) });
 
-  for (let i = 0; i < 3; i += 1) await clickNextPutAsk();
+  for (let i = 0; i < 3; i += 1) await clickNextPutAsk(height <= 700);
   const legs = await page.locator("[data-chain-draft-leg]").count();
   const stillClosed = (await page.getByTestId("options-chain-order-sheet").count()) === 0;
-  record("legs 2-4 no sheet", legs >= 4 && stillClosed, `legs=${legs}`);
-  await page.screenshot({ path: path.join(OUT, "chain-draft-4-legs-956.png") });
+  record(`legs 2-4 no sheet (${tag})`, legs === 4 && stillClosed, `legs=${legs}`);
+  await page.screenshot({ path: path.join(OUT, `chain-draft-4-legs-${height}.png`) });
 
-  await clickNextPutAsk();
+  await clickNextPutAsk(height <= 700);
   await page.waitForTimeout(400);
   const legCountAfter5 = await page.locator("[data-chain-draft-leg]").count();
   const limitMsg = (await page.locator("[data-chain-leg-limit-msg]").count()) > 0;
-  record("5th rejected", legCountAfter5 === 4 && limitMsg, `legs=${legCountAfter5} msg=${limitMsg}`);
-  await page.screenshot({ path: path.join(OUT, "chain-draft-5th-rejected-956.png") });
+  record(`5th rejected (${tag})`, legCountAfter5 === 4 && limitMsg, `legs=${legCountAfter5} msg=${limitMsg}`);
+  await page.screenshot({ path: path.join(OUT, `chain-draft-5th-rejected-${height}.png`) });
 
   await page.locator("[data-chain-draft-leg]").first().getByLabel("Remove leg").click();
   await page.waitForTimeout(300);
-  await clickNextPutAsk();
+  await clickNextPutAsk(height <= 700);
   const legCountAfterSwap = await page.locator("[data-chain-draft-leg]").count();
-  record("remove and add", legCountAfterSwap === 4, `legs=${legCountAfterSwap}`);
+  record(`remove and add (${tag})`, legCountAfterSwap === 4, `legs=${legCountAfterSwap}`);
 
   const scrollY1 = await page.evaluate(() => document.querySelector("[data-options-chain-scroll]")?.scrollTop ?? 0);
-  record("scroll preserved (~)", Math.abs(scrollY1 - scrollY0) < 120, `${scrollY0} -> ${scrollY1}`);
+  record(`scroll preserved (${tag})`, Math.abs(scrollY1 - scrollY0) < 120, `${scrollY0} -> ${scrollY1}`);
 
   await page.getByTestId("chain-draft-next").click();
   await page.waitForSelector("[data-testid='options-chain-order-sheet']", { timeout: 15_000 });
-  record("Next opens ticket", true, "sheet visible");
-  await page.screenshot({ path: path.join(OUT, "chain-draft-next-ticket-956.png") });
+  record(`Next opens ticket (${tag})`, true, "sheet visible");
+  await page.screenshot({ path: path.join(OUT, `chain-draft-next-ticket-${height}.png`) });
 
-  record("zero place-order POST", placeOrderPosts === 0, `count=${placeOrderPosts}`);
+  record(`zero place-order POST (${tag})`, placeOrderPosts === 0, `count=${placeOrderPosts}`);
+}
+
+try {
+  await runHeight(956);
+  await runHeight(658);
 } catch (err) {
   record("chain-draft capture", false, err instanceof Error ? err.message : String(err));
 }
