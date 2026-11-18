@@ -31,4 +31,13 @@ describe("atOrderSend", () => {
     const mod = await import("../atOrderSend");
     expect(mod.atOrderSendAllowed()).toBe(false);
   });
+
+  it("allows send when auth disabled and VITE_ORDERS_ALLOW_WITHOUT_AUTH=1", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "1");
+    vi.stubEnv("VITE_AUTH_DISABLED", "1");
+    vi.stubEnv("VITE_ORDERS_ALLOW_WITHOUT_AUTH", "1");
+    vi.resetModules();
+    const mod = await import("../atOrderSend");
+    expect(mod.atOrderSendAllowed()).toBe(true);
+  });
 });

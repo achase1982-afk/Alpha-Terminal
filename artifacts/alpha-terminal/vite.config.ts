@@ -49,6 +49,10 @@ export default defineConfig({
     "import.meta.env.VITE_DEV_BYPASS_AUTH": JSON.stringify(
       process.env.VITE_DEV_BYPASS_AUTH ?? "",
     ),
+    "import.meta.env.VITE_AT_ORDER_SEND": JSON.stringify(process.env.VITE_AT_ORDER_SEND ?? ""),
+    "import.meta.env.VITE_ORDERS_ALLOW_WITHOUT_AUTH": JSON.stringify(
+      process.env.VITE_ORDERS_ALLOW_WITHOUT_AUTH ?? "",
+    ),
     // react-draggable (via react-grid-layout) gates its debug logger on
     // process.env.DRAGGABLE_DEBUG; without this define the bare `process`
     // reference throws in the browser and aborts every grid resize/drag start.
