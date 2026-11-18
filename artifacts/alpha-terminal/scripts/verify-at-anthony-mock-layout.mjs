@@ -19,15 +19,10 @@ function record(name, pass, detail) {
 }
 
 async function switchView(page, value) {
-  const hit = page.locator("[data-at-subview-hit]").first();
-  await hit.waitFor({ state: "attached", timeout: 90_000 });
-  for (let i = 0; i < 4; i += 1) {
-    const cur = await page.locator("[data-at-subview-value]").first().getAttribute("data-at-subview-value");
-    if (cur === value) break;
-    await hit.click({ force: true });
-    await page.waitForTimeout(400);
-  }
-  await page.waitForTimeout(300);
+  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+  await viewSel.first().waitFor({ state: "attached", timeout: 90_000 });
+  await viewSel.first().selectOption(value);
+  await page.waitForTimeout(500);
 }
 
 async function toggleBox(page) {
@@ -88,30 +83,10 @@ try {
 
   const tap = await page.evaluate(() => {
     const chrome = document.querySelector("[data-at-subview-chrome]");
-    const hit = document.querySelector("[data-at-subview-hit]");
-    const visual = document.querySelector("[data-at-subview-toggle]");
-    const cr = chrome?.getBoundingClientRect();
-    const hr = hit?.getBoundingClientRect();
-    const vr = visual?.getBoundingClientRect();
-    return {
-      visualW: vr?.width ?? 0,
-      visualH: vr?.height ?? 0,
-      hitW: hr?.width ?? 0,
-      hitH: hr?.height ?? 0,
-      layoutW: cr?.width ?? 0,
-      layoutH: cr?.height ?? 0,
-    };
+    const r = chrome?.getBoundingClientRect();
+    return { w: r?.width ?? 0, h: r?.height ?? 0 };
   });
-  record(
-    "toggle compact footprint (~102×26 layout)",
-    tap.layoutW <= 106 && tap.layoutH <= 28 && tap.visualW <= 106 && tap.visualH <= 28,
-    `${tap.visualW?.toFixed?.(0) ?? 0}×${tap.visualH?.toFixed?.(0) ?? 0} layout=${tap.layoutW?.toFixed?.(0)}×${tap.layoutH?.toFixed?.(0)}`,
-  );
-  record(
-    "invisible hit target ≥44px",
-    tap.hitW >= 44 && tap.hitH >= 44,
-    `${tap.hitW?.toFixed?.(0) ?? 0}×${tap.hitH?.toFixed?.(0) ?? 0}`,
-  );
+  record("toggle tap target ≥44px", tap.w >= 44 && tap.h >= 44, `${tap.w?.toFixed?.(0) ?? 0}×${tap.h?.toFixed?.(0) ?? 0}`);
 
   const noBlackPill = await page.evaluate(() => {
     const el = document.querySelector("[data-at-subview-toggle]");
