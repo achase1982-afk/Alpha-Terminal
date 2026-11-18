@@ -52,6 +52,13 @@ export function registerAtFixtureFromLocation(): void {
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const fixtureKind = (params.get("fixture") ?? "spx").toLowerCase();
   const isAapl = fixtureKind === "aapl";
+  const isNvda = fixtureKind === "nvda";
+  const isEs = fixtureKind === "es";
+  try {
+    localStorage.setItem("at_glance_top", "1");
+  } catch {
+    /* ignore */
+  }
   const sceneParam = params.get("scene") ?? "default";
   const scene = (
     sceneParam === "settings-expanded" ||
@@ -85,10 +92,10 @@ export function registerAtFixtureFromLocation(): void {
   setAtFixtureOverride({
     enabled: true,
     scene,
-    symbol: isAapl ? "AAPL" : "SPX",
+    symbol: isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX",
     initialSubView,
-    chain: isAapl ? buildAaplFixtureChain() : buildFixtureChainResponse(),
-    underlyingPrice: isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
+    chain: isEs ? buildFixtureChainResponse() : isNvda ? buildAaplFixtureChain() : isAapl ? buildAaplFixtureChain() : buildFixtureChainResponse(),
+    underlyingPrice: isEs ? 5950.25 : isNvda ? 182.42 : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
     tapStrike:
       sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm"
         ? isAapl
@@ -111,12 +118,12 @@ export function registerAtFixtureFromLocation(): void {
 
   const { setSymbol, setTokens, setTraderTokens } = useTerminalStore.getState();
   useOptionsSettingsStore.getState().setStrikeCount(20);
-  setSymbol(isAapl ? "AAPL" : "SPX");
+  setSymbol(isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX");
   setTokens("at-fixture-dev-token", "");
   setTraderTokens("at-fixture-dev-token", "");
 
-  const spot = isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
-  const sym = isAapl ? "AAPL" : "SPX";
+  const spot = isEs ? 5950.25 : isNvda ? 182.42 : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
+  const sym = isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX";
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,

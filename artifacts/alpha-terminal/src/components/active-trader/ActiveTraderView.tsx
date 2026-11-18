@@ -39,6 +39,8 @@ import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
 import { RegimeStrip } from "./RegimeStrip";
+import { AtGlanceTop } from "./AtGlanceTop";
+import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { FilterStrip } from "./FilterStrip";
 import {
   loadAtSettingsPanelOpen,
@@ -499,6 +501,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
+  const glanceTop = atGlanceTopEnabled();
   const fixtureTight = !!presentation?.skipNetwork;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
 
@@ -543,6 +546,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       style={{ background: BG, overscrollBehavior: "none" }}
     >
       <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
+        {glanceTop ? (
+          <AtGlanceTop
+            symbol={symbol}
+            underlyingPrice={underlyingPrice}
+            zones={zones}
+            keepawayPutLine={keepawayPutLine}
+            keepawayCallLine={keepawayCallLine}
+            keepawayStats={keepawayStats}
+            sessionOpen={underlyingQuote?.close ?? null}
+            embedded
+          />
+        ) : (
           <RegimeStrip
             embedded
             accentHex={accentHex}
@@ -558,6 +573,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             sessionLabel={presentation?.sessionLabel}
             headline={pressureHeadline}
           />
+        )}
         <FilterStrip
           embedded
           accentHex={accentHex}
