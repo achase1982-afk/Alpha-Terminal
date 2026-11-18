@@ -6,7 +6,11 @@ import {
 } from "./deskLiveFlowConfig.js";
 import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
 import { deskFlowEquityWireKeysMatch } from "./deskLiveFlowSymbol.js";
-import { deskLiveFlowSubsAcquire, deskLiveFlowSubsRelease } from "./deskLiveFlowSubs.js";
+import {
+  deskLiveFlowSubsAcquire,
+  deskLiveFlowSubsRelease,
+  deskLiveFlowSubsSymbolActive,
+} from "./deskLiveFlowSubs.js";
 import { deskLiveFlowTapeDropSymbol } from "./deskLiveFlowTape.js";
 
 export type DeskLiveFlowFrame = {
@@ -132,6 +136,13 @@ export function deskLiveFlowBroadcastFrame(frame: DeskLiveFlowFrame): void {
   }
 }
 
+function deskLiveFlowOnClientDisconnect(symbol: string, kind: DeskFlowAssetKind): void {
+  deskLiveFlowSubsRelease(symbol, kind);
+  if (kind !== "spx" && !deskLiveFlowSubsSymbolActive(symbol, kind)) {
+    deskLiveFlowTapeDropSymbol(symbol, kind);
+  }
+}
+
 export function registerDeskLiveFlowSse(res: Response, symbol: string, kind: DeskFlowAssetKind): void {
   const sym =
     kind === "futures"
@@ -153,9 +164,13 @@ export function registerDeskLiveFlowSse(res: Response, symbol: string, kind: Des
   ensureHeartbeat();
   res.on("close", () => {
     sseClients.delete(client);
-    deskLiveFlowSubsRelease(sym, kind);
-    if (kind !== "spx") deskLiveFlowTapeDropSymbol(sym, kind);
+    deskLiveFlowOnClientDisconnect(sym, kind);
   });
+}
+
+/** Vitest: SSE close path without a live Response. */
+export function __deskLiveFlowOnClientDisconnectForTests(symbol: string, kind: DeskFlowAssetKind): void {
+  deskLiveFlowOnClientDisconnect(symbol, kind);
 }
 
 export function deskLiveFlowSseClientCountForTests(): number {
