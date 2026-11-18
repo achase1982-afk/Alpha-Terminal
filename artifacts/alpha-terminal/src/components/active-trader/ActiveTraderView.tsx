@@ -984,7 +984,23 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           <span className="text-center col-span-2 font-bold" style={{ color: UP, fontSize: 10 }}>
             Calls
           </span>
-          <span />
+          <span
+            data-at-ladder-heat-caption
+            data-at-ladder-group-metric
+            className="text-center"
+            title="Contracts traded in the last 30 seconds"
+            style={{
+              fontSize: 9,
+              fontWeight: 500,
+              color: AT_LABEL,
+              letterSpacing: "0.02em",
+              textTransform: "none",
+              whiteSpace: "nowrap",
+              lineHeight: 1.15,
+            }}
+          >
+            Contracts traded · last 30s
+          </span>
           <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
             Puts
           </span>
@@ -1006,24 +1022,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         >
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>
-          <span className="text-center flex flex-col justify-center leading-tight" style={{ color: WHITE, fontWeight: 600 }}>
-            <span>Strike</span>
-            <span
-              data-at-ladder-heat-caption
-              title="Contracts traded in the last 30 seconds"
-              style={{
-                fontSize: 7,
-                fontWeight: 500,
-                color: AT_LABEL,
-                letterSpacing: "0.02em",
-                textTransform: "none",
-                marginTop: 1,
-                whiteSpace: "nowrap",
-                lineHeight: 1.1,
-              }}
-            >
-              Contracts · 30s
-            </span>
+          <span className="text-center" style={{ color: WHITE, fontWeight: 600, fontSize: 10 }}>
+            Strike
           </span>
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>

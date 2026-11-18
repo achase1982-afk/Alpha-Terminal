@@ -8,9 +8,9 @@ import { resolveCallWallDisplay, resolvePutWallDisplay } from "@/lib/active-trad
 
 const TRACK_H = 15;
 const SIDE_COL_W = 30;
-const FLOW_VALUE_PX = 11;
-const WALL_LABEL_PX = 9;
-const WALL_VALUE_PX = 12;
+const FLOW_VALUE_PX = 12;
+const WALL_LABEL_PX = 10;
+const WALL_VALUE_PX = 13;
 const WALL_COL_MAX = 86;
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
@@ -50,7 +50,13 @@ function GrossFlowTrack({
   const sideTag = side === "calls" ? "CALL" : "PUT";
 
   return (
-    <div data-at-gross-flow-row={side} className="flex items-center min-w-0" style={{ height: TRACK_H, gap: 4 }}>
+    <div
+      data-at-gross-flow-row={side}
+      data-at-flow-gross-sold-usd={dashAmounts ? "" : String(soldUsd)}
+      data-at-flow-gross-bought-usd={dashAmounts ? "" : String(boughtUsd)}
+      className="flex items-center min-w-0"
+      style={{ height: TRACK_H, gap: 4 }}
+    >
       <span
         className="shrink-0 inline-block text-left"
         style={{

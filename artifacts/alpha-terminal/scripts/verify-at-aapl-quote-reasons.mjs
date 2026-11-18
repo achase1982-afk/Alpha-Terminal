@@ -79,7 +79,11 @@ const at = await page.evaluate(() => {
   return { pill, fresh, caption, captionLines, captionH: captionRect?.height, unavailable: unavailable.slice(0, 20), breakdown, headerRange };
 });
 
-record("ladder caption one line", at.caption === "Contracts · 30s" && (at.captionLines ?? 1) <= 1, `${at.caption} lines=${at.captionLines}`);
+record(
+  "ladder caption group row",
+  at.caption.includes("Contracts traded") && (at.captionLines ?? 1) <= 1,
+  `${at.caption} lines=${at.captionLines}`,
+);
 record("caption height readable", (at.captionH ?? 99) < 24, `h=${at.captionH}`);
 record(
   "heat pill not falsely live",
