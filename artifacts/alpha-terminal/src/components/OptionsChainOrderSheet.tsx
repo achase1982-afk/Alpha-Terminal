@@ -163,6 +163,8 @@ export function OptionsChainOrderSheet({
   const [errorMsg, setErrorMsg] = useState("");
   const [priceError, setPriceError] = useState("");
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
+  const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
+    useState<ChainSheetAtBracketConfirm | null>(null);
   const limitUserEditedRef = useRef(false);
   const legsHydrateKeyRef = useRef("");
 
@@ -185,6 +187,7 @@ export function OptionsChainOrderSheet({
       setQuantity(1);
       limitUserEditedRef.current = false;
       legsHydrateKeyRef.current = "";
+      setAtBracketConfirmSnapshot(null);
     }
   }, [legs.length]);
 
@@ -386,8 +389,26 @@ export function OptionsChainOrderSheet({
     }
     setReviewLimitSnapped(px);
     setPriceError("");
+    if (atBracketDraft) {
+      const sym = legs[0]?.schwabSymbol;
+      const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
+      setAtBracketConfirmSnapshot(
+        sym
+          ? buildChainSheetAtBracketConfirm({
+              prefs: atBracketDraft.prefs,
+              legCount: distinctLegs,
+              primaryInstruction: atBracketDraft.primaryInstruction,
+              limitPrice: px,
+              optionSymbol: sym,
+              underlyingSymbol: symbol.replace(/^\$/, ""),
+            })
+          : null,
+      );
+    } else {
+      setAtBracketConfirmSnapshot(null);
+    }
     setStage("review");
-  }, [snapLimitForSubmit, guardDraftLegCount]);
+  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -468,30 +489,8 @@ export function OptionsChainOrderSheet({
     quantity > 0 &&
     (demoFixture || !!accountHash || !!sendPreviewOnly);
 
-  const atBracketConfirm = useMemo((): ChainSheetAtBracketConfirm | null => {
-    if (!atBracketDraft || stage !== "review") return null;
-    const px = reviewLimitSnapped ?? submittedLimit;
-    if (px == null || px <= 0) return null;
-    const sym = legs[0]?.schwabSymbol;
-    if (!sym) return null;
-    const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
-    return buildChainSheetAtBracketConfirm({
-      prefs: atBracketDraft.prefs,
-      legCount: distinctLegs,
-      primaryInstruction: atBracketDraft.primaryInstruction,
-      limitPrice: px,
-      optionSymbol: sym,
-      underlyingSymbol: symbol.replace(/^\$/, ""),
-    });
-  }, [
-    atBracketDraft,
-    stage,
-    reviewLimitSnapped,
-    submittedLimit,
-    legs,
-    symbol,
-    draftDistinctLegCount,
-  ]);
+  const atBracketConfirm =
+    stage === "review" ? atBracketConfirmSnapshot : null;
 
   if (legs.length === 0) return null;
 
