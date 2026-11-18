@@ -21,21 +21,15 @@ import { useSpotDirectionColor } from "@/lib/active-trader/atSpotDirection";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
+import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
+import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
   fontVariantNumeric: "tabular-nums",
 };
 
-const PAINT_MS = 250;
-
-function fmtMoneyShort(n: number): string {
-  const a = Math.abs(n);
-  if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
-  if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
-  if (a >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return n.toFixed(0);
-}
+const SPOT_PAINT_MS = 250;
 
 export type AtGlanceTopProps = {
   symbol: string;
@@ -47,6 +41,39 @@ export type AtGlanceTopProps = {
   sessionOpen?: number | null;
   embedded?: boolean;
 };
+
+function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
+  const { line, noPrints, unsupported } = formatGlanceMoneyRow(agg);
+  if (unsupported) {
+    return (
+      <Pane className="num truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.25, paddingBottom: 2 }}>
+        {line}
+      </Pane>
+    );
+  }
+  if (!line && noPrints) {
+    return (
+      <Pane
+        className="num flex items-center gap-1.5"
+        data-at-glance-flow="no-prints"
+        style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.25, paddingBottom: 2 }}
+      >
+        <span style={{ color: WHITE }}>—</span>
+        <span style={{ fontSize: 9, fontWeight: 400 }}>no prints</span>
+      </Pane>
+    );
+  }
+  if (!line) return null;
+  return (
+    <Pane
+      className="num truncate"
+      data-at-glance-flow="live"
+      style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE, lineHeight: 1.25, paddingBottom: 2 }}
+    >
+      {line}
+    </Pane>
+  );
+}
 
 export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
@@ -60,9 +87,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const [compact, setCompact] = useState(() => loadAtGlanceCompact());
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote } = useQuote(symbol);
-  const spotShown = useThrottledNumber(underlyingPrice, PAINT_MS);
-  const spotColor = useSpotDirectionColor(underlyingPrice, PAINT_MS, quote?.change ?? null);
-  const flow = useDeskFlowStream(symbol, mode === "index" || mode === "stock");
+  const flow = useDeskFlowStream(symbol, true);
+  const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
+  const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
+  const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS, quote?.change ?? null);
+  const flowCopy = formatGlanceMoneyRow(flow);
 
   const open = sessionOpen ?? quote?.close ?? null;
   const fromOpen =
@@ -82,12 +111,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     });
   };
 
-  const flowLine =
-    flow.kind === "index"
-      ? `▲ CALLS +${fmtMoneyShort(flow.display.callsBought1m)} · ▲ PUTS ${fmtMoneyShort(flow.display.putsSold1m)}`
-      : flow.kind === "stock"
-        ? `▲ LIFT $${fmtMoneyShort(flow.tape.buyersLift1m)} · ▼ HIT $${fmtMoneyShort(flow.tape.sellersHit1m)}`
-        : null;
+  const compactFlow =
+    flowCopy.unsupported
+      ? flowCopy.line
+      : flowCopy.noPrints
+        ? "no prints"
+        : flowCopy.line;
 
   if (mode === "futures") {
     return (
@@ -100,8 +129,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <span className="num" style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotColor }}>
             {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
           </span>
-          <span style={{ fontSize: 10, fontWeight: 400, color: GRAY }}>{symbol.replace(/^\$/, "")} futures</span>
+          <span style={{ fontSize: 10, fontWeight: 400, color: GRAY }}>{symbol.replace(/^\$/, "")}</span>
         </div>
+        <MoneyRow agg={flow} />
       </div>
     );
   }
@@ -122,7 +152,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <span style={{ fontSize: 26, fontWeight: 600, color: spotColor }}>
             {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
           </span>
-          <span style={{ fontSize: 10, color: GRAY, fontWeight: 400 }}>{flowLine}</span>
+          <span style={{ fontSize: 10, color: flowCopy.noPrints && !flowCopy.unsupported ? GRAY : WHITE, fontWeight: 400 }}>
+            {flowCopy.noPrints && !flowCopy.unsupported ? "—" : compactFlow ?? "—"}
+          </span>
         </div>
       </button>
     );
@@ -184,14 +216,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </Pane>
       </Pane>
 
-      {flowLine ? (
-        <Pane
-          className="num truncate"
-          style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE, lineHeight: 1.25, paddingBottom: 2 }}
-        >
-          {flowLine}
-        </Pane>
-      ) : null}
+      <MoneyRow agg={flow} />
     </Pane>
   );
 });

@@ -20,15 +20,19 @@ const viewports = [
 ];
 
 const fixtures = ["spx", "nvda", "es"];
+const CAPTURE_MODES = [
+  { tag: "fixture", env: { VITE_AT_GLANCE_FLOW_FIXTURE: "1", VITE_AT_GLANCE_FLOW_REPLAY: "0" } },
+  { tag: "replay", env: { VITE_AT_GLANCE_FLOW_FIXTURE: "0", VITE_AT_GLANCE_FLOW_REPLAY: "1" } },
+];
 
-async function ensureVite() {
+async function ensureVite(extraEnv = {}) {
   const ok = await fetch(BASE + "?fixture=spx").then((r) => r.ok).catch(() => false);
   if (ok) return null;
   const child = spawn("pnpm", ["exec", "vite", "--host", "127.0.0.1", "--port", "3000", "--strictPort"], {
     cwd: PKG,
     detached: true,
     stdio: "ignore",
-    env: { ...process.env, BROWSER: "none", VITE_DEV_BYPASS_AUTH: "true", VITE_AT_GLANCE_TOP: "1" },
+    env: { ...process.env, BROWSER: "none", VITE_DEV_BYPASS_AUTH: "true", VITE_AT_GLANCE_TOP: "1", ...extraEnv },
   });
   child.unref();
   for (let i = 0; i < 120; i++) {
@@ -39,10 +43,21 @@ async function ensureVite() {
 }
 
 await mkdir(OUT, { recursive: true });
-const vite = await ensureVite();
-const report = { capturedAt: new Date().toISOString(), primaryDevice: IPHONE_17_PRO_MAX.tag, rows: [] };
+let vite = null;
+const report = { capturedAt: new Date().toISOString(), primaryDevice: IPHONE_17_PRO_MAX.tag, modes: [] };
 
-for (const vp of viewports) {
+for (const mode of CAPTURE_MODES) {
+  if (vite) vite.kill();
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("pkill -f 'vite --host 127.0.0.1 --port 3000' || true");
+  } catch {
+    /* ignore */
+  }
+  await new Promise((r) => setTimeout(r, 600));
+  vite = await ensureVite(mode.env);
+  const modeReport = { mode: mode.tag, rows: [] };
+  for (const vp of viewports) {
   for (const fx of fixtures) {
     const browser = await webkit.launch();
     const ctx = await browser.newContext({
@@ -57,11 +72,13 @@ for (const vp of viewports) {
     await page.waitForSelector("[data-at-glance-top]", { timeout: 60_000 }).catch(() => undefined);
     await page.waitForTimeout(800);
     const m0 = await page.evaluate(layoutMetricsScript());
-    const name = `glance-${fx}-${vp.tag}`;
+    const name = `glance-${mode.tag}-${fx}-${vp.tag}`;
     await page.screenshot({ path: path.join(OUT, `${name}.png`) });
-    report.rows.push({ fixture: fx, viewport: vp.tag, primary: !!vp.primary, ...m0, file: `${name}.png` });
+    modeReport.rows.push({ fixture: fx, viewport: vp.tag, primary: !!vp.primary, ...m0, file: `${name}.png` });
     await browser.close();
   }
+  }
+  report.modes.push(modeReport);
 }
 
 const burstBrowser = await webkit.launch();

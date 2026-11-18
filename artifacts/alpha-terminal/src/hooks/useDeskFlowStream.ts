@@ -1,72 +1,206 @@
-import { useEffect, useState } from "react";
-import { AT_GLANCE_FLOW_FIXTURE } from "@/lib/active-trader/atGlanceFeature";
+import { useEffect, useRef, useState } from "react";
+import { atGlanceFlowFixtureEnabled, atGlanceFlowReplayEnabled } from "@/lib/active-trader/atGlanceFeature";
 import {
   buildNvdaTapeFixture,
   buildSpxFlowFixture,
   spxFlowDisplayTotals,
 } from "@/lib/active-trader/deskFlowFixture";
-import type { DeskFlowSnapshot, DeskStockTapeSnapshot } from "@/lib/active-trader/deskFlowTypes";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
+import { deskFlowStreamSymbol } from "@/lib/active-trader/deskFlowStreamSymbol";
+import {
+  createDeskFlowAggregatorInternal,
+  deskFlowAggregatorMarkConnected,
+  deskFlowAggregatorMarkUnsupported,
+  deskFlowAggregatorProject,
+  reduceDeskFlowFrame,
+  type DeskFlowAggregate,
+} from "@/lib/active-trader/deskFlowAggregator";
+import { parseDeskFlowFrame } from "@/lib/active-trader/deskFlowFrameTypes";
+import { deskFlowReplayForSymbol } from "@/lib/active-trader/deskFlowReplay";
+import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 
-export type AtGlanceFlowView =
-  | { kind: "index"; snapshot: DeskFlowSnapshot; display: ReturnType<typeof spxFlowDisplayTotals> }
-  | { kind: "stock"; tape: DeskStockTapeSnapshot; unavailable: boolean }
-  | { kind: "futures"; unavailable: true }
-  | { kind: "none" };
+const API_BASE = import.meta.env.BASE_URL + "api";
+const INITIAL_BACKOFF_MS = 1_000;
+const MAX_BACKOFF_MS = 30_000;
 
-export function useDeskFlowStream(symbol: string, enabled: boolean): AtGlanceFlowView {
-  const [view, setView] = useState<AtGlanceFlowView>({ kind: "none" });
+function fixtureAggregate(symbol: string): DeskFlowAggregate {
+  const mode = resolveAtGlanceMode(symbol);
+  let internal = createDeskFlowAggregatorInternal(mode);
+  internal = deskFlowAggregatorMarkConnected(internal, true);
+  if (mode === "index") {
+    spxFlowDisplayTotals(buildSpxFlowFixture());
+    const now = Date.now();
+    internal = reduceDeskFlowFrame(internal, {
+      type: "flow_1s",
+      sym: "SPX",
+      bucket_ms: now - 5_000,
+      call_buy: 5.9e6,
+      call_sell: 1.1e6,
+      put_buy: 1.2e6,
+      put_sell: 18.1e6,
+      rx_ts_ms: now,
+    });
+  } else if (mode === "stock") {
+    const tape = buildNvdaTapeFixture();
+    const now = Date.now();
+    internal = reduceDeskFlowFrame(internal, {
+      type: "tape_1s",
+      sym: symbol.replace(/^\$/, "").toUpperCase(),
+      bucket_ms: now - 5_000,
+      buy_$: tape.buyersLift1m,
+      sell_$: tape.sellersHit1m,
+      n_prints: 3,
+      rx_ts_ms: now,
+    });
+  } else if (mode === "futures") {
+    const now = Date.now();
+    internal = reduceDeskFlowFrame(internal, {
+      type: "tape_1s",
+      sym: deskFlowStreamSymbol(symbol),
+      bucket_ms: now - 5_000,
+      buy_$: 8e6,
+      sell_$: 3e6,
+      n_prints: 6,
+      futures_mult: 50,
+      rx_ts_ms: now,
+    });
+  }
+  return deskFlowAggregatorProject(internal);
+}
+
+function replayAggregate(symbol: string): DeskFlowAggregate {
+  const mode = resolveAtGlanceMode(symbol);
+  let internal = createDeskFlowAggregatorInternal(mode);
+  internal = deskFlowAggregatorMarkConnected(internal, true);
+  const frames = deskFlowReplayForSymbol(symbol);
+  const base = Date.now() - 120_000;
+  for (const f of frames) {
+    const shifted = { ...f, bucket_ms: "bucket_ms" in f ? base + (f.bucket_ms as number) : undefined, bar_start_ms: "bar_start_ms" in f ? base + (f.bar_start_ms as number) : undefined, rx_ts_ms: base + (f.rx_ts_ms ?? 0) };
+    internal = reduceDeskFlowFrame(internal, shifted);
+  }
+  return deskFlowAggregatorProject(internal);
+}
+
+export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAggregate {
+  const mode = resolveAtGlanceMode(symbol);
+  const [aggregate, setAggregate] = useState<DeskFlowAggregate>(() =>
+    deskFlowAggregatorProject(createDeskFlowAggregatorInternal(mode)),
+  );
+  const aggRef = useRef(createDeskFlowAggregatorInternal(mode));
+
+  useEffect(() => {
+    aggRef.current = createDeskFlowAggregatorInternal(mode);
+    setAggregate(deskFlowAggregatorProject(aggRef.current));
+  }, [symbol, mode]);
 
   useEffect(() => {
     if (!enabled) {
-      setView({ kind: "none" });
-      return;
-    }
-    const mode = resolveAtGlanceMode(symbol);
-    if (mode === "futures") {
-      setView({ kind: "futures", unavailable: true });
-      return;
-    }
-    if (AT_GLANCE_FLOW_FIXTURE) {
-      if (mode === "index") {
-        const snapshot = buildSpxFlowFixture();
-        setView({ kind: "index", snapshot, display: spxFlowDisplayTotals(snapshot) });
-      } else if (mode === "stock") {
-        const sym = symbol.replace(/^\$/, "").toUpperCase();
-        if (sym === "NVDA" || sym === "AAPL") {
-          setView({
-            kind: "stock",
-            tape: buildNvdaTapeFixture(),
-            unavailable: false,
-          });
-        } else {
-          setView({ kind: "stock", tape: buildNvdaTapeFixture(), unavailable: true });
-        }
-      } else {
-        setView({ kind: "futures", unavailable: true });
-      }
+      setAggregate(deskFlowAggregatorProject(aggRef.current));
       return;
     }
 
-    const sym = symbol.replace(/^\$/, "").toUpperCase();
-    const url = `/api/desk/v1/stream/flow?symbol=${encodeURIComponent(sym)}`;
-  let cancelled = false;
-    const es = new EventSource(url);
-    es.onmessage = () => {
-      /* PR #660 — wire uw_np_bar / flow_1s when live */
+    if (atGlanceFlowReplayEnabled()) {
+      setAggregate(replayAggregate(symbol));
+      return;
+    }
+
+    if (atGlanceFlowFixtureEnabled()) {
+      setAggregate(fixtureAggregate(symbol));
+      return;
+    }
+
+    let cancelled = false;
+    let es: EventSource | null = null;
+    let backoff = INITIAL_BACKOFF_MS;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const bump = () => {
+      if (cancelled) return;
+      setAggregate(deskFlowAggregatorProject(aggRef.current));
     };
-    es.onerror = () => {
-      if (!cancelled) {
-        const snapshot = buildSpxFlowFixture();
-        setView({ kind: "index", snapshot, display: spxFlowDisplayTotals(snapshot) });
-        es.close();
+
+    const open = async () => {
+      if (cancelled) return;
+      aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, false);
+      bump();
+
+      const streamSym = deskFlowStreamSymbol(symbol);
+      const path = `${API_BASE}/desk/v1/stream/flow?symbol=${encodeURIComponent(streamSym)}`;
+      try {
+        const probe = await fetchWithAuth(path, { headers: { Accept: "text/event-stream" } });
+        if (!probe.ok) {
+          const body = (await probe.json().catch(() => ({}))) as { error?: string };
+          if (body.error === "futures_flow_unsupported") {
+            setAggregate(deskFlowAggregatorMarkUnsupported(aggRef.current));
+            return;
+          }
+          aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, false);
+          bump();
+          scheduleReconnect();
+          return;
+        }
+        await probe.body?.cancel();
+      } catch {
+        scheduleReconnect();
+        return;
       }
+
+      if (cancelled) return;
+
+      const url = await buildAuthenticatedEventSourceUrl(path);
+      es = new EventSource(url);
+      es.onopen = () => {
+        backoff = INITIAL_BACKOFF_MS;
+        aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, true);
+        bump();
+      };
+      es.onmessage = (ev) => {
+        if (cancelled) return;
+        try {
+          const frame = parseDeskFlowFrame(JSON.parse(ev.data));
+          if (!frame) return;
+          if (frame.type === "resync") return;
+          aggRef.current = reduceDeskFlowFrame(aggRef.current, frame);
+          bump();
+        } catch {
+          /* ignore */
+        }
+      };
+      es.onerror = () => {
+        try {
+          es?.close();
+        } catch {
+          /* noop */
+        }
+        es = null;
+        aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, false);
+        bump();
+        scheduleReconnect();
+      };
     };
+
+    const scheduleReconnect = () => {
+      if (cancelled || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        backoff = Math.min(backoff * 2, MAX_BACKOFF_MS);
+        void open();
+      }, backoff);
+    };
+
+    void open();
+
     return () => {
       cancelled = true;
-      es.close();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      try {
+        es?.close();
+      } catch {
+        /* noop */
+      }
+      es = null;
     };
-  }, [symbol, enabled]);
+  }, [symbol, enabled, mode]);
 
-  return view;
+  return aggregate;
 }
