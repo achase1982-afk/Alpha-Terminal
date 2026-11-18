@@ -12,6 +12,7 @@
 import type { QuoteData } from "@/hooks/useQuote";
 import { isOvernightQuotePlaceholder } from "@/lib/atQuoteSessionChange";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
+import { formatSessionFeedLevel } from "@/lib/active-trader/spxRefZone";
 
 export type DayLowKind = "unavailable" | "current" | "prior";
 
@@ -52,17 +53,9 @@ export function resolveDayLowFromStreamQuote(
   return { kind: "current", value: low };
 }
 
-export function formatDayLowLevel(n: number): string {
-  const frac = Math.abs(n * 2) % 2 === 1;
-  return n.toLocaleString("en-US", {
-    minimumFractionDigits: frac ? 1 : 0,
-    maximumFractionDigits: frac ? 1 : 0,
-  });
-}
-
 export function dayLowLabelText(display: DayLowDisplay): string {
   if (display.kind === "unavailable" || display.value == null) return "Day low —";
-  const n = formatDayLowLevel(display.value);
+  const n = formatSessionFeedLevel(display.value);
   if (display.kind === "prior") return `Prev low ${n}`;
   return `Day low ${n}`;
 }

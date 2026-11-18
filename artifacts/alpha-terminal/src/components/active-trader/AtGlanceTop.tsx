@@ -2,11 +2,9 @@ import { memo, useState, type CSSProperties, type PropsWithChildren } from "reac
 import {
   BG_EXP_BAR,
   BORDER,
-  DOWN_TEXT,
   GAMMA_SCENARIO,
   GOLD,
   PUT_WALL,
-  UP,
   WHITE,
 } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
@@ -18,12 +16,14 @@ import { useSpotDirectionColor } from "@/lib/active-trader/atSpotDirection";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
-import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
-import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
 import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
+import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
+import { SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
+import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
+import { AtGlanceFlowDetail } from "./AtGlanceFlowDetail";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -32,106 +32,6 @@ const NUM_FEAT: CSSProperties = {
 
 const SPOT_PAINT_MS = 250;
 const MAX_GLANCE_PX = 191;
-const FLOW_WINDOWS = ["1m", "5m", "hr"] as const;
-type FlowWindow = (typeof FLOW_WINDOWS)[number];
-
-function MoneyRow({
-  agg,
-  sessionClosed,
-}: {
-  agg: ReturnType<typeof useDeskFlowStream>["aggregate"];
-  sessionClosed?: boolean;
-}) {
-  const [flowWindow, setFlowWindow] = useState<FlowWindow>("1m");
-  const copy = formatGlanceMoneyRow(agg);
-  if (copy.unsupported) {
-    return (
-      <Pane className="num truncate" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 500, color: AT_SECONDARY, lineHeight: 1.15 }}>
-        {copy.line1m}
-      </Pane>
-    );
-  }
-  if (copy.noPrints) {
-  if (sessionClosed) {
-    return (
-      <Pane
-        className="num flex items-center gap-1.5"
-        data-at-glance-flow="closed"
-        style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 500, color: AT_SECONDARY, lineHeight: 1.15 }}
-      >
-        <span style={{ fontSize: 10, fontWeight: 500, color: AT_LABEL }}>Closed</span>
-      </Pane>
-    );
-  }
-    return (
-      <Pane
-        className="num flex items-center gap-1.5"
-        data-at-glance-flow="no-prints"
-        style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 500, color: AT_SECONDARY, lineHeight: 1.15 }}
-      >
-        <span style={{ color: WHITE }}>—</span>
-        <span style={{ fontSize: 10, fontWeight: 400, color: AT_LABEL }}>no prints</span>
-      </Pane>
-    );
-  }
-  if (!copy.line1m) return null;
-  const body =
-    flowWindow === "1m" ? copy.line1m : flowWindow === "5m" ? copy.line5m : copy.lineHr;
-
-  return (
-    <Pane
-      data-at-glance-flow="live"
-      data-at-glance-flow-window={flowWindow}
-      className="flex items-start gap-1.5"
-      style={{ lineHeight: 1.12, overflow: "hidden", maxHeight: 52 }}
-    >
-      <Pane
-        className="num flex-1 min-w-0"
-        data-at-glance-flow-body
-        style={{
-          ...NUM_FEAT,
-          fontSize: 11,
-          fontWeight: 400,
-          color: WHITE,
-          lineHeight: 1.2,
-          whiteSpace: "pre-line",
-          wordBreak: "break-word",
-        }}
-      >
-        {body}
-      </Pane>
-      <Pane className="num flex shrink-0 items-center gap-0.5" data-at-glance-flow-seg style={{ fontSize: 10 }}>
-        {FLOW_WINDOWS.map((w, i) => (
-          <Pane key={w} className="inline-flex items-center gap-0.5">
-            {i > 0 ? (
-              <span style={{ color: AT_LABEL, fontSize: 9 }} aria-hidden>
-                ·
-              </span>
-            ) : null}
-            <button
-              type="button"
-              data-at-glance-flow-seg={w}
-              onClick={() => setFlowWindow(w)}
-              style={{
-                fontSize: 10,
-                fontWeight: flowWindow === w ? 600 : 500,
-                color: flowWindow === w ? WHITE : AT_SECONDARY,
-                padding: "2px 4px",
-                minWidth: 28,
-                minHeight: 28,
-                background: flowWindow === w ? "rgba(255,255,255,0.1)" : "transparent",
-                borderRadius: 4,
-                border: flowWindow === w ? `1px solid ${AT_SECONDARY}` : "1px solid transparent",
-              }}
-            >
-              {w}
-            </button>
-          </Pane>
-        ))}
-      </Pane>
-    </Pane>
-  );
-}
 
 export type AtGlanceTopProps = {
   symbol: string;
@@ -153,13 +53,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   zones,
   keepawayPutLine,
   keepawayCallLine,
-  sessionOpen,
   glanceCaption,
   sessionClosed,
   skipNetwork,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const { data: quote, restQuote } = useQuote(symbol);
+  const { sessionChange } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed } = useDeskFlowStream(symbol, true);
   const flowClosed = sessionClosed || flowSessionClosed;
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
@@ -167,7 +66,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS);
   const spotLabel = formatAtGlanceSpot(symbol, spotShown);
 
-  const fromOpen = resolveGlanceFromOpenChange(quote, spotShown, sessionOpen, restQuote);
+  const dayStatus = resolveDayStatus(sessionChange);
+  const dayStatusText = dayStatusLabel(dayStatus);
 
   const gexStr = mode === "futures" ? null : formatGexUsd(zones.netGexUsdPer1Pct);
   const gexDisplay = gexStr && gexStr !== "\u2014" ? gexStr.replace(/^GEX\s*/, "") : "\u2014";
@@ -179,6 +79,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       : null;
 
   const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
+  const [flowDetailOpen, setFlowDetailOpen] = useState(false);
 
   return (
     <Pane
@@ -191,40 +92,35 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         overflow: "hidden",
       }}
     >
-      <Pane className="flex items-center gap-1" style={{ minHeight: 18, lineHeight: 1.1 }}>
+      <Pane className="flex items-center gap-1" style={{ minHeight: 16, lineHeight: 1.1 }}>
         <Pane
           className="num shrink-0"
+          data-at-day-status={dayStatus.kind}
           style={{
             ...NUM_FEAT,
-            fontSize: 12,
+            fontSize: 10,
             fontWeight: 600,
-            color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : fromOpen != null && fromOpen > 0 ? UP : WHITE,
+            color: dayStatusColor(dayStatus),
+            background: "transparent",
+            border: "none",
           }}
         >
-          {fromOpen != null ? (
-            <>
-              {fromOpen >= 0 ? "▲" : "▼"}
-              {Math.abs(fromOpen).toFixed(2)}
-              <span style={{ fontSize: 9, fontWeight: 500, color: AT_LABEL, marginLeft: 3 }}>OPEN</span>
-            </>
-          ) : (
-            "—"
-          )}
+          {dayStatusText}
         </Pane>
         {gexStr != null ? (
-          <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 600, color: WHITE }}>
+          <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 600, color: WHITE }}>
             GEX {gexDisplay}
           </Pane>
         ) : (
           <Pane className="flex-1" />
         )}
         {zones.flip != null ? (
-          <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 600, color: GAMMA_SCENARIO }}>
+          <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 600, color: GAMMA_SCENARIO }}>
             FLIP {formatStrikeLevel(Math.round(zones.flip))}
           </Pane>
         ) : null}
         {keepawayHint ? (
-          <Pane className="num shrink-0 hidden min-[400px]:block" style={{ ...NUM_FEAT, fontSize: 9, fontWeight: 500, color: AT_SECONDARY }}>
+          <Pane className="num shrink-0 hidden min-[400px]:block" style={{ ...NUM_FEAT, fontSize: 8, fontWeight: 500, color: AT_SECONDARY }}>
             {keepawayHint}
           </Pane>
         ) : null}
@@ -234,11 +130,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         className="grid gap-x-0.5 items-end"
         style={{
           gridTemplateColumns: showWalls ? "1fr auto 1fr" : "1fr",
-          minHeight: 32,
+          minHeight: 30,
         }}
       >
         {showWalls ? (
-          <Pane className="num text-left" style={{ ...NUM_FEAT, fontSize: 22, fontWeight: 600, color: PUT_WALL, lineHeight: 1 }}>
+          <Pane className="num text-left" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 600, color: PUT_WALL, lineHeight: 1 }}>
             <span style={{ fontSize: 8, fontWeight: 500, color: AT_LABEL, display: "block", marginBottom: 0 }}>PUT</span>
             {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}
           </Pane>
@@ -247,7 +143,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           {caption ? (
             <Pane
               data-at-glance-session
-              style={{ fontSize: 8, fontWeight: 500, letterSpacing: "0.04em", color: AT_SECONDARY, lineHeight: 1.1, marginBottom: 2 }}
+              style={{ fontSize: 8, fontWeight: 500, letterSpacing: "0.04em", color: AT_SECONDARY, lineHeight: 1.1, marginBottom: 1 }}
             >
               {caption}
             </Pane>
@@ -255,12 +151,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <Pane style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.06em", color: AT_LABEL, lineHeight: 1 }}>
             {symbol.replace(/^\$/, "")}
           </Pane>
-          <Pane className="num" style={{ ...NUM_FEAT, fontSize: 30, fontWeight: 700, color: spotColor, lineHeight: 1 }}>
+          <Pane className="num" style={{ ...NUM_FEAT, fontSize: 26, fontWeight: 700, color: spotColor, lineHeight: 1 }}>
             {spotLabel}
           </Pane>
         </Pane>
         {showWalls ? (
-          <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 22, fontWeight: 600, color: GOLD, lineHeight: 1 }}>
+          <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 600, color: GOLD, lineHeight: 1 }}>
             <span style={{ fontSize: 8, fontWeight: 500, color: AT_LABEL, display: "block", marginBottom: 0 }}>CALL</span>
             {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}
           </Pane>
@@ -270,36 +166,80 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       {sessionLevels.showRow ? (
         <Pane
           data-at-day-low-zone
-          className="flex flex-wrap items-center gap-x-1.5 px-0.5"
-          style={{ minHeight: 14, lineHeight: 1.2, marginTop: 2 }}
+          className="flex flex-nowrap items-center gap-x-0.5 px-0.5 overflow-hidden"
+          style={{ minHeight: 11, lineHeight: 1.1, marginTop: 0, fontSize: 8 }}
         >
           <Pane
             className="num shrink-0"
             data-at-day-low
             data-at-day-low-kind={sessionLevels.dayLow.kind}
-            style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}
+            style={{ ...NUM_FEAT, fontSize: 8, fontWeight: 500, color: WHITE }}
           >
             {sessionLevels.dayLowText}
           </Pane>
           {sessionLevels.lowZone.status !== "hidden" ? (
             <>
-              <span style={{ color: AT_LABEL, fontSize: 10 }} aria-hidden>
+              <span style={{ color: AT_LABEL, fontSize: 9 }} aria-hidden>
                 ·
               </span>
               <Pane
                 className="num shrink-0"
                 data-at-low-zone-slot
                 data-at-low-zone-status={sessionLevels.lowZone.status}
-                style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: AT_SECONDARY }}
+                title={SPX_REF_ZONE_TOOLTIP}
+                style={{ ...NUM_FEAT, fontSize: 8, fontWeight: 500, color: AT_SECONDARY }}
               >
                 {sessionLevels.lowZoneText}
               </Pane>
             </>
           ) : null}
+          {sessionLevels.highZone.status !== "hidden" ? (
+            <>
+              <span style={{ color: AT_LABEL, fontSize: 9 }} aria-hidden>
+                ·
+              </span>
+              <Pane
+                className="num shrink-0"
+                data-at-high-zone-slot
+                data-at-high-zone-status={sessionLevels.highZone.status}
+                title={SPX_REF_ZONE_TOOLTIP}
+                style={{ ...NUM_FEAT, fontSize: 8, fontWeight: 500, color: AT_SECONDARY }}
+              >
+                {sessionLevels.highZoneText}
+              </Pane>
+            </>
+          ) : null}
+          <span style={{ color: AT_LABEL, fontSize: 9 }} aria-hidden>
+            ·
+          </span>
+          <Pane
+            className="num shrink-0"
+            data-at-day-high
+            data-at-day-high-kind={sessionLevels.dayHigh.kind}
+            style={{ ...NUM_FEAT, fontSize: 8, fontWeight: 500, color: WHITE }}
+          >
+            {sessionLevels.dayHighText}
+          </Pane>
         </Pane>
       ) : null}
 
-      <MoneyRow agg={flow} sessionClosed={flowClosed} />
+      <Pane data-at-glance-flow-row style={{ marginTop: 1, minHeight: 34, maxHeight: 40, overflow: "hidden" }}>
+        <AtGlanceGrossFlow
+          agg={flow}
+          sessionClosed={flowClosed}
+          callWall={zones.callWall}
+          putWall={zones.putWall}
+          onOpenDetail={() => setFlowDetailOpen(true)}
+        />
+      </Pane>
+
+      <AtGlanceFlowDetail
+        open={flowDetailOpen}
+        onClose={() => setFlowDetailOpen(false)}
+        agg={flow}
+        gexLabel={gexDisplay !== "\u2014" ? gexDisplay : null}
+        sessionClosed={flowClosed}
+      />
     </Pane>
   );
 });

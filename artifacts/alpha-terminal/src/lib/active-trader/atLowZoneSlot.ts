@@ -1,24 +1,33 @@
 /**
- * Low-side zone display (upper edge / band). Quant definition pending (Quinn).
- * No default offset or formula is shipped in production.
+ * Low-side reference zone (upper edge). Display only — no order rules.
  */
 
-export const AT_LOW_ZONE_NUMBERS_ENABLED = false;
+import {
+  computeLowZoneTop,
+  formatRefZoneHalf,
+  SPX_REF_ZONE_K_DEFAULT,
+} from "@/lib/active-trader/spxRefZone";
 
 export type LowZoneSlotDisplay =
   | { status: "hidden" }
-  | { status: "pending" }
-  | { status: "range"; low: number; high: number };
+  | { status: "unavailable" }
+  | { status: "value"; top: number };
 
-/**
- * Isolated hook point for the confirmed low-zone formula (offset, sample window, rounding).
- * Returns `pending` until `AT_LOW_ZONE_NUMBERS_ENABLED` and Quinn's definition lands here.
- */
 export function resolveLowZoneSlotDisplay(
-  _sessionLow: number | null,
-  opts?: { showSlot?: boolean },
+  sessionLow: number | null,
+  opts?: { showSlot?: boolean; k?: number },
 ): LowZoneSlotDisplay {
   if (opts?.showSlot === false) return { status: "hidden" };
-  if (!AT_LOW_ZONE_NUMBERS_ENABLED) return { status: "pending" };
-  return { status: "pending" };
+  if (sessionLow == null || !Number.isFinite(sessionLow) || sessionLow <= 0) {
+    return { status: "unavailable" };
+  }
+  const top = computeLowZoneTop(sessionLow, opts?.k ?? SPX_REF_ZONE_K_DEFAULT);
+  if (top == null) return { status: "unavailable" };
+  return { status: "value", top };
+}
+
+export function lowZoneSlotLabel(display: LowZoneSlotDisplay): string {
+  if (display.status === "hidden") return "";
+  if (display.status === "unavailable") return "Low zone —";
+  return `Low zone ${formatRefZoneHalf(display.top)}`;
 }
