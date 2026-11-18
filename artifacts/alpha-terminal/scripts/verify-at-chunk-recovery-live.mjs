@@ -20,6 +20,7 @@ const context = await browser.newContext({
   ...IPHONE,
   viewport: { width: 440, height: 956 },
   deviceScaleFactor: 3,
+  serviceWorkers: "block",
 });
 const page = await context.newPage();
 await page.addInitScript(() => {
@@ -27,18 +28,22 @@ await page.addInitScript(() => {
 });
 
 let blockPortfolio = true;
-await page.route(/PortfolioView-[A-Za-z0-9_-]+\.js/, (route) => {
-  if (blockPortfolio) route.abort("failed");
-  else route.continue();
+await page.route("**/*", (route) => {
+  const url = route.request().url();
+  if (blockPortfolio && /PortfolioView/i.test(url)) {
+    route.abort("failed");
+    return;
+  }
+  route.continue();
 });
 
 try {
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.waitForTimeout(800);
 
-  await page.getByRole("button", { name: /menu/i }).first().click({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Portfolio", exact: true }).click({ timeout: 30_000 });
-  await page.waitForTimeout(1200);
+  await page.locator("[data-bottom-nav]").getByText("PORTFOLIO", { exact: true }).click({ timeout: 30_000 });
+  await page.waitForSelector('[data-lazy-view-name="Portfolio"]', { timeout: 15_000 });
+  await page.waitForTimeout(400);
 
   const shell = await page.evaluate(() => ({
     header: !!document.getElementById("terminal-header"),
@@ -54,7 +59,7 @@ try {
   await page.screenshot({ path: path.join(OUT, "portfolio-chunk-blocked-440x956.png") });
 
   blockPortfolio = false;
-  await page.locator("[data-lazy-view-retry]").click({ timeout: 10_000 });
+  await page.locator('[data-lazy-view-name="Portfolio"] [data-lazy-view-retry]').click({ timeout: 10_000 });
   await page.waitForTimeout(2500);
   const recovered = await page.evaluate(
     () => !document.querySelector("[data-lazy-view-error]") && document.body.innerText.length > 200,
@@ -62,15 +67,16 @@ try {
   record("retry recovers portfolio", recovered, recovered ? "ok" : "still error");
 
   let blockNews = true;
-  await page.unroute(/.*/).catch(() => undefined);
-  await page.route(/NewsTab-[A-Za-z0-9_-]+\.js/, (route) => {
-    if (blockNews) route.abort("failed");
+  await page.unroute("**/*").catch(() => undefined);
+  await page.route("**/*", (route) => {
+    const url = route.request().url();
+    if (blockNews && /NewsTab/i.test(url)) route.abort("failed");
     else route.continue();
   });
 
-  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 }).catch(() => undefined);
+  await page.locator("[data-bottom-nav]").getByText("MARKETS", { exact: true }).click({ timeout: 30_000 });
   await page.waitForTimeout(400);
-  await page.getByRole("button", { name: "News", exact: true }).click({ timeout: 30_000 }).catch(() => undefined);
+  await page.getByRole("button", { name: "NEWS", exact: true }).click({ timeout: 30_000 });
   await page.waitForTimeout(1200);
 
   const news = await page.evaluate(() => ({
@@ -82,13 +88,12 @@ try {
   await page.screenshot({ path: path.join(OUT, "news-chunk-blocked-440x956.png") });
 
   blockNews = false;
-  const retryNews = page.locator('[data-lazy-view-name="News"] [data-lazy-view-retry]');
-  if ((await retryNews.count()) > 0) {
-    await retryNews.click();
-    await page.waitForTimeout(2000);
-  }
-  const newsOk = await page.evaluate(() => !document.querySelector('[data-lazy-view-name="News"]'));
-  record("news retry", newsOk || !(await page.locator('[data-lazy-view-error]').count()), "ok");
+  await page.locator('[data-lazy-view-name="News"] [data-lazy-view-retry]').click({ timeout: 10_000 }).catch(() => undefined);
+  await page.waitForTimeout(2500);
+  const newsOk = await page.evaluate(
+    () => !document.querySelector('[data-lazy-view-name="News"] [data-lazy-view-error]'),
+  );
+  record("news retry", newsOk, newsOk ? "ok" : "still error");
 } catch (err) {
   record("chunk recovery live", false, err instanceof Error ? err.message : String(err));
 }

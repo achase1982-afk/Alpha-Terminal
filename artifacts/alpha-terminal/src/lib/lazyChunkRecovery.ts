@@ -16,7 +16,8 @@ export function isChunkLoadError(err: unknown): boolean {
     /Loading chunk [\w-]+ failed/i.test(msg) ||
     /Importing a module script failed/i.test(msg) ||
     /error loading dynamically imported module/i.test(msg) ||
-    /Unable to preload CSS/i.test(msg)
+    /Unable to preload CSS/i.test(msg) ||
+    (/is not an object/i.test(msg) && /evaluating/i.test(msg))
   );
 }
 
