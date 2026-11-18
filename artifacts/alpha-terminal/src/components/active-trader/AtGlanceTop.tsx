@@ -3,11 +3,9 @@ import { Info } from "lucide-react";
 import {
   BG_EXP_BAR,
   BORDER,
-  DOWN_TEXT,
   GAMMA_SCENARIO,
   GOLD,
   PUT_WALL,
-  UP,
   WHITE,
 } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
@@ -15,10 +13,11 @@ import { formatGexUsd } from "@/lib/active-trader/zonesModel";
 import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
+import { useSpotDirectionColor } from "@/lib/active-trader/atSpotDirection";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
+import { resolveDayDirectionCue } from "@/lib/active-trader/atDayDirectionCue";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
-import { resolveGlanceFromOpenChange, resolveSessionChangeDisplay } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
 import { AT_LABEL, AT_INTERACTIVE, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
@@ -54,30 +53,20 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
   underlyingPrice,
   zones,
-  sessionOpen,
   glanceCaption,
   sessionClosed,
   skipNetwork,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const { data: quote, restQuote } = useQuote(symbol);
+  const { data: quote } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium } = useDeskFlowStream(symbol, true);
   const flowClosed = sessionClosed || flowSessionClosed;
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
 
-  const sessionChange = resolveSessionChangeDisplay(quote, restQuote);
-  const fromOpen = resolveGlanceFromOpenChange(quote, spotShown, sessionOpen, restQuote);
-  const spotColor =
-    flowClosed || fromOpen == null
-      ? WHITE
-      : fromOpen > 0
-        ? UP
-        : fromOpen < 0
-          ? DOWN_TEXT
-          : sessionChange.change === 0
-            ? WHITE
-            : WHITE;
+  const dayCue = resolveDayDirectionCue(quote, spotShown);
+  const tickColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS);
+  const spotColor = flowClosed ? WHITE : tickColor;
 
   const spotLabel = formatAtGlanceSpot(symbol, spotShown);
   const gexStr = mode === "futures" ? null : formatGexUsd(zones.netGexUsdPer1Pct);
@@ -158,12 +147,28 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <Pane style={{ fontSize: 9, fontWeight: 500, letterSpacing: "0.06em", color: AT_LABEL, lineHeight: 1 }}>
             {symbol.replace(/^\$/, "")}
           </Pane>
-          <Pane
-            className="num"
-            data-ui-audit="at-glance-spot"
-            style={{ ...NUM_FEAT, fontSize: 26, fontWeight: 700, color: spotColor, lineHeight: 1 }}
-          >
-            {spotLabel}
+          <Pane className="flex items-baseline justify-center gap-1 flex-wrap" style={{ lineHeight: 1 }}>
+            <Pane
+              className="num"
+              data-ui-audit="at-glance-spot"
+              data-at-tick-color="independent"
+              style={{ ...NUM_FEAT, fontSize: 26, fontWeight: 700, color: spotColor, lineHeight: 1 }}
+            >
+              {spotLabel}
+            </Pane>
+            <Pane
+              data-at-day-direction
+              className="num truncate max-w-[9.5rem]"
+              style={{
+                ...NUM_FEAT,
+                fontSize: 9,
+                fontWeight: 600,
+                color: dayCue.tint,
+                letterSpacing: "0.02em",
+              }}
+            >
+              {dayCue.label}
+            </Pane>
           </Pane>
         </Pane>
         {showWalls ? (

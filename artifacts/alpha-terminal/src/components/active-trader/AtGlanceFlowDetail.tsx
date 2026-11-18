@@ -76,6 +76,11 @@ export const AtGlanceFlowDetail = memo(function AtGlanceFlowDetail({
               </ul>
             )}
           </div>
+          <div data-at-today-flow-note style={{ fontSize: 9, color: AT_LABEL, lineHeight: 1.3 }}>
+            TODAY option-flow totals (est. net call/put premium since 9:30 ET) are not shown — the live
+            stream exposes timestamped flow_1s buckets but this client does not
+            receive a validated full-session rollup on connect. No fabricated TODAY row.
+          </div>
           {!gross.unsupported && !gross.noPrints && gross.line1m ? (
             <div>
               <div style={{ fontSize: 9, color: AT_LABEL, marginBottom: 2 }}>Aggregated tape (1m / 5m / hr)</div>

@@ -144,9 +144,18 @@ export function registerAtFixtureFromLocation(): void {
 
   const spot = isEs ? FIXTURE_ES_SPOT : isNvda ? FIXTURE_NVDA_SPOT : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
   const sym = isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX";
-  const close =
-    isNvda ? FIXTURE_NVDA_OPEN : isAapl ? spot - 1.2 : isEs ? spot - 8.5 : spot - 12;
-  const change = spot - close;
+  const steadyFlowDemo = !isEs && !isNvda && !isAapl && sceneParam === "steady-flow-demo";
+  const live = steadyFlowDemo ? spot + 1.25 : spot;
+  const close = steadyFlowDemo
+    ? Math.round(spot * 1.008 * 100) / 100
+    : isNvda
+      ? FIXTURE_NVDA_OPEN
+      : isAapl
+        ? spot - 1.2
+        : isEs
+          ? spot - 8.5
+          : spot - 12;
+  const change = live - close;
   const changePct = close !== 0 ? (change / close) * 100 : 0;
   const description = isNvda
     ? "NVIDIA CORP"
@@ -162,8 +171,8 @@ export function registerAtFixtureFromLocation(): void {
       [sym]: {
         symbol: sym,
         description,
-        last: spot,
-        regularLast: spot,
+        last: live,
+        regularLast: live,
         extendedLast: null,
         bid: spot - tick,
         ask: spot + tick,

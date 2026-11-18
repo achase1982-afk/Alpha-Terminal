@@ -116,8 +116,14 @@ export const AtGlanceFlowTracks = memo(function AtGlanceFlowTracks({ glance, onO
       style={{ padding: 0, background: "transparent", border: "none", cursor: onOpenDetail ? "pointer" : "default" }}
       aria-label="Option flow details"
     >
+      <div
+        data-at-flow-now-label
+        style={{ fontSize: 8, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.06em", marginBottom: 1, lineHeight: 1 }}
+      >
+        FLOW NOW · {glance.windowLabel}
+      </div>
       {glance.streamNote ? (
-        <div data-at-flow-tape-note style={{ fontSize: 8, color: AT_LABEL, marginBottom: 2, lineHeight: 1.1 }}>
+        <div data-at-flow-tape-note style={{ fontSize: 7, color: AT_LABEL, marginBottom: 1, lineHeight: 1.1 }}>
           {glance.streamNote}
         </div>
       ) : null}
