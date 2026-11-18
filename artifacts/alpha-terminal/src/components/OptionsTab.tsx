@@ -1939,7 +1939,7 @@ export function OptionsTab({
       {!isFuturesSymbol && (
       <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
       <div
-        className="flex items-center justify-between w-full px-3 shrink-0 z-40"
+        className="flex items-center justify-between w-full pl-3 pr-2 shrink-0 z-40"
         style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-2 min-w-0">
