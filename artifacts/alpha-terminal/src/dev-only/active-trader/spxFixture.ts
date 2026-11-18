@@ -207,6 +207,16 @@ export const FIXTURE_ZONE_MODEL: ZoneModel = {
   asOfLabel: "15:42",
 };
 
+/** Golden keep-away stats (2026 YTD, n=221) for dev fixture. */
+export const FIXTURE_SPX_KEEPAWAY = {
+  symbol: "SPX" as const,
+  n: 221,
+  startYmd: "2026-01-01",
+  endYmd: "2026-11-17",
+  lowSide: { median: 29.5, mean: 36.6 },
+  highSide: { median: 24.2, mean: 34.6 },
+};
+
 export const FIXTURE_REGIME = { label: "Bullish trend", degraded: false };
 export const FIXTURE_CLASSIFIED_PCT = 0.74;
 export const FIXTURE_HEADLINE = "Upward pressure · Price stalled";

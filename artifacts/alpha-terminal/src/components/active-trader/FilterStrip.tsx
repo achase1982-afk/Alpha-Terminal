@@ -1,4 +1,5 @@
-import { memo } from "react";
+import { memo, useState } from "react";
+import { Info } from "lucide-react";
 import { BG_EXP_BAR, BORDER, DIM, GRAY, MONO, FW_LIGHT, UP, DOWN, WHITE } from "@/components/options/optionsTheme";
 
 export type LaneFilterKey = "call_buy" | "call_sell" | "put_buy" | "put_sell";
@@ -39,46 +40,60 @@ export const FilterStrip = memo(function FilterStrip({
   stickyTop,
   embedded,
 }: FilterStripProps) {
+  const [legendOpen, setLegendOpen] = useState(false);
+  const pct =
+    classifiedPct != null ? `${Math.round(classifiedPct * 100)}% classified` : "— classified";
+
   return (
     <div
       data-at-filter-strip
-      className={embedded ? "px-3 py-1.5 space-y-1" : "sticky z-[37] px-3 py-1.5 space-y-1"}
+      className={embedded ? "px-3 py-0.5" : "sticky z-[37] px-3 py-0.5"}
       style={{
         ...(embedded ? {} : { top: stickyTop }),
         background: BG_EXP_BAR,
         borderBottom: `1px solid ${BORDER}`,
         fontFamily: MONO,
+        minHeight: 22,
       }}
     >
-      <div
-        className="flex flex-wrap items-center gap-x-3 gap-y-1"
-        style={{ fontSize: 11, fontWeight: FW_LIGHT }}
-      >
-        {CHIPS.map((c) => {
-          const on = filters[c.key];
-          return (
-            <button
-              key={c.key}
-              type="button"
-              className="shrink-0 bg-transparent border-0 p-0 cursor-pointer"
-              style={{
-                color: on ? WHITE : "#52525b",
-                textDecoration: on ? "none" : "none",
-                opacity: on ? 1 : 0.55,
-              }}
-              onClick={() => onToggle(c.key)}
-            >
-              {c.label}
-            </button>
-          );
-        })}
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2" style={{ fontSize: 10, color: DIM }}>
-        <span>
-          Classified contracts · {windowLabel}
-          {classifiedPct != null ? ` · ${Math.round(classifiedPct * 100)}% classified (L1 inference)` : ""}
+      <div className="flex items-center gap-2 min-h-[20px]">
+        <div
+          className="flex flex-1 flex-wrap items-center gap-x-2 gap-y-0 min-w-0"
+          style={{ fontSize: 10, fontWeight: FW_LIGHT }}
+        >
+          {CHIPS.map((c) => {
+            const on = filters[c.key];
+            return (
+              <button
+                key={c.key}
+                type="button"
+                className="shrink-0 bg-transparent border-0 p-0 cursor-pointer"
+                style={{
+                  color: on ? WHITE : "#52525b",
+                  opacity: on ? 1 : 0.55,
+                }}
+                onClick={() => onToggle(c.key)}
+              >
+                {c.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="shrink-0 tabular-nums truncate max-w-[38%]" style={{ fontSize: 9, color: DIM }}>
+          {windowLabel} · {pct}
         </span>
-        <div className="flex items-center gap-2">
+        <button
+          type="button"
+          aria-label="Flow legend"
+          className="shrink-0 p-0"
+          style={{ color: legendOpen ? WHITE : DIM }}
+          onClick={() => setLegendOpen((v) => !v)}
+        >
+          <Info className="w-3 h-3" />
+        </button>
+      </div>
+      {legendOpen ? (
+        <div className="flex flex-wrap items-center gap-2 pb-0.5" style={{ fontSize: 9, color: DIM }}>
           <span className="flex items-center">
             <LegendBadge color={UP}>B</LegendBadge> buy-led
           </span>
@@ -88,8 +103,9 @@ export const FilterStrip = memo(function FilterStrip({
           <span className="flex items-center">
             <LegendBadge color={GRAY}>=</LegendBadge> even
           </span>
+          <span>L1 inference</span>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 });

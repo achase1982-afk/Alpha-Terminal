@@ -28,16 +28,15 @@ interface LadderBodyProps {
   underlyingPrice: number | null;
   zones: ZoneModel;
   laneFilters: Record<"call_buy" | "call_sell" | "put_buy" | "put_sell", boolean>;
-  tradeStripStrike: number | null;
+  selectedStrike: number | null;
   onQuoteTap: (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => void;
-  onTradeStripSell: (contract: OptionsContract, type: "CALL" | "PUT") => void;
-  onTradeStripBuy: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   positionQtyByKey: Map<string, number>;
   workingOrderChips?: Map<string, string>;
   flowByKey: Record<string, FlowLaneCounts>;
-  tradeContext: AtTradeContext | null;
   symbolLabel: string;
+  keepawayPutLine?: number | null;
+  keepawayCallLine?: number | null;
   ladderMode: AtLadderMode;
   verticalWidth: AtVerticalWidth;
   rowByStrike: Map<number, LadderRowModel>;
@@ -172,15 +171,12 @@ type LadderRowViewProps = {
   zones: ZoneModel;
   maxFlow: number;
   laneFilters: LadderBodyProps["laneFilters"];
-  showTradeStrip: boolean;
+  isSelected: boolean;
   onQuoteTap: LadderBodyProps["onQuoteTap"];
-  onTradeStripSell: LadderBodyProps["onTradeStripSell"];
-  onTradeStripBuy: LadderBodyProps["onTradeStripBuy"];
   onAddLeg: LadderBodyProps["onAddLeg"];
   positionQtyByKey: Map<string, number>;
   workingOrderChips?: Map<string, string>;
   flowByKey: Record<string, FlowLaneCounts>;
-  tradeContext: AtTradeContext | null;
   underlyingPrice: number | null;
   symbolLabel: string;
   spotBetweenRows: boolean;
@@ -191,6 +187,8 @@ type LadderRowViewProps = {
   rowByStrike: Map<number, LadderRowModel>;
   rowHeight: number;
   onVerticalTap: LadderBodyProps["onVerticalTap"];
+  keepawayPutLine?: number | null;
+  keepawayCallLine?: number | null;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -199,15 +197,12 @@ const LadderRowView = memo(function LadderRowView({
   zones,
   maxFlow,
   laneFilters,
-  showTradeStrip,
+  isSelected,
   onQuoteTap,
-  onTradeStripSell,
-  onTradeStripBuy,
   onAddLeg,
   positionQtyByKey,
   workingOrderChips,
   flowByKey,
-  tradeContext,
   underlyingPrice,
   symbolLabel,
   spotBetweenRows,
@@ -218,6 +213,8 @@ const LadderRowView = memo(function LadderRowView({
   rowByStrike,
   rowHeight,
   onVerticalTap,
+  keepawayPutLine,
+  keepawayCallLine,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
@@ -280,18 +277,30 @@ const LadderRowView = memo(function LadderRowView({
     return chips.length ? <div className="absolute top-0.5 right-0.5 flex gap-px">{chips}</div> : null;
   };
 
+  const putKeepaway = keepawayPutLine != null && row.strike < keepawayPutLine;
+  const callKeepaway = keepawayCallLine != null && row.strike > keepawayCallLine;
+  const keepawayForbidden = putKeepaway || callKeepaway;
+
   const rowStyle: React.CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
     height: rowHeight,
     borderBottom: `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
-    background: spotRow ? `${accentHex}22` : AT_LADDER_PANEL_BG,
+    background: spotRow
+      ? `${accentHex}22`
+      : keepawayForbidden
+        ? "rgba(255,255,255,0.045)"
+        : isSelected
+          ? "rgba(251,191,36,0.12)"
+          : AT_LADDER_PANEL_BG,
     boxShadow: isCallWall
       ? `inset 4px 0 0 ${UP}`
       : isPutWall
         ? `inset 4px 0 0 ${DOWN}`
-        : undefined,
+        : isSelected
+          ? `inset 0 0 0 1px ${accentHex}55`
+          : undefined,
   };
 
   const putBidPx = ladderMode === "vertical" ? putSpread.bid : putTick?.bid ?? null;
@@ -302,35 +311,66 @@ const LadderRowView = memo(function LadderRowView({
   return (
     <>
       {spotBetweenRows && underlyingPrice != null && (
-        <div className="relative w-full grid" style={{ gridTemplateColumns: AT_LADDER_GRID, height: 10 }}>
+        <div
+          data-at-spot-gap
+          className="relative w-full grid"
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 12 }}
+        >
           <div
-            className="col-span-full relative"
-            style={{ gridColumn: "1 / -1", height: 10 }}
+            className="relative pointer-events-none"
+            style={{ gridColumn: "1 / -1", gridRow: 1, height: 12 }}
           >
             <div
               className="absolute left-0 right-0"
               style={{
-                top: Math.min(8, Math.max(0, spotFrac * 8)),
+                top: Math.min(10, Math.max(2, spotFrac * 10)),
                 borderTop: `1px dashed ${accentHex}99`,
               }}
             />
           </div>
           <div
-            className="flex items-center justify-center col-start-4 z-[1]"
-            style={{ marginTop: Math.min(4, Math.max(-4, spotFrac * 8 - 4)) }}
+            className="flex items-center z-[1] pointer-events-none min-w-0"
+            style={{
+              gridColumn: "1 / 4",
+              gridRow: 1,
+              height: 12,
+              lineHeight: "12px",
+              paddingLeft: 2,
+              alignSelf: "start",
+            }}
           >
-            <span style={{ fontSize: 7, color: accentHex, background: BG, padding: "0 4px" }}>
-              SPX {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
+            <span
+              className="truncate"
+              style={{
+                fontSize: 10,
+                lineHeight: "12px",
+                color: accentHex,
+                background: AT_LADDER_PANEL_BG,
+                padding: "0 2px",
+                fontFamily: MONO,
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {symbolLabel} {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
             </span>
           </div>
         </div>
       )}
       {flipBetweenRows && zones.flip != null && (
         <div
-          className="relative w-full grid items-start"
-          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 6, marginTop: -1 }}
+          data-at-flip-gap
+          className="relative w-full grid"
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 12 }}
         >
-          <div style={{ gridColumn: "1 / 7", borderTop: `1px dotted ${GAMMA_SCENARIO}`, marginTop: 3 }} />
+          <div
+            className="pointer-events-none"
+            style={{ gridColumn: "1 / -1", gridRow: 1, height: 12, position: "relative" }}
+          >
+            <div
+              className="absolute left-0 right-0"
+              style={{ top: 5, borderTop: `1px dotted ${GAMMA_SCENARIO}` }}
+            />
+          </div>
           <FlipPill flip={zones.flip} />
         </div>
       )}
@@ -467,101 +507,35 @@ const LadderRowView = memo(function LadderRowView({
         />
         <FlowBarCell flow={callFlow} laneFilters={laneFilters} side="call" maxFlow={maxFlow} />
       </div>
-      {showTradeStrip && tradeContext && (() => {
-        const legColor = tradeContext.type === "CALL" ? UP : DOWN;
-        const isVert = tradeContext.mode === "vertical";
-        const spread = tradeContext.type === "PUT" ? putSpread : callSpread;
-        const tick = tradeContext.type === "PUT" ? putTick : callTick;
-        const bid = isVert ? fmtPx(spread.bid) : fmtPx(tick?.bid);
-        const ask = isVert ? fmtPx(spread.ask) : fmtPx(tick?.ask);
-        const key =
-          tradeContext.mode === "single"
-            ? tradeContext.contract.streamKey ?? ""
-            : tradeContext.nearContract.streamKey ?? "";
-        const pos = key ? positionQtyByKey.get(key) : undefined;
-        const posStr =
-          pos != null && pos !== 0
-            ? ` · pos ${pos > 0 ? "+" : "−"}${Math.abs(pos)}`
-            : "";
-        const title =
-          isVert && tradeContext.mode === "vertical"
-            ? `${tradeContext.anchorStrike}/${tradeContext.farStrike} ${tradeContext.type} VERTICAL`
-            : `${row.strike} ${tradeContext.type}`;
-        const detail = isVert
-          ? ` · SELL ${bid} credit / BUY ${ask} debit`
-          : ` · SELL ${bid} at bid / BUY ${ask} at ask`;
-        return (
-          <div
-            className="px-2 py-1"
-            style={{
-              minHeight: rowHeight + 8,
-              borderBottom: `1px solid ${BORDER_ROW}`,
-              background: "linear-gradient(180deg, rgba(10,10,10,1), rgba(0,0,0,1))",
-              borderTop: `1px solid ${accentHex}30`,
-              fontFamily: MONO,
-            }}
-            data-at-trade-strip
-          >
-            <div
-              className="leading-snug mb-1 truncate"
-              style={{ fontSize: 10, color: GRAY, fontVariantNumeric: "tabular-nums" }}
-            >
-              <span style={{ color: legColor, fontWeight: FW_PREMIUM }}>{title}</span>
-              <span style={{ color: DIM }}>{detail}</span>
-              {posStr ? <span style={{ color: pos! > 0 ? UP : DOWN }}>{posStr}</span> : null}
-            </div>
-            <div className="grid grid-cols-3 items-center gap-1" style={{ fontSize: 12 }}>
-              <button
-                type="button"
-                style={{ color: DOWN, textAlign: "left" }}
-                onClick={() =>
-                  onTradeStripSell(
-                    tradeContext.mode === "single" ? tradeContext.contract : tradeContext.nearContract,
-                    tradeContext.type,
-                  )
-                }
-              >
-                SELL {bid}
-              </button>
-              <button
-                type="button"
-                style={{ color: GRAY, textAlign: "center" }}
-                onClick={() =>
-                  onAddLeg(
-                    tradeContext.mode === "single" ? tradeContext.contract : tradeContext.nearContract,
-                    tradeContext.type,
-                  )
-                }
-              >
-                + Leg
-              </button>
-              <button
-                type="button"
-                style={{ color: UP, textAlign: "right" }}
-                onClick={() =>
-                  onTradeStripBuy(
-                    tradeContext.mode === "single" ? tradeContext.contract : tradeContext.nearContract,
-                    tradeContext.type,
-                  )
-                }
-              >
-                BUY {ask}
-              </button>
-            </div>
-          </div>
-        );
-      })()}
     </>
   );
 });
 
 function FlipPill({ flip }: { flip: number }) {
   return (
-    <span className="flex items-start justify-end pr-0.5 col-start-7" style={{ marginTop: -5 }}>
+    <span
+      className="flex items-center justify-end pointer-events-none overflow-hidden"
+      style={{
+        gridColumn: "6 / 8",
+        gridRow: 1,
+        height: 12,
+        maxHeight: 12,
+        lineHeight: "12px",
+        paddingRight: 2,
+        alignSelf: "center",
+      }}
+    >
       <span
-        className="px-1 rounded-full whitespace-nowrap"
+        className="rounded-full whitespace-nowrap"
         style={{
           fontSize: 8,
+          lineHeight: "10px",
+          height: 10,
+          maxHeight: 10,
+          padding: "0 3px",
+          boxSizing: "border-box",
+          display: "inline-flex",
+          alignItems: "center",
           color: GAMMA_SCENARIO,
           border: `1px solid ${GAMMA_SCENARIO}`,
           background: BG,
@@ -591,21 +565,21 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   return (
     <div style={{ background: AT_LADDER_PANEL_BG }}>
       {props.rows.map((row, i) => {
-        const next = props.rows[i + 1];
+        const prev = props.rows[i - 1];
         const spotBetween =
           props.underlyingPrice != null &&
-          next != null &&
-          row.strike >= props.underlyingPrice &&
-          next.strike < props.underlyingPrice;
+          prev != null &&
+          prev.strike > props.underlyingPrice &&
+          row.strike <= props.underlyingPrice;
         const spotFrac =
           spotBetween && props.underlyingPrice != null
-            ? (row.strike - props.underlyingPrice) / (row.strike - next!.strike)
+            ? (prev.strike - props.underlyingPrice) / (prev.strike - row.strike)
             : 0;
         const flipBetween =
           props.zones.flip != null &&
-          next != null &&
-          row.strike > props.zones.flip &&
-          next.strike <= props.zones.flip;
+          prev != null &&
+          prev.strike > props.zones.flip &&
+          row.strike <= props.zones.flip;
         return (
           <LadderRowView
             key={row.strike}
@@ -614,7 +588,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             zones={props.zones}
             maxFlow={maxFlow}
             laneFilters={props.laneFilters}
-            showTradeStrip={props.tradeStripStrike === row.strike}
+            isSelected={props.selectedStrike === row.strike}
             underlyingPrice={props.underlyingPrice}
             symbolLabel={props.symbolLabel}
             spotBetweenRows={spotBetween}
@@ -625,16 +599,13 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             rowByStrike={props.rowByStrike}
             rowHeight={rowHeight}
             onVerticalTap={props.onVerticalTap}
+            keepawayPutLine={props.keepawayPutLine}
+            keepawayCallLine={props.keepawayCallLine}
             onQuoteTap={props.onQuoteTap}
-            onTradeStripSell={props.onTradeStripSell}
-            onTradeStripBuy={props.onTradeStripBuy}
             onAddLeg={props.onAddLeg}
             positionQtyByKey={props.positionQtyByKey}
             workingOrderChips={props.workingOrderChips}
             flowByKey={props.flowByKey}
-            tradeContext={
-              props.tradeStripStrike === row.strike && props.tradeContext ? props.tradeContext : null
-            }
           />
         );
       })}

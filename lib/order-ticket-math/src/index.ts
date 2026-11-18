@@ -14,3 +14,13 @@ export * from "./chainTicketSummary.js";
 export * from "./optionPop.js";
 export * from "./schwabComplexStrategy.js";
 export * from "./futuresOrderGuard.js";
+export {
+  computeSpxKeepawayFromDailyCandles,
+  roundKeepawayCallLine,
+  roundKeepawayPutLine,
+  spxKeepawayBoundary,
+  isSpxSymbol,
+  type DailyOhlc,
+  type SpxKeepawaySideStats,
+  type SpxKeepawayStats,
+} from "./spxKeepaway.js";

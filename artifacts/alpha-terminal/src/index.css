@@ -152,6 +152,25 @@
     overscroll-behavior-x: none;
   }
 
+  .tab-inner-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .at-ladder-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    background: #030303;
+  }
+
   .pf-hscroll {
     position: relative;
     -webkit-overflow-scrolling: touch;
