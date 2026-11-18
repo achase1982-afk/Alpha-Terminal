@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AtLadderVolumeHeatEngine, AT_LADDER_HEAT_WINDOW_MS } from "./atLadderVolumeHeatEngine";
 import {
-  AtLadderVolumeHeatEngine,
-  AT_LADDER_HEAT_WINDOW_MS,
-  type LadderHeatCellView,
-} from "./atLadderVolumeHeatEngine";
+  createAtLadderHeatStore,
+  publishAtLadderHeat,
+  type AtLadderHeatStore,
+} from "./atLadderHeatStore";
 import { getAtFixtureOverride } from "./atFixtureBridge";
 import { isIndexSymbol } from "./atGlanceMode";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import {
   defaultFixtureLadderVolumeSamples,
   ladderVolumeHeatFixtureSamples,
@@ -58,22 +59,6 @@ function formatPollBadge(
   return { label: "", sourceFresh: false };
 }
 
-function heatMapsEqual(
-  a: Record<string, LadderHeatCellView>,
-  b: Record<string, LadderHeatCellView>,
-): boolean {
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const k of keys) {
-    const x = a[k];
-    const y = b[k];
-    if (!x || !y) return false;
-    if (x.availability !== y.availability) return false;
-    if (Math.abs(x.intensity - y.intensity) > 0.015) return false;
-    if (x.contracts30s !== y.contracts30s) return false;
-  }
-  return true;
-}
-
 type RestChainLeg = {
   streamKey?: string;
   schwabSymbol?: string;
@@ -91,11 +76,12 @@ type RestChainLeg = {
 };
 
 function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[], want: Set<string>, now: number): void {
+  const batch: OptionTick[] = [];
   for (const leg of legs) {
     const rawKey = leg.streamKey ?? leg.schwabSymbol ?? "";
     const key = want.has(rawKey) ? rawKey : rawKey.trim();
     if (!key || (want.size > 0 && !want.has(key))) continue;
-    useOptionsStreamStore.getState().mergeTick({
+    batch.push({
       key,
       bid: leg.bid ?? null,
       ask: leg.ask ?? null,
@@ -127,6 +113,8 @@ function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[],
       engine.ingestCumulative(key, leg.volume, leg.volumeSampledAt);
     }
   }
+  // One store write for the whole poll body, not one per contract.
+  if (batch.length > 0) useOptionsStreamStore.getState().mergeTicks(batch);
 }
 
 function restWindowPath(
@@ -159,7 +147,7 @@ export function useAtLadderVolumeHeat(input: {
   restWindow?: { fromDate: string; toDate: string; strikeCount: number; range: string };
   /** Initial chain contract volumes so the first live tick computes a delta immediately. */
   seedContracts?: readonly AtLadderSeedContractVolume[];
-}): { heatByKey: Record<string, LadderHeatCellView>; source: AtLadderHeatSourceMeta } {
+}): { heatStore: AtLadderHeatStore; source: AtLadderHeatSourceMeta } {
   const engineRef = useRef(
     new AtLadderVolumeHeatEngine({
       scaleFloorContracts: 25,
@@ -167,8 +155,7 @@ export function useAtLadderVolumeHeat(input: {
       emaAlpha: 0.28,
     }),
   );
-  const [heatByKey, setHeatByKey] = useState<Record<string, LadderHeatCellView>>({});
-  const [tick, setTick] = useState(0);
+  const [heatStore] = useState(createAtLadderHeatStore);
   const streamKeysRef = useRef(input.streamKeys);
   streamKeysRef.current = input.streamKeys;
   const volumeSigRef = useRef(new Map<string, string>());
@@ -178,6 +165,8 @@ export function useAtLadderVolumeHeat(input: {
   const restWindowRef = useRef(input.restWindow);
   restWindowRef.current = input.restWindow;
   const [restActive, setRestActive] = useState(false);
+  const restActiveRef = useRef(restActive);
+  restActiveRef.current = restActive;
 
   const fx = getAtFixtureOverride();
   const scene =
@@ -191,6 +180,72 @@ export function useAtLadderVolumeHeat(input: {
   }, [fx, input.skipNetwork, input.symbol]);
 
   const schedulePaintRef = useRef<(() => void) | null>(null);
+
+  const readSource = useCallback((): AtLadderHeatSourceMeta => {
+    const engine = engineRef.current;
+    const now = Date.now();
+    engine.setNowMs(now);
+    const lastSourceRxMs = engine.getSourceLastRxMs();
+
+    if (mode === "stream") {
+      const rx = streamRxRef.current;
+      const wsFresh = rx != null && now - rx <= 12_000;
+      const usingRest = !wsFresh && restActiveRef.current;
+      return {
+        kind: usingRest ? "poll" : "stream",
+        label: usingRest ? "REST" : "WS",
+        sourceFresh: wsFresh || usingRest || rx == null,
+        lastSourceRxMs,
+        pollMs: usingRest ? AT_LADDER_HEAT_POLL_MS : undefined,
+      };
+    }
+
+    if (mode === "poll") {
+      const { sourceFresh } = formatPollBadge(engine, now, AT_LADDER_HEAT_POLL_MS);
+      return {
+        kind: mode,
+        label: sourceFresh ? "REST" : "",
+        sourceFresh,
+        lastSourceRxMs,
+        pollMs: AT_LADDER_HEAT_POLL_MS,
+      };
+    }
+
+    if (mode === "fixture") {
+      const sourceFresh = engine.isSourceFresh(now);
+      return {
+        kind: mode,
+        label: sourceFresh ? "Live · stream" : "",
+        sourceFresh,
+        lastSourceRxMs,
+      };
+    }
+
+    return {
+      kind: mode,
+      label: "",
+      sourceFresh: false,
+      lastSourceRxMs,
+    };
+  }, [mode]);
+
+  const [source, setSource] = useState<AtLadderHeatSourceMeta>(readSource);
+  /** The header badge only re-renders when what it shows changes, not on every heat repaint. */
+  const syncSource = useCallback(() => {
+    const next = readSource();
+    setSource((prev) =>
+      prev.kind === next.kind &&
+      prev.label === next.label &&
+      prev.sourceFresh === next.sourceFresh &&
+      prev.pollMs === next.pollMs
+        ? prev
+        : next,
+    );
+  }, [readSource]);
+
+  useEffect(() => {
+    syncSource();
+  }, [syncSource, restActive]);
 
   useEffect(() => {
     const engine = engineRef.current;
@@ -214,9 +269,8 @@ export function useAtLadderVolumeHeat(input: {
       lastPaintMs = rafNow;
       const keys = streamKeysRef.current;
       engineRef.current.setNowMs(Date.now());
-      const next = engineRef.current.snapshot(keys);
-      setHeatByKey((prev) => (heatMapsEqual(prev, next) ? prev : next));
-      setTick((n) => n + 1);
+      publishAtLadderHeat(heatStore, engineRef.current.snapshot(keys));
+      syncSource();
     };
 
     const requestPaint = () => {
@@ -236,7 +290,7 @@ export function useAtLadderVolumeHeat(input: {
       if (raf) cancelAnimationFrame(raf);
       window.clearInterval(decay);
     };
-  }, [mode]);
+  }, [mode, heatStore, syncSource]);
 
   useEffect(() => {
     if (mode !== "fixture") return;
@@ -525,53 +579,5 @@ export function useAtLadderVolumeHeat(input: {
     input.restWindow?.strikeCount,
   ]);
 
-  const source: AtLadderHeatSourceMeta = useMemo(() => {
-    const engine = engineRef.current;
-    const now = Date.now();
-    engine.setNowMs(now);
-    const lastSourceRxMs = engine.getSourceLastRxMs();
-
-    if (mode === "stream") {
-      const rx = streamRxRef.current;
-      const wsFresh = rx != null && now - rx <= 12_000;
-      const usingRest = !wsFresh && restActive;
-      return {
-        kind: usingRest ? "poll" : "stream",
-        label: usingRest ? "REST" : "WS",
-        sourceFresh: wsFresh || usingRest || rx == null,
-        lastSourceRxMs,
-        pollMs: usingRest ? AT_LADDER_HEAT_POLL_MS : undefined,
-      };
-    }
-
-    if (mode === "poll") {
-      const { sourceFresh } = formatPollBadge(engine, now, AT_LADDER_HEAT_POLL_MS);
-      return {
-        kind: mode,
-        label: sourceFresh ? "REST" : "",
-        sourceFresh,
-        lastSourceRxMs,
-        pollMs: AT_LADDER_HEAT_POLL_MS,
-      };
-    }
-
-    if (mode === "fixture") {
-      const sourceFresh = engine.isSourceFresh(now);
-      return {
-        kind: mode,
-        label: sourceFresh ? "Live · stream" : "",
-        sourceFresh,
-        lastSourceRxMs,
-      };
-    }
-
-    return {
-      kind: mode,
-      label: "",
-      sourceFresh: false,
-      lastSourceRxMs,
-    };
-  }, [heatByKey, mode, tick, restActive]);
-
-  return { heatByKey, source };
+  return { heatStore, source };
 }

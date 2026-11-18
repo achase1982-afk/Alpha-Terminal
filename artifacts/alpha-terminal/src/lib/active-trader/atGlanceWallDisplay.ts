@@ -40,7 +40,7 @@ export function resolveGammaFlipDisplay(zones: ZoneModel): string {
 
 /** Ladder strike chip under ATM (pin supersedes separate walls). */
 export function ladderStrikeZoneTag(
-  zones: ZoneModel,
+  zones: Pick<ZoneModel, "gammaPinStrike" | "wallsRollLabel" | "callWall" | "putWall">,
   strike: number,
 ): string | null {
   if (zones.gammaPinStrike != null && Math.abs(strike - zones.gammaPinStrike) < 0.001) {

@@ -116,10 +116,16 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: null }),
 }));
 
-vi.mock("@/lib/options-stream-store", () => ({
-  useOptionsStreamStore: (sel: (s: { ticks: Record<string, never> }) => unknown) => sel({ ticks: {} }),
-  useOptionTick: () => undefined,
-}));
+vi.mock("@/lib/options-stream-store", () => {
+  const state = { ticks: {} as Record<string, never> };
+  return {
+    useOptionsStreamStore: Object.assign((sel: (s: typeof state) => unknown) => sel(state), {
+      getState: () => state,
+      subscribe: () => () => {},
+    }),
+    useOptionTick: () => undefined,
+  };
+});
 
 vi.mock("@/components/active-trader/ActiveTraderView", () => ({
   ActiveTraderView: () => <div data-at-root data-at-glance-top data-testid="active-trader-pane" />,

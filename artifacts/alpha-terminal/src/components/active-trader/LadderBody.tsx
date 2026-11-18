@@ -1,4 +1,13 @@
-import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   BORDER,
@@ -12,9 +21,6 @@ import {
   GOLD,
   PUT_WALL,
 } from "@/components/options/optionsTheme";
-import { useOptionTick } from "@/lib/options-stream-store";
-import type { FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
-import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
   AT_LADDER_GRID,
@@ -26,10 +32,18 @@ import {
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
+import { useAtLadderHeatCell, type AtLadderHeatStore } from "@/lib/active-trader/atLadderHeatStore";
 import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { aggregateSpreadNBBO, verticalStrikes } from "@/lib/active-trader/aggregateSpreadNBBO";
-import { atLadderLegKey } from "@/lib/active-trader/atLadderLegKeys";
-import { atLadderDisplayQuote, atLadderExecutableQuote } from "@/lib/active-trader/atLadderExecutableQuote";
+import { atLadderLegKey, atLadderQuoteCellKey } from "@/lib/active-trader/atLadderLegKeys";
+import {
+  AT_CELL_PRESSED,
+  AT_CELL_SELECTED,
+  atSelectionPress,
+  useAtLadderCellFlags,
+  type AtLadderSelectionStore,
+} from "@/lib/active-trader/atLadderSelection";
+import { useAtLadderQuote, useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 
 export interface LadderRowModel {
@@ -41,17 +55,21 @@ export interface LadderRowModel {
 interface LadderBodyProps {
   rows: LadderRowModel[];
   accentHex: string;
-  underlyingPrice: number | null;
-  zones: ZoneModel;
-  laneFilters: Record<"call_buy" | "call_sell" | "put_buy" | "put_sell", boolean>;
+  /** Strike nearest the underlying; gets the yellow pill. */
+  spotStrike: number | null;
+  /** Gamma flip level. The nearest loaded strike gets the purple outline. */
+  flip: number | null;
+  callWall: number | null;
+  putWall: number | null;
+  pinStrike: number | null;
+  /** Walls are from a prior expiry and roll at the open: no wall outlines. */
+  wallsRolling: boolean;
   selectedStrike: number | null;
   onQuoteTap: (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => void;
-  onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   positionQtyByKey: Map<string, number>;
   workingOrderChips?: Map<string, string>;
-  flowByKey: Record<string, FlowLaneCounts>;
-  heatByKey: Record<string, LadderHeatCellView>;
-  symbolLabel: string;
+  heat: AtLadderHeatStore;
+  selection: AtLadderSelectionStore;
   keepawayPutLine?: number | null;
   keepawayCallLine?: number | null;
   ladderMode: AtLadderMode;
@@ -65,7 +83,6 @@ interface LadderBodyProps {
     side: "BUY" | "SELL";
     nearContract: OptionsContract;
   }) => void;
-  selectedQuoteCells?: ReadonlySet<string>;
   chainQuoteTs?: number;
   expiryLabel: string;
 }
@@ -81,28 +98,22 @@ export type AtTradeContext =
       nearContract: OptionsContract;
     };
 
-const EMPTY_HEAT: LadderHeatCellView = { availability: "unavailable", contracts30s: 0, intensity: 0 };
+/** Finger travel past this many CSS px turns a press into a scroll and drops it. */
+export const AT_TAP_SLOP_PX = 8;
+/** A click that follows a handled pointer gesture within this window is the same tap. */
+const CLICK_AFTER_POINTER_MS = 700;
+
+/**
+ * Render counter for the isolation test: a quote must re-render one contract
+ * pair, and a tap one cell, never a row or the ladder. Unset outside tests.
+ */
+export type AtLadderRenderProbe = (part: "body" | "row" | "pair" | "cell") => void;
+const renderProbe = (part: "body" | "row" | "pair" | "cell") =>
+  (globalThis as { __AT_LADDER_RENDER_PROBE__?: AtLadderRenderProbe }).__AT_LADDER_RENDER_PROBE__?.(part);
 
 function fmtPx(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n < 0) return "—";
   return n.toFixed(2);
-}
-
-function mergeLegHeat(
-  mode: AtLadderMode,
-  nearKey: string | undefined,
-  farKey: string | undefined,
-  heatByKey: Record<string, LadderHeatCellView>,
-): LadderHeatCellView {
-  if (!nearKey) return EMPTY_HEAT;
-  const near = heatByKey[nearKey] ?? EMPTY_HEAT;
-  if (mode !== "vertical" || !farKey) return near;
-  const far = heatByKey[farKey] ?? EMPTY_HEAT;
-  return {
-    availability: near.availability,
-    contracts30s: near.contracts30s + far.contracts30s,
-    intensity: Math.max(near.intensity, far.intensity),
-  };
 }
 
 function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSProperties {
@@ -144,73 +155,87 @@ function quoteAriaLabel(input: {
   return `${input.side} ${input.type} strike ${input.strike} expiry ${input.expiryLabel} at ${input.tint} ${px}`;
 }
 
-function QuoteCell({
+type QuoteCellProps = {
+  /** `atLadderQuoteCellKey`; null when the strike has no contract on this side. */
+  cellKey: string | null;
+  legKey: string | null;
+  quoteSide: "bid" | "ask";
+  side: "BUY" | "SELL";
+  price: number | null;
+  unavailableReason: string | null;
+  locked: boolean;
+  tapable: boolean;
+  strike: number;
+  type: "CALL" | "PUT";
+  expiryLabel: string;
+  selection: AtLadderSelectionStore;
+  dataAttr: string;
+  dividerLeft?: boolean;
+};
+
+/**
+ * One bid or ask cell. Taps are handled once for the whole ladder (see
+ * `LadderBody`); this only draws, and re-renders when its own price, press or
+ * leg state changes.
+ */
+const QuoteCell = memo(function QuoteCell({
+  cellKey,
+  legKey,
+  quoteSide,
+  side,
   price,
   unavailableReason,
   locked,
-  tapable = true,
-  tint,
+  tapable,
   strike,
-  leg,
   type,
-  side,
   expiryLabel,
-  onQuoteTap,
-  onClick,
+  selection,
   dataAttr,
-  legSelected,
   dividerLeft,
-}: {
-  price: number | null;
-  unavailableReason?: string | null;
-  dimmed?: boolean;
-  asOfLabel?: string | null;
-  locked?: boolean;
-  tapable?: boolean;
-  tint: "bid" | "ask";
-  strike: number;
-  leg: OptionsContract | null;
-  type: "CALL" | "PUT";
-  side: "BUY" | "SELL";
-  expiryLabel: string;
-  onQuoteTap: LadderBodyProps["onQuoteTap"];
-  onClick?: () => void;
-  dataAttr?: string;
-  legSelected?: boolean;
-  dividerLeft?: boolean;
-}) {
+}: QuoteCellProps) {
+  renderProbe("cell");
+  const flags = useAtLadderCellFlags(selection, legKey, quoteSide, cellKey);
+  const legSelected = (flags & AT_CELL_SELECTED) !== 0;
+  const pressed = (flags & AT_CELL_PRESSED) !== 0;
+
   const selectColor = side === "BUY" ? UP : DOWN_TEXT;
   const selectBorder = side === "BUY" ? UP : DOWN;
-  const selectFill =
-    side === "BUY" ? "rgba(0, 209, 102, 0.14)" : "rgba(242, 54, 69, 0.16)";
+  const selectFill = side === "BUY" ? "rgba(0, 209, 102, 0.14)" : "rgba(242, 54, 69, 0.16)";
+  const pressFill = side === "BUY" ? "rgba(0, 209, 102, 0.22)" : "rgba(242, 54, 69, 0.24)";
 
   return (
     <button
       type="button"
-      aria-label={quoteAriaLabel({ strike, type, side, tint, price, expiryLabel })}
+      aria-label={quoteAriaLabel({ strike, type, side, tint: quoteSide, price, expiryLabel })}
+      aria-pressed={legSelected}
+      data-at-cell={cellKey ?? undefined}
+      data-at-tapable={tapable && cellKey ? "1" : undefined}
       data-at-quote={dataAttr}
       data-at-quote-side={side}
       data-at-quote-unavailable={unavailableReason ?? undefined}
       data-at-quote-locked={locked ? "1" : undefined}
-      className="relative w-full h-full flex items-center justify-center px-1 active:opacity-80"
+      data-at-pressed={pressed ? "1" : undefined}
+      data-at-leg-selected={legSelected ? side : undefined}
+      className="relative w-full h-full flex items-center justify-center px-1"
       style={{
         fontSize: 14,
         fontWeight: 500,
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
-        background: "transparent",
+        background: pressed && !legSelected ? pressFill : "transparent",
+        boxShadow: pressed && !legSelected ? `inset 0 0 0 1px ${selectBorder}` : undefined,
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
         borderRight: "none",
         borderBottom: "none",
         boxSizing: "border-box",
+        touchAction: "manipulation",
+        WebkitTapHighlightColor: "transparent",
+        WebkitTouchCallout: "none",
+        userSelect: "none",
       }}
-      disabled={!tapable && !onClick}
-      onClick={() => {
-        if (!tapable && !onClick) return;
-        if (onClick) onClick();
-        else if (leg && tapable) onQuoteTap(leg, type, side);
-      }}
+      disabled={!tapable}
     >
       {legSelected ? (
         <span
@@ -221,8 +246,9 @@ function QuoteCell({
             padding: "1px 7px 2px",
             borderRadius: 5,
             border: `1px solid ${selectBorder}`,
-            background: selectFill,
+            background: pressed ? pressFill : selectFill,
             lineHeight: 1.04,
+            pointerEvents: "none",
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 600, color: WHITE }}>
@@ -244,8 +270,8 @@ function QuoteCell({
         <span
           style={
             unavailableReason
-              ? { fontSize: 9, fontWeight: 500, color: GRAY, letterSpacing: "0.02em" }
-              : { color: WHITE }
+              ? { fontSize: 9, fontWeight: 500, color: GRAY, letterSpacing: "0.02em", pointerEvents: "none" }
+              : { color: WHITE, pointerEvents: "none" }
           }
         >
           {unavailableReason ?? fmtPx(price)}
@@ -253,137 +279,160 @@ function QuoteCell({
       )}
     </button>
   );
-}
+});
 
-function QuoteHeatPair({
-  side,
-  view,
-  bid,
-  ask,
-}: {
-  side: "call" | "put";
-  view: LadderHeatCellView;
-  bid: ReactNode;
-  ask: ReactNode;
-}) {
+type ContractPairProps = {
+  pairSide: "call" | "put";
+  type: "CALL" | "PUT";
+  strike: number;
+  contract: OptionsContract | null;
+  /** Wing contract for vertical mode; null in single mode. */
+  far: OptionsContract | null;
+  vertical: boolean;
+  heat: AtLadderHeatStore;
+  selection: AtLadderSelectionStore;
+  chainQuoteTs: number;
+  clockMinute: number;
+  expiryLabel: string;
+};
+
+/**
+ * Bid + ask cells of one contract over their shared heat shade. Subscribes to
+ * that contract's quote and heat only, so a tick here never touches another
+ * strike, the row, or the ladder.
+ */
+const ContractPair = memo(function ContractPair({
+  pairSide,
+  type,
+  strike,
+  contract,
+  far,
+  vertical,
+  heat,
+  selection,
+  chainQuoteTs,
+  clockMinute,
+  expiryLabel,
+}: ContractPairProps) {
+  renderProbe("pair");
+  const near = useAtLadderQuote(contract, chainQuoteTs, clockMinute);
+  const farQuote = useAtLadderQuote(vertical ? far : null, chainQuoteTs, clockMinute);
+  const nearHeat = useAtLadderHeatCell(heat, contract?.streamKey);
+  const farHeat = useAtLadderHeatCell(heat, vertical ? far?.streamKey : null);
+
+  let bidPx = near.bid;
+  let askPx = near.ask;
+  let heatView = nearHeat;
+  if (vertical) {
+    const spread = aggregateSpreadNBBO(
+      { bid: near.bid, ask: near.ask },
+      { bid: farQuote.bid, ask: farQuote.ask },
+    );
+    bidPx = spread.bid;
+    askPx = spread.ask;
+    if (contract?.streamKey && far?.streamKey) {
+      heatView = {
+        availability: nearHeat.availability,
+        contracts30s: nearHeat.contracts30s + farHeat.contracts30s,
+        intensity: Math.max(nearHeat.intensity, farHeat.intensity),
+      };
+    }
+  }
+
+  const legKey = contract ? atLadderLegKey(contract, type) : null;
+  const tapable = vertical ? contract != null : near.tapable;
+
   return (
     <div
       className="relative grid h-full min-w-0"
       style={{
         gridColumn: "span 2",
         gridTemplateColumns: "1fr 1fr",
-        ...heatPairStyle(view, side),
+        ...heatPairStyle(heatView, pairSide),
       }}
-      data-at-quote-heat={side}
-      data-at-quote-heat-state={view.availability}
-      data-at-quote-heat-intensity={view.intensity.toFixed(3)}
+      data-at-quote-heat={pairSide}
+      data-at-quote-heat-state={heatView.availability}
+      data-at-quote-heat-intensity={heatView.intensity.toFixed(3)}
+      data-at-quote-heat-contracts={heatView.contracts30s}
     >
-      {bid}
-      {ask}
+      <QuoteCell
+        cellKey={contract ? atLadderQuoteCellKey(contract, type, "bid") : null}
+        legKey={legKey}
+        quoteSide="bid"
+        side="SELL"
+        price={bidPx}
+        unavailableReason={bidPx == null ? near.reason : null}
+        locked={near.locked && bidPx != null}
+        tapable={tapable}
+        strike={strike}
+        type={type}
+        expiryLabel={expiryLabel}
+        selection={selection}
+        dataAttr={`${pairSide}-bid-${strike}`}
+      />
+      <QuoteCell
+        cellKey={contract ? atLadderQuoteCellKey(contract, type, "ask") : null}
+        legKey={legKey}
+        quoteSide="ask"
+        side="BUY"
+        price={askPx}
+        unavailableReason={askPx == null ? near.reason : null}
+        locked={false}
+        tapable={tapable}
+        strike={strike}
+        type={type}
+        expiryLabel={expiryLabel}
+        selection={selection}
+        dataAttr={`${pairSide}-ask-${strike}`}
+        dividerLeft
+      />
     </div>
   );
-}
+});
 
 type LadderRowViewProps = {
   row: LadderRowModel;
+  callFar: OptionsContract | null;
+  putFar: OptionsContract | null;
+  vertical: boolean;
   accentHex: string;
-  zones: ZoneModel;
   isSelected: boolean;
   spotRow: boolean;
   gammaFlipRow: boolean;
-  onQuoteTap: LadderBodyProps["onQuoteTap"];
-  positionQtyByKey: Map<string, number>;
-  workingOrderChips?: Map<string, string>;
-  heatByKey: Record<string, LadderHeatCellView>;
-  ladderMode: AtLadderMode;
-  verticalWidth: AtVerticalWidth;
-  rowByStrike: Map<number, LadderRowModel>;
+  zoneTag: string | null;
+  keepawayForbidden: boolean;
+  positionQty: number | null;
+  workChip?: string;
+  heat: AtLadderHeatStore;
+  selection: AtLadderSelectionStore;
   rowHeight: number;
-  onVerticalTap: LadderBodyProps["onVerticalTap"];
-  keepawayPutLine?: number | null;
-  keepawayCallLine?: number | null;
-  selectedQuoteCells?: ReadonlySet<string>;
-  chainQuoteTs?: number;
+  chainQuoteTs: number;
+  clockMinute: number;
   expiryLabel: string;
 };
 
+/** One strike. Every prop is a primitive or a stable reference, so quotes and taps elsewhere skip it. */
 const LadderRowView = memo(function LadderRowView({
   row,
+  callFar,
+  putFar,
+  vertical,
   accentHex,
-  zones,
   isSelected,
   spotRow,
   gammaFlipRow,
-  onQuoteTap,
-  positionQtyByKey,
-  workingOrderChips,
-  heatByKey,
-  ladderMode,
-  verticalWidth,
-  rowByStrike,
+  zoneTag,
+  keepawayForbidden,
+  positionQty,
+  workChip,
+  heat,
+  selection,
   rowHeight,
-  onVerticalTap,
-  keepawayPutLine,
-  keepawayCallLine,
-  selectedQuoteCells,
-  chainQuoteTs = 0,
+  chainQuoteTs,
+  clockMinute,
   expiryLabel,
 }: LadderRowViewProps) {
-  const callTick = useOptionTick(row.call?.streamKey);
-  const putTick = useOptionTick(row.put?.streamKey);
-  const putFarStrike = verticalStrikes(row.strike, verticalWidth, "PUT").far;
-  const callFarStrike = verticalStrikes(row.strike, verticalWidth, "CALL").far;
-  const putFarRow = rowByStrike.get(putFarStrike);
-  const callFarRow = rowByStrike.get(callFarStrike);
-  const putFarTick = useOptionTick(putFarRow?.put?.streamKey);
-  const callFarTick = useOptionTick(callFarRow?.call?.streamKey);
-
-  const putSpread = useMemo(() => {
-    const near = atLadderExecutableQuote(row.put, putTick, chainQuoteTs);
-    const far = atLadderExecutableQuote(putFarRow?.put ?? null, putFarTick, chainQuoteTs);
-    return aggregateSpreadNBBO(
-      { bid: near.bid, ask: near.ask },
-      { bid: far.bid, ask: far.ask },
-    );
-  }, [row.put, putTick, putFarRow?.put, putFarTick, chainQuoteTs]);
-  const callSpread = useMemo(() => {
-    const near = atLadderExecutableQuote(row.call, callTick, chainQuoteTs);
-    const far = atLadderExecutableQuote(callFarRow?.call ?? null, callFarTick, chainQuoteTs);
-    return aggregateSpreadNBBO(
-      { bid: near.bid, ask: near.ask },
-      { bid: far.bid, ask: far.ask },
-    );
-  }, [row.call, callTick, callFarRow?.call, callFarTick, chainQuoteTs]);
-
-  const zoneTag = ladderStrikeZoneTag(zones, row.strike);
-
-  const strikePositionQty = (() => {
-    const keys = [row.call?.streamKey, row.put?.streamKey].filter(Boolean) as string[];
-    for (const key of keys) {
-      const q = positionQtyByKey.get(key);
-      if (q != null && q !== 0) return q;
-    }
-    return null;
-  })();
-
-  const renderBadges = (key: string | undefined) => {
-    if (!key) return null;
-    const chips: ReactNode[] = [];
-    const work = workingOrderChips?.get(key);
-    if (work) {
-      chips.push(
-        <span key="ord" className="px-0.5 rounded border" style={{ fontSize: 7, color: GRAY, borderColor: BORDER }}>
-          {work}
-        </span>,
-      );
-    }
-    return chips.length ? <div className="absolute top-0.5 right-0.5 flex gap-px">{chips}</div> : null;
-  };
-
-  const putKeepaway = keepawayPutLine != null && row.strike < keepawayPutLine;
-  const callKeepaway = keepawayCallLine != null && row.strike > keepawayCallLine;
-  const keepawayForbidden = putKeepaway || callKeepaway;
-
+  renderProbe("row");
   const rowStyle: CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
     height: rowHeight,
@@ -400,29 +449,7 @@ const LadderRowView = memo(function LadderRowView({
     zIndex: gammaFlipRow ? 2 : undefined,
   };
 
-  const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
-  const callKey = row.call ? atLadderLegKey(row.call, "CALL") : null;
-  const putSingle = atLadderDisplayQuote(row.put, putTick, chainQuoteTs);
-  const callSingle = atLadderDisplayQuote(row.call, callTick, chainQuoteTs);
-  const putBidPx = ladderMode === "vertical" ? putSpread.bid : putSingle.bid;
-  const putAskPx = ladderMode === "vertical" ? putSpread.ask : putSingle.ask;
-  const callBidPx = ladderMode === "vertical" ? callSpread.bid : callSingle.bid;
-  const callAskPx = ladderMode === "vertical" ? callSpread.ask : callSingle.ask;
-  const putBidReason = putBidPx == null ? putSingle.reason : null;
-  const putAskReason = putAskPx == null ? putSingle.reason : null;
-  const callBidReason = callBidPx == null ? callSingle.reason : null;
-  const callAskReason = callAskPx == null ? callSingle.reason : null;
-  const putTapable = putSingle.tapable;
-  const callTapable = callSingle.tapable;
-
-  const callHeat = mergeLegHeat(
-    ladderMode,
-    row.call?.streamKey,
-    callFarRow?.call?.streamKey,
-    heatByKey,
-  );
-  const putHeat = mergeLegHeat(ladderMode, row.put?.streamKey, putFarRow?.put?.streamKey, heatByKey);
-
+  const isWall = zoneTag === "CALL WALL" || zoneTag === "PUT WALL";
   const strikeBorder = spotRow
     ? "none"
     : zoneTag === "CALL WALL"
@@ -436,69 +463,21 @@ const LadderRowView = memo(function LadderRowView({
       className="grid items-stretch w-full"
       style={rowStyle}
       data-at-ladder-row={row.strike}
+      data-at-spot-row={spotRow ? "1" : undefined}
       data-at-gamma-flip-row={gammaFlipRow ? "1" : undefined}
     >
-      <QuoteHeatPair
-        side="call"
-        view={callHeat}
-        bid={
-          <QuoteCell
-            price={callBidPx}
-            unavailableReason={callBidReason}
-            locked={callSingle.locked && callBidPx != null}
-            tapable={callTapable}
-            tint="bid"
-            strike={row.strike}
-            leg={row.call}
-            type="CALL"
-            side="SELL"
-            expiryLabel={expiryLabel}
-            onQuoteTap={onQuoteTap}
-            dataAttr={`call-bid-${row.strike}`}
-            legSelected={!!(callKey && selectedQuoteCells?.has(`${callKey}|bid`))}
-            onClick={
-              ladderMode === "vertical" && row.call
-                ? () =>
-                    onVerticalTap({
-                      anchorStrike: row.strike,
-                      farStrike: callFarStrike,
-                      type: "CALL",
-                      side: "SELL",
-                      nearContract: row.call!,
-                    })
-                : undefined
-            }
-          />
-        }
-        ask={
-          <QuoteCell
-            price={callAskPx}
-            unavailableReason={callAskReason}
-            tapable={callTapable}
-            tint="ask"
-            strike={row.strike}
-            leg={row.call}
-            type="CALL"
-            side="BUY"
-            expiryLabel={expiryLabel}
-            onQuoteTap={onQuoteTap}
-            dataAttr={`call-ask-${row.strike}`}
-            legSelected={!!(callKey && selectedQuoteCells?.has(`${callKey}|ask`))}
-            dividerLeft
-            onClick={
-              ladderMode === "vertical" && row.call
-                ? () =>
-                    onVerticalTap({
-                      anchorStrike: row.strike,
-                      farStrike: callFarStrike,
-                      type: "CALL",
-                      side: "BUY",
-                      nearContract: row.call!,
-                    })
-                : undefined
-            }
-          />
-        }
+      <ContractPair
+        pairSide="call"
+        type="CALL"
+        strike={row.strike}
+        contract={row.call}
+        far={callFar}
+        vertical={vertical}
+        heat={heat}
+        selection={selection}
+        chainQuoteTs={chainQuoteTs}
+        clockMinute={clockMinute}
+        expiryLabel={expiryLabel}
       />
       <div
         className="relative flex items-center justify-center h-full"
@@ -507,19 +486,25 @@ const LadderRowView = memo(function LadderRowView({
           background: AT_LADDER_STRIKE_BG,
           borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
           borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-          padding: spotRow || zoneTag === "CALL WALL" || zoneTag === "PUT WALL" ? "3px 4px" : 0,
+          padding: spotRow || isWall ? "3px 4px" : 0,
           boxSizing: "border-box",
           fontVariantNumeric: "tabular-nums",
         }}
         data-at-strike={row.strike}
       >
-        {renderBadges(row.call?.streamKey ?? row.put?.streamKey)}
+        {workChip ? (
+          <div className="absolute top-0.5 right-0.5 flex gap-px">
+            <span className="px-0.5 rounded border" style={{ fontSize: 7, color: GRAY, borderColor: BORDER }}>
+              {workChip}
+            </span>
+          </div>
+        ) : null}
         <div
           className="w-full h-full flex flex-col items-center justify-center"
           style={{
             background: spotRow ? GOLD : "transparent",
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
-            borderRadius: spotRow || zoneTag === "CALL WALL" || zoneTag === "PUT WALL" ? 4 : 0,
+            borderRadius: spotRow || isWall ? 4 : 0,
             border: strikeBorder,
             fontSize: 15,
             fontWeight: spotRow ? 700 : 500,
@@ -527,7 +512,7 @@ const LadderRowView = memo(function LadderRowView({
           }}
         >
           <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
-          {strikePositionQty != null && (
+          {positionQty != null && (
             <span
               data-at-position-badge
               className="leading-none"
@@ -537,12 +522,12 @@ const LadderRowView = memo(function LadderRowView({
                 padding: "1px 5px",
                 borderRadius: 999,
                 color: AT_SPOT_PILL_TEXT,
-                background: strikePositionQty > 0 ? UP : DOWN,
+                background: positionQty > 0 ? UP : DOWN,
                 marginTop: 1,
               }}
             >
-              {strikePositionQty > 0 ? "+" : "−"}
-              {Math.abs(strikePositionQty)}
+              {positionQty > 0 ? "+" : "−"}
+              {Math.abs(positionQty)}
             </span>
           )}
           {gammaFlipRow ? (
@@ -560,7 +545,7 @@ const LadderRowView = memo(function LadderRowView({
             >
               Gamma flip
             </span>
-          ) : zoneTag === "CALL WALL" || zoneTag === "PUT WALL" ? (
+          ) : isWall ? (
             <span
               data-at-strike-zone-tag
               data-at-strike-wall={zoneTag === "CALL WALL" ? "call" : "put"}
@@ -591,67 +576,18 @@ const LadderRowView = memo(function LadderRowView({
           ) : null}
         </div>
       </div>
-      <QuoteHeatPair
-        side="put"
-        view={putHeat}
-        bid={
-          <QuoteCell
-            price={putBidPx}
-            unavailableReason={putBidReason}
-            locked={putSingle.locked && putBidPx != null}
-            tapable={putTapable}
-            tint="bid"
-            strike={row.strike}
-            leg={row.put}
-            type="PUT"
-            side="SELL"
-            expiryLabel={expiryLabel}
-            onQuoteTap={onQuoteTap}
-            dataAttr={`put-bid-${row.strike}`}
-            legSelected={!!(putKey && selectedQuoteCells?.has(`${putKey}|bid`))}
-            onClick={
-              ladderMode === "vertical" && row.put
-                ? () =>
-                    onVerticalTap({
-                      anchorStrike: row.strike,
-                      farStrike: putFarStrike,
-                      type: "PUT",
-                      side: "SELL",
-                      nearContract: row.put!,
-                    })
-                : undefined
-            }
-          />
-        }
-        ask={
-          <QuoteCell
-            price={putAskPx}
-            unavailableReason={putAskReason}
-            tapable={putTapable}
-            tint="ask"
-            strike={row.strike}
-            leg={row.put}
-            type="PUT"
-            side="BUY"
-            expiryLabel={expiryLabel}
-            onQuoteTap={onQuoteTap}
-            dataAttr={`put-ask-${row.strike}`}
-            legSelected={!!(putKey && selectedQuoteCells?.has(`${putKey}|ask`))}
-            dividerLeft
-            onClick={
-              ladderMode === "vertical" && row.put
-                ? () =>
-                    onVerticalTap({
-                      anchorStrike: row.strike,
-                      farStrike: putFarStrike,
-                      type: "PUT",
-                      side: "BUY",
-                      nearContract: row.put!,
-                    })
-                : undefined
-            }
-          />
-        }
+      <ContractPair
+        pairSide="put"
+        type="PUT"
+        strike={row.strike}
+        contract={row.put}
+        far={putFar}
+        vertical={vertical}
+        heat={heat}
+        selection={selection}
+        chainQuoteTs={chainQuoteTs}
+        clockMinute={clockMinute}
+        expiryLabel={expiryLabel}
       />
     </div>
   );
@@ -675,48 +611,201 @@ function resolveNearestStrikeInBand(
   return Math.abs(nearest - target) <= tolerance ? nearest : null;
 }
 
+type CellTarget = {
+  contract: OptionsContract;
+  type: "CALL" | "PUT";
+  side: "BUY" | "SELL";
+  strike: number;
+};
+
+type PressGesture = {
+  pointerId: number;
+  cellKey: string;
+  x: number;
+  y: number;
+  release: () => void;
+};
+
 export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
+  renderProbe("body");
   const rowHeight = props.rowHeight ?? AT_LADDER_ROW_H;
+  const { rows, selection, onQuoteTap, onVerticalTap, ladderMode, verticalWidth, rowByStrike } = props;
+  const vertical = ladderMode === "vertical";
+  const clockMinute = useMinuteClock();
 
-  const strikes = useMemo(() => props.rows.map((r) => r.strike), [props.rows]);
-  const spotStrike = useMemo(() => {
-    if (props.underlyingPrice == null || strikes.length === 0) return null;
-    const idx = findAtmStrikeIndex(strikes, props.underlyingPrice);
-    return idx >= 0 ? strikes[idx]! : null;
-  }, [strikes, props.underlyingPrice]);
-
+  const strikes = useMemo(() => rows.map((r) => r.strike), [rows]);
   const gammaFlipStrike = useMemo(
-    () => resolveNearestStrikeInBand(strikes, props.zones.flip),
-    [strikes, props.zones.flip],
+    () => resolveNearestStrikeInBand(strikes, props.flip),
+    [strikes, props.flip],
+  );
+  const zoneLevels = useMemo(
+    () => ({
+      gammaPinStrike: props.pinStrike,
+      wallsRollLabel: props.wallsRolling ? "roll" : null,
+      callWall: props.callWall,
+      putWall: props.putWall,
+    }),
+    [props.pinStrike, props.wallsRolling, props.callWall, props.putWall],
   );
 
+  /** Cell key -> what a tap on it means. Rebuilt only when the strike list changes. */
+  const cellTargets = useMemo(() => {
+    const map = new Map<string, CellTarget>();
+    for (const row of rows) {
+      if (row.call) {
+        map.set(atLadderQuoteCellKey(row.call, "CALL", "bid"), { contract: row.call, type: "CALL", side: "SELL", strike: row.strike });
+        map.set(atLadderQuoteCellKey(row.call, "CALL", "ask"), { contract: row.call, type: "CALL", side: "BUY", strike: row.strike });
+      }
+      if (row.put) {
+        map.set(atLadderQuoteCellKey(row.put, "PUT", "bid"), { contract: row.put, type: "PUT", side: "SELL", strike: row.strike });
+        map.set(atLadderQuoteCellKey(row.put, "PUT", "ask"), { contract: row.put, type: "PUT", side: "BUY", strike: row.strike });
+      }
+    }
+    return map;
+  }, [rows]);
+
+  const latest = useRef({ cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth });
+  latest.current = { cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth };
+  const gestureRef = useRef<PressGesture | null>(null);
+  const lastPointerHandledAtRef = useRef(-Infinity);
+
+  const commitCell = useCallback((cellKey: string) => {
+    const cur = latest.current;
+    const target = cur.cellTargets.get(cellKey);
+    if (!target) return;
+    if (cur.vertical) {
+      cur.onVerticalTap({
+        anchorStrike: target.strike,
+        farStrike: verticalStrikes(target.strike, cur.verticalWidth, target.type).far,
+        type: target.type,
+        side: target.side,
+        nearContract: target.contract,
+      });
+      return;
+    }
+    cur.onQuoteTap(target.contract, target.type, target.side);
+  }, []);
+
+  /**
+   * Touch -> highlight, lift -> commit. The highlight is one store write that
+   * re-renders a single cell; nothing waits on quotes, the ticket or a fetch.
+   * Moving past the slop (a scroll) or a browser pointercancel drops the press.
+   */
+  const handlePointerDown = useCallback(
+    (e: ReactPointerEvent<HTMLDivElement>) => {
+      if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) return;
+      const cellEl = (e.target as HTMLElement).closest<HTMLElement>("[data-at-cell]");
+      const cellKey = cellEl?.dataset.atCell;
+      if (!cellEl || !cellKey || cellEl.dataset.atTapable !== "1") return;
+      gestureRef.current?.release();
+
+      const pointerId = e.pointerId;
+      const end = (commit: boolean) => {
+        const g = gestureRef.current;
+        if (!g || g.pointerId !== pointerId) return;
+        g.release();
+        lastPointerHandledAtRef.current = performance.now();
+        if (commit) commitCell(g.cellKey);
+      };
+      const onMove = (ev: PointerEvent) => {
+        const g = gestureRef.current;
+        if (!g || ev.pointerId !== g.pointerId) return;
+        if (Math.hypot(ev.clientX - g.x, ev.clientY - g.y) > AT_TAP_SLOP_PX) end(false);
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId === pointerId) end(true);
+      };
+      const onCancel = (ev: PointerEvent) => {
+        if (ev.pointerId === pointerId) end(false);
+      };
+      window.addEventListener("pointermove", onMove, { passive: true });
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
+
+      gestureRef.current = {
+        pointerId,
+        cellKey,
+        x: e.clientX,
+        y: e.clientY,
+        release: () => {
+          window.removeEventListener("pointermove", onMove);
+          window.removeEventListener("pointerup", onUp);
+          window.removeEventListener("pointercancel", onCancel);
+          gestureRef.current = null;
+          atSelectionPress(selection, null);
+        },
+      };
+      atSelectionPress(selection, cellKey);
+    },
+    [commitCell, selection],
+  );
+
+  /** Keyboard and assistive-tech activation arrive as a click with no pointer gesture before it. */
+  const handleClick = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>) => {
+      if (performance.now() - lastPointerHandledAtRef.current < CLICK_AFTER_POINTER_MS) return;
+      const cellEl = (e.target as HTMLElement).closest<HTMLElement>("[data-at-cell]");
+      const cellKey = cellEl?.dataset.atCell;
+      if (!cellEl || !cellKey || cellEl.dataset.atTapable !== "1") return;
+      commitCell(cellKey);
+    },
+    [commitCell],
+  );
+
+  useEffect(() => () => gestureRef.current?.release(), []);
+
   return (
-    <div style={{ background: AT_LADDER_PANEL_BG }}>
-      {props.rows.map((row) => (
-        <LadderRowView
-          key={row.strike}
-          row={row}
-          accentHex={props.accentHex}
-          zones={props.zones}
-          isSelected={props.selectedStrike === row.strike}
-          spotRow={spotStrike === row.strike}
-          gammaFlipRow={gammaFlipStrike === row.strike}
-          ladderMode={props.ladderMode}
-          verticalWidth={props.verticalWidth}
-          rowByStrike={props.rowByStrike}
-          rowHeight={rowHeight}
-          onVerticalTap={props.onVerticalTap}
-          keepawayPutLine={props.keepawayPutLine}
-          keepawayCallLine={props.keepawayCallLine}
-          onQuoteTap={props.onQuoteTap}
-          positionQtyByKey={props.positionQtyByKey}
-          workingOrderChips={props.workingOrderChips}
-          heatByKey={props.heatByKey}
-          selectedQuoteCells={props.selectedQuoteCells}
-          chainQuoteTs={props.chainQuoteTs}
-          expiryLabel={props.expiryLabel}
-        />
-      ))}
+    <div
+      data-at-ladder-body
+      style={{ background: AT_LADDER_PANEL_BG }}
+      onPointerDown={handlePointerDown}
+      onClick={handleClick}
+    >
+      {rows.map((row) => {
+        let positionQty: number | null = null;
+        for (const key of [row.call?.streamKey, row.put?.streamKey]) {
+          if (!key) continue;
+          const q = props.positionQtyByKey.get(key);
+          if (q != null && q !== 0) {
+            positionQty = q;
+            break;
+          }
+        }
+        const chipKey = row.call?.streamKey ?? row.put?.streamKey;
+        const putKeepaway = props.keepawayPutLine != null && row.strike < props.keepawayPutLine;
+        const callKeepaway = props.keepawayCallLine != null && row.strike > props.keepawayCallLine;
+        return (
+          <LadderRowView
+            key={row.strike}
+            row={row}
+            callFar={
+              vertical
+                ? rowByStrike.get(verticalStrikes(row.strike, verticalWidth, "CALL").far)?.call ?? null
+                : null
+            }
+            putFar={
+              vertical
+                ? rowByStrike.get(verticalStrikes(row.strike, verticalWidth, "PUT").far)?.put ?? null
+                : null
+            }
+            vertical={vertical}
+            accentHex={props.accentHex}
+            isSelected={props.selectedStrike === row.strike}
+            spotRow={props.spotStrike === row.strike}
+            gammaFlipRow={gammaFlipStrike === row.strike}
+            zoneTag={ladderStrikeZoneTag(zoneLevels, row.strike)}
+            keepawayForbidden={putKeepaway || callKeepaway}
+            positionQty={positionQty}
+            workChip={chipKey ? props.workingOrderChips?.get(chipKey) : undefined}
+            heat={props.heat}
+            selection={selection}
+            rowHeight={rowHeight}
+            chainQuoteTs={props.chainQuoteTs ?? 0}
+            clockMinute={clockMinute}
+            expiryLabel={props.expiryLabel}
+          />
+        );
+      })}
     </div>
   );
 });

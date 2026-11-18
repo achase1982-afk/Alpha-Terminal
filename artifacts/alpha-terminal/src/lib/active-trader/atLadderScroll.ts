@@ -97,3 +97,77 @@ export function scrollAtLadderToStrikeAboveSheet(
   const bandFraction = Math.min(0.38, Math.max(0.14, visiblePx / Math.max(container.clientHeight, 1) * 0.42));
   scrollAtLadderToStrike(container, strike, bandFraction);
 }
+/**
+ * Ladder rows are a fixed height, so everything the scroll handler needs is
+ * arithmetic on `scrollTop`. The functions above walk every row and read its
+ * box, which is fine for a one-off recenter but not on every scroll event.
+ */
+export type AtLadderViewport = {
+  scrollTop: number;
+  /** Height of the scrollport that is not covered by the order sheet. */
+  viewportPx: number;
+  rowHeight: number;
+  rowCount: number;
+};
+
+/** First and last row index that intersect the viewport, or null when there are no rows. */
+export function atLadderVisibleRowRange(v: AtLadderViewport): { first: number; last: number } | null {
+  if (v.rowCount <= 0 || v.rowHeight <= 0) return null;
+  const clamp = (i: number) => Math.min(v.rowCount - 1, Math.max(0, i));
+  const first = clamp(Math.floor(v.scrollTop / v.rowHeight));
+  const last = clamp(Math.floor((v.scrollTop + Math.max(1, v.viewportPx) - 1) / v.rowHeight));
+  return { first, last: Math.max(first, last) };
+}
+
+/** `scrollTop` that puts row `index` centered on the band at `bandFraction` of the viewport. */
+export function atLadderScrollTopForRow(
+  index: number,
+  v: Pick<AtLadderViewport, "viewportPx" | "rowHeight" | "rowCount">,
+  bandFraction = 0.42,
+): number {
+  const rowCenter = index * v.rowHeight + v.rowHeight / 2;
+  const max = Math.max(0, v.rowCount * v.rowHeight - v.viewportPx);
+  return Math.min(max, Math.max(0, Math.round(rowCenter - v.viewportPx * bandFraction)));
+}
+
+/** Distance in px from the row's center to the band center; the recenter pill keys off this. */
+export function atLadderRowOffsetFromBand(index: number, v: AtLadderViewport, bandFraction = 0.42): number {
+  const rowCenter = index * v.rowHeight + v.rowHeight / 2 - v.scrollTop;
+  return rowCenter - v.viewportPx * bandFraction;
+}
+
+/** True when row `index` is fully inside the viewport. */
+export function atLadderRowFullyVisible(index: number, v: AtLadderViewport, slackPx = 1): boolean {
+  const top = index * v.rowHeight - v.scrollTop;
+  return top >= -slackPx && top + v.rowHeight <= v.viewportPx + slackPx;
+}
+
+/**
+ * Extra scroll needed so row `index` clears the bottom edge of the viewport
+ * (the top edge of the order sheet). 0 when it already does.
+ */
+export function atLadderNudgeToClearSheet(index: number, v: AtLadderViewport, marginPx = 6): number {
+  const bottom = (index + 1) * v.rowHeight - v.scrollTop;
+  const limit = v.viewportPx - marginPx;
+  return bottom > limit ? Math.ceil(bottom - limit) : 0;
+}
+
+/**
+ * When the strike list changes (a page was added above, or the window moved),
+ * how far `scrollTop` must shift so the strikes on screen stay where they are.
+ */
+export function atLadderScrollShiftForRows(
+  prevStrikes: readonly number[],
+  nextStrikes: readonly number[],
+  rowHeight: number,
+): number {
+  if (prevStrikes.length === 0 || nextStrikes.length === 0) return 0;
+  const prevTop = prevStrikes[0]!;
+  const nextTop = nextStrikes[0]!;
+  if (prevTop === nextTop) return 0;
+  const addedAbove = nextStrikes.indexOf(prevTop);
+  if (addedAbove > 0) return addedAbove * rowHeight;
+  const removedAbove = prevStrikes.indexOf(nextTop);
+  if (removedAbove > 0) return -removedAbove * rowHeight;
+  return 0;
+}

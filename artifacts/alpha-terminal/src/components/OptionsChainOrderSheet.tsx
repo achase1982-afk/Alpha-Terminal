@@ -25,7 +25,7 @@ import {
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useTerminalStore } from "@/lib/store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
-import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
 import {
   detectStrategyType,
   type StrategyLeg,
@@ -82,6 +82,9 @@ const VALUE_STYLE: CSSProperties = { fontSize: 14, color: WHITE, fontVariantNume
 const SHEET_BOTTOM_OFFSET = "calc(76px + max(env(safe-area-inset-bottom, 0px), 12px))";
 
 type Stage = "form" | "review" | "submitting" | "success" | "error";
+
+/** How often the ticket re-prices from live leg quotes. */
+const TICKET_TICK_MS = 120;
 
 function fmt(n: number | null | undefined, decimals = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
@@ -220,7 +223,16 @@ export function OptionsChainOrderSheet({
   });
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
-  const optionTicks = useOptionsStreamStore((s) => s.ticks);
+  /**
+   * Live quotes for this ticket's legs only, a few times a second. The whole
+   * tick map changes on every quote for every contract, which re-ran all of
+   * the ticket math far more often than the numbers can be read.
+   */
+  const legSymbols = useMemo(
+    () => [...new Set(legs.map((l) => l.schwabSymbol).filter(Boolean))].sort(),
+    [legs],
+  );
+  const optionTicks = useOptionTicksForKeys(legSymbols, TICKET_TICK_MS);
 
   const [limitPrice, setLimitPrice] = useState(restoredSheetSession?.limitPrice ?? "");
   const [quantity, setQuantity] = useState(1);

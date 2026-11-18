@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
@@ -11,10 +11,9 @@ import {
   saveActiveTraderPrefs,
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
-import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
-import { auditNearAtmLadderQuotes } from "@/lib/active-trader/atLadderQuoteHealth";
+import { auditNearAtmLadderQuotes, type LadderQuoteHealthAudit } from "@/lib/active-trader/atLadderQuoteHealth";
 import { equityOptionsClosedPill, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
@@ -22,9 +21,9 @@ import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
-import type { LaneFilterKey } from "./FilterStrip";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import {
   canArmAutoSend,
@@ -48,11 +47,18 @@ import {
 import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import {
-  AT_MAX_LADDER_LEGS,
   atLadderLegKey,
   quoteSideFromTap,
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
+import {
+  atSelectionClear,
+  atSelectionRemoveLeg,
+  atSelectionSetLegs,
+  atSelectionToggleLeg,
+  createAtLadderSelectionStore,
+  useAtLadderLegs,
+} from "@/lib/active-trader/atLadderSelection";
 import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded } from "./AtSettingsPanel";
@@ -66,7 +72,9 @@ import {
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import {
-  atLadderSpotOffCenter,
+  atLadderRowOffsetFromBand,
+  atLadderScrollShiftForRows,
+  atLadderVisibleRowRange,
   scrollAtLadderToSpot,
   scrollAtLadderToStrike,
   scrollAtLadderToStrikeAboveSheet,
@@ -163,6 +171,33 @@ function selectedLegsFromChain(
   return next;
 }
 
+/** Spot row farther than this from its band shows the recenter pill. */
+const AT_RECENTER_TOLERANCE_PX = 56;
+/** Distance from the first / last loaded strike that asks for the next page. */
+const AT_EDGE_LOAD_PX = 96;
+/** The quote subscription follows the viewport once scrolling has paused this long. */
+const AT_VISIBLE_SETTLE_MS = 140;
+
+/** Header quote-health pill and order-settings mid: a human reads them, so a few updates a second is plenty. */
+const AT_QUOTE_AUDIT_MS = 2_000;
+const AT_SUMMARY_TICK_MS = 250;
+
+const EMPTY_QUOTE_AUDIT: LadderQuoteHealthAudit = {
+  nearAtmHasInvalid: false,
+  counts: { crossed: 0, incomplete: 0, stale: 0, ok: 0 },
+  nearAtm: [],
+};
+
+function sameQuoteAudit(a: LadderQuoteHealthAudit, b: LadderQuoteHealthAudit): boolean {
+  return (
+    a.nearAtmHasInvalid === b.nearAtmHasInvalid &&
+    a.counts.crossed === b.counts.crossed &&
+    a.counts.incomplete === b.counts.incomplete &&
+    a.counts.stale === b.counts.stale &&
+    a.counts.ok === b.counts.ok
+  );
+}
+
 export const ActiveTraderView = memo(function ActiveTraderView({
   symbol,
   groups,
@@ -203,15 +238,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
   const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
-  const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
-    call_buy: true,
-    call_sell: true,
-    put_buy: true,
-    put_sell: true,
-  });
   const [tradeStripStrike, setTradeStripStrike] = useState<number | null>(null);
   const [tradeContext, setTradeContext] = useState<AtTradeContext | null>(null);
-  const [selectedLegs, setSelectedLegs] = useState(() => selectedLegsFromChain(buildLegsFromChain));
+  /**
+   * Picked legs live in a store the ladder cells read directly, so a tap paints
+   * its outline without waiting for this component. `selectedLegs` follows it
+   * as a transition and feeds the ticket.
+   */
+  const [selection] = useState(() =>
+    createAtLadderSelectionStore(selectedLegsFromChain(buildLegsFromChain)),
+  );
+  const selectedLegs = useAtLadderLegs(selection);
   const [legQuantities, setLegQuantities] = useState(
     () => (buildLegQtyFromChain ? new Map(buildLegQtyFromChain) : new Map<string, number>()),
   );
@@ -231,25 +268,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   useEffect(() => {
     if (!buildLegsFromChain?.length) return;
-    setSelectedLegs(() => {
-      const next = new Map<string, AtLadderLegPick>();
-      for (const leg of buildLegsFromChain) {
-        next.set(atLadderLegKey(leg.contract, leg.type), {
-          contract: leg.contract,
-          type: leg.type,
-          expiration: leg.expiration,
-          side: leg.side,
-        });
-      }
-      return next;
-    });
+    atSelectionSetLegs(selection, selectedLegsFromChain(buildLegsFromChain));
     if (buildLegQtyFromChain) {
       setLegQuantities(new Map(buildLegQtyFromChain));
     }
     setChainSheetCollapsed(false);
     setChainSheetPeek(false);
-  }, [chainLegSyncSig, buildLegsFromChain, buildLegQtyFromChain]);
-  const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  }, [chainLegSyncSig, buildLegsFromChain, buildLegQtyFromChain, selection]);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [lastLegQuoteSide, setLastLegQuoteSide] = useState<"bid" | "ask">("ask");
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
@@ -328,12 +353,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   useEffect(() => {
     if (!noTradableExpirations && primary) return;
-    setSelectedLegs(new Map());
+    atSelectionClear(selection);
     setLegQuantities(new Map());
     setSelected(null);
     setTradeContext(null);
     setTradeStripStrike(null);
-  }, [noTradableExpirations, primary?.expiration]);
+  }, [noTradableExpirations, primary?.expiration, selection]);
 
   const ladderRows: LadderRowModel[] = useMemo(() => {
     if (!primary?.rows?.length) return [];
@@ -341,6 +366,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       .map((r) => ({ strike: r.strike, call: r.call, put: r.put }))
       .sort((a, b) => b.strike - a.strike);
   }, [primary]);
+  const ladderStrikes = useMemo(() => ladderRows.map((r) => r.strike), [ladderRows]);
+  /** Loaded strike nearest the underlying. The ladder only re-renders when this moves to another strike. */
+  const spotStrike = useMemo(() => {
+    if (underlyingPrice == null || ladderStrikes.length === 0) return null;
+    const idx = findAtmStrikeIndex(ladderStrikes, underlyingPrice);
+    return idx >= 0 ? ladderStrikes[idx]! : null;
+  }, [ladderStrikes, underlyingPrice]);
 
   const [visibleStrikes, setVisibleStrikes] = useState<{ min: number; max: number } | null>(null);
   const streamKeys = useMemo(() => {
@@ -397,8 +429,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return out;
   }, [ladderRows, chainQuoteTs]);
 
-  const { flowByKey } = useFlowByKey(streamKeys, windowSec * 1000);
-  const { heatByKey, source: ladderHeatSource } = useAtLadderVolumeHeat({
+  const { heatStore, source: ladderHeatSource } = useAtLadderVolumeHeat({
     symbol,
     streamKeys,
     skipNetwork: presentation?.skipNetwork,
@@ -406,22 +437,32 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     seedContracts,
   });
 
-  const streamTicks = useOptionsStreamStore((s) => s.ticks);
-  const quoteAudit = useMemo(
-    () =>
-      auditNearAtmLadderQuotes({
-        rows: ladderRows,
-        underlyingPrice,
-        ticks: streamTicks,
-        chainQuoteTs,
-      }),
-    [ladderRows, underlyingPrice, streamTicks, chainQuoteTs],
-  );
-
+  /**
+   * Near-ATM quote health for the header pill. Checked on a timer against the
+   * tick store rather than on every quote.
+   */
+  const [quoteAudit, setQuoteAudit] = useState<LadderQuoteHealthAudit>(EMPTY_QUOTE_AUDIT);
+  const auditInputRef = useRef({ ladderRows, underlyingPrice, chainQuoteTs });
+  auditInputRef.current = { ladderRows, underlyingPrice, chainQuoteTs };
   useEffect(() => {
-    if (quoteAudit.nearAtm.length === 0) return;
-    console.info("[AT] near-ATM quote breakdown", quoteAudit.counts, quoteAudit.nearAtm.slice(0, 20));
-  }, [quoteAudit]);
+    if (ladderRows.length === 0) {
+      setQuoteAudit(EMPTY_QUOTE_AUDIT);
+      return;
+    }
+    const run = () => {
+      const cur = auditInputRef.current;
+      const next = auditNearAtmLadderQuotes({
+        rows: cur.ladderRows,
+        underlyingPrice: cur.underlyingPrice,
+        ticks: useOptionsStreamStore.getState().ticks,
+        chainQuoteTs: cur.chainQuoteTs,
+      });
+      setQuoteAudit((prev) => (sameQuoteAudit(prev, next) ? prev : next));
+    };
+    run();
+    const id = window.setInterval(run, AT_QUOTE_AUDIT_MS);
+    return () => window.clearInterval(id);
+  }, [ladderRows]);
 
   const ladderHeatSourceDisplay = useMemo(() => {
     const now = Date.now();
@@ -447,7 +488,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return { ...ladderHeatSource, label: "Snapshot · prior session", sourceFresh: false };
     }
     return ladderHeatSource;
-  }, [ladderHeatSource, quoteAudit.nearAtmHasInvalid, quoteAudit.counts]);
+  }, [ladderHeatSource, quoteAudit]);
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
@@ -464,21 +505,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     }
     return m;
   }, [primary]);
-
-  const classifiedPct = useMemo(() => {
-    if (presentation?.classifiedPct != null) return presentation.classifiedPct;
-    let cls = 0;
-    let tot = 0;
-    for (const k of streamKeys) {
-      const f = flowByKey[k];
-      if (!f) continue;
-      const c = f.buy + f.sell + f.even;
-      const t = c + f.unknown;
-      cls += c;
-      tot += t;
-    }
-    return tot > 0 ? cls / tot : null;
-  }, [flowByKey, streamKeys, presentation?.classifiedPct]);
 
   const positions = usePortfolioStreamStore((s) => s.account?.positions);
   const positionQtyByKey = useMemo(() => {
@@ -514,7 +540,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     }
     if (tradeEpochRef.current === epoch) return;
     tradeEpochRef.current = epoch;
-    setSelectedLegs(new Map());
+    atSelectionClear(selection);
     setLegQuantities(new Map());
     setSelected(null);
     setTradeContext(null);
@@ -525,7 +551,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       saveActiveTraderPrefs(symbolClass, next);
       return next;
     });
-  }, [symbol, tradingHash, activeExpiration, symbolClass]);
+  }, [symbol, tradingHash, activeExpiration, symbolClass, selection]);
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
   const autoSendBusyRef = useRef(false);
 
@@ -538,10 +564,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [accounts, tradingHash, presentation?.skipNetwork]);
   const isPaper = false;
 
-  const toggleLane = useCallback((key: LaneFilterKey) => {
-    setLaneFilters((prev) => ({ ...prev, [key]: !prev[key] }));
-  }, []);
-
   const onPrefsChange = useCallback(
     (p: ActiveTraderTemplatePrefs) => {
       setPrefs(p);
@@ -550,7 +572,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [symbolClass],
   );
 
-  const selectedTick = useOptionTick(selected?.contract.streamKey);
   const templatePrimaryInstruction = useMemo((): SchwabInstruction => {
     const firstLeg = selectedLegs.size > 0 ? [...selectedLegs.values()][0] : null;
     if (firstLeg) return firstLeg.side === "bid" ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
@@ -563,7 +584,23 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return primary.rows[idx] ?? null;
   }, [primary, underlyingPrice]);
 
-  const atmTick = useOptionTick(atmRow?.call?.streamKey);
+  /**
+   * Live quotes for the few contracts the header summary and the ticket read
+   * (picked legs, last tapped contract, ATM call), a few times a second. The
+   * ladder cells subscribe to their own contracts and do not go through here.
+   */
+  const summaryTickKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (selected?.contract.streamKey) keys.add(selected.contract.streamKey);
+    if (atmRow?.call?.streamKey) keys.add(atmRow.call.streamKey);
+    for (const leg of selectedLegs.values()) {
+      if (leg.contract.streamKey) keys.add(leg.contract.streamKey);
+    }
+    return [...keys].sort();
+  }, [selected, atmRow, selectedLegs]);
+  const summaryTicks = useOptionTicksForKeys(summaryTickKeys, AT_SUMMARY_TICK_MS);
+  const selectedTick = selected?.contract.streamKey ? summaryTicks[selected.contract.streamKey] : undefined;
+  const atmTick = atmRow?.call?.streamKey ? summaryTicks[atmRow.call.streamKey] : undefined;
   const templateLimitMid = useMemo(() => {
     const tick = selectedTick ?? atmTick;
     if (!tick) return null;
@@ -679,42 +716,42 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
   );
 
-  const handleToggleLeg = useCallback((contract: OptionsContract, type: "CALL" | "PUT", side: "bid" | "ask") => {
-    const key = atLadderLegKey(contract, type);
-    setSelectedLegs((prev) => {
-      const next = new Map(prev);
-      const existing = next.get(key);
-      if (existing && existing.side === side) {
-        next.delete(key);
-        setLegQuantities((q) => {
-          const nq = new Map(q);
-          nq.delete(key);
-          return nq;
-        });
-      } else if (existing) {
-        next.set(key, { contract, type, expiration: contract.expiration, side });
-      } else {
-        if (prev.size >= AT_MAX_LADDER_LEGS) {
-          if (legShakeTimerRef.current) clearTimeout(legShakeTimerRef.current);
-          legShakeTimerRef.current = setTimeout(() => undefined, 0);
-          return prev;
+  /**
+   * The leg change itself is one synchronous store write, so the tapped cell's
+   * outline is on the next frame. Everything that hangs off it (ticket, sheet
+   * state, header summary) is a transition and renders after that paint.
+   */
+  const handleToggleLeg = useCallback(
+    (contract: OptionsContract, type: "CALL" | "PUT", side: "bid" | "ask") => {
+      const result = atSelectionToggleLeg(selection, contract, type, side);
+      startTransition(() => {
+        if (result === "removed") {
+          const key = atLadderLegKey(contract, type);
+          setLegQuantities((q) => {
+            if (!q.has(key)) return q;
+            const nq = new Map(q);
+            nq.delete(key);
+            return nq;
+          });
         }
-        next.set(key, { contract, type, expiration: contract.expiration, side });
-      }
-      return next;
-    });
-    setChainSheetCollapsed(false);
-    setChainSheetPeek(false);
-  }, []);
+        setChainSheetCollapsed(false);
+        setChainSheetPeek(false);
+      });
+      return result;
+    },
+    [selection],
+  );
 
   const handleQuoteTap = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
       const legSide = quoteSideFromTap(side);
-      setLastLegQuoteSide(legSide);
-      setSelected({ contract, type });
-      setTradeStripStrike(contract.strike);
-      setTradeContext(null);
       handleToggleLeg(contract, type, legSide);
+      startTransition(() => {
+        setLastLegQuoteSide(legSide);
+        setSelected({ contract, type });
+        setTradeStripStrike(contract.strike);
+        setTradeContext(null);
+      });
       if (!chainSheetCollapsed) {
         requestAnimationFrame(() => {
           const sheetPx = chainSheetPeek ? atSheetPeekHeightPx() : 280;
@@ -786,21 +823,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     handleQuoteTap(row.call, "CALL", "BUY");
   }, [primary, handleQuoteTap, handleVerticalTap, prefs.verticalWidth]);
 
-  const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
-
-  const selectedQuoteCells = useMemo(() => {
-    const s = new Set<string>();
-    for (const [key, leg] of selectedLegs) {
-      s.add(`${key}|${leg.side}`);
-    }
-    return s;
-  }, [selectedLegs]);
   const trayLegs = useMemo(() => [...selectedLegs.values()], [selectedLegs]);
 
   const ticketLegs = useMemo(() => {
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
-      const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
+      const tick = l.contract.streamKey ? summaryTicks[l.contract.streamKey] : undefined;
       const q = mergeChainContractWithStream(l.contract, tick, chainQuoteTs);
       const merged: OptionsContract = {
         ...l.contract,
@@ -829,7 +857,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       buildSchwabOptionKey,
       tradingHash,
     );
-  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingHash, chainQuoteTs]);
+  }, [selectedLegs, summaryTicks, symbol, accounts, legQuantities, tradingHash, chainQuoteTs]);
 
   const ladderOrderSummary = useMemo(() => {
     if (ticketLegs.length === 0) return null;
@@ -870,11 +898,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [selectedLegs, holdSubs, symbol]);
 
   const handleClearLegs = useCallback(() => {
-    setSelectedLegs(new Map());
+    atSelectionClear(selection);
     setLegQuantities(new Map());
     setChainSheetCollapsed(false);
     setTradeStripStrike(null);
-  }, []);
+  }, [selection]);
 
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
@@ -887,19 +915,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
-  const handleSheetRemoveLeg = useCallback((legId: string) => {
-    const key = selectionKeyFromLegId(legId);
-    setSelectedLegs((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-    setLegQuantities((prev) => {
-      const next = new Map(prev);
-      next.delete(key);
-      return next;
-    });
-  }, []);
+  const handleSheetRemoveLeg = useCallback(
+    (legId: string) => {
+      const key = selectionKeyFromLegId(legId);
+      atSelectionRemoveLeg(selection, key);
+      setLegQuantities((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+    },
+    [selection],
+  );
 
   const atAddLegFromLadder = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side?: "bid" | "ask") => {
@@ -944,7 +971,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
-  const symbolLabel = underlyingSymbol;
   const scrollLadderToSpot = useCallback(() => {
     requestAnimationFrame(() => {
       scrollAtLadderToSpot(ladderScrollRef.current, underlyingPrice);
@@ -965,26 +991,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     scrollLadderToSpot();
   }, [symbol, activeExpiration, ladderDataReady, ladderRows.length, scrollLadderToSpot]);
 
-  const prevTopStrikeRef = useRef<number | null>(null);
-  const prevScrollHeightRef = useRef<number>(0);
+  /** Keep the strikes on screen where they are when a page of strikes lands above them. */
+  const prevStrikesRef = useRef<{ key: string; strikes: number[] }>({ key: "", strikes: [] });
   useLayoutEffect(() => {
     const el = ladderScrollRef.current;
-    const topStrike = ladderRows[0]?.strike ?? null;
-    if (
-      el &&
-      prevTopStrikeRef.current != null &&
-      topStrike != null &&
-      topStrike > prevTopStrikeRef.current &&
-      prevScrollHeightRef.current > 0
-    ) {
-      const addedPx = el.scrollHeight - prevScrollHeightRef.current;
-      if (addedPx > 0) {
-        el.scrollTop += addedPx;
-      }
+    const key = `${symbol}|${activeExpiration ?? ""}`;
+    const prev = prevStrikesRef.current;
+    if (el && prev.key === key) {
+      const shift = atLadderScrollShiftForRows(prev.strikes, ladderStrikes, ladderRowH);
+      if (shift !== 0) el.scrollTop += shift;
     }
-    prevTopStrikeRef.current = topStrike;
-    prevScrollHeightRef.current = el?.scrollHeight ?? 0;
-  }, [ladderRows]);
+    prevStrikesRef.current = { key, strikes: ladderStrikes };
+  }, [ladderStrikes, ladderRowH, symbol, activeExpiration]);
 
   const upArmedRef = useRef(true);
   const downArmedRef = useRef(true);
@@ -993,55 +1011,95 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     downArmedRef.current = true;
   }, [ladderRows.length]);
 
+  /**
+   * Scroll bookkeeping: which strikes are on screen (drives the quote
+   * subscription), whether the spot row drifted off its band (recenter pill),
+   * and whether an edge was reached (load the next strikes).
+   *
+   * Rows are a fixed height, so this is arithmetic on `scrollTop`, once per
+   * frame. It used to walk every row and read its box on every scroll event.
+   */
+  const scrollInputRef = useRef({ ladderStrikes, ladderRowH, spotStrike, onReachEdge, ladderDataReady });
+  scrollInputRef.current = { ladderStrikes, ladderRowH, spotStrike, onReachEdge, ladderDataReady };
+  const measureLadderRef = useRef<(() => void) | null>(null);
   useEffect(() => {
     const el = ladderScrollRef.current;
     if (!el) return;
-    const syncOffCenter = () => setLadderOffCenter(atLadderSpotOffCenter(el, underlyingPrice));
-    const measureVisible = () => {
-      const box = el.getBoundingClientRect();
-      let min = Infinity;
-      let max = -Infinity;
-      let n = 0;
-      for (const node of el.querySelectorAll<HTMLElement>("[data-at-strike]")) {
-        const rect = node.getBoundingClientRect();
-        if (rect.bottom < box.top || rect.top > box.bottom) continue;
-        const strike = Number(node.dataset.atStrike);
-        if (!Number.isFinite(strike)) continue;
-        if (strike < min) min = strike;
-        if (strike > max) max = strike;
-        n += 1;
-      }
-      if (n === 0) return;
-      setVisibleStrikes((prev) => (prev && prev.min === min && prev.max === max ? prev : { min, max }));
+    let frame = 0;
+    let visibleTimer: ReturnType<typeof setTimeout> | null = null;
+    let pendingVisible: { min: number; max: number } | null = null;
+
+    const commitVisible = () => {
+      visibleTimer = null;
+      const next = pendingVisible;
+      pendingVisible = null;
+      if (!next) return;
+      setVisibleStrikes((prev) => (prev && prev.min === next.min && prev.max === next.max ? prev : next));
     };
-    const onScroll = () => {
-      prevScrollHeightRef.current = el.scrollHeight;
-      syncOffCenter();
-      measureVisible();
-      if (!onReachEdge || !ladderDataReady || !centeredKeyRef.current) return;
-      if (el.scrollHeight <= el.clientHeight + 8) return;
-      const nearTop = el.scrollTop < 96;
-      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+
+    const measure = (settleMs: number) => {
+      const cur = scrollInputRef.current;
+      const strikes = cur.ladderStrikes;
+      const viewport = {
+        scrollTop: el.scrollTop,
+        viewportPx: el.clientHeight,
+        rowHeight: cur.ladderRowH,
+        rowCount: strikes.length,
+      };
+      const spotIdx = cur.spotStrike != null ? strikes.indexOf(cur.spotStrike) : -1;
+      setLadderOffCenter(
+        spotIdx >= 0 && Math.abs(atLadderRowOffsetFromBand(spotIdx, viewport)) > AT_RECENTER_TOLERANCE_PX,
+      );
+
+      const range = atLadderVisibleRowRange(viewport);
+      if (!range) return;
+      // Rows are descending: the first visible row is the highest strike.
+      pendingVisible = { min: strikes[range.last]!, max: strikes[range.first]! };
+      if (visibleTimer != null) clearTimeout(visibleTimer);
+      if (settleMs <= 0) commitVisible();
+      else visibleTimer = setTimeout(commitVisible, settleMs);
+
+      if (!cur.onReachEdge || !cur.ladderDataReady || !centeredKeyRef.current) return;
+      const contentPx = strikes.length * cur.ladderRowH;
+      if (contentPx <= viewport.viewportPx + 8) return;
+      const nearTop = viewport.scrollTop < AT_EDGE_LOAD_PX;
+      const nearBottom = contentPx - viewport.scrollTop - viewport.viewportPx < AT_EDGE_LOAD_PX;
       if (!nearTop) upArmedRef.current = true;
       if (!nearBottom) downArmedRef.current = true;
       if (nearTop && upArmedRef.current) {
         upArmedRef.current = false;
-        onReachEdge("up");
+        cur.onReachEdge("up");
       } else if (nearBottom && downArmedRef.current) {
         downArmedRef.current = false;
-        onReachEdge("down");
+        cur.onReachEdge("down");
       }
     };
-    syncOffCenter();
-    measureVisible();
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure(AT_VISIBLE_SETTLE_MS);
+      });
+    };
+    measureLadderRef.current = () => measure(0);
+    measure(0);
     el.addEventListener("scroll", onScroll, { passive: true });
-    const ro = new ResizeObserver(syncOffCenter);
+    const ro = new ResizeObserver(() => measure(0));
     ro.observe(el);
     return () => {
+      measureLadderRef.current = null;
       el.removeEventListener("scroll", onScroll);
       ro.disconnect();
+      if (frame) cancelAnimationFrame(frame);
+      if (visibleTimer != null) clearTimeout(visibleTimer);
     };
-  }, [underlyingPrice, ladderRows.length, ladderDataReady, onReachEdge]);
+  }, [ladderDataReady]);
+
+  // The strike list or the spot strike changed without a scroll event.
+  useEffect(() => {
+    measureLadderRef.current?.();
+  }, [ladderStrikes, spotStrike, ladderRowH]);
 
   if (futuresOnlyMode) {
     return (
@@ -1216,9 +1274,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           <LadderBody
             rows={ladderRows}
             accentHex={accentHex}
-            underlyingPrice={underlyingPrice}
-            zones={zones}
-            laneFilters={laneFilters}
+            spotStrike={spotStrike}
+            flip={zones.flip}
+            callWall={zones.callWall}
+            putWall={zones.putWall}
+            pinStrike={zones.gammaPinStrike ?? null}
+            wallsRolling={!!zones.wallsRollLabel}
             selectedStrike={tradeStripStrike}
             ladderMode={ladderMode}
             rowHeight={ladderRowH}
@@ -1226,12 +1287,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             rowByStrike={rowByStrike}
             onVerticalTap={handleVerticalTap}
             onQuoteTap={handleQuoteTap}
-            onAddLeg={atAddLegFromLadder}
-            selectedQuoteCells={selectedQuoteCells}
             positionQtyByKey={positionQtyByKey}
-            flowByKey={flowByKey}
-            heatByKey={heatByKey}
-            symbolLabel={symbolLabel}
+            heat={heatStore}
+            selection={selection}
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
             chainQuoteTs={chainQuoteTs}

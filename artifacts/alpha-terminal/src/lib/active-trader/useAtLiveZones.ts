@@ -39,9 +39,16 @@ export type AtLiveZonesState = {
   sessionClosed: boolean;
 };
 
+/** How often chain-derived levels re-read live gamma / open interest. */
+const CHAIN_LEVELS_REFRESH_MS = 5_000;
+
 /**
  * Key levels: prefer UW `live_gamma_0dte` via `/api/market/at-gamma-glance`;
  * fall back to chain OI/gamma when UW snapshot is unavailable.
+ *
+ * The chain fallback reads live gamma / open interest from the tick store on a
+ * slow clock. It used to subscribe to every tick, which recomputed the whole
+ * model (and handed the ladder a new `zones` object) on each option quote.
  */
 export function useAtLiveZones(
   symbol: string,
@@ -50,10 +57,19 @@ export function useAtLiveZones(
   fixtureZones: ZoneModel | undefined,
   skipNetwork?: boolean,
 ): AtLiveZonesState {
-  const ticks = useOptionsStreamStore((s) => s.ticks);
   const mode = resolveAtGlanceMode(symbol);
   const ticker = symbol.replace(/^\$/, "").toUpperCase();
   const [uwGlance, setUwGlance] = useState<GammaGlanceResponse | null>(null);
+  const [liveClock, setLiveClock] = useState(0);
+  /** Whole-point spot: walls and net gamma do not move on sub-point ticks. */
+  const spotStep =
+    underlyingPrice != null && Number.isFinite(underlyingPrice) ? Math.round(underlyingPrice) : null;
+
+  useEffect(() => {
+    if (fixtureZones) return;
+    const id = window.setInterval(() => setLiveClock((n) => n + 1), CHAIN_LEVELS_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [fixtureZones]);
 
   useEffect(() => {
     if (fixtureZones || skipNetwork || mode === "futures" || !GAMMA_GLANCE_TICKERS.has(ticker)) {
@@ -83,8 +99,9 @@ export function useAtLiveZones(
     };
   }, [symbol, ticker, mode, skipNetwork, fixtureZones]);
 
-  const zones = useMemo(() => {
-    if (fixtureZones) return fixtureZones;
+  const chainLevels = useMemo(() => {
+    if (fixtureZones) return null;
+    const ticks = useOptionsStreamStore.getState().ticks;
     const rows: ChainRowForZones[] = (chainRows ?? []).map((r) => {
       const cTick = r.call?.streamKey ? ticks[r.call.streamKey] : undefined;
       const pTick = r.put?.streamKey ? ticks[r.put.streamKey] : undefined;
@@ -102,13 +119,20 @@ export function useAtLiveZones(
         putGamma: putGamma ?? null,
       };
     });
-    const chainFallback = rows.length ? computeZoneModel(rows, underlyingPrice) : null;
-    const chainCallWall = chainFallback
-      ? sanitizeGlanceWallStrike(chainFallback.callWall, underlyingPrice, "chain", rows)
-      : null;
-    const chainPutWall = chainFallback
-      ? sanitizeGlanceWallStrike(chainFallback.putWall, underlyingPrice, "chain", rows)
-      : null;
+    const fallback = rows.length ? computeZoneModel(rows, spotStep) : null;
+    return {
+      fallback,
+      callWall: fallback ? sanitizeGlanceWallStrike(fallback.callWall, spotStep, "chain", rows) : null,
+      putWall: fallback ? sanitizeGlanceWallStrike(fallback.putWall, spotStep, "chain", rows) : null,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- liveClock re-reads the tick store
+  }, [chainRows, spotStep, fixtureZones, liveClock]);
+
+  const zones = useMemo(() => {
+    if (fixtureZones) return fixtureZones;
+    const chainFallback = chainLevels?.fallback ?? null;
+    const chainCallWall = chainLevels?.callWall ?? null;
+    const chainPutWall = chainLevels?.putWall ?? null;
 
     const uwZones = uwGlance?.zones;
     const uwLive =
@@ -142,7 +166,7 @@ export function useAtLiveZones(
         glanceCaption: uwGlance?.glanceCaption ?? uwZones.glanceCaption,
       };
     }
-    if (!chainFallback) return computeZoneModel([], underlyingPrice);
+    if (!chainFallback) return computeZoneModel([], spotStep);
     const sanitized = {
       ...chainFallback,
       callWall: chainCallWall,
@@ -157,7 +181,7 @@ export function useAtLiveZones(
       };
     }
     return sanitized;
-  }, [chainRows, underlyingPrice, ticks, fixtureZones, uwGlance]);
+  }, [chainLevels, spotStep, fixtureZones, uwGlance]);
 
   return {
     zones,
