@@ -16,6 +16,7 @@ import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { isSpxSymbol } from "@workspace/order-ticket-math";
+import { useAtVixQuote } from "@/hooks/useAtVixQuote";
 import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
@@ -103,7 +104,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const mode = resolveAtGlanceMode(symbol);
   const spxHeader = isSpxSymbol(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
-  const { data: vixQuote } = useQuote("$VIX");
+  const vixLast = useAtVixQuote(spxHeader);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
@@ -154,7 +155,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     >
       <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
 
-      {spxHeader && vixQuote?.last != null ? (
+      {spxHeader && vixLast != null ? (
         <div
           data-at-vix-strip
           className="flex items-baseline gap-1 num"
@@ -162,7 +163,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         >
           <span style={{ color: AT_LABEL, fontWeight: 500 }}>VIX</span>
           <span data-at-vix-last style={{ color: WHITE }}>
-            {vixQuote.last.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {vixLast.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
         </div>
       ) : null}
