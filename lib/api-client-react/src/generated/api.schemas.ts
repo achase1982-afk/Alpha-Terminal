@@ -219,9 +219,15 @@ export type GetOptionChainParams = {
   contractType?: string;
   daysToExpiration?: number;
   /**
-   * Number of strikes above and below ATM to return from broker
+   * Total strikes to keep centered on spot. The broker is asked for half of this above ATM and half below.
    */
   strikeCount?: number;
+  /** Expiration window start (yyyy-MM-dd). */
+  fromDate?: string;
+  /** Expiration window end (yyyy-MM-dd), inclusive. */
+  toDate?: string;
+  /** NTM, SAK (strikes above), or SBK (strikes below). */
+  range?: string;
 };
 
 export type ListChatThreadsParams = {

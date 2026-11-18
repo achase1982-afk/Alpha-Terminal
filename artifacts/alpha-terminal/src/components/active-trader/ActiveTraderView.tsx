@@ -13,6 +13,7 @@ import {
 } from "@/lib/active-trader/activeTraderPrefs";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
+import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
 import { auditNearAtmLadderQuotes } from "@/lib/active-trader/atLadderQuoteHealth";
 import { equityOptionsClosedPill, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
@@ -117,6 +118,15 @@ interface ActiveTraderViewProps {
   settingsPanelInitiallyOpen?: boolean;
   /** REST chain fetch timestamp — used when stream quotes are empty or zero. */
   chainQuoteTs?: number;
+  /** Ladder scrolled to the first or last loaded strike — ask for the next page. */
+  onReachEdge?: (edge: "up" | "down") => void;
+  /** Same expiry window the ladder REST-fetched, used only if the stream goes quiet. */
+  ladderRestWindow?: {
+    fromDate: string;
+    toDate: string;
+    strikeCount: number;
+    range: string;
+  };
   /** Shared Chain / Active Trader selector (toolbar placement). */
   subViewChrome?: React.ReactNode;
   /** Chain fetch / brokerage state for skeleton messaging. */
@@ -162,6 +172,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   chainQuoteTs: chainQuoteTsProp,
   subViewChrome,
   ladderPlug,
+  onReachEdge,
+  ladderRestWindow,
   buildLegsFromChain,
   buildLegQtyFromChain,
 }: ActiveTraderViewProps) {
@@ -323,14 +335,31 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       .sort((a, b) => b.strike - a.strike);
   }, [primary]);
 
+  const [visibleStrikes, setVisibleStrikes] = useState<{ min: number; max: number } | null>(null);
   const streamKeys = useMemo(() => {
-    const keys: string[] = [];
-    for (const row of ladderRows) {
-      if (row.call?.streamKey) keys.push(row.call.streamKey);
-      if (row.put?.streamKey) keys.push(row.put.streamKey);
+    const rows = ladderRows.map((row) => ({
+      strike: row.strike,
+      callKey: row.call?.streamKey ?? null,
+      putKey: row.put?.streamKey ?? null,
+    }));
+    if (visibleStrikes) {
+      return selectAtStreamKeys({
+        rows,
+        visibleMin: visibleStrikes.min,
+        visibleMax: visibleStrikes.max,
+      });
     }
-    return keys;
-  }, [ladderRows]);
+    const spot = underlyingPrice;
+    if (spot == null) {
+      return selectAtStreamKeys({ rows, visibleMin: -1e12, visibleMax: 1e12, overscan: 0 }).slice(0, 80);
+    }
+    return selectAtStreamKeys({
+      rows,
+      visibleMin: spot,
+      visibleMax: spot,
+      overscan: 20,
+    });
+  }, [ladderRows, visibleStrikes, underlyingPrice]);
 
   const holdSig = useMemo(() => {
     if (!primary || streamKeys.length === 0) return null;
@@ -350,6 +379,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     symbol,
     streamKeys,
     skipNetwork: presentation?.skipNetwork,
+    restWindow: ladderRestWindow,
   });
 
   const streamTicks = useOptionsStreamStore((s) => s.ticks);
@@ -906,27 +936,69 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [underlyingPrice]);
 
   useEffect(() => {
+    setVisibleStrikes(null);
+  }, [symbol, activeExpiration]);
+
+  const centeredKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ladderDataReady) return;
+    const key = `${symbol}|${activeExpiration ?? ""}`;
+    if (centeredKeyRef.current === key) return;
+    centeredKeyRef.current = key;
     scrollLadderToSpot();
-  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot, ladderRows.length]);
+  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot]);
+
+  const edgeArmedRef = useRef(true);
+  useEffect(() => {
+    edgeArmedRef.current = true;
+  }, [ladderRows.length]);
 
   useEffect(() => {
     const el = ladderScrollRef.current;
     if (!el) return;
-    const sync = () => setLadderOffCenter(atLadderSpotOffCenter(el, underlyingPrice));
-    sync();
-    el.addEventListener("scroll", sync, { passive: true });
-    const ro = new ResizeObserver(sync);
+    const syncOffCenter = () => setLadderOffCenter(atLadderSpotOffCenter(el, underlyingPrice));
+    const measureVisible = () => {
+      const box = el.getBoundingClientRect();
+      let min = Infinity;
+      let max = -Infinity;
+      let n = 0;
+      for (const node of el.querySelectorAll<HTMLElement>("[data-at-strike]")) {
+        const rect = node.getBoundingClientRect();
+        if (rect.bottom < box.top || rect.top > box.bottom) continue;
+        const strike = Number(node.dataset.atStrike);
+        if (!Number.isFinite(strike)) continue;
+        if (strike < min) min = strike;
+        if (strike > max) max = strike;
+        n += 1;
+      }
+      if (n === 0) return;
+      setVisibleStrikes((prev) => (prev && prev.min === min && prev.max === max ? prev : { min, max }));
+    };
+    const onScroll = () => {
+      syncOffCenter();
+      measureVisible();
+      if (!onReachEdge || !ladderDataReady) return;
+      if (el.scrollHeight <= el.clientHeight + 8) return;
+      const nearTop = el.scrollTop < 72;
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 72;
+      if (!nearTop && !nearBottom) {
+        edgeArmedRef.current = true;
+        return;
+      }
+      if (!edgeArmedRef.current) return;
+      edgeArmedRef.current = false;
+      onReachEdge(nearTop ? "up" : "down");
+    };
+    syncOffCenter();
+    measureVisible();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    const ro = new ResizeObserver(syncOffCenter);
     ro.observe(el);
     return () => {
-      el.removeEventListener("scroll", sync);
+      el.removeEventListener("scroll", onScroll);
       ro.disconnect();
     };
-  }, [underlyingPrice, ladderRows.length, ladderDataReady]);
-
-  useEffect(() => {
-    if (underlyingPrice == null) return;
-    scrollLadderToSpot();
-  }, [underlyingPrice, scrollLadderToSpot]);
+  }, [underlyingPrice, ladderRows.length, ladderDataReady, onReachEdge]);
 
   if (futuresOnlyMode) {
     return (

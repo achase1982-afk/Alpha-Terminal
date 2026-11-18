@@ -213,7 +213,26 @@ paths:
           required: false
           schema:
             type: number
-            description: Number of strikes above and below ATM to return from broker
+            description: Total strikes to keep centered on spot when range is NTM. The broker is asked for half of this above ATM and half below, capped at 80 per side. SAK and SBK pass the count in that direction only. Index underlyings are never requested as a full book.
+        - name: fromDate
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Expiration window start (yyyy-MM-dd). Index chains default to the next 21 sessions when omitted.
+        - name: toDate
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Expiration window end (yyyy-MM-dd), inclusive.
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [NTM, SAK, SBK]
+            description: NTM is the at-the-money window. SAK is the next strikes above. SBK is the next strikes below. Used by the Active Trader ladder as it scrolls.
       responses:
         "200":
           description: Option chain data

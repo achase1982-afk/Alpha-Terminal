@@ -1080,6 +1080,18 @@ function sendFuturesSubscription(symbols: string[]) {
   }
 }
 
+function sendAppLevelOneOptionsAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_OPTIONS", "ADD", {
+    keys: symbols.join(","),
+    fields: APP_LEVELONE_OPTIONS_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: LEVELONE_OPTIONS ADD (app)");
+  }
+}
+
 function sendLevelOneOptionsUnsubs(symbols: string[]): void {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
   const req = buildRequest("LEVELONE_OPTIONS", "UNSUBS", {
@@ -2930,16 +2942,21 @@ function managedSetsEqual(next: Set<string>, prev: Set<string>): boolean {
 export function replaceManagedLevelOneOptionSubscriptions(plan: string[]): void {
   const next = new Set(plan.map((s) => s.trim()).filter(Boolean));
   if (managedSetsEqual(next, subscribedOptionSymbols)) return;
-  const prev = [...subscribedOptionSymbols];
+  const added: string[] = [];
+  const removed: string[] = [];
+  for (const s of next) {
+    if (!subscribedOptionSymbols.has(s)) added.push(s);
+  }
+  for (const s of subscribedOptionSymbols) {
+    if (!next.has(s)) removed.push(s);
+  }
   subscribedOptionSymbols.clear();
   for (const s of next) subscribedOptionSymbols.add(s);
+  // ADD/UNSUBS the difference. SUBS replaces every LEVELONE_OPTIONS key on the
+  // account, including the header tape, positions, and desk adds.
   if (connectionState === "connected") {
-    if (next.size === 0) {
-      if (prev.length > 0) sendLevelOneOptionsUnsubs(prev);
-    } else {
-      sendOptionSubscription([...next], { replayDesk: false });
-    }
-    deskStreamerReplayDeskAfterAppLevelOneSub();
+    if (removed.length > 0) sendLevelOneOptionsUnsubs(removed);
+    if (added.length > 0) sendAppLevelOneOptionsAdd(added);
     noteWireLevelOneOptionsPeak();
   }
   streamerSubNotifyAppPlanWired([...next]);
@@ -2964,13 +2981,12 @@ export function replaceManagedOptionsBookSubscriptions(plan: string[]): void {
 export function removeOptionSymbols(symbols: string[]) {
   const cleaned = [...new Set(symbols.map((s) => s.trim()).filter(Boolean))];
   if (!cleaned.length) return;
-  let changed = false;
+  const removed: string[] = [];
   for (const s of cleaned) {
-    if (subscribedOptionSymbols.delete(s)) changed = true;
+    if (subscribedOptionSymbols.delete(s)) removed.push(s);
   }
-  if (changed && connectionState === "connected") {
-    sendOptionSubscription([...subscribedOptionSymbols], { replayDesk: false });
-    deskStreamerReplayDeskAfterAppLevelOneSub();
+  if (removed.length > 0 && connectionState === "connected") {
+    sendLevelOneOptionsUnsubs(removed);
     streamerSubNotifyAppPlanWired([...subscribedOptionSymbols]);
   }
 }
