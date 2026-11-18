@@ -31,6 +31,20 @@ describe("chain sheet spread limit hydrate", () => {
     vega: 0.13,
   };
 
+  const symmetricIronCondor5 = [
+    { strike: 7530, optionType: "PUT" as const, instruction: "SELL_TO_OPEN" as const, quantity: 1, bid: 2.1, ask: 2.15, expiration: EXP },
+    { strike: 7525, optionType: "PUT" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 0.12, ask: 0.16, expiration: EXP },
+    { strike: 7550, optionType: "CALL" as const, instruction: "SELL_TO_OPEN" as const, quantity: 1, bid: 1.85, ask: 1.9, expiration: EXP },
+    { strike: 7555, optionType: "CALL" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 0.1, ask: 0.14, expiration: EXP },
+  ];
+
+  const unequalIronCondor = [
+    { strike: 7530, optionType: "PUT" as const, instruction: "SELL_TO_OPEN" as const, quantity: 1, bid: 2.1, ask: 2.15, expiration: EXP },
+    { strike: 7520, optionType: "PUT" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 0.05, ask: 0.08, expiration: EXP },
+    { strike: 7550, optionType: "CALL" as const, instruction: "SELL_TO_OPEN" as const, quantity: 1, bid: 1.85, ask: 1.9, expiration: EXP },
+    { strike: 7555, optionType: "CALL" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 0.1, ask: 0.14, expiration: EXP },
+  ];
+
   it("bull call debit: spread mid ~2.15 yields max loss $215, max profit $285, BE 7547.15", () => {
     const legs = [buy7545, sell7550];
     const agg = aggregateSpreadNBBO(
@@ -80,63 +94,60 @@ describe("chain sheet spread limit hydrate", () => {
     expect(one?.breakevens.length).toBeGreaterThan(0);
   });
 
-  it("iron condor credit: max profit = credit, max loss = wing width − credit", () => {
-    const legs = [
-      {
-        strike: 7530,
-        optionType: "PUT" as const,
-        instruction: "SELL_TO_OPEN" as const,
-        quantity: 1,
-        bid: 1.55,
-        ask: 1.62,
-        expiration: EXP,
-      },
-      {
-        strike: 7525,
-        optionType: "PUT" as const,
-        instruction: "BUY_TO_OPEN" as const,
-        quantity: 1,
-        bid: 0.38,
-        ask: 0.45,
-        expiration: EXP,
-      },
-      {
-        strike: 7550,
-        optionType: "CALL" as const,
-        instruction: "SELL_TO_OPEN" as const,
-        quantity: 1,
-        bid: 11.3,
-        ask: 11.5,
-        expiration: EXP,
-      },
-      {
-        strike: 7555,
-        optionType: "CALL" as const,
-        instruction: "BUY_TO_OPEN" as const,
-        quantity: 1,
-        bid: 0.42,
-        ask: 0.5,
-        expiration: EXP,
-      },
-    ];
-    const agg = aggregateSpreadNBBO(
-      legs.map((l) => ({ instruction: l.instruction, bid: l.bid, ask: l.ask, quantity: l.quantity })),
-    );
-    const creditMid = agg?.mid ?? 0;
-    expect(creditMid).toBeGreaterThan(0);
+  it("iron condor 5-wide credit $3.70: max profit $370, max loss $130, two breakevens", () => {
     const summary = computeChainTicketSummary({
       underlyingSymbol: "SPX",
-      legs,
-      limitPrice: creditMid,
+      legs: symmetricIronCondor5,
+      limitPrice: 3.7,
       spreadQuantity: 1,
       isCredit: true,
     });
-    const limitPerShare = summary?.limitPerShare ?? creditMid;
     expect(summary?.isCredit).toBe(true);
+    expect(summary?.maxProfit).toBe(370);
+    expect(summary?.maxLoss).toBe(130);
+    expect(summary?.breakevens).toHaveLength(2);
+    expect(summary?.breakevens[0]).toBeCloseTo(7526.3, 1);
+    expect(summary?.breakevens[1]).toBeCloseTo(7553.7, 1);
+  });
+
+  it("iron condor qty 2 scales max profit and max loss", () => {
+    const summary = computeChainTicketSummary({
+      underlyingSymbol: "SPX",
+      legs: symmetricIronCondor5,
+      limitPrice: 3.7,
+      spreadQuantity: 2,
+      isCredit: true,
+    });
+    expect(summary?.maxProfit).toBe(740);
+    expect(summary?.maxLoss).toBe(260);
+  });
+
+  it("unequal wings put 10 / call 5 at $3.70: max profit $370, max loss $630", () => {
+    const summary = computeChainTicketSummary({
+      underlyingSymbol: "SPX",
+      legs: unequalIronCondor,
+      limitPrice: 3.7,
+      spreadQuantity: 1,
+      isCredit: true,
+    });
+    expect(summary?.maxProfit).toBe(370);
+    expect(summary?.maxLoss).toBe(630);
+    expect(summary?.breakevens).toHaveLength(2);
+  });
+
+  it("1:2 call ratio vertical: bounded max loss is null", () => {
+    const legs = [
+      { strike: 5900, optionType: "CALL" as const, instruction: "BUY_TO_OPEN" as const, quantity: 1, bid: 3.7, ask: 3.8, expiration: EXP },
+      { strike: 5910, optionType: "CALL" as const, instruction: "SELL_TO_OPEN" as const, quantity: 2, bid: 1.2, ask: 1.25, expiration: EXP },
+    ];
+    const summary = computeChainTicketSummary({
+      underlyingSymbol: "SPX",
+      legs,
+      limitPrice: 1.5,
+      spreadQuantity: 1,
+      isCredit: false,
+    });
+    expect(summary?.maxLoss).toBeNull();
     expect(summary?.maxProfit).toBeGreaterThan(0);
-    expect(summary?.maxProfit).toBeCloseTo(limitPerShare * 100, 0);
-    if (summary?.maxLoss != null && summary.maxLoss > 0) {
-      expect(summary.maxLoss).toBeLessThan(5 * 100);
-    }
   });
 });

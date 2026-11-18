@@ -527,7 +527,35 @@ describe("OrderTicket component", () => {
     expect(order.childOrderStrategies).toBeUndefined();
   });
 
+  it("default off: preview send label and no place-order POST", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "");
+    vi.resetModules();
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    const { OrderTicket: Ticket } = await import("./OrderTicket");
+    render(
+      <Ticket
+        isOpen
+        onClose={() => {}}
+        initialStage="review"
+        atTemplatePrefs={atBracketPrefs}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    await screen.findByText(/Trigger order summary/i);
+    const send = await screen.findByRole("button", { name: /sending off/i });
+    expect((send as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(send);
+    expect(fetchMock).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("double-tap Send calls place-order exactly once (Active Trader bracket)", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "1");
+    vi.resetModules();
+    const { OrderTicket: Ticket } = await import("./OrderTicket");
     const fetchMock = vi.mocked(fetchWithAuth);
     fetchMock.mockImplementation(
       () =>
@@ -539,7 +567,7 @@ describe("OrderTicket component", () => {
         }),
     );
     render(
-      <OrderTicket
+      <Ticket
         isOpen
         onClose={() => {}}
         initialStage="review"
@@ -558,6 +586,8 @@ describe("OrderTicket component", () => {
     fireEvent.click(send);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/portfolio/place-order");
+    vi.unstubAllEnvs();
+    vi.resetModules();
   });
 
   it("FAIL liquidity when any leg of a multi-leg order is crossed", async () => {

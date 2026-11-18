@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadActiveTraderPrefs, type ActiveTraderTemplatePrefs } from "../activeTraderPrefs";
 import {
   canArmAutoSend,
@@ -11,14 +11,35 @@ import { submitAtSchwabOrder } from "../atPlaceOrder";
 const basePrefs: ActiveTraderTemplatePrefs = loadActiveTraderPrefs("index");
 
 describe("auto send safeguards", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("defaults off and disarmed", () => {
     expect(basePrefs.autoSend).toEqual({ enabled: false, armed: false });
   });
 
-  it("requires enabled + armed + account + quote", () => {
+  it("is not live-ready when order send is off by default", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "");
+    const { isAutoSendLiveReady: ready } = await import("../atAutoSend");
     const armed = patchAutoSendArmed(patchAutoSendEnabled(basePrefs, true), true);
     expect(
-      isAutoSendLiveReady(armed, {
+      ready(armed, {
+        accountHash: "abc",
+        blockLiveSend: false,
+        orderValidationError: null,
+        entryPrice: 3.6,
+      }),
+    ).toBe(false);
+  });
+
+  it("requires enabled + armed + account + quote when VITE_AT_ORDER_SEND=1", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "1");
+    const { isAutoSendLiveReady: ready } = await import("../atAutoSend");
+    const armed = patchAutoSendArmed(patchAutoSendEnabled(basePrefs, true), true);
+    expect(
+      ready(armed, {
         accountHash: "abc",
         blockLiveSend: false,
         orderValidationError: null,
@@ -26,7 +47,7 @@ describe("auto send safeguards", () => {
       }),
     ).toBe(true);
     expect(
-      isAutoSendLiveReady(armed, {
+      ready(armed, {
         accountHash: null,
         blockLiveSend: false,
         orderValidationError: null,
@@ -34,7 +55,7 @@ describe("auto send safeguards", () => {
       }),
     ).toBe(false);
     expect(
-      isAutoSendLiveReady(armed, {
+      ready(armed, {
         accountHash: "abc",
         blockLiveSend: true,
         orderValidationError: null,

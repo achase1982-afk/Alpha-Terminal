@@ -100,7 +100,7 @@ for (const fx of ["spx", "nvda"]) {
     await page.locator("button", { hasText: "CLEAR" }).click();
     await page.waitForTimeout(300);
     await tapQuote(page, "put-bid-7530");
-    await tapQuote(page, "put-ask-7525");
+    await tapQuote(page, "put-ask-7520");
     await tapQuote(page, "call-bid-7550");
     await tapQuote(page, "call-ask-7555");
     await page.waitForTimeout(500);

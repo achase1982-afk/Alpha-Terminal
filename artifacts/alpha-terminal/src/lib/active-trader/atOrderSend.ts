@@ -1,8 +1,8 @@
 import { isAuthDisabled } from "@/lib/authMode";
 
-/** Owner-enabled live Schwab submit from Active Trader (auto-send + review confirm). */
+/** Live Schwab submit — off unless explicitly enabled at build time (`VITE_AT_ORDER_SEND=1`). */
 export const AT_ORDER_SEND_ENABLED =
-  typeof import.meta !== "undefined" && import.meta.env?.VITE_AT_ORDER_SEND !== "0";
+  typeof import.meta !== "undefined" && import.meta.env?.VITE_AT_ORDER_SEND === "1";
 
 /** Vertical ladder mode ships in a follow-up PR. */
 export const AT_VERTICAL_LADDER_ENABLED = false;

@@ -255,8 +255,9 @@ export function OptionsChainOrderSheet({
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
-      limitUserEditedRef.current = false;
-      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+      if (!limitUserEditedRef.current) {
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+      }
       return;
     }
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
@@ -278,6 +279,7 @@ export function OptionsChainOrderSheet({
       const tick = optionPremiumTickForSymbol(symbol, base) ?? 0.01;
       const raw = dir === "up" ? base + tick : Math.max(tick, base - tick);
       const rounded = roundOptionPriceToTick(raw, limitTickCtx, dir === "up" ? "up" : "down");
+      limitUserEditedRef.current = true;
       setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
       setPriceError("");
     },
@@ -338,6 +340,7 @@ export function OptionsChainOrderSheet({
   }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
 
   const handleSubmit = useCallback(async () => {
+    if (sendPreviewOnly) return;
     if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
     if (demoFixture) {
@@ -380,7 +383,13 @@ export function OptionsChainOrderSheet({
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendPreviewOnly]);
+
+  const handleClearAllClick = useCallback(() => {
+    limitUserEditedRef.current = false;
+    legsHydrateKeyRef.current = "";
+    onClearAll();
+  }, [onClearAll]);
 
   const isValid =
     legs.length > 0 &&
@@ -434,7 +443,7 @@ export function OptionsChainOrderSheet({
           )}
           <button
             type="button"
-            onClick={onClearAll}
+            onClick={handleClearAllClick}
             className="text-[10px] px-2 py-1 tracking-wider"
             style={{ color: GRAY, border: `1px solid ${BORDER}`, borderRadius: 6 }}
           >
@@ -451,7 +460,7 @@ export function OptionsChainOrderSheet({
               <CheckCircle2 className="w-8 h-8" style={{ color: UP }} />
               <p className="text-[13px]" style={{ color: WHITE }}>Sent to Schwab</p>
               {orderId && <p className="text-[10px]" style={{ color: MUTED }}>Order {orderId}</p>}
-              <button type="button" onClick={onClearAll} className="mt-2 text-[12px] px-4 py-2" style={{ background: GOLD, color: "#000", borderRadius: 8 }}>
+              <button type="button" onClick={handleClearAllClick} className="mt-2 text-[12px] px-4 py-2" style={{ background: GOLD, color: "#000", borderRadius: 8 }}>
                 Done
               </button>
             </div>
@@ -580,9 +589,11 @@ export function OptionsChainOrderSheet({
                     <Minus className="w-3.5 h-3.5" style={{ color: GRAY }} />
                   </button>
                   <input
-                    type="number"
+                    type="text"
                     inputMode="decimal"
+                    enterKeyHint="done"
                     value={limitPrice}
+                    className="flex-1 text-[12px] text-right bg-transparent outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     onChange={(e) => {
                       limitUserEditedRef.current = true;
                       setLimitPrice(e.target.value);
@@ -592,7 +603,6 @@ export function OptionsChainOrderSheet({
                       const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
                       if (snapped != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, snapped));
                     }}
-                    className="flex-1 text-[12px] text-right bg-transparent outline-none tabular-nums"
                     style={{ color: WHITE }}
                     data-testid="chain-sheet-limit"
                   />
@@ -668,13 +678,13 @@ export function OptionsChainOrderSheet({
           >
             <button
               type="button"
-              disabled={!isValid}
+              disabled={!isValid || !!sendPreviewOnly}
               onClick={validateAndReview}
               className="w-full text-[13px] font-bold tracking-wider py-2.5 disabled:opacity-40"
               style={{ background: GOLD, color: "#000", borderRadius: 8 }}
               data-testid="chain-sheet-review"
             >
-              Review
+              {sendPreviewOnly ? "Review (sending off)" : "Review"}
             </button>
           </div>
         )}

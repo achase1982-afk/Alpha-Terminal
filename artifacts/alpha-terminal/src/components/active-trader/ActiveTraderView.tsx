@@ -36,7 +36,7 @@ import {
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
 import { AtFuturesLiveQuote } from "@/components/active-trader/AtFuturesLiveQuote";
-import { AT_ORDER_SEND_ENABLED, AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
+import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
@@ -49,6 +49,7 @@ import {
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
 import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActiveTraderSheetBrackets";
+import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
 import { RegimeStrip } from "./RegimeStrip";
@@ -600,6 +601,36 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     );
   }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingHash]);
 
+  const ladderOrderSummary = useMemo(() => {
+    if (ticketLegs.length === 0) return null;
+    const agg = aggregateSpreadNBBO(
+      ticketLegs.map((l) => ({
+        instruction: l.direction,
+        bid: l.bid,
+        ask: l.ask,
+        quantity: l.quantity,
+      })),
+    );
+    const structure = ticketLegs.map((l) => ({
+      strike: l.strike,
+      optionType: l.optionType,
+      instruction: l.direction,
+      quantity: l.quantity,
+    }));
+    const isCredit = inferNetCreditFromLegStructure(structure) ?? false;
+    const spreadMid = agg?.mid ?? null;
+    const primaryInstruction: SchwabInstruction =
+      ticketLegs.length === 1
+        ? ticketLegs[0]!.direction
+        : isCredit
+          ? "SELL_TO_OPEN"
+          : "BUY_TO_OPEN";
+    return { spreadMid, primaryInstruction, isCredit };
+  }, [ticketLegs]);
+
+  const settingsSummaryLimit = ladderOrderSummary?.spreadMid ?? templateLimitMid;
+  const settingsSummaryInstruction = ladderOrderSummary?.primaryInstruction ?? templatePrimaryInstruction;
+
   useEffect(() => {
     if (selectedLegs.size === 0) return;
     const syms = [...selectedLegs.values()]
@@ -774,8 +805,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           open={settingsOpen}
           onToggle={toggleSettings}
           prefs={prefs}
-          primaryInstruction={templatePrimaryInstruction}
-          limitMid={templateLimitMid}
+          primaryInstruction={settingsSummaryInstruction}
+          limitMid={settingsSummaryLimit}
           expiryLabel={expiryLabel}
           underlyingSymbol={underlyingSymbol}
         />
@@ -905,7 +936,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
           demoFixture={blockLiveSend}
-          sendPreviewOnly={!AT_ORDER_SEND_ENABLED || blockLiveSend}
+          sendPreviewOnly
           extrasAfterLimit={({ limitPerShare, isCredit, legCount }) => (
             <AtActiveTraderSheetBrackets
               prefs={prefs}

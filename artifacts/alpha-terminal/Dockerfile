@@ -25,6 +25,10 @@ ENV CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
 ARG VITE_AUTH_DISABLED=""
 ENV VITE_AUTH_DISABLED=${VITE_AUTH_DISABLED}
 
+# Active Trader live order submit (default off in production images).
+ARG VITE_AT_ORDER_SEND="0"
+ENV VITE_AT_ORDER_SEND=${VITE_AT_ORDER_SEND}
+
 RUN pnpm install --frozen-lockfile \
     && pnpm --filter @workspace/alpha-terminal run build
 

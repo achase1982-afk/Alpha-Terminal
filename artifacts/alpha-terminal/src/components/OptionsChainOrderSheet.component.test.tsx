@@ -83,4 +83,16 @@ describe("OptionsChainOrderSheet", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/portfolio/place-order");
   });
+
+  it("sendPreviewOnly: no POST on Review or Send", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    renderSheet({ sendPreviewOnly: true });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(true));
+    expect(review.textContent).toMatch(/sending off/i);
+    fireEvent.click(review);
+    expect(screen.queryByTestId("chain-sheet-confirm")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
