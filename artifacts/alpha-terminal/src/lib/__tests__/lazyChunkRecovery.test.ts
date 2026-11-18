@@ -7,10 +7,12 @@ import {
   setLazyRecoveryTradeLatch,
   tryGuardedFullReload,
 } from "../lazyChunkRecovery";
+import { useChainDraftSessionStore } from "../orders/chainDraftSessionStore";
 
 describe("lazyChunkRecovery", () => {
   beforeEach(() => {
     setLazyRecoveryTradeLatch(false);
+    useChainDraftSessionStore.getState().clear();
     sessionStorage.clear();
     document.body.innerHTML = "";
   });
@@ -31,6 +33,21 @@ describe("lazyChunkRecovery", () => {
 
   it("detects chain draft strip in DOM", () => {
     document.body.innerHTML = '<div data-chain-draft-strip></div>';
+    expect(hasUnsavedTradingState()).toBe(true);
+  });
+
+  it("detects hoisted chain draft session store", () => {
+    useChainDraftSessionStore.getState().setDraft("$SPX", {
+      selectedLegs: [
+        {
+          key: "x",
+          contract: { strike: 100 },
+          type: "PUT",
+          expiration: "2025-01-01",
+          side: "ask",
+        },
+      ],
+    });
     expect(hasUnsavedTradingState()).toBe(true);
   });
 

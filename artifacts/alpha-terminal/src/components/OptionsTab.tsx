@@ -41,6 +41,7 @@ import {
   canAddChainDraftLeg,
   CHAIN_MAX_DRAFT_LEGS,
 } from "@/lib/orders/chainDraftLegLimits";
+import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
@@ -1336,13 +1337,33 @@ export function OptionsTab({
   const accentKey = useUICustomizationStore(s => s.accentColor);
   const accentHex = ACCENT_COLORS[accentKey];
   const [columnsEditorOpen, setColumnsEditorOpen] = useState(false);
-  const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(new Map());
+  const hydratedDraft = useMemo(() => {
+    const d = useChainDraftSessionStore.getState();
+    if (d.symbol !== symbol || d.selectedLegs.length === 0) return null;
+    return d;
+  }, [symbol]);
+  const [selectedLegs, setSelectedLegs] = useState<Map<string, SelectedLeg>>(() => {
+    if (!hydratedDraft) return new Map();
+    const m = new Map<string, SelectedLeg>();
+    for (const leg of hydratedDraft.selectedLegs) {
+      m.set(leg.key, {
+        contract: leg.contract as unknown as Contract,
+        type: leg.type,
+        expiration: leg.expiration,
+        side: leg.side,
+      });
+    }
+    return m;
+  });
   const [showInlineGreeks, setShowInlineGreeks] = useState(false);
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
   const [legLimitRejected, setLegLimitRejected] = useState(false);
-  const [chainTicketOpen, setChainTicketOpen] = useState(false);
-  const [sheetCollapsed, setSheetCollapsed] = useState(true);
-  const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
+  const [chainTicketOpen, setChainTicketOpen] = useState(() => hydratedDraft?.chainTicketOpen ?? false);
+  const [sheetCollapsed, setSheetCollapsed] = useState(() => hydratedDraft?.sheetCollapsed ?? true);
+  const [legQuantities, setLegQuantities] = useState<Map<string, number>>(() => {
+    if (!hydratedDraft) return new Map();
+    return new Map(Object.entries(hydratedDraft.legQuantities));
+  });
   const legLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chainScrollRef = useRef<HTMLDivElement>(null);
   const accounts = useSchwabAccountStore((s) => s.accounts);
@@ -1539,7 +1560,28 @@ export function OptionsTab({
     setSheetCollapsed(false);
     setChainTicketOpen(false);
     setLegLimitRejected(false);
+    useChainDraftSessionStore.getState().clear();
   }, [symbol]);
+
+  useEffect(() => {
+    const stored = [...selectedLegs.entries()].map(([key, leg]) => ({
+      key,
+      contract: { ...leg.contract } as Record<string, unknown>,
+      type: leg.type,
+      expiration: leg.expiration,
+      side: leg.side,
+    }));
+    const qty: Record<string, number> = {};
+    legQuantities.forEach((v, k) => {
+      qty[k] = v;
+    });
+    useChainDraftSessionStore.getState().setDraft(symbol, {
+      selectedLegs: stored,
+      legQuantities: qty,
+      chainTicketOpen,
+      sheetCollapsed,
+    });
+  }, [symbol, selectedLegs, legQuantities, chainTicketOpen, sheetCollapsed]);
 
   const withPreservedChainScroll = useCallback((run: () => void) => {
     const el = chainScrollRef.current;
@@ -1653,6 +1695,7 @@ export function OptionsTab({
     setSheetCollapsed(true);
     setChainTicketOpen(false);
     setLegLimitRejected(false);
+    useChainDraftSessionStore.getState().clear();
   }, []);
 
   const handleBuildStrategy = useCallback(() => {
@@ -2157,6 +2200,12 @@ export function OptionsTab({
           openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
           demoFixture={!!chainFixtureOverride}
           draftDistinctLegCount={selectedLegs.size}
+          restoredSheetSession={
+            useChainDraftSessionStore.getState().symbol === symbol
+              ? useChainDraftSessionStore.getState().sheet
+              : undefined
+          }
+          onSheetSessionPersist={(session) => useChainDraftSessionStore.getState().setSheetSession(session)}
         />
       )}
 
