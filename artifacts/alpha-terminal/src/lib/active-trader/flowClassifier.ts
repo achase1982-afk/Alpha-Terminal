@@ -10,14 +10,19 @@ export interface FlowLaneCounts {
   unknown: number;
 }
 
-export interface TickClassifierState {
+type FlowSide = "buy" | "sell" | "even" | "unknown";
+
+interface FlowWindowEvent {
+  ms: number;
+  qty: number;
+  side: FlowSide;
+}
+
+interface TickClassifierState {
   prevBid: number | null;
   prevAsk: number | null;
   prevVolume: number;
-  windowBuy: number;
-  windowSell: number;
-  windowEven: number;
-  windowUnknown: number;
+  events: FlowWindowEvent[];
 }
 
 const stateByKey = new Map<string, TickClassifierState>();
@@ -31,7 +36,7 @@ export function classifyQuoteRule(
   bid: number | null,
   ask: number | null,
   tradePx: number | null,
-): "buy" | "sell" | "even" | "unknown" {
+): FlowSide {
   if (bid == null || ask == null || tradePx == null || bid <= 0 || ask <= 0 || ask < bid) return "unknown";
   const m = mid(bid, ask);
   const w = ask - bid;
@@ -44,44 +49,66 @@ export function classifyQuoteRule(
   return "even";
 }
 
-export function ingestOptionTickForFlow(key: string, tick: OptionTick, windowMs: number): FlowLaneCounts {
+function pruneEvents(st: TickClassifierState, windowMs: number, nowMs: number): void {
+  const cutoff = nowMs - windowMs;
+  if (st.events.length === 0) return;
+  let i = 0;
+  while (i < st.events.length && st.events[i]!.ms < cutoff) i += 1;
+  if (i > 0) st.events = st.events.slice(i);
+}
+
+function countsFromEvents(events: FlowWindowEvent[]): FlowLaneCounts {
+  const out: FlowLaneCounts = { buy: 0, sell: 0, even: 0, unknown: 0 };
+  for (const e of events) {
+    out[e.side] += e.qty;
+  }
+  return out;
+}
+
+export function ingestOptionTickForFlow(
+  key: string,
+  tick: OptionTick,
+  windowMs: number,
+  nowMs: number = Date.now(),
+): FlowLaneCounts {
   let st = stateByKey.get(key);
   if (!st) {
     st = {
       prevBid: tick.bid,
       prevAsk: tick.ask,
       prevVolume: tick.volume ?? 0,
-      windowBuy: 0,
-      windowSell: 0,
-      windowEven: 0,
-      windowUnknown: 0,
+      events: [],
     };
     stateByKey.set(key, st);
     return { buy: 0, sell: 0, even: 0, unknown: 0 };
   }
 
+  pruneEvents(st, windowMs, nowMs);
+
   const vol = tick.volume ?? st.prevVolume;
   const dV = vol - st.prevVolume;
   if (dV > 0 && tick.last != null) {
-  const side = classifyQuoteRule(st.prevBid, st.prevAsk, tick.last);
+    const side = classifyQuoteRule(st.prevBid, st.prevAsk, tick.last);
     const qty = tick.lastSize != null && tick.lastSize > 0 ? Math.min(dV, tick.lastSize) : dV;
-    if (side === "buy") st.windowBuy += qty;
-    else if (side === "sell") st.windowSell += qty;
-    else if (side === "even") st.windowEven += qty;
-    else st.windowUnknown += qty;
+    st.events.push({ ms: nowMs, qty, side });
+    pruneEvents(st, windowMs, nowMs);
   }
 
   st.prevBid = tick.bid ?? st.prevBid;
   st.prevAsk = tick.ask ?? st.prevAsk;
   st.prevVolume = vol;
 
-  void windowMs;
-  return {
-    buy: st.windowBuy,
-    sell: st.windowSell,
-    even: st.windowEven,
-    unknown: st.windowUnknown,
-  };
+  return countsFromEvents(st.events);
+}
+
+/** Total estimated contracts traded in the rolling window (all sides). */
+export function getFlowActivityForKey(key: string, windowMs: number, nowMs: number = Date.now()): number {
+  const st = stateByKey.get(key);
+  if (!st) return 0;
+  pruneEvents(st, windowMs, nowMs);
+  let total = 0;
+  for (const e of st.events) total += e.qty;
+  return total;
 }
 
 export function flowBadgeFromCounts(c: FlowLaneCounts): FlowBadge {
@@ -95,28 +122,28 @@ export function flowBadgeFromCounts(c: FlowLaneCounts): FlowBadge {
 
 export function resetFlowClassifierWindow(): void {
   for (const st of stateByKey.values()) {
-    st.windowBuy = 0;
-    st.windowSell = 0;
-    st.windowEven = 0;
-    st.windowUnknown = 0;
+    st.events = [];
   }
 }
 
-export function getFlowCountsForKey(key: string): FlowLaneCounts {
+export function getFlowCountsForKey(key: string, windowMs?: number, nowMs: number = Date.now()): FlowLaneCounts {
   const st = stateByKey.get(key);
   if (!st) return { buy: 0, sell: 0, even: 0, unknown: 0 };
-  return { buy: st.windowBuy, sell: st.windowSell, even: st.windowEven, unknown: st.windowUnknown };
+  if (windowMs != null) pruneEvents(st, windowMs, nowMs);
+  return countsFromEvents(st.events);
 }
 
 /** Dev/test harness: pre-seed window counts (does not run in production routes). */
-export function seedFlowCountsForKey(key: string, counts: FlowLaneCounts, prevVolume = 0): void {
+export function seedFlowCountsForKey(key: string, counts: FlowLaneCounts, prevVolume = 0, nowMs = Date.now()): void {
+  const events: FlowWindowEvent[] = [];
+  if (counts.buy > 0) events.push({ ms: nowMs, qty: counts.buy, side: "buy" });
+  if (counts.sell > 0) events.push({ ms: nowMs, qty: counts.sell, side: "sell" });
+  if (counts.even > 0) events.push({ ms: nowMs, qty: counts.even, side: "even" });
+  if (counts.unknown > 0) events.push({ ms: nowMs, qty: counts.unknown, side: "unknown" });
   stateByKey.set(key, {
     prevBid: 1,
     prevAsk: 1.05,
     prevVolume,
-    windowBuy: counts.buy,
-    windowSell: counts.sell,
-    windowEven: counts.even,
-    windowUnknown: counts.unknown,
+    events,
   });
 }

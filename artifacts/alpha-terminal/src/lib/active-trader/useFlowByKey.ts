@@ -1,26 +1,43 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
+  getFlowActivityForKey,
   getFlowCountsForKey,
   ingestOptionTickForFlow,
   type FlowLaneCounts,
 } from "./flowClassifier";
 
-export function useFlowByKey(keys: string[], windowMs: number): Record<string, FlowLaneCounts> {
+export function useFlowByKey(
+  keys: string[],
+  windowMs: number,
+): { flowByKey: Record<string, FlowLaneCounts>; activityByKey: Record<string, number> } {
   const ticks = useOptionsStreamStore((s) => s.ticks);
+  const [windowTick, setWindowTick] = useState(0);
 
   useEffect(() => {
+    const step = Math.max(2_000, Math.min(8_000, Math.floor(windowMs / 4)));
+    const id = window.setInterval(() => setWindowTick((n) => n + 1), step);
+    return () => window.clearInterval(id);
+  }, [windowMs]);
+
+  useEffect(() => {
+    const now = Date.now();
     for (const key of keys) {
       const tick = ticks[key];
-      if (tick) ingestOptionTickForFlow(key, tick, windowMs);
+      if (tick) ingestOptionTickForFlow(key, tick, windowMs, now);
     }
   }, [keys, ticks, windowMs]);
 
   return useMemo(() => {
-    const out: Record<string, FlowLaneCounts> = {};
+    void windowTick;
+    const now = Date.now();
+    const flowByKey: Record<string, FlowLaneCounts> = {};
+    const activityByKey: Record<string, number> = {};
     for (const key of keys) {
-      out[key] = getFlowCountsForKey(key);
+      flowByKey[key] = getFlowCountsForKey(key, windowMs, now);
+      activityByKey[key] = getFlowActivityForKey(key, windowMs, now);
     }
-    return out;
-  }, [keys, ticks, windowMs]);
+    return { flowByKey, activityByKey };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- windowTick drives rolling fade
+  }, [keys, ticks, windowMs, windowTick]);
 }

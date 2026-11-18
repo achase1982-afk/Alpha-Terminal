@@ -61,6 +61,7 @@ import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { AtApprovedMobileOrderSheet } from "@/components/active-trader/AtApprovedMobileOrderSheet";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -121,6 +122,8 @@ export interface OptionsChainOrderSheetProps {
     prefs: ActiveTraderTemplatePrefs;
     primaryInstruction: SchwabInstruction;
   };
+  /** Active Trader: open bracket/advanced builder; restores scroll in parent. */
+  onAdvancedOrders?: () => void;
 }
 
 function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
@@ -197,6 +200,7 @@ export function OptionsChainOrderSheet({
   onSheetPeekChange,
   draftDistinctLegCount,
   atBracketDraft,
+  onAdvancedOrders,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -221,6 +225,8 @@ export function OptionsChainOrderSheet({
     useState<ChainSheetAtBracketConfirm | null>(null);
   const limitUserEditedRef = useRef(false);
   const legsHydrateKeyRef = useRef("");
+  const [limitLocked, setLimitLocked] = useState(false);
+  const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
 
   const pricedLegs = useMemo(
     () => legs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol])),
@@ -353,6 +359,7 @@ export function OptionsChainOrderSheet({
 
   useEffect(() => {
     if (legs.length === 0 || stage !== "form") return;
+    if (sendPreviewOnly && limitLocked) return;
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
@@ -370,7 +377,7 @@ export function OptionsChainOrderSheet({
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted]);
+  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, sendPreviewOnly, limitLocked]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -604,6 +611,90 @@ export function OptionsChainOrderSheet({
   ]);
 
   if (legs.length === 0) return null;
+
+  if (sendPreviewOnly) {
+    const entryMultiplier = quantity * 100;
+    const entryAbs =
+      summary?.grossNotional != null ? Math.abs(summary.grossNotional) * entryMultiplier : null;
+    const exitRaw = isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk;
+    const exitAbs = exitRaw != null ? Math.abs(exitRaw) * entryMultiplier : null;
+    const maxLossLabel =
+      summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—";
+    const mid = summary?.spreadMid != null ? fmt(summary.spreadMid) : null;
+
+    if (stage === "review") {
+      return (
+        <div data-testid="options-chain-order-sheet" data-at-approved-ticket>
+          <ConfirmPanel
+            strategyName={strategyId.name}
+            strategyColor={strategyId.color}
+            symbol={symbol}
+            legs={legs}
+            quantity={quantity}
+            timeInForce={timeInForce}
+            isCredit={isCredit}
+            limitTickCtx={limitTickCtx}
+            reviewLimitSnapped={reviewLimitSnapped}
+            submittedLimit={submittedLimit}
+            summary={summary}
+            feeAdjustedNetCash={feeAdjustedNetCash}
+            atBracketConfirm={atBracketConfirm}
+            atExitDurationLabel={
+              effectiveAtBracketDraft
+                ? formatAtExitDuration(effectiveAtBracketDraft.prefs.exitDuration)
+                : undefined
+            }
+            onBack={() => {
+              placeOrderInFlightRef.current = false;
+              setSendLocked(false);
+              setStage("form");
+            }}
+            onSend={() => void handleSubmit()}
+            sendDisabled={sendLocked || !!sendPreviewOnly}
+            sendLabel="Sending off (preview)"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <AtApprovedMobileOrderSheet
+        legs={legs}
+        collapsed={collapsed}
+        sheetPeek={sheetPeek}
+        onCollapsedChange={onCollapsedChange}
+        onClearAll={handleClearAllClick}
+        onRemoveLeg={onRemoveLeg}
+        entryLabel={isCredit ? "Entry credit" : "Entry debit"}
+        entryAmount={entryAbs}
+        targetExitAmount={exitAbs}
+        estNetAmount={feeAdjustedNetCash}
+        estNetUnavailable={feeAdjustedNetCash == null && summary?.grossNotional != null}
+        maxLossLabel={maxLossLabel}
+        midDisplay={mid}
+        limitPrice={limitPrice}
+        onLimitPriceChange={(v) => {
+          limitUserEditedRef.current = true;
+          setLimitPrice(v);
+          setPriceError("");
+        }}
+        limitLocked={limitLocked}
+        onLimitLockedChange={setLimitLocked}
+        onNudgeLimit={nudgePrice}
+        orderType={orderType}
+        onOrderTypeChange={setOrderType}
+        limitTickCtx={limitTickCtx}
+        sendLabel={limitLocked ? "Review (sending off)" : "Lock limit to send"}
+        sendDisabled={!limitLocked || !isValid}
+        primaryActionTestId="chain-sheet-review"
+        onSend={() => {
+          if (!limitLocked) return;
+          validateAndReview();
+        }}
+        onAdvancedOrders={onAdvancedOrders}
+      />
+    );
+  }
 
   const sheetHeight = collapsed ? 52 : sheetPeek ? AT_SHEET_PEEK_VH : AT_SHEET_FULL_VH;
 

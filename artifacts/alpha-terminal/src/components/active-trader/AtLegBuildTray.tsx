@@ -15,8 +15,9 @@ export const AtLegBuildTray = memo(function AtLegBuildTray({ legs, qtyByKey, onR
   return (
     <div
       data-at-leg-tray
-      className="shrink-0 flex gap-1.5 px-2 py-1.5 overflow-x-auto"
+      className="shrink-0 grid gap-1.5 px-2 py-1.5"
       style={{
+        gridTemplateColumns: legs.length > 2 ? "1fr 1fr" : "1fr",
         background: "#0a0a0a",
         borderBottom: `1px solid ${BORDER}`,
         fontFamily: MONO,
