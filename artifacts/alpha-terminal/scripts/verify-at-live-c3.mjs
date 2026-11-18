@@ -106,6 +106,7 @@ async function runSpreadFlow(height) {
 
   await ensureSheetOpen();
   const reviewBtn = page.locator("[data-testid='chain-sheet-review']");
+  await reviewBtn.scrollIntoViewIfNeeded();
   await reviewBtn.waitFor({ state: "visible", timeout: 12_000 });
   const reviewDisabled = await reviewBtn.isDisabled();
   record(`Review enabled (${height}px)`, !reviewDisabled, (await reviewBtn.textContent()) ?? "");
