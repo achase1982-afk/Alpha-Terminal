@@ -166,9 +166,10 @@ test("auth-disabled with server-connected hydrates chain and active trader (mock
 
   const subviewToggle = page.locator("[data-at-subview-toggle]");
   await expect(subviewToggle).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: "Active Trader", exact: true })).toBeVisible();
+  await expect(subviewToggle).toHaveAttribute("data-at-subview-value", "chain");
 
-  await page.getByRole("button", { name: "Active Trader", exact: true }).click();
+  await subviewToggle.click();
+  await expect(subviewToggle).toHaveAttribute("data-at-subview-value", "at");
   await expect(page.locator("[data-at-root]")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("CONNECT BROKERAGE TO VIEW OPTIONS")).toHaveCount(0);
 });
