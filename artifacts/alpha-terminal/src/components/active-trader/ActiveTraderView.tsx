@@ -104,7 +104,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const primary =
     groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
-  const futuresQuoteMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
+  const futuresOnlyMode = isFuturesDisplaySymbol(symbol);
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
     call_buy: true,
@@ -479,6 +479,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
   const pressureHeadline = presentation?.headline?.trim() ? presentation.headline : "";
 
+  if (futuresOnlyMode) {
+    return (
+      <div
+        className="flex flex-col"
+        style={{
+          background: BG,
+          minHeight: `max(440px, calc(100dvh - ${stickyOffset + 72}px))`,
+        }}
+      >
+        <AtFuturesLiveQuote symbol={symbol} layout="fill" />
+      </div>
+    );
+  }
+
   return (
     <div style={{ background: BG }}>
       <div ref={chromeRef}>
@@ -583,9 +597,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       </div>
 
       <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto", background: AT_LADDER_PANEL_BG }}>
-        {futuresQuoteMode ? (
-          <AtFuturesLiveQuote symbol={symbol} />
-        ) : ladderDataReady ? (
+        {ladderDataReady ? (
         <LadderBody
           rows={ladderRows}
           accentHex={accentHex}

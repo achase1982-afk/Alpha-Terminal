@@ -52,6 +52,8 @@ import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
+import { FuturesTradeBlockedNotice } from "@/components/FuturesTradeBlockedNotice";
+import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
 
 // ---------------------------------------------------------------------------
 // Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
@@ -372,23 +374,6 @@ export default function TerminalPage() {
   const atSubViewActive = useAtChromeStore((s) => s.subViewIsAt);
   const atOptionsChrome = activeBottom === "markets" && contextTab === "options" && atSubViewActive;
 
-  useLayoutEffect(() => {
-    if (!import.meta.env.DEV) return;
-    const atFx = getAtFixtureOverride();
-    const chainFx = getChainOrderFixtureOverride();
-    const futuresFx = getFuturesEsFixtureOverride();
-    if (atFx?.enabled || chainFx || futuresFx?.enabled) {
-      setActiveBottom("markets");
-      setContextTab("options");
-    }
-    if (futuresFx?.openTicketConfirm) {
-      setOrderOpen(true);
-      setOrderSide("BUY");
-      setOrderOptionSymbol(undefined);
-      setOrderStrategyLegs(undefined);
-      setOrderInitialStage("review");
-    }
-  }, []);
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
       const savedRaw = sessionStorage.getItem("alpha_session_ai_tab");
@@ -398,6 +383,8 @@ export default function TerminalPage() {
     } catch { return "pulse"; }
   });
   const [strategistDeepLinkJobId, setStrategistDeepLinkJobId] = useState<string | null>(null);
+  const [futuresTradeNoticeOpen, setFuturesTradeNoticeOpen] = useState(false);
+  const terminalSymbol = useTerminalStore((s) => s.symbol);
   const [orderOpen, setOrderOpen] = useState(false);
   const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
   const [orderOptionSymbol, setOrderOptionSymbol] = useState<string | undefined>();
@@ -423,6 +410,11 @@ export default function TerminalPage() {
   const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>>(new Map());
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
+    const sym = useTerminalStore.getState().symbol;
+    if (isFuturesDisplaySymbol(sym)) {
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     setOrderAtPrefs(null);
     setOrderOptionSymbol(undefined);
     setOrderOptionInstruction(undefined);
@@ -437,6 +429,11 @@ export default function TerminalPage() {
   // on the same trade they sent for review.
   const reopenValidatedOrder = useCallback((meta: StrategistValidationMeta) => {
     const t = meta.ticket;
+    if (isFuturesDisplaySymbol(t.ticker)) {
+      useTerminalStore.getState().setSymbol(t.ticker);
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(t.ticker);
     setOrderSide(t.side ?? "BUY");
@@ -485,6 +482,11 @@ export default function TerminalPage() {
     strategyIsCredit?: boolean,
     isClose?: boolean,
   ) => {
+    if (isFuturesDisplaySymbol(sym)) {
+      useTerminalStore.getState().setSymbol(sym);
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(sym);
     setOrderSide(side);
@@ -541,6 +543,11 @@ export default function TerminalPage() {
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
+    const sym = useTerminalStore.getState().symbol;
+    if (isFuturesDisplaySymbol(sym)) {
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     setOrderAtPrefs(null);
     const schwabSym = optionTradeStreamKey(contract);
     const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
@@ -556,6 +563,10 @@ export default function TerminalPage() {
 
   const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
     const sym = useTerminalStore.getState().symbol;
+    if (isFuturesDisplaySymbol(sym)) {
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     const symClass = sym.toUpperCase().includes("SPX") || sym.startsWith("$") ? "index" : "equity";
     setOrderAtPrefs(loadActiveTraderPrefs(symClass));
     const schwabSym = optionTradeStreamKey(contract);
@@ -576,6 +587,20 @@ export default function TerminalPage() {
     setOrderInitialStage("review");
     setOrderConfirmDisabled(false);
     setOrderOpen(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const atFx = getAtFixtureOverride();
+    const chainFx = getChainOrderFixtureOverride();
+    const futuresFx = getFuturesEsFixtureOverride();
+    if (atFx?.enabled || chainFx || futuresFx?.enabled) {
+      setActiveBottom("markets");
+      setContextTab("options");
+    }
+    if (futuresFx?.openTradeNoticeOnMount) {
+      setFuturesTradeNoticeOpen(true);
+    }
   }, []);
 
   const [strategyInitialLegs, setStrategyInitialLegs] = useState<StrategyLeg[]>([]);
@@ -1263,6 +1288,11 @@ export default function TerminalPage() {
         }}
       />
       {schwabLinked && <SchwabAccountPickerSheet />}
+      <FuturesTradeBlockedNotice
+        isOpen={futuresTradeNoticeOpen}
+        onClose={() => setFuturesTradeNoticeOpen(false)}
+        symbol={terminalSymbol}
+      />
     </div>
   );
 }

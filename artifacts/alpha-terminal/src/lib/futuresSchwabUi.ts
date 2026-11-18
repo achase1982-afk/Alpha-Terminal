@@ -6,7 +6,7 @@ export function futuresChainPlaceholderPrimary(): string {
   return "No options chain for futures through the Schwab API";
 }
 
-function futuresRootForPlaceholder(symbol: string): string {
+export function futuresRootForPlaceholder(symbol: string): string {
   const bare = symbol.replace(/^\//, "").toUpperCase();
   const m = bare.match(/^([A-Z0-9]{1,4})[FGHJKMNQUVXZ]\d{2}$/);
   return m ? m[1]! : bare;

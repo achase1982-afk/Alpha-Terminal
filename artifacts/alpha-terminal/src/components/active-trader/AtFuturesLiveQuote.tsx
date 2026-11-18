@@ -14,24 +14,35 @@ function fmtSize(n: number | null | undefined): string {
 
 interface AtFuturesLiveQuoteProps {
   symbol: string;
+  layout?: "inline" | "fill";
 }
 
-export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol }: AtFuturesLiveQuoteProps) {
+export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol, layout = "inline" }: AtFuturesLiveQuoteProps) {
   const { data: quote } = useQuote(symbol);
   const change = quote?.change ?? null;
   const changePct = quote?.changePct ?? null;
   const changeColor = change == null ? DIM : change > 0 ? UP : change < 0 ? DOWN : DIM;
 
+  const fill = layout === "fill";
+
   return (
     <div
-      className="px-3 py-4 font-mono border-b"
-      style={{ background: BG, borderColor: BORDER, fontFamily: MONO }}
+      className={`px-4 font-mono ${fill ? "flex flex-col flex-1 py-6" : "py-4 border-b"}`}
+      style={{
+        background: BG,
+        borderColor: BORDER,
+        fontFamily: MONO,
+        ...(fill ? { minHeight: "min(100%, 480px)" } : {}),
+      }}
       data-ui-audit="at-futures-live-quote"
     >
-      <p className="text-[10px] tracking-widest uppercase mb-3" style={{ color: DIM }}>
-        Live futures quote
+      <p className="text-[10px] tracking-widest uppercase mb-4" style={{ color: DIM }}>
+        Live quote · {symbol.toUpperCase()}
       </p>
-      <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+      <div
+        className={`grid gap-3 ${fill ? "flex-1 content-center" : ""}`}
+        style={{ gridTemplateColumns: "1fr 1fr" }}
+      >
         <div>
           <div className="text-[9px] uppercase tracking-wide" style={{ color: DIM }}>Last</div>
           <div className="text-xl tabular-nums" style={{ color: WHITE }}>{fmt(quote?.last)}</div>
@@ -66,8 +77,8 @@ export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol }: A
           </div>
         </div>
       </div>
-      <p className="text-[9px] mt-3 leading-relaxed" style={{ color: DIM }}>
-        No options ladder for this futures root — streaming quotes only.
+      <p className="text-[10px] mt-4 leading-relaxed shrink-0" style={{ color: DIM }}>
+        Streaming quotes only — no Schwab options chain on this symbol.
       </p>
     </div>
   );

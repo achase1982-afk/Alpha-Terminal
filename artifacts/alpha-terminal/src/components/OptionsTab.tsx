@@ -44,6 +44,7 @@ import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBrid
 import {
   futuresChainPlaceholderPrimary,
   futuresChainPlaceholderSecondary,
+  futuresRootForPlaceholder,
   isFuturesDisplaySymbol,
 } from "@/lib/futuresSchwabUi";
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
@@ -1805,6 +1806,7 @@ export function OptionsTab({
             className="p-12 text-center font-mono flex flex-col items-center max-w-md mx-auto"
             style={{ color: GRAY }}
             data-ui-audit="futures-chain-placeholder"
+            data-futures-root={futuresRootForPlaceholder(symbol)}
           >
             <span className="text-[11px] leading-relaxed" style={{ fontWeight: FW_NORMAL }}>
               {futuresChainPlaceholderPrimary()}

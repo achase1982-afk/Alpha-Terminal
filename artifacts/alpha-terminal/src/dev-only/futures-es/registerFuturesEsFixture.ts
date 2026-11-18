@@ -11,11 +11,21 @@ import type { OptionsSubView } from "@/components/active-trader/OptionsSubViewTo
 
 export const FUTURES_ES_FIXTURE_MARKER = "futures-es-fixture-dev";
 
-const FIXTURE_LAST = 5925.25;
+const QUOTE_BY_ROOT: Record<string, number> = {
+  ES: 5925.25,
+  NQ: 21480.5,
+  MES: 5925.0,
+};
 
-function buildChainError(): OptionChainResponse {
+function fixtureSymbol(scene: FuturesEsFixtureScene, paramSymbol: string | null): string {
+  if (paramSymbol?.startsWith("/")) return paramSymbol.toUpperCase();
+  if (scene === "options-nq") return "/NQ";
+  return "/ES";
+}
+
+function buildChainError(symbol: string): OptionChainResponse {
   return {
-    symbol: "/ES",
+    symbol,
     calls: [],
     puts: [],
     error: "futures_chain_unsupported",
@@ -23,7 +33,7 @@ function buildChainError(): OptionChainResponse {
 }
 
 function sceneToSubView(scene: FuturesEsFixtureScene): OptionsSubView {
-  return scene === "options-chain" ? "chain" : "at";
+  return scene === "active-trader" ? "at" : "chain";
 }
 
 export function registerFuturesEsFixtureFromLocation(): void {
@@ -31,23 +41,26 @@ export function registerFuturesEsFixtureFromLocation(): void {
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const scene = (params.get("scene") ?? "options-chain") as FuturesEsFixtureScene;
+  const displaySymbol = fixtureSymbol(scene, params.get("symbol"));
+  const root = displaySymbol.replace(/^\//, "").replace(/[FGHJKMNQUVXZ]\d{2}$/, "") || "ES";
+  const last = QUOTE_BY_ROOT[root] ?? QUOTE_BY_ROOT.ES ?? 5925.25;
   const initialSubView = sceneToSubView(scene);
 
   const streamQuote = {
-    symbol: "/ES",
-    last: FIXTURE_LAST,
-    regularLast: FIXTURE_LAST,
-    extendedLast: FIXTURE_LAST,
-    bid: FIXTURE_LAST - 0.25,
-    ask: FIXTURE_LAST + 0.25,
+    symbol: displaySymbol,
+    last,
+    regularLast: last,
+    extendedLast: last,
+    bid: last - 0.25,
+    ask: last + 0.25,
     bidSize: 42,
     askSize: 38,
     change: 12.5,
     changePct: 0.21,
     volume: 812_400,
-    high: FIXTURE_LAST + 8,
-    low: FIXTURE_LAST - 15,
-    close: FIXTURE_LAST - 12.5,
+    high: last + 8,
+    low: last - 15,
+    close: last - 12.5,
     ts: Date.now(),
     quoteSource: "SCHWAB" as const,
   };
@@ -55,26 +68,26 @@ export function registerFuturesEsFixtureFromLocation(): void {
   const override: FuturesEsFixtureOverride = {
     enabled: true,
     marker: FUTURES_ES_FIXTURE_MARKER,
-    symbol: "/ES",
+    symbol: displaySymbol,
     scene,
-    chain: buildChainError(),
-    underlyingPrice: FIXTURE_LAST,
+    chain: buildChainError(displaySymbol),
+    underlyingPrice: last,
     streamQuote,
     initialSubView,
-    openTicketConfirm: scene === "ticket-confirm",
+    openTradeNoticeOnMount: scene === "trade-notice",
   };
 
   setFuturesEsFixtureOverride(override);
 
   const { setSymbol, setTokens, setTraderTokens } = useTerminalStore.getState();
-  setSymbol("/ES");
+  setSymbol(displaySymbol);
   setTokens("futures-es-fixture-dev", "");
   setTraderTokens("futures-es-fixture-dev", "");
 
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,
-      "/ES": streamQuote,
+      [displaySymbol]: streamQuote,
     },
   }));
 

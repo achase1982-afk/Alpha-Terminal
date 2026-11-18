@@ -2,7 +2,11 @@ import type { OptionChainResponse } from "@workspace/api-client-react";
 import type { LiveQuote } from "@/lib/store";
 import type { OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 
-export type FuturesEsFixtureScene = "options-chain" | "active-trader" | "ticket-confirm";
+export type FuturesEsFixtureScene =
+  | "options-chain"
+  | "options-nq"
+  | "active-trader"
+  | "trade-notice";
 
 export interface FuturesEsFixtureOverride {
   enabled: true;
@@ -13,7 +17,7 @@ export interface FuturesEsFixtureOverride {
   underlyingPrice: number;
   streamQuote: LiveQuote;
   initialSubView: OptionsSubView;
-  openTicketConfirm?: boolean;
+  openTradeNoticeOnMount?: boolean;
 }
 
 let override: FuturesEsFixtureOverride | null = null;
