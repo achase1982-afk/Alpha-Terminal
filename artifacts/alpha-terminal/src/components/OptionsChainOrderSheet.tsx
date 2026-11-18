@@ -62,6 +62,7 @@ import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConf
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { AtApprovedMobileOrderSheet } from "@/components/active-trader/AtApprovedMobileOrderSheet";
+import type { ChainDraftSheetSession } from "@/lib/orders/chainDraftSessionStore";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -124,6 +125,9 @@ export interface OptionsChainOrderSheetProps {
   };
   /** Active Trader: open bracket/advanced builder; restores scroll in parent. */
   onAdvancedOrders?: () => void;
+  /** Restored limit lock after Options remount (chunk recovery). */
+  restoredSheetSession?: ChainDraftSheetSession;
+  onSheetSessionPersist?: (session: ChainDraftSheetSession) => void;
 }
 
 function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
@@ -201,6 +205,8 @@ export function OptionsChainOrderSheet({
   draftDistinctLegCount,
   atBracketDraft,
   onAdvancedOrders,
+  restoredSheetSession,
+  onSheetSessionPersist,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -213,7 +219,7 @@ export function OptionsChainOrderSheet({
   const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const optionTicks = useOptionsStreamStore((s) => s.ticks);
 
-  const [limitPrice, setLimitPrice] = useState("");
+  const [limitPrice, setLimitPrice] = useState(restoredSheetSession?.limitPrice ?? "");
   const [quantity, setQuantity] = useState(1);
   const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
   const [stage, setStage] = useState<Stage>("form");
@@ -225,7 +231,7 @@ export function OptionsChainOrderSheet({
     useState<ChainSheetAtBracketConfirm | null>(null);
   const limitUserEditedRef = useRef(false);
   const legsHydrateKeyRef = useRef("");
-  const [limitLocked, setLimitLocked] = useState(false);
+  const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
 
   const pricedLegs = useMemo(
@@ -250,6 +256,10 @@ export function OptionsChainOrderSheet({
       setAtBracketConfirmSnapshot(null);
     }
   }, [legs.length]);
+
+  useEffect(() => {
+    onSheetSessionPersist?.({ limitPrice, limitLocked });
+  }, [limitPrice, limitLocked, onSheetSessionPersist]);
 
   const legsHydrateKey = useMemo(
     () =>

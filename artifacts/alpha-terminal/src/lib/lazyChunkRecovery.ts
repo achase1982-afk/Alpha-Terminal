@@ -1,3 +1,5 @@
+import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
+
 /** sessionStorage timestamp guard — at most one auto-reload per 30s window. */
 export const CHUNK_RELOAD_GUARD_KEY = "at-chunk-reload-guard";
 const RELOAD_GUARD_MS = 30_000;
@@ -24,6 +26,7 @@ export function isChunkLoadError(err: unknown): boolean {
 /** DOM + latch: chain draft, AT tray, open order surfaces. */
 export function hasUnsavedTradingState(): boolean {
   if (tradeActivityLatch) return true;
+  if (useChainDraftSessionStore.getState().hasActiveDraft()) return true;
   if (typeof document === "undefined") return false;
   if (document.querySelector("[data-chain-draft-strip]")) return true;
   const tray = document.querySelector("[data-at-leg-tray]");
