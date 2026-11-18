@@ -1,3 +1,6 @@
+/** Charcoal glance header surface (approved mobile mock). */
+export const AT_HEADER_BG = "#1b1d21";
+
 /** Anthony AT contrast floor on #000 — labels ~4.5:1+, body secondary ~5.5:1+ on black. */
 export const AT_LABEL = "#9A9A9A";
 export const AT_SECONDARY = "#B8B8B8";

@@ -116,4 +116,39 @@ export async function assertAtHeaderLayout(page, record) {
     return true;
   });
   record("header text in safe area", noClip, noClip ? "ok" : "clipped");
+
+  const flowMath = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("[data-at-gross-flow-row]")];
+    let maxDelta = 0;
+    for (const row of rows) {
+      const soldAttr = row.getAttribute("data-at-flow-gross-sold-usd");
+      const buyAttr = row.getAttribute("data-at-flow-gross-bought-usd");
+      if (!soldAttr || !buyAttr) continue;
+      const soldUsd = Number(soldAttr);
+      const buyUsd = Number(buyAttr);
+      if (!Number.isFinite(soldUsd) || !Number.isFinite(buyUsd)) continue;
+      const text = (row.textContent ?? "").replace(/\s+/g, " ");
+      const soldM = text.match(/Sold \$?([\d,.]+[KMB]?)/i);
+      const buyM = text.match(/Bought \$?([\d,.]+[KMB]?)/i);
+      const parseCompact = (raw) => {
+        const t = raw.replace(/,/g, "");
+        const m = t.match(/^([\d.]+)([KMB])?$/i);
+        if (!m) return NaN;
+        const n = Number(m[1]);
+        const suf = (m[2] ?? "").toUpperCase();
+        const scale = suf === "K" ? 1e3 : suf === "M" ? 1e6 : suf === "B" ? 1e9 : 1;
+        return n * scale;
+      };
+      const soldShown = soldM ? parseCompact(soldM[1]) : NaN;
+      const buyShown = buyM ? parseCompact(buyM[1]) : NaN;
+      if (Number.isFinite(soldShown)) maxDelta = Math.max(maxDelta, Math.abs(soldUsd - soldShown));
+      if (Number.isFinite(buyShown)) maxDelta = Math.max(maxDelta, Math.abs(buyUsd - buyShown));
+    }
+    return { maxDelta, rows: rows.length };
+  });
+  record(
+    "top flow math diff zero",
+    flowMath.rows === 0 || flowMath.maxDelta < 1.5,
+    flowMath.rows ? `Δ${flowMath.maxDelta.toFixed(3)}` : "no rows",
+  );
 }

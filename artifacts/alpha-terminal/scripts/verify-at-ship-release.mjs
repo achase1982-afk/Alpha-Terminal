@@ -127,7 +127,7 @@ try {
   const caption = await page.locator("[data-at-ladder-heat-caption]").first().innerText().catch(() => "");
   record(
     "ladder heat caption",
-    caption === "Contracts · 30s",
+    caption.includes("Contracts traded") && caption.includes("30s"),
     caption || "missing",
   );
   const shotPath = path.join(OUT, "ship-fixture-pixel-baseline-440x956.png");

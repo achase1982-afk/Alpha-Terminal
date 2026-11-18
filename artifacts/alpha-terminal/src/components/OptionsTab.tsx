@@ -1892,8 +1892,11 @@ export function OptionsTab({
   );
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
-  const subViewChrome = (
-    <OptionsSubViewToggle toolbar view={optionsSubView} onChange={setOptionsSubView} />
+  const chainViewChrome = (
+    <OptionsSubViewToggle placement="chain-toolbar" view={optionsSubView} onChange={setOptionsSubView} />
+  );
+  const atViewChrome = (
+    <OptionsSubViewToggle placement="at-header" view={optionsSubView} onChange={setOptionsSubView} />
   );
 
   return (
@@ -1903,7 +1906,7 @@ export function OptionsTab({
     >
       {optionsSubView === "at" && (
         <ActiveTraderView
-          subViewChrome={subViewChrome}
+          subViewChrome={atViewChrome}
           symbol={symbol}
           groups={atGroups}
           activeExpiration={atExpiration ?? undefined}
@@ -1940,7 +1943,6 @@ export function OptionsTab({
         style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-2 min-w-0">
-          {subViewChrome}
           <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">
@@ -1971,21 +1973,24 @@ export function OptionsTab({
             </Select>
           )}
         </div>
-        <MetricsStrip
-          groups={groups}
-          lastPrice={underlyingPrice}
-          earningsInfo={{
-            earningsDate: earningsData?.earningsDate ?? quote?.nextEarningsDate,
-            confirmed: earningsData?.confirmed,
-            time: earningsData?.time,
-            epsEstimate: earningsData?.epsEstimate,
-            epsPrior: earningsData?.epsPrior,
-            period: earningsData?.period,
-            periodYear: earningsData?.periodYear,
-          }}
-          isFetching={isFetching}
-          hasData={!!data}
-        />
+        <div className="flex items-center gap-1.5 shrink-0 min-w-0" data-at-chain-toolbar-end>
+          <MetricsStrip
+            groups={groups}
+            lastPrice={underlyingPrice}
+            earningsInfo={{
+              earningsDate: earningsData?.earningsDate ?? quote?.nextEarningsDate,
+              confirmed: earningsData?.confirmed,
+              time: earningsData?.time,
+              epsEstimate: earningsData?.epsEstimate,
+              epsPrior: earningsData?.epsPrior,
+              period: earningsData?.period,
+              periodYear: earningsData?.periodYear,
+            }}
+            isFetching={isFetching}
+            hasData={!!data}
+          />
+          {chainViewChrome}
+        </div>
       </div>
 
       <div

@@ -10,7 +10,7 @@ import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
-import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
+import { AT_HEADER_BG, AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
 import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
@@ -24,7 +24,7 @@ import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder
 import { formatGlanceOrderSettingsLine } from "@/lib/active-trader/atSummaryFormat";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
 
-export const AT_HEADER_BG = "#1b1d21";
+export { AT_HEADER_BG };
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -149,7 +149,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         overflow: "hidden",
       }}
     >
-      <span data-at-glance-chrome-version="anthony-v2" className="sr-only" aria-hidden />
+      <span data-at-glance-chrome-version="anthony-v3" className="sr-only" aria-hidden />
 
       <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 16, lineHeight: 1.1 }}>
         <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">
