@@ -579,20 +579,23 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       setTradeStripStrike(contract.strike);
       setTradeContext(null);
       handleToggleLeg(contract, type, legSide);
-      requestAnimationFrame(() => {
-        const sheetPx = chainSheetCollapsed ? 52 : chainSheetPeek ? atSheetPeekHeightPx() : 280;
-        scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, contract.strike, sheetPx);
-      });
+      if (!chainSheetCollapsed) {
+        requestAnimationFrame(() => {
+          const sheetPx = chainSheetPeek ? atSheetPeekHeightPx() : 280;
+          scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, contract.strike, sheetPx);
+        });
+      }
     },
     [chainSheetCollapsed, chainSheetPeek, handleToggleLeg],
   );
 
   useEffect(() => {
-    if (!tradeStripStrike) return;
+    if (!tradeStripStrike || tradeContext) return;
+    if (chainSheetCollapsed && selectedLegs.size > 0) return;
     requestAnimationFrame(() => {
       scrollAtLadderToStrike(ladderScrollRef.current, tradeStripStrike, 0.32);
     });
-  }, [tradeStripStrike, tradeContext]);
+  }, [tradeStripStrike, tradeContext, chainSheetCollapsed, selectedLegs.size]);
 
   useEffect(() => {
     const onSheet = (ev: Event) => {
@@ -966,14 +969,24 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         </div>
       </div>
 
-      <AtLegBuildTray
-        legs={trayLegs}
-        qtyByKey={legQuantities}
-        onRemove={(key) => {
-          const leg = selectedLegs.get(key);
-          if (leg) handleToggleLeg(leg.contract, leg.type, leg.side);
+      <div
+        className="shrink-0"
+        data-at-leg-tray-slot
+        style={{
+          minHeight: trayLegs.length > 0 ? 44 : 0,
+          background: "#0a0a0a",
+          borderBottom: trayLegs.length > 0 ? `1px solid ${BORDER_ROW}` : "none",
         }}
-      />
+      >
+        <AtLegBuildTray
+          legs={trayLegs}
+          qtyByKey={legQuantities}
+          onRemove={(key) => {
+            const leg = selectedLegs.get(key);
+            if (leg) handleToggleLeg(leg.contract, leg.type, leg.side);
+          }}
+        />
+      </div>
 
       <div className="relative flex-1 min-h-0">
       <div
