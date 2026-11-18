@@ -97,6 +97,11 @@ async function runFlow(height) {
   );
 
   if (height <= 658) {
+    const collapsedHdr = page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='false']");
+    if ((await collapsedHdr.count()) > 0) {
+      await collapsedHdr.first().click();
+      await page.waitForTimeout(300);
+    }
     const expand = page.getByRole("button", { name: "Expand", exact: true });
     if ((await expand.count()) > 0) {
       await expand.click();
