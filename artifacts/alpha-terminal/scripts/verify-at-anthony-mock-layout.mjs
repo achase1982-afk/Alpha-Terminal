@@ -19,10 +19,15 @@ function record(name, pass, detail) {
 }
 
 async function switchView(page, value) {
-  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
-  await viewSel.first().waitFor({ state: "attached", timeout: 90_000 });
-  await viewSel.first().selectOption(value);
-  await page.waitForTimeout(500);
+  const toggle = page.locator("[data-at-subview-toggle]").first();
+  await toggle.waitFor({ state: "visible", timeout: 90_000 });
+  for (let i = 0; i < 4; i += 1) {
+    const cur = await toggle.getAttribute("data-at-subview-value");
+    if (cur === value) break;
+    await toggle.click({ force: true });
+    await page.waitForTimeout(400);
+  }
+  await page.waitForTimeout(300);
 }
 
 async function toggleBox(page) {
