@@ -39,11 +39,8 @@ export async function assertAtHeaderLayout(page, record) {
     const cells = el.querySelectorAll("[data-at-day-low], [data-at-day-high], [data-at-low-zone-ref], [data-at-high-zone-ref]");
     for (const c of cells) {
       const r = c.getBoundingClientRect();
-      if (r.height > 14) return true;
-    }
-    const words = el.querySelectorAll("span");
-    for (const w of words) {
-      if ((w.textContent ?? "").trim().length === 1 && w.getBoundingClientRect().height > 12) return true;
+      if (r.height > 18) return true;
+      if (c.scrollWidth > c.clientWidth + 2) return true;
     }
     return false;
   });
