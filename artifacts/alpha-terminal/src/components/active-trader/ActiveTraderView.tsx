@@ -370,9 +370,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     const label = ladderHeatSource.label.trim();
     if (!label) {
       const staleCount = quoteAudit.counts.stale + quoteAudit.counts.crossed + quoteAudit.counts.incomplete;
-      const fallback =
-        staleCount > 0 || quoteAudit.nearAtmHasInvalid ? "Quotes degraded" : "Snapshot · prior session";
-      return { ...ladderHeatSource, label: fallback, sourceFresh: false };
+      if (staleCount > 0 || quoteAudit.nearAtmHasInvalid) {
+        return { ...ladderHeatSource, label: "Quotes degraded", sourceFresh: false };
+      }
+      if (equityOptionsSessionOpen(now)) {
+        return { ...ladderHeatSource, label: "", sourceFresh: false };
+      }
+      return { ...ladderHeatSource, label: "Snapshot · prior session", sourceFresh: false };
     }
     return ladderHeatSource;
   }, [ladderHeatSource, quoteAudit.nearAtmHasInvalid, quoteAudit.counts]);

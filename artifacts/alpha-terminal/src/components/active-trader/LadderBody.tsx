@@ -2,7 +2,7 @@ import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   STRIKE_W, BORDER_ROW, BORDER, UP, DOWN, GRAY, WHITE,
-  BG, MONO, GAMMA_SCENARIO,
+  BG, MONO, GAMMA_SCENARIO, GOLD, PUT_WALL,
 } from "@/components/options/optionsTheme";
 import { useOptionTick } from "@/lib/options-stream-store";
 import type { FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
@@ -112,6 +112,8 @@ function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSPrope
   const alpha = 0.1 + view.intensity * 0.82;
   return {
     background: `linear-gradient(90deg, rgba(${rgb}, ${alpha}) 0%, rgba(${rgb}, ${alpha * 0.45}) 55%, rgba(${rgb}, ${alpha * 0.12}) 100%)`,
+    transition: "background 160ms ease-out, box-shadow 160ms ease-out",
+    willChange: "background",
   };
 }
 
@@ -369,14 +371,7 @@ const LadderRowView = memo(function LadderRowView({
         : isSelected
           ? "rgba(251,191,36,0.12)"
           : AT_LADDER_PANEL_BG,
-    boxShadow:
-      zoneTag === "CALL WALL"
-        ? `inset 4px 0 0 ${UP}`
-        : zoneTag === "PUT WALL"
-          ? `inset 4px 0 0 ${DOWN}`
-          : isSelected
-            ? `inset 0 0 0 1px ${accentHex}55`
-            : undefined,
+    boxShadow: isSelected && !zoneTag ? `inset 0 0 0 1px ${accentHex}55` : undefined,
     borderTop: spotRow ? `1px solid ${accentHex}55` : undefined,
   };
 
@@ -497,7 +492,13 @@ const LadderRowView = memo(function LadderRowView({
             color: spotRow ? "#0a0a0a" : WHITE,
             fontSize: 14,
             fontWeight: spotRow ? 600 : 500,
-            border: spotRow ? "1px solid #fbbf24" : `1px solid ${BORDER_ROW}`,
+            border: spotRow
+              ? "1px solid #fbbf24"
+              : zoneTag === "CALL WALL"
+                ? `1px solid ${GOLD}`
+                : zoneTag === "PUT WALL"
+                  ? `1px solid ${PUT_WALL}`
+                  : `1px solid ${BORDER_ROW}`,
             fontVariantNumeric: "tabular-nums",
           }}
           data-at-strike={row.strike}
@@ -522,7 +523,20 @@ const LadderRowView = memo(function LadderRowView({
               {Math.abs(strikePositionQty)}
             </span>
           )}
-          {zoneTag ? (
+          {zoneTag === "CALL WALL" || zoneTag === "PUT WALL" ? (
+            <span
+              data-at-strike-zone-tag
+              data-at-strike-wall={zoneTag === "CALL WALL" ? "call" : "put"}
+              style={{
+                fontSize: 7,
+                lineHeight: 1,
+                color: zoneTag === "CALL WALL" ? GOLD : PUT_WALL,
+                opacity: 0.9,
+              }}
+            >
+              {zoneTag === "CALL WALL" ? "Call wall" : "Put wall"}
+            </span>
+          ) : zoneTag ? (
             <span data-at-strike-zone-tag style={{ fontSize: 7, opacity: 0.65 }}>
               {zoneTag}
             </span>

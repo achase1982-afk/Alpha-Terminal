@@ -19,9 +19,22 @@ function record(name, pass, detail) {
 }
 
 async function switchView(page, value) {
-  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
-  await viewSel.first().waitFor({ state: "attached", timeout: 90_000 });
-  await viewSel.first().selectOption(value);
+  const wantAt = value === "at";
+  const hit = page.locator("[data-at-subview-hit]").first();
+  const select = page.locator('[data-at-subview-select-fallback], select[aria-label="Options view"]');
+  if (await hit.count()) {
+    const checked = await page
+      .locator("[data-at-subview-value]")
+      .first()
+      .getAttribute("data-at-subview-value");
+    if ((checked === "at") !== wantAt) {
+      await hit.click({ force: true });
+      await page.waitForTimeout(400);
+    }
+    return;
+  }
+  await select.first().waitFor({ state: "attached", timeout: 90_000 });
+  await select.first().selectOption(value);
   await page.waitForTimeout(500);
 }
 

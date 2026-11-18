@@ -217,9 +217,9 @@ export function seedSpxFixtureFlow(): void {
 }
 
 export const FIXTURE_ZONE_MODEL: ZoneModel = {
-  callWall: 7550,
-  putWall: 7530,
-  flip: 7538,
+  callWall: 7365,
+  putWall: 7320,
+  flip: 7355,
   netGexUsdPer1Pct: 1.24e9,
   env: "damping",
   asOfLabel: "15:42",

@@ -185,6 +185,24 @@ export function registerAtFixtureFromLocation(): void {
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,
+      $VIX: {
+        symbol: "$VIX",
+        description: "CBOE VOLATILITY INDEX",
+        last: 18.42,
+        regularLast: 18.42,
+        extendedLast: null,
+        bid: 18.4,
+        ask: 18.44,
+        bidSize: 1,
+        askSize: 1,
+        change: -0.35,
+        changePct: -1.86,
+        volume: 0,
+        high: 19.1,
+        low: 18.2,
+        close: 18.77,
+        ts: Date.now(),
+      },
       [sym]: {
         symbol: sym,
         description,

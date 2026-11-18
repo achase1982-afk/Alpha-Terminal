@@ -141,10 +141,10 @@ describe("OptionsTab subview toggle", () => {
 
     expect(screen.queryByTestId("active-trader-pane")).toBeNull();
 
-    const viewSelect = screen.getByLabelText("Options view");
-    expect(viewSelect).toBeTruthy();
+    const viewSwitch = screen.getByRole("switch", { name: "Options view" });
+    expect(viewSwitch).toBeTruthy();
 
-    fireEvent.change(viewSelect, { target: { value: "at" } });
+    fireEvent.click(viewSwitch);
 
     await waitFor(() => {
       expect(screen.getByTestId("active-trader-pane")).toBeTruthy();

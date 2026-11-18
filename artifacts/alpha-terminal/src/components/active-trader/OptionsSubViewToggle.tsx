@@ -1,72 +1,177 @@
-import { memo } from "react";
-import { ChevronDown } from "lucide-react";
-import { BG_EXP_BAR, GRAY, MONO, FW_NORMAL, BORDER } from "@/components/options/optionsTheme";
-import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
+import { memo, useCallback, useRef } from "react";
+import { GRAY, MONO, FW_NORMAL } from "@/components/options/optionsTheme";
+import { AT_HEADER_BG, AT_LABEL } from "@/lib/active-trader/atChromeContrast";
+import { BG_EXP_BAR } from "@/components/options/optionsTheme";
 
 export type OptionsSubView = "chain" | "at";
 
 interface OptionsSubViewToggleProps {
   view: OptionsSubView;
   onChange: (v: OptionsSubView) => void;
-  /** Chain options toolbar (upper-right) vs AT glance header — same visual, shared position. */
   placement?: "chain-toolbar" | "at-header";
 }
 
-const MIN_TAP = 44;
+const SWIPE_PX = 20;
+/** Legacy dropdown visual footprint (no chevron). */
+const PILL_W_PX = 38;
+const PILL_H_PX = 22;
+const CHROME_H_PX = 26;
+const HIT_MIN_PX = 44;
+const TRACK_BG = "#1f1f23";
+const KNOB = "#ececef";
+const TRACK_INSET = "inset 0 2px 4px rgba(0,0,0,0.55), inset 0 0 0 0.5px rgba(255,255,255,0.06)";
+const KNOB_SHADOW =
+  "0 2px 5px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.08)";
 
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
   onChange,
   placement = "chain-toolbar",
 }: OptionsSubViewToggleProps) {
-  const label = view === "chain" ? "Chain" : "ActiveTrader";
   const chromeBg = placement === "at-header" ? AT_HEADER_BG : BG_EXP_BAR;
+  const atActive = view === "at";
+  const swipeHandledRef = useRef(false);
+  const startXRef = useRef(0);
+
+  const flip = useCallback(() => {
+    onChange(view === "chain" ? "at" : "chain");
+  }, [view, onChange]);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLButtonElement>) => {
+    swipeHandledRef.current = false;
+    startXRef.current = e.clientX;
+    if (typeof e.currentTarget.setPointerCapture === "function") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+  }, []);
+
+  const onPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLButtonElement>) => {
+      const dx = e.clientX - startXRef.current;
+      if (Math.abs(dx) >= SWIPE_PX) {
+        swipeHandledRef.current = true;
+        flip();
+      }
+      if (typeof e.currentTarget.releasePointerCapture === "function") {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [flip],
+  );
+
+  const onClick = useCallback(() => {
+    if (swipeHandledRef.current) {
+      swipeHandledRef.current = false;
+      return;
+    }
+    flip();
+  }, [flip]);
+
   return (
     <div
       data-at-subview-chrome
-      className="inline-flex items-center justify-center shrink-0"
-      style={{ minWidth: MIN_TAP, minHeight: MIN_TAP }}
+      data-at-view-selector
+      data-at-subview-placement={placement}
+      data-at-subview-value={view}
+      className="relative inline-flex items-center shrink-0 gap-1.5"
+      style={{
+        height: CHROME_H_PX,
+        background: chromeBg,
+        padding: "0 2px",
+        boxSizing: "border-box",
+      }}
     >
-      <label
-        className="inline-flex items-center gap-1 rounded-md cursor-pointer"
-        data-at-subview-toggle
-        data-at-view-selector
-        data-at-subview-placement={placement}
+      <span
+        data-at-subview-label="chain"
         style={{
           fontFamily: MONO,
-          fontWeight: FW_NORMAL,
-          background: chromeBg,
-          border: `1px solid ${BORDER}`,
-          fontSize: 11,
-          color: GRAY,
-          minHeight: MIN_TAP,
-          minWidth: MIN_TAP,
-          padding: "0 10px",
-          boxSizing: "border-box",
+          fontSize: 9,
+          fontWeight: 500,
+          color: !atActive ? GRAY : AT_LABEL,
+          lineHeight: 1,
+          whiteSpace: "nowrap",
         }}
       >
-        <select
+        Chain
+      </span>
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: PILL_W_PX, height: CHROME_H_PX }}
+      >
+        <button
+          type="button"
+          role="switch"
+          aria-checked={atActive}
           aria-label="Options view"
-          value={view}
-          onChange={(e) => onChange(e.target.value as OptionsSubView)}
-          className="bg-transparent border-0 outline-none cursor-pointer pr-0 flex-1 min-w-0"
+          data-at-subview-hit
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onClick={onClick}
+          className="absolute border-0 p-0 m-0 cursor-pointer"
           style={{
-            fontFamily: MONO,
-            fontSize: 11,
-            fontWeight: 600,
-            color: "inherit",
-            appearance: "none",
-            WebkitAppearance: "none",
-            minWidth: 72,
-            minHeight: MIN_TAP - 2,
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            minWidth: HIT_MIN_PX,
+            minHeight: HIT_MIN_PX,
+            width: Math.max(PILL_W_PX, HIT_MIN_PX),
+            height: Math.max(CHROME_H_PX, HIT_MIN_PX),
+            background: "transparent",
+            zIndex: 2,
+            touchAction: "pan-y",
+          }}
+        />
+        <div
+          data-at-subview-toggle
+          data-at-subview-visual-w={PILL_W_PX}
+          data-at-subview-visual-h={PILL_H_PX}
+          className="relative rounded-full pointer-events-none"
+          style={{
+            width: PILL_W_PX,
+            height: PILL_H_PX,
+            background: `linear-gradient(180deg, ${TRACK_BG} 0%, #18181b 100%)`,
+            boxShadow: TRACK_INSET,
           }}
         >
-          <option value="chain">Chain</option>
-          <option value="at">ActiveTrader</option>
+          <span
+            aria-hidden
+            className="absolute rounded-full"
+            style={{
+              width: PILL_H_PX - 4,
+              height: PILL_H_PX - 4,
+              top: 2,
+              left: atActive ? PILL_W_PX - (PILL_H_PX - 2) : 2,
+              background: `linear-gradient(180deg, ${KNOB} 0%, #d4d4d8 100%)`,
+              boxShadow: KNOB_SHADOW,
+              transition: "left 160ms cubic-bezier(0.33, 1, 0.68, 1)",
+            }}
+          />
+        </div>
+        <select
+          aria-hidden
+          tabIndex={-1}
+          value={view}
+          onChange={(e) => onChange(e.target.value as OptionsSubView)}
+          className="sr-only"
+          data-at-subview-select-fallback
+        >
+          <option value="chain">chain</option>
+          <option value="at">at</option>
         </select>
-        <ChevronDown className="w-3.5 h-3.5 shrink-0 pointer-events-none" style={{ color: GRAY }} aria-hidden />
-        <span className="sr-only">{label}</span>
-      </label>
+      </div>
+      <span
+        data-at-subview-label="at"
+        style={{
+          fontFamily: MONO,
+          fontSize: 9,
+          fontWeight: FW_NORMAL,
+          color: atActive ? GRAY : AT_LABEL,
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+        }}
+      >
+        ActiveTrader
+      </span>
     </div>
   );
 });
