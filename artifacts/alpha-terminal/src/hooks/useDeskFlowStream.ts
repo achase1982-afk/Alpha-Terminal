@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { atGlanceFlowFixtureEnabled, atGlanceFlowReplayEnabled } from "@/lib/active-trader/atGlanceFeature";
+import {
+  atGlanceFlowFixtureEnabled,
+  atGlanceFlowReplayEnabled,
+  atGlanceFlowWorstCaseEnabled,
+} from "@/lib/active-trader/atGlanceFeature";
 import {
   buildNvdaTapeFixture,
   buildSpxFlowFixture,
@@ -68,6 +72,48 @@ function fixtureAggregate(symbol: string): DeskFlowAggregate {
   return deskFlowAggregatorProject(internal);
 }
 
+const WORST_USD = 1.23e9;
+
+function worstCaseAggregate(symbol: string): DeskFlowAggregate {
+  const mode = resolveAtGlanceMode(symbol);
+  let internal = createDeskFlowAggregatorInternal(mode);
+  internal = deskFlowAggregatorMarkConnected(internal, true);
+  const now = Date.now();
+  if (mode === "index") {
+    internal = reduceDeskFlowFrame(internal, {
+      type: "flow_1s",
+      sym: "SPX",
+      bucket_ms: now - 5_000,
+      call_buy: WORST_USD,
+      call_sell: WORST_USD,
+      put_buy: WORST_USD,
+      put_sell: WORST_USD,
+      rx_ts_ms: now,
+    });
+    internal = reduceDeskFlowFrame(internal, {
+      type: "flow_60s",
+      sym: "SPX",
+      bar_start_ms: now - 120_000,
+      call_buy: WORST_USD,
+      call_sell: WORST_USD,
+      put_buy: WORST_USD,
+      put_sell: WORST_USD,
+      rx_ts_ms: now,
+    });
+    internal = reduceDeskFlowFrame(internal, {
+      type: "flow_60s",
+      sym: "SPX",
+      bar_start_ms: now - 3_600_000,
+      call_buy: WORST_USD,
+      call_sell: WORST_USD,
+      put_buy: WORST_USD,
+      put_sell: WORST_USD,
+      rx_ts_ms: now,
+    });
+  }
+  return deskFlowAggregatorProject(internal);
+}
+
 function replayAggregate(symbol: string): DeskFlowAggregate {
   const mode = resolveAtGlanceMode(symbol);
   let internal = createDeskFlowAggregatorInternal(mode);
@@ -96,6 +142,11 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAgg
   useEffect(() => {
     if (!enabled) {
       setAggregate(deskFlowAggregatorProject(aggRef.current));
+      return;
+    }
+
+    if (atGlanceFlowWorstCaseEnabled()) {
+      setAggregate(worstCaseAggregate(symbol));
       return;
     }
 

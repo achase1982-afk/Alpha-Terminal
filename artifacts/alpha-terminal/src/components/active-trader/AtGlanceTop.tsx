@@ -7,6 +7,7 @@ import {
   GAMMA_SCENARIO,
   GOLD,
   GRAY,
+  DIM,
   PUT_WALL,
   UP,
   WHITE,
@@ -34,7 +35,7 @@ const SPOT_PAINT_MS = 250;
 const MAX_GLANCE_PX = 191;
 
 function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
-  const [detailOn, setDetailOn] = useState(true);
+  const [detailOn, setDetailOn] = useState(true); // default open — 5m / this hr fit via wrap
   const copy = formatGlanceMoneyRow(agg);
   if (copy.unsupported) {
     return (
@@ -56,26 +57,50 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
     );
   }
   if (!copy.line1m) return null;
+  const detailLine = (label: string, text: string | null) =>
+    text ? (
+      <Pane
+        key={label}
+        className="num"
+        style={{
+          ...NUM_FEAT,
+          fontSize: 8.5,
+          fontWeight: 500,
+          color: GRAY,
+          lineHeight: 1.25,
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+        }}
+      >
+        <span style={{ color: DIM, fontSize: 8, marginRight: 4 }}>{label}</span>
+        {text}
+      </Pane>
+    ) : null;
+
   return (
     <Pane style={{ lineHeight: 1.15 }}>
       <button
         type="button"
-        className="num w-full text-left truncate"
+        className="num w-full text-left"
         data-at-glance-flow="live"
         onClick={() => setDetailOn((v) => !v)}
-        style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}
+        style={{
+          ...NUM_FEAT,
+          fontSize: 10,
+          fontWeight: 500,
+          color: WHITE,
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+        }}
       >
         <span style={{ color: GRAY, fontSize: 9, fontWeight: 400, marginRight: 4 }}>1m</span>
         {copy.line1m}
         <span style={{ color: GRAY, fontSize: 8, marginLeft: 6 }}>{detailOn ? "▴" : "▾"}</span>
       </button>
-      {detailOn && copy.lineDetail ? (
-        <Pane
-          className="num truncate pt-0.5"
-          data-at-glance-flow-detail
-          style={{ ...NUM_FEAT, fontSize: 9, fontWeight: 500, color: GRAY }}
-        >
-          {copy.lineDetail}
+      {detailOn ? (
+        <Pane className="pt-0.5 space-y-0.5" data-at-glance-flow-detail>
+          {detailLine("5m", copy.line5m)}
+          {detailLine("this hr", copy.lineHr)}
         </Pane>
       ) : null}
     </Pane>

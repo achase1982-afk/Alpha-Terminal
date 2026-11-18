@@ -40,10 +40,8 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
 
   return (
     <div className="flex flex-col gap-2 px-3 pt-0 pb-2" data-at-mobile-peek>
-      <div className="flex items-center justify-between gap-2 min-h-[32px]">
-        <span style={{ fontSize: 13, color: WHITE, fontWeight: 500 }} className="truncate flex-1">
-          {contractLabel}
-        </span>
+      <span className="sr-only">{contractLabel}</span>
+      <div className="flex items-center justify-end gap-2 min-h-[28px]">
         <div
           className="inline-flex p-0.5 shrink-0"
           style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.2)" }}

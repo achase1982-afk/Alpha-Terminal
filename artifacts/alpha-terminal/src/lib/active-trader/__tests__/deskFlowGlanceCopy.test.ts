@@ -21,9 +21,10 @@ describe("formatGlanceMoneyRow", () => {
       rx_ts_ms: Date.now(),
     });
     const row = formatGlanceMoneyRow(deskFlowAggregatorProject(s));
-    expect(row.line1m).toMatch(/CALLS/);
-    expect(row.line1m).toMatch(/PUTS/);
-    expect(row.lineDetail).toMatch(/this hr/);
+    expect(row.line1m).toMatch(/C \+/);
+    expect(row.line1m).toMatch(/P \+/);
+    expect(row.line5m).toBeTruthy();
+    expect(row.lineHr).toBeTruthy();
     expect(row.line1m).not.toMatch(/bull|bear|regime/i);
   });
 });

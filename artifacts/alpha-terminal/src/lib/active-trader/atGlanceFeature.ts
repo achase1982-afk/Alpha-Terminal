@@ -29,3 +29,8 @@ export function atGlanceFlowFixtureEnabled(): boolean {
 export function atGlanceFlowReplayEnabled(): boolean {
   return import.meta.env.VITE_AT_GLANCE_FLOW_REPLAY === "1";
 }
+
+/** Dev capture: SPX flow rows at ~$1.23B (worst-case width). */
+export function atGlanceFlowWorstCaseEnabled(): boolean {
+  return import.meta.env.VITE_AT_GLANCE_FLOW_WORST === "1";
+}

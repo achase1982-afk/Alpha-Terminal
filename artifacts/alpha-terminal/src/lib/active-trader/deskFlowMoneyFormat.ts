@@ -2,7 +2,7 @@
 export function fmtGlanceMoneyUsd(n: number): string {
   const sign = n < 0 ? "−" : "+";
   const a = Math.abs(n);
-  if (a >= 1e9) return `${sign}${(a / 1e9).toFixed(1)}B`;
+  if (a >= 1e9) return `${sign}${(a / 1e9).toFixed(2)}B`;
   if (a >= 1e6) return `${sign}${(a / 1e6).toFixed(1)}M`;
   if (a >= 1e3) return `${sign}${(a / 1e3).toFixed(0)}K`;
   if (a === 0) return "$0";
@@ -13,7 +13,7 @@ export function fmtGlanceMoneyMagnitude(n: number): string {
   const a = Math.abs(n);
   const core =
     a >= 1e9
-      ? `${(a / 1e9).toFixed(1)}B`
+      ? `${(a / 1e9).toFixed(2)}B`
       : a >= 1e6
         ? `${(a / 1e6).toFixed(1)}M`
         : a >= 1e3
