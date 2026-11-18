@@ -51,4 +51,6 @@ try {
 
 await writeFile(path.join(OUT, "report.json"), JSON.stringify({ checks }, null, 2));
 await browser.close();
-process.exit(checks.some((c) => !c.pass) ? 1 : 0);
+const failed = checks.filter((c) => !c.pass);
+console.log(JSON.stringify({ failed: failed.length, checks }, null, 2));
+process.exit(failed.length ? 1 : 0);
