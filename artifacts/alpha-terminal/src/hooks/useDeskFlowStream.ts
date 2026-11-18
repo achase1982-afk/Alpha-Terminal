@@ -81,16 +81,24 @@ function replayAggregate(symbol: string): DeskFlowAggregate {
   return deskFlowAggregatorProject(internal);
 }
 
-export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAggregate {
+export type DeskFlowStreamState = {
+  aggregate: DeskFlowAggregate;
+  /** From at-flow-stream `meta` when desk reports session_closed. */
+  sessionClosed: boolean;
+};
+
+export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStreamState {
   const mode = resolveAtGlanceMode(symbol);
   const [aggregate, setAggregate] = useState<DeskFlowAggregate>(() =>
     deskFlowAggregatorProject(createDeskFlowAggregatorInternal(mode)),
   );
+  const [sessionClosed, setSessionClosed] = useState(false);
   const aggRef = useRef(createDeskFlowAggregatorInternal(mode));
 
   useEffect(() => {
     aggRef.current = createDeskFlowAggregatorInternal(mode);
     setAggregate(deskFlowAggregatorProject(aggRef.current));
+    setSessionClosed(false);
   }, [symbol, mode]);
 
   useEffect(() => {
@@ -109,6 +117,7 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAgg
       return;
     }
 
+    setSessionClosed(false);
     let cancelled = false;
     let es: EventSource | null = null;
     let backoff = INITIAL_BACKOFF_MS;
@@ -130,6 +139,15 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAgg
 
       const url = await buildAuthenticatedEventSourceUrl(path);
       es = new EventSource(url);
+      es.addEventListener("meta", (ev) => {
+        if (cancelled) return;
+        try {
+          const j = JSON.parse((ev as MessageEvent).data) as { sessionClosed?: boolean };
+          if (j.sessionClosed === true) setSessionClosed(true);
+        } catch {
+          /* ignore */
+        }
+      });
       es.onopen = () => {
         backoff = INITIAL_BACKOFF_MS;
         aggRef.current = deskFlowAggregatorMarkConnected(aggRef.current, true);
@@ -183,5 +201,5 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowAgg
     };
   }, [symbol, enabled, mode]);
 
-  return aggregate;
+  return { aggregate, sessionClosed };
 }

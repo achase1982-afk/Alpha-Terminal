@@ -37,7 +37,7 @@ function MoneyRow({
   agg,
   sessionClosed,
 }: {
-  agg: ReturnType<typeof useDeskFlowStream>;
+  agg: ReturnType<typeof useDeskFlowStream>["aggregate"];
   sessionClosed?: boolean;
 }) {
   const [flowWindow, setFlowWindow] = useState<FlowWindow>("1m");
@@ -156,7 +156,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote } = useQuote(symbol);
-  const flow = useDeskFlowStream(symbol, true);
+  const { aggregate: flow, sessionClosed: flowSessionClosed } = useDeskFlowStream(symbol, true);
+  const flowClosed = sessionClosed || flowSessionClosed;
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
   const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS);
@@ -266,7 +267,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         ) : null}
       </Pane>
 
-      <MoneyRow agg={flow} sessionClosed={sessionClosed} />
+      <MoneyRow agg={flow} sessionClosed={flowClosed} />
     </Pane>
   );
 });

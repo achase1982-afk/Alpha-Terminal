@@ -54,6 +54,19 @@ try {
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
   await page.getByRole("button", { name: "Active Trader", exact: true }).click();
   await page.waitForSelector("[data-at-glance-top]", { timeout: 60_000 });
+  await page
+    .waitForFunction(
+      () => {
+        const root = document.querySelector("[data-at-glance-top]");
+        const text = root?.textContent ?? "";
+        return /GEX/.test(text) && !/GEX —/.test(text);
+      },
+      { timeout: 90_000 },
+    )
+    .catch(() => undefined);
+  await page
+    .waitForSelector("[data-at-glance-flow=\"closed\"], [data-at-glance-flow=\"live\"]", { timeout: 90_000 })
+    .catch(() => undefined);
 
   const headerSym = await page.locator("[data-at-symbol-header]").innerText();
   metrics.headerText = headerSym;

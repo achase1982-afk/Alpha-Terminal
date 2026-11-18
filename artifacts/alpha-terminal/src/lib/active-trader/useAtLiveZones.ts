@@ -60,15 +60,20 @@ export function useAtLiveZones(
     }
     let cancelled = false;
     const q = encodeURIComponent(symbol);
-    void fetchWithAuth(`/api/market/at-gamma-glance?symbol=${q}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: GammaGlanceResponse | null) => {
-        if (cancelled || !j) return;
-        setUwGlance(j);
-      })
-      .catch(() => undefined);
+    const load = () => {
+      void fetchWithAuth(`/api/market/at-gamma-glance?symbol=${q}`, { clerkTokenTimeoutMs: 4_000 })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: GammaGlanceResponse | null) => {
+          if (cancelled || !j) return;
+          setUwGlance(j);
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const poll = window.setInterval(load, 35_000);
     return () => {
       cancelled = true;
+      window.clearInterval(poll);
     };
   }, [symbol, ticker, mode, skipNetwork, fixtureZones]);
 
