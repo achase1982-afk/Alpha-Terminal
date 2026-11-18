@@ -3,6 +3,8 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useTerminalStore } from "@/lib/store";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 
+const POLL_MS = 60_000;
+
 export function useSpxKeepawayStats(enabled: boolean): SpxKeepawayStats | null {
   const [stats, setStats] = useState<SpxKeepawayStats | null>(null);
   const accessToken = useTerminalStore((s) => s.accessToken ?? s.traderAccessToken);
@@ -16,28 +18,21 @@ export function useSpxKeepawayStats(enabled: boolean): SpxKeepawayStats | null {
       return;
     }
     let cancelled = false;
-    const load = (attempt: number) => {
+    const load = () => {
       void fetchWithAuth("/api/market/spx-keepaway-stats")
         .then((r) => (r.ok ? r.json() : { stats: null }))
         .then((j: { stats?: SpxKeepawayStats | null }) => {
-          if (cancelled) return;
-          const next = j.stats ?? null;
-          setStats(next);
-          if (next == null && attempt < 2) {
-            window.setTimeout(() => load(attempt + 1), 1200);
-          }
+          if (!cancelled) setStats(j.stats ?? null);
         })
         .catch(() => {
-          if (!cancelled && attempt < 2) {
-            window.setTimeout(() => load(attempt + 1), 1200);
-          } else if (!cancelled) {
-            setStats(null);
-          }
+          if (!cancelled) setStats(null);
         });
     };
-    load(0);
+    load();
+    const intervalId = window.setInterval(load, POLL_MS);
     return () => {
       cancelled = true;
+      window.clearInterval(intervalId);
     };
   }, [enabled, accessToken]);
 

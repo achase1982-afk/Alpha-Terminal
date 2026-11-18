@@ -88,9 +88,9 @@ async function runAtSuite(vp, fixture) {
   if (await spotGap.count()) {
     await spotGap.screenshot({ path: path.join(OUT, `${prefix}-spot-marker.png`) }).catch(() => undefined);
   }
-  const flipRow = page.locator("[data-at-ladder-scroll] .grid").filter({ hasText: /^Flip / }).first();
-  if (await flipRow.count()) {
-    await flipRow.screenshot({ path: path.join(OUT, `${prefix}-flip-marker.png`) }).catch(() => undefined);
+  const flipGap = page.locator("[data-at-flip-gap]").first();
+  if (await flipGap.count()) {
+    await flipGap.screenshot({ path: path.join(OUT, `${prefix}-flip-marker.png`) }).catch(() => undefined);
   }
 
   const strike = fixture === "aapl" ? "350" : "7545";

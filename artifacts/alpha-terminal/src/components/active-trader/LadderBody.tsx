@@ -314,32 +314,41 @@ const LadderRowView = memo(function LadderRowView({
         <div
           data-at-spot-gap
           className="relative w-full grid"
-          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 8 }}
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 12 }}
         >
           <div
-            className="col-span-full relative"
-            style={{ gridColumn: "1 / -1", height: 8 }}
+            className="relative pointer-events-none"
+            style={{ gridColumn: "1 / -1", gridRow: 1, height: 12 }}
           >
             <div
               className="absolute left-0 right-0"
               style={{
-                top: Math.min(6, Math.max(0, spotFrac * 6)),
+                top: Math.min(10, Math.max(2, spotFrac * 10)),
                 borderTop: `1px dashed ${accentHex}99`,
               }}
             />
           </div>
           <div
-            className="flex items-center justify-center z-[1] pointer-events-none"
-            style={{ gridColumn: "4 / 5", paddingLeft: 2, marginTop: 1 }}
+            className="flex items-center z-[1] pointer-events-none min-w-0"
+            style={{
+              gridColumn: "1 / 4",
+              gridRow: 1,
+              height: 12,
+              lineHeight: "12px",
+              paddingLeft: 2,
+              alignSelf: "start",
+            }}
           >
             <span
-              className="truncate whitespace-nowrap"
+              className="truncate"
               style={{
-                fontSize: 8,
-                lineHeight: 1,
+                fontSize: 10,
+                lineHeight: "12px",
                 color: accentHex,
                 background: AT_LADDER_PANEL_BG,
-                padding: "0 3px",
+                padding: "0 2px",
+                fontFamily: MONO,
+                fontVariantNumeric: "tabular-nums",
               }}
             >
               {symbolLabel} {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
@@ -349,10 +358,19 @@ const LadderRowView = memo(function LadderRowView({
       )}
       {flipBetweenRows && zones.flip != null && (
         <div
-          className="relative w-full grid items-start"
-          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 6, marginTop: -1 }}
+          data-at-flip-gap
+          className="relative w-full grid"
+          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 12 }}
         >
-          <div style={{ gridColumn: "1 / 7", borderTop: `1px dotted ${GAMMA_SCENARIO}`, marginTop: 3 }} />
+          <div
+            className="pointer-events-none"
+            style={{ gridColumn: "1 / -1", gridRow: 1, height: 12, position: "relative" }}
+          >
+            <div
+              className="absolute left-0 right-0"
+              style={{ top: 5, borderTop: `1px dotted ${GAMMA_SCENARIO}` }}
+            />
+          </div>
           <FlipPill flip={zones.flip} />
         </div>
       )}
@@ -496,13 +514,22 @@ const LadderRowView = memo(function LadderRowView({
 function FlipPill({ flip }: { flip: number }) {
   return (
     <span
-      className="flex items-center justify-center pointer-events-none"
-      style={{ gridColumn: "4 / 6", marginTop: 0, height: 6 }}
+      className="flex items-center justify-end pointer-events-none"
+      style={{
+        gridColumn: "6 / 8",
+        gridRow: 1,
+        height: 12,
+        lineHeight: "12px",
+        paddingRight: 2,
+        alignSelf: "start",
+        marginTop: -1,
+      }}
     >
       <span
         className="px-1 rounded-full whitespace-nowrap"
         style={{
-          fontSize: 8,
+          fontSize: 9,
+          lineHeight: "12px",
           color: GAMMA_SCENARIO,
           border: `1px solid ${GAMMA_SCENARIO}`,
           background: BG,
