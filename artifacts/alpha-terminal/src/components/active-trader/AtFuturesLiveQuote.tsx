@@ -27,12 +27,11 @@ export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol, lay
 
   return (
     <div
-      className={`px-4 font-mono ${fill ? "flex flex-col flex-1 py-6" : "py-4 border-b"}`}
+      className={`px-4 font-mono ${fill ? "flex flex-col flex-1 min-h-0 h-full py-4 overflow-y-auto overscroll-contain" : "py-4 border-b"}`}
       style={{
         background: BG,
         borderColor: BORDER,
         fontFamily: MONO,
-        ...(fill ? { minHeight: "min(100%, 480px)" } : {}),
       }}
       data-ui-audit="at-futures-live-quote"
     >

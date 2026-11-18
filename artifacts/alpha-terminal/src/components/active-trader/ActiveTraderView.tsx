@@ -107,7 +107,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   groups,
   activeExpiration,
   underlyingPrice,
-  stickyOffset,
+  stickyOffset: _stickyOffset,
   accentHex,
   holdSubs,
   onAddLeg,
@@ -567,13 +567,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   if (futuresOnlyMode) {
     return (
-      <div
-        className="flex flex-col"
-        style={{
-          background: BG,
-          minHeight: `max(440px, calc(100dvh - ${stickyOffset + 72}px))`,
-        }}
-      >
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden" style={{ background: BG }}>
         <AtFuturesLiveQuote symbol={symbol} layout="fill" />
       </div>
     );

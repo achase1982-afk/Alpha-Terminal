@@ -1,5 +1,52 @@
 import type { ActiveTraderTemplatePrefs, AtTemplateKind } from "./activeTraderPrefs";
 import { atBracketPreviewPrices, type SchwabInstruction } from "./atSchwabOrderBuilder";
+import { parseSchwabOptionSymbol } from "@workspace/order-ticket-math";
+
+function optionRootFromOcc(sym: string): string {
+  const root = sym.trim().slice(0, 6).trim();
+  return root || sym;
+}
+
+/** Human leg label for glance mobile sheet (no raw OCC). */
+export function formatAtMobileContractLabel(optionSymbol: string | undefined, fallbackUnderlying: string): string {
+  if (!optionSymbol) return fallbackUnderlying.replace(/^\$/, "");
+  const parsed = parseSchwabOptionSymbol(optionSymbol);
+  const root = optionRootFromOcc(optionSymbol);
+  if (!parsed) return root;
+  const strikeStr = parsed.strike % 1 === 0 ? String(parsed.strike) : parsed.strike.toFixed(1);
+  const type = parsed.optionType === "CALL" ? "Call" : "Put";
+  let exp = "";
+  if (parsed.expiration) {
+    const d = new Date(`${parsed.expiration}T12:00:00`);
+    if (!Number.isNaN(d.getTime())) {
+      exp = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+  }
+  return `${root} ${strikeStr} ${type}${exp ? ` · ${exp}` : ""}`;
+}
+
+function formatAtMobileLegShort(optionSymbol: string | undefined, fallbackUnderlying: string): string {
+  const full = formatAtMobileContractLabel(optionSymbol, fallbackUnderlying);
+  return full.replace(/ · [A-Za-z]{3} \d{1,2}$/, "");
+}
+
+export function formatAtMobilePinnedSummary(input: {
+  optionSymbol: string | undefined;
+  underlying: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  limit: string | null | undefined;
+  takeProfit: number | null | undefined;
+}): string {
+  const leg = formatAtMobileLegShort(input.optionSymbol, input.underlying);
+  const sideWord = input.side === "BUY" ? "Buy" : "Sell";
+  const lim = input.limit?.trim();
+  const tp =
+    input.takeProfit != null && Number.isFinite(input.takeProfit)
+      ? input.takeProfit.toFixed(2)
+      : null;
+  return `${leg} · ${sideWord} ${input.quantity}${lim ? ` @ ${lim}` : ""}${tp ? ` · TP ${tp}` : ""}`;
+}
 
 /** Short labels for collapsed summary (avoid truncation in 440px). */
 export function abbrevAtTemplate(template: AtTemplateKind): string {

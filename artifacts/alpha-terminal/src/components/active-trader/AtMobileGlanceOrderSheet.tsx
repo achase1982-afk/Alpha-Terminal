@@ -6,7 +6,8 @@ import { BG, BORDER, DIM, GOLD, MUTED, UP, DOWN, WHITE } from "@/components/opti
 export const AT_MOBILE_PEEK_MAX_PX = 430;
 
 type Props = {
-  displaySymbol: string;
+  /** e.g. NVDA 182.5 Call · Nov 18 */
+  contractLabel: string;
   side: "BUY" | "SELL";
   onSideChange: (side: "BUY" | "SELL") => void;
   quantity: number;
@@ -17,11 +18,12 @@ type Props = {
   onTakeProfitEnabled: (on: boolean) => void;
   takeProfitPrice: string | null;
   onReview: () => void;
-  reviewDisabled?: boolean;
+  /** Validation blocks review — show disabled preview CTA instead of Review. */
+  reviewBlocked?: boolean;
 };
 
 export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
-  displaySymbol,
+  contractLabel,
   side,
   onSideChange,
   quantity,
@@ -32,15 +34,15 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
   onTakeProfitEnabled,
   takeProfitPrice,
   onReview,
-  reviewDisabled,
+  reviewBlocked,
 }: Props) {
   const sideColor = side === "BUY" ? UP : DOWN;
 
   return (
-    <div className="flex flex-col gap-2 px-3 pt-1 pb-2" data-at-mobile-peek>
-      <div className="flex items-center justify-between gap-2">
-        <span style={{ fontSize: 13, color: WHITE, fontWeight: 500 }} className="truncate">
-          {displaySymbol}
+    <div className="flex flex-col gap-2 px-3 pt-0 pb-2" data-at-mobile-peek>
+      <div className="flex items-center justify-between gap-2 min-h-[32px]">
+        <span style={{ fontSize: 13, color: WHITE, fontWeight: 500 }} className="truncate flex-1">
+          {contractLabel}
         </span>
         <div
           className="inline-flex p-0.5 shrink-0"
@@ -117,24 +119,42 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
         </span>
       </label>
 
-      <button
-        type="button"
-        data-testid="at-mobile-review"
-        disabled={reviewDisabled}
-        onClick={onReview}
-        className="w-full mt-1 tracking-wide disabled:opacity-50 transition-transform active:scale-[0.98]"
-        style={{
-          height: 44,
-          borderRadius: 999,
-          border: "none",
-          background: `linear-gradient(135deg, ${GOLD}, #c9a227)`,
-          color: BG,
-          fontSize: 16,
-          fontWeight: 600,
-        }}
-      >
-        Review
-      </button>
+      {reviewBlocked ? (
+        <button
+          type="button"
+          disabled
+          className="w-full mt-1 tracking-wide disabled:opacity-60"
+          style={{
+            height: 44,
+            borderRadius: 999,
+            border: `1px solid ${BORDER}`,
+            background: "transparent",
+            color: MUTED,
+            fontSize: 16,
+            fontWeight: 500,
+          }}
+        >
+          Sending off (preview)
+        </button>
+      ) : (
+        <button
+          type="button"
+          data-testid="at-mobile-review"
+          onClick={onReview}
+          className="w-full mt-1 tracking-wide transition-transform active:scale-[0.98]"
+          style={{
+            height: 44,
+            borderRadius: 999,
+            border: "none",
+            background: `linear-gradient(135deg, ${GOLD}, #c9a227)`,
+            color: BG,
+            fontSize: 16,
+            fontWeight: 600,
+          }}
+        >
+          Review
+        </button>
+      )}
     </div>
   );
 });
