@@ -52,6 +52,7 @@ interface LadderBodyProps {
   }) => void;
   selectedLegKeys?: ReadonlySet<string>;
   chainQuoteTs?: number;
+  expiryLabel: string;
 }
 
 export type AtTradeContext =
@@ -118,6 +119,18 @@ function FlowBarCell({
   );
 }
 
+function quoteAriaLabel(input: {
+  strike: number;
+  type: "CALL" | "PUT";
+  side: "BUY" | "SELL";
+  tint: "bid" | "ask";
+  price: number | null;
+  expiryLabel: string;
+}): string {
+  const px = input.price != null && Number.isFinite(input.price) ? input.price.toFixed(2) : "unavailable";
+  return `${input.side} ${input.type} strike ${input.strike} expiry ${input.expiryLabel} at ${input.tint} ${px}`;
+}
+
 function QuoteCell({
   price,
   tint,
@@ -125,6 +138,7 @@ function QuoteCell({
   leg,
   type,
   side,
+  expiryLabel,
   onQuoteTap,
   onClick,
   dataAttr,
@@ -137,6 +151,7 @@ function QuoteCell({
   leg: OptionsContract | null;
   type: "CALL" | "PUT";
   side: "BUY" | "SELL";
+  expiryLabel: string;
   onQuoteTap: LadderBodyProps["onQuoteTap"];
   onClick?: () => void;
   dataAttr?: string;
@@ -147,6 +162,7 @@ function QuoteCell({
   return (
     <button
       type="button"
+      aria-label={quoteAriaLabel({ strike, type, side, tint, price, expiryLabel })}
       data-at-quote={dataAttr}
       className="w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80"
       style={{
@@ -198,6 +214,7 @@ type LadderRowViewProps = {
   keepawayCallLine?: number | null;
   selectedLegKeys?: ReadonlySet<string>;
   chainQuoteTs?: number;
+  expiryLabel: string;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -226,6 +243,7 @@ const LadderRowView = memo(function LadderRowView({
   keepawayCallLine,
   selectedLegKeys,
   chainQuoteTs = 0,
+  expiryLabel,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
@@ -353,6 +371,7 @@ const LadderRowView = memo(function LadderRowView({
           leg={row.put}
           type="PUT"
           side="SELL"
+          expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && putTick?.bidSize != null ? `×${Math.round(putTick.bidSize)}` : null}
           dataAttr={`put-bid-${row.strike}`}
@@ -377,6 +396,7 @@ const LadderRowView = memo(function LadderRowView({
           leg={row.put}
           type="PUT"
           side="BUY"
+          expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && putTick?.askSize != null ? `×${Math.round(putTick.askSize)}` : null}
           dataAttr={`put-ask-${row.strike}`}
@@ -438,6 +458,7 @@ const LadderRowView = memo(function LadderRowView({
           leg={row.call}
           type="CALL"
           side="SELL"
+          expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && callTick?.bidSize != null ? `×${Math.round(callTick.bidSize)}` : null}
           dataAttr={`call-bid-${row.strike}`}
@@ -462,6 +483,7 @@ const LadderRowView = memo(function LadderRowView({
           leg={row.call}
           type="CALL"
           side="BUY"
+          expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && callTick?.askSize != null ? `×${Math.round(callTick.askSize)}` : null}
           dataAttr={`call-ask-${row.strike}`}
@@ -582,6 +604,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             flowByKey={props.flowByKey}
             selectedLegKeys={props.selectedLegKeys}
             chainQuoteTs={props.chainQuoteTs}
+            expiryLabel={props.expiryLabel}
           />
         );
       })}

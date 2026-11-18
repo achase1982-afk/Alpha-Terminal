@@ -43,6 +43,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { computeOrderEconomics } from "@workspace/order-ticket-math";
 import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
+import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -387,6 +389,7 @@ export function OptionsChainOrderSheet({
         body: JSON.stringify({ accountHash, order }),
       });
       const data = await res.json();
+      const partial = interpretBracketPlaceOrderResult(data);
       if (!res.ok || data.error) {
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
@@ -394,7 +397,13 @@ export function OptionsChainOrderSheet({
         setStage("error");
         return;
       }
-      setOrderId(data.orderId ?? "—");
+      if (partial?.entryAccepted && !partial.exitsAccepted && partial.userMessage) {
+        setOrderId(partial.orderId ?? "—");
+        setErrorMsg(partial.userMessage);
+        setStage("error");
+        return;
+      }
+      setOrderId(data.orderId ?? partial?.orderId ?? "—");
       setStage("success");
     } catch (err: unknown) {
       placeOrderInFlightRef.current = false;
@@ -770,11 +779,10 @@ function formatLegLine(
   underlying: string,
   spreadQty: number,
 ): string {
-  const verb = leg.direction.startsWith("BUY") ? "Buy" : "Sell";
-  const phase = leg.direction.includes("_TO_OPEN") ? "to open" : "to close";
   const type = leg.optionType === "CALL" ? "Call" : "Put";
   const sym = underlying.toUpperCase().replace(/^\$/, "");
-  return `${verb} ${phase} ${leg.quantity * spreadQty} ${sym} ${leg.strike} ${type}`;
+  const instr = humanInstruction(leg.direction);
+  return `${instr} · ${leg.quantity * spreadQty} × ${sym} ${leg.strike} ${type}`;
 }
 
 function ConfirmPanel({

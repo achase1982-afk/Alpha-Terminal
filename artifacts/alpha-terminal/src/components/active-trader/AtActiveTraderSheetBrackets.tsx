@@ -2,8 +2,9 @@ import { memo } from "react";
 import { BORDER, UP, DOWN } from "@/components/options/optionsTheme";
 import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
-import { atBracketLegPreviewPrice } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { atBracketLegPreviewPrice, humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { abbrevAtTemplate } from "@/lib/active-trader/atSummaryFormat";
 
 type Props = {
   prefs: ActiveTraderTemplatePrefs;
@@ -26,8 +27,7 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
   isCredit = false,
 }: Props) {
   const qty = prefs.qty;
-  const spreadPrimary: SchwabInstruction = isCredit ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
-  const bracketInstruction: SchwabInstruction = isSpread ? spreadPrimary : primaryInstruction;
+  const bracketInstruction: SchwabInstruction = primaryInstruction;
   const tp =
     entryPrice != null && prefs.takeProfit.enabled
       ? atBracketLegPreviewPrice(
@@ -65,6 +65,23 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
 
   return (
     <div className="mt-3 pt-2 space-y-2" style={{ borderTop: `1px solid ${BORDER}` }}>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5" style={{ fontSize: 10, color: AT_SECONDARY }}>
+        <span>Template: {abbrevAtTemplate(prefs.template)}</span>
+        <span>·</span>
+        <span>Entry: {humanInstruction(bracketInstruction)}</span>
+        {!isSpread && prefs.takeProfit.enabled && tp != null ? (
+          <>
+            <span>·</span>
+            <span style={{ color: UP }}>TP {tp.toFixed(2)}</span>
+          </>
+        ) : null}
+        {!isSpread && prefs.stopLoss.enabled && sl != null ? (
+          <>
+            <span>·</span>
+            <span style={{ color: DOWN }}>SL {sl.toFixed(2)}</span>
+          </>
+        ) : null}
+      </div>
       <label className="flex items-center justify-between gap-2" style={{ fontSize: 11, color: AT_SECONDARY }}>
         <span className="flex items-center gap-2">
           <input

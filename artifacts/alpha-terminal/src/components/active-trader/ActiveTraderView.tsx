@@ -724,6 +724,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [handleToggleLeg, lastLegQuoteSide],
   );
 
+  const actionBarContext = useMemo((): AtTradeContext | null => {
+    if (tradeContext) return tradeContext;
+    if (selectedLegs.size === 0) return null;
+    const last = [...selectedLegs.values()][selectedLegs.size - 1];
+    if (!last) return null;
+    return { mode: "single", contract: last.contract, type: last.type };
+  }, [tradeContext, selectedLegs]);
+
+  const showFloatingActionBar =
+    chainSheetCollapsed && ticketLegs.length > 0 && actionBarContext != null;
+  const showDockedActionBar = ticketLegs.length === 0 && actionBarContext != null;
+
   const instrumentLabel = useMemo(() => {
     if (selected) {
       const root = symbol.replace(/^\$/, "").slice(0, 4);
@@ -945,6 +957,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
             chainQuoteTs={chainQuoteTs}
+            expiryLabel={expiryLabel}
           />
           </div>
         ) : (
@@ -1013,10 +1026,31 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             />
           )}
         />
-      ) : tradeContext ? (
+      ) : null}
+      {showFloatingActionBar && actionBarContext ? (
+        <div
+          className="fixed left-0 right-0 z-[112]"
+          style={{ bottom: 52 }}
+          data-at-collapsed-action-bar
+        >
+          <AtTradeActionBar
+            accentHex={accentHex}
+            tradeContext={actionBarContext}
+            ladderMode={ladderMode}
+            verticalWidth={prefs.verticalWidth}
+            rowByStrike={rowByStrike}
+            positionQtyByKey={positionQtyByKey}
+            onSell={(c, t) => handleTradeIntent(c, "SELL", t)}
+            onBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
+            onAddLeg={atAddLegFromLadder}
+            lastLegQuoteSide={lastLegQuoteSide}
+          />
+        </div>
+      ) : null}
+      {showDockedActionBar && actionBarContext ? (
         <AtTradeActionBar
           accentHex={accentHex}
-          tradeContext={tradeContext}
+          tradeContext={actionBarContext}
           ladderMode={ladderMode}
           verticalWidth={prefs.verticalWidth}
           rowByStrike={rowByStrike}
