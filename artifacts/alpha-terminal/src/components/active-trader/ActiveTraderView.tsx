@@ -12,6 +12,7 @@ import {
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
+import { useAtLadderPremiumHeat } from "@/lib/active-trader/useAtLadderPremiumHeat";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -328,7 +329,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     underlyingPrice,
   );
 
-  const { flowByKey, activityByKey } = useFlowByKey(streamKeys, windowSec * 1000);
+  const { flowByKey } = useFlowByKey(streamKeys, windowSec * 1000);
+  const heatByKey = useAtLadderPremiumHeat(streamKeys);
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
@@ -940,18 +942,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             background: BG_HEADER,
           }}
         >
-          <span className="text-center leading-none font-semibold" style={{ color: UP, fontSize: 9 }}>
-            Call flow
-          </span>
           <span className="text-center col-span-2 font-bold" style={{ color: UP, fontSize: 10 }}>
             Calls
           </span>
           <span />
           <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
             Puts
-          </span>
-          <span className="text-center leading-none font-semibold" style={{ color: DOWN, fontSize: 9 }}>
-            Put flow
           </span>
         </div>
         <div
@@ -969,13 +965,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             background: BG_HEADER,
           }}
         >
-          <span />
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>
           <span className="text-center" style={{ color: WHITE, fontWeight: 600 }}>Strike</span>
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>
-          <span />
         </div>
       </div>
 
@@ -1039,7 +1033,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             selectedQuoteCells={selectedQuoteCells}
             positionQtyByKey={positionQtyByKey}
             flowByKey={flowByKey}
-            activityByKey={activityByKey}
+            heatByKey={heatByKey}
             symbolLabel={symbolLabel}
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
