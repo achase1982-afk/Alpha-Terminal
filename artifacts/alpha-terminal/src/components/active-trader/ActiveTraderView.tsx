@@ -329,7 +329,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     underlyingPrice,
   );
 
-  const flowByKey = useFlowByKey(streamKeys, windowSec * 1000);
+  const { flowByKey, activityByKey } = useFlowByKey(streamKeys, windowSec * 1000);
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
@@ -984,19 +984,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         className="shrink-0"
         data-at-leg-tray-slot
         style={{
-          minHeight: trayLegs.length > 0 ? 44 : 0,
+          minHeight: trayLegs.length > 0 && ticketLegs.length === 0 ? 44 : 0,
           background: "#0a0a0a",
-          borderBottom: trayLegs.length > 0 ? `1px solid ${BORDER_ROW}` : "none",
+          borderBottom: trayLegs.length > 0 && ticketLegs.length === 0 ? `1px solid ${BORDER_ROW}` : "none",
         }}
       >
-        <AtLegBuildTray
-          legs={trayLegs}
-          qtyByKey={legQuantities}
-          onRemove={(key) => {
-            const leg = selectedLegs.get(key);
-            if (leg) handleToggleLeg(leg.contract, leg.type, leg.side);
-          }}
-        />
+        {ticketLegs.length === 0 ? (
+          <AtLegBuildTray
+            legs={trayLegs}
+            qtyByKey={legQuantities}
+            onRemove={(key) => {
+              const leg = selectedLegs.get(key);
+              if (leg) handleToggleLeg(leg.contract, leg.type, leg.side);
+            }}
+          />
+        ) : null}
       </div>
 
       <div className="relative flex-1 min-h-0">
@@ -1038,6 +1040,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             selectedQuoteCells={selectedQuoteCells}
             positionQtyByKey={positionQtyByKey}
             flowByKey={flowByKey}
+            activityByKey={activityByKey}
             symbolLabel={symbolLabel}
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
@@ -1103,17 +1106,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             prefs,
             primaryInstruction: settingsSummaryInstruction,
           }}
-          extrasAfterLimit={({ limitPerShare, isCredit, legCount }) => (
-            <AtActiveTraderSheetBrackets
-              prefs={prefs}
-              onPrefsChange={onPrefsChange}
-              entryPrice={limitPerShare}
-              underlyingSymbol={underlyingSymbol}
-              isSpread={legCount > 1}
-              isCredit={isCredit}
-              primaryInstruction={settingsSummaryInstruction}
-            />
-          )}
+          onAdvancedOrders={() => setSettingsOpen(true)}
         />
       ) : null}
       {showFloatingActionBar && actionBarContext ? (
