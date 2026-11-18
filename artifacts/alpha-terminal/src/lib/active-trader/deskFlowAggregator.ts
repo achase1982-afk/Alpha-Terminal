@@ -95,7 +95,7 @@ function sumTapeBars(bars: Tape60sBar[], field: "buy_$" | "sell_$"): number {
   return n;
 }
 
-function sumFlow1sWindow(buckets: Flow1sBucket[], nowMs: number, windowMs: number): Flow1sBucket {
+export function sumFlow1sWindow(buckets: Flow1sBucket[], nowMs: number, windowMs: number): Flow1sBucket {
   const minMs = nowMs - windowMs;
   const out: Flow1sBucket = { bucket_ms: minMs, call_buy: 0, call_sell: 0, put_buy: 0, put_sell: 0 };
   for (const b of buckets) {
@@ -108,7 +108,11 @@ function sumFlow1sWindow(buckets: Flow1sBucket[], nowMs: number, windowMs: numbe
   return out;
 }
 
-function sumTape1sWindow(buckets: Tape1sBucket[], nowMs: number, windowMs: number): { buy: number; sell: number } {
+export function sumTape1sWindow(
+  buckets: Tape1sBucket[],
+  nowMs: number,
+  windowMs: number,
+): { buy: number; sell: number } {
   const minMs = nowMs - windowMs;
   let buy = 0;
   let sell = 0;
