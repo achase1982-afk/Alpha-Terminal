@@ -50,12 +50,19 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   stopLimitOffset: 0.05,
 };
 
+function sanitizeAutoSend(prefs: ActiveTraderTemplatePrefs): ActiveTraderTemplatePrefs {
+  return {
+    ...prefs,
+    autoSend: { ...prefs.autoSend, armed: false },
+  };
+}
+
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Record<string, ActiveTraderTemplatePrefs>;
-    return { ...DEFAULTS, ...(parsed[symbolClass] ?? {}) };
+    return sanitizeAutoSend({ ...DEFAULTS, ...(parsed[symbolClass] ?? {}) });
   } catch {
     return { ...DEFAULTS };
   }
@@ -65,7 +72,7 @@ export function saveActiveTraderPrefs(symbolClass: "index" | "equity", prefs: Ac
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, ActiveTraderTemplatePrefs>) : {};
-    parsed[symbolClass] = prefs;
+    parsed[symbolClass] = sanitizeAutoSend(prefs);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
   } catch {
     /* ignore */

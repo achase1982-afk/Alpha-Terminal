@@ -329,15 +329,37 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const accounts = useSchwabAccountStore((s) => s.accounts);
+  const tradeEpochRef = useRef<string | null>(null);
+  useEffect(() => {
+    const epoch = `${symbol}|${tradingHash ?? ""}|${activeExpiration ?? ""}`;
+    if (tradeEpochRef.current === null) {
+      tradeEpochRef.current = epoch;
+      return;
+    }
+    if (tradeEpochRef.current === epoch) return;
+    tradeEpochRef.current = epoch;
+    setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+    setSelected(null);
+    setTradeContext(null);
+    setTradeStripStrike(null);
+    setPrefs((p) => {
+      if (!p.autoSend.armed) return p;
+      const next = patchAutoSendArmed(p, false);
+      saveActiveTraderPrefs(symbolClass, next);
+      return next;
+    });
+  }, [symbol, tradingHash, activeExpiration, symbolClass]);
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
   const autoSendBusyRef = useRef(false);
 
-  const accountLabel =
-    accounts.length > 0
-      ? `Schwab ···${String(accounts[0]?.accountNumber ?? "").slice(-3)}`
-      : presentation?.skipNetwork
-        ? "Demo acct"
-        : "Account";
+  const accountLabel = useMemo(() => {
+    if (presentation?.skipNetwork) return "Demo acct";
+    const acct =
+      (tradingHash ? accounts.find((a) => a.hashValue === tradingHash) : undefined) ?? accounts[0];
+    if (!acct?.accountNumber) return "Account";
+    return `Schwab ···${String(acct.accountNumber).slice(-3)}`;
+  }, [accounts, tradingHash, presentation?.skipNetwork]);
   const isPaper = false;
 
   const toggleLane = useCallback((key: LaneFilterKey) => {
