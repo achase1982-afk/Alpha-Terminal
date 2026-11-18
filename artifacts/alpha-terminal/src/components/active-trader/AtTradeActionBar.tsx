@@ -21,7 +21,8 @@ interface AtTradeActionBarProps {
   positionQtyByKey: Map<string, number>;
   onSell: (contract: OptionsContract, type: "CALL" | "PUT") => void;
   onBuy: (contract: OptionsContract, type: "CALL" | "PUT") => void;
-  onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT") => void;
+  onAddLeg: (contract: OptionsContract, type: "CALL" | "PUT", quoteSide: "bid" | "ask") => void;
+  lastLegQuoteSide?: "bid" | "ask";
 }
 
 export const AtTradeActionBar = memo(function AtTradeActionBar({
@@ -34,6 +35,7 @@ export const AtTradeActionBar = memo(function AtTradeActionBar({
   onSell,
   onBuy,
   onAddLeg,
+  lastLegQuoteSide = "ask",
 }: AtTradeActionBarProps) {
   const anchorStrike =
     tradeContext.mode === "single" ? tradeContext.contract.strike : tradeContext.anchorStrike;
@@ -95,17 +97,28 @@ export const AtTradeActionBar = memo(function AtTradeActionBar({
         {posStr ? <span style={{ color: pos! > 0 ? UP : DOWN }}>{posStr}</span> : null}
       </div>
       <div className="grid grid-cols-3 items-center gap-1" style={{ fontSize: 13, fontWeight: 500 }}>
-        <button type="button" style={{ color: DOWN, textAlign: "left" }} onClick={() => onSell(contract, tradeContext.type)}>
+        <button
+          type="button"
+          aria-label={`Sell ${title} at bid ${bid}`}
+          style={{ color: DOWN, textAlign: "left" }}
+          onClick={() => onSell(contract, tradeContext.type)}
+        >
           SELL {bid}
         </button>
         <button
           type="button"
+          aria-label={`Add leg ${title} ${lastLegQuoteSide === "bid" ? "sell" : "buy"} side`}
           style={{ color: GRAY, textAlign: "center" }}
-          onClick={() => onAddLeg(contract, tradeContext.type)}
+          onClick={() => onAddLeg(contract, tradeContext.type, lastLegQuoteSide)}
         >
           + Leg
         </button>
-        <button type="button" style={{ color: UP, textAlign: "right" }} onClick={() => onBuy(contract, tradeContext.type)}>
+        <button
+          type="button"
+          aria-label={`Buy ${title} at ask ${ask}`}
+          style={{ color: UP, textAlign: "right" }}
+          onClick={() => onBuy(contract, tradeContext.type)}
+        >
           BUY {ask}
         </button>
       </div>

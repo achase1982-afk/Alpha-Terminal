@@ -1414,7 +1414,7 @@ export function OptionsTab({
     setAtExpiration((prev) => {
       const tradable = filterAtExpiryPillGroups(groups);
       if (prev && tradable.some((g) => g.expiration === prev)) return prev;
-      return (nearestTradableExpiration(groups) ?? groups[0])?.expiration ?? null;
+      return nearestTradableExpiration(groups)?.expiration ?? null;
     });
   }, [groups]);
 

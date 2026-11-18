@@ -26,8 +26,8 @@ export const AtActiveTraderSheetBrackets = memo(function AtActiveTraderSheetBrac
   isCredit = false,
 }: Props) {
   const qty = prefs.qty;
-  const bracketInstruction: SchwabInstruction =
-    isSpread && isCredit ? "SELL_TO_OPEN" : isSpread ? "BUY_TO_OPEN" : primaryInstruction;
+  const spreadPrimary: SchwabInstruction = isCredit ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
+  const bracketInstruction: SchwabInstruction = isSpread ? spreadPrimary : primaryInstruction;
   const tp =
     entryPrice != null && prefs.takeProfit.enabled
       ? atBracketLegPreviewPrice(

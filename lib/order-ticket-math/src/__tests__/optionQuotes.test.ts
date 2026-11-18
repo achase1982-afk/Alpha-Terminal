@@ -32,6 +32,20 @@ describe("optionQuotes", () => {
     expect(agg).toBeNull();
   });
 
+  it("does not synthesize bid=0 from ask-only stream", () => {
+    expect(resolvePairedBidAsk({ streamAsk: 0.2 })).toBeNull();
+    expect(resolvePairedBidAsk({ streamBid: 1.1, contractAsk: 1.2 })).toBeNull();
+  });
+
+  it("uses full contract pair when stream is one-sided", () => {
+    const pair = resolvePairedBidAsk({
+      streamBid: 2.4,
+      contractBid: 1.1,
+      contractAsk: 1.2,
+    });
+    expect(pair).toEqual({ bid: 1.1, ask: 1.2, source: "contract", crossed: false });
+  });
+
   it("prefers stream only when newer than stored contract pair", () => {
     const fresh = resolvePairedBidAsk({
       streamBid: 1.1,
