@@ -1729,6 +1729,7 @@ export function OptionsTab({
       )}
       {optionsSubView === "chain" && (
       <>
+      {!isFuturesSymbol && (
       <div
         className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
         style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
@@ -1780,6 +1781,7 @@ export function OptionsTab({
           hasData={!!data}
         />
       </div>
+      )}
 
       <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
         {isLoadingEffective && !data && (
@@ -1879,7 +1881,7 @@ export function OptionsTab({
           </div>
         )}
 
-        {data && groups.length === 0 && (
+        {data && groups.length === 0 && !isFuturesSymbol && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>NO OPTIONS DATA FOR THIS RANGE</span>

@@ -36,16 +36,19 @@ export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol, lay
       }}
       data-ui-audit="at-futures-live-quote"
     >
-      <p className="text-[10px] tracking-widest uppercase mb-4" style={{ color: DIM }}>
+      <p className="text-[10px] tracking-widest uppercase mb-2" style={{ color: DIM }}>
         Live quote · {symbol.toUpperCase()}
       </p>
-      <div
-        className={`grid gap-3 ${fill ? "flex-1 content-center" : ""}`}
-        style={{ gridTemplateColumns: "1fr 1fr" }}
-      >
-        <div>
-          <div className="text-[9px] uppercase tracking-wide" style={{ color: DIM }}>Last</div>
-          <div className="text-xl tabular-nums" style={{ color: WHITE }}>{fmt(quote?.last)}</div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <div className="col-span-2">
+          <div className="text-[9px] uppercase tracking-wide mb-0.5" style={{ color: DIM }}>Last</div>
+          <div
+            className="tabular-nums leading-none"
+            data-ui-audit="at-futures-last"
+            style={{ fontSize: 40, fontWeight: 600, color: WHITE }}
+          >
+            {fmt(quote?.last)}
+          </div>
         </div>
         <div>
           <div className="text-[9px] uppercase tracking-wide" style={{ color: DIM }}>Change</div>
@@ -77,7 +80,10 @@ export const AtFuturesLiveQuote = memo(function AtFuturesLiveQuote({ symbol, lay
           </div>
         </div>
       </div>
-      <p className="text-[10px] mt-4 leading-relaxed shrink-0" style={{ color: DIM }}>
+      <p
+        className={`text-[10px] leading-relaxed shrink-0 ${fill ? "mt-auto pt-4" : "mt-4"}`}
+        style={{ color: DIM }}
+      >
         Streaming quotes only — no Schwab options chain on this symbol.
       </p>
     </div>
