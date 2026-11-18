@@ -68,17 +68,31 @@ export function computeZonesFromUwGamma0dte(
     .filter((r) => r.callGammaOi !== 0 || r.putGammaOi !== 0)
     .sort((a, b) => a.strike - b.strike);
 
-  const flipFromCumulative = (rows: typeof active): number | null => {
+  const listCumulativeFlips = (rows: typeof active): number[] => {
     let cumulative = 0;
     let prevCumSign: -1 | 1 | null = null;
+    const flips: number[] = [];
     for (const row of rows) {
       cumulative += row.callGammaOi + row.putGammaOi;
       if (cumulative === 0) continue;
       const sign: -1 | 1 = cumulative > 0 ? 1 : -1;
-      if (prevCumSign !== null && sign !== prevCumSign) return row.strike;
+      if (prevCumSign !== null && sign !== prevCumSign) flips.push(row.strike);
       prevCumSign = sign;
     }
-    return null;
+    return flips;
+  };
+
+  const pickFlipStrike = (flips: number[], spotHint: number | null): number | null => {
+    if (!flips.length) return null;
+    if (spotHint == null || !Number.isFinite(spotHint)) return flips[0] ?? null;
+    const atOrBelow = flips.filter((s) => s <= spotHint);
+    if (atOrBelow.length) return atOrBelow[atOrBelow.length - 1]!;
+    return flips.reduce((best, s) => (Math.abs(s - spotHint) < Math.abs(best - spotHint) ? s : best));
+  };
+
+  const flipFromCumulative = (rows: typeof active, spotHint: number | null): number | null => {
+    const flips = listCumulativeFlips(rows);
+    return pickFlipStrike(flips, spotHint);
   };
   const flipFromPerStrike = (rows: typeof active): number | null => {
     let prevSign: -1 | 1 | null = null;
@@ -92,9 +106,15 @@ export function computeZonesFromUwGamma0dte(
     return null;
   };
 
+  const spotHint =
+    spot ??
+    (maxCallStrike != null && minPutStrike != null
+      ? (maxCallStrike + minPutStrike) / 2
+      : maxCallStrike ?? minPutStrike);
+
   let flip: number | null = null;
   if (active.length >= 2) {
-    flip = flipFromCumulative(active) ?? flipFromPerStrike(active);
+    flip = flipFromCumulative(active, spotHint) ?? flipFromPerStrike(active);
   }
 
   const hasGamma = active.length > 0 && Number.isFinite(netGex) && netGex !== 0;
