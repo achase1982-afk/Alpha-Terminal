@@ -574,14 +574,16 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             headline={pressureHeadline}
           />
         )}
-        <FilterStrip
-          embedded
-          accentHex={accentHex}
-          filters={laneFilters}
-          onToggle={toggleLane}
-          classifiedPct={classifiedPct}
-          windowLabel={`last ${windowSec}s`}
-        />
+        {!glanceTop ? (
+          <FilterStrip
+            embedded
+            accentHex={accentHex}
+            filters={laneFilters}
+            onToggle={toggleLane}
+            classifiedPct={classifiedPct}
+            windowLabel={`last ${windowSec}s`}
+          />
+        ) : null}
         <AtSettingsExpanded
           open={settingsOpen}
           accentHex={accentHex}
@@ -610,7 +612,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         <AtSettingsSummary
-          slim
+          slim={!glanceTop}
+          glanceSlim={glanceTop}
           open={settingsOpen}
           onToggle={toggleSettings}
           prefs={prefs}

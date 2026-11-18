@@ -3,6 +3,7 @@ import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
 import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
 import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
+import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { TradingChart } from "@/components/TradingChart";
 import { MacroBar } from "@/components/MacroBar";
 import { TickerTape } from "@/components/TickerTape";
@@ -373,6 +374,7 @@ export default function TerminalPage() {
   });
   const atSubViewActive = useAtChromeStore((s) => s.subViewIsAt);
   const atOptionsChrome = activeBottom === "markets" && contextTab === "options" && atSubViewActive;
+  const atGlanceChrome = atOptionsChrome && atGlanceTopEnabled();
 
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
@@ -1101,16 +1103,16 @@ export default function TerminalPage() {
               <div className="flex flex-1 min-h-0 flex-col">
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
-                  {schwabLinked && <SchwabAccountHeader compact />}
+                  {schwabLinked && !atGlanceChrome ? <SchwabAccountHeader compact /> : null}
                   {atOptionsChrome ? (
-                    <AtSymbolHeader />
+                    <AtSymbolHeader compact={atGlanceChrome} />
                   ) : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} />
                       <VolumeBar />
                     </>
                   )}
-                  <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                  {!atGlanceChrome ? <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} /> : null}
                   {contextTab === "company" && (
                     <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
                   )}
@@ -1247,7 +1249,7 @@ export default function TerminalPage() {
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
                   {atOptionsChrome ? (
-                    <AtSymbolHeader />
+                    <AtSymbolHeader compact={atGlanceChrome} />
                   ) : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} />
@@ -1256,7 +1258,7 @@ export default function TerminalPage() {
                   )}
                 </div>
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 shrink-0 bg-background">
-                  <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} />
+                  {!atGlanceChrome ? <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} /> : null}
                   {contextTab === "company" && (
                     <CompanySectionTabBar page={companyPage} onPageChange={setCompanyPage} companyTabsId={companyTabsId} />
                   )}

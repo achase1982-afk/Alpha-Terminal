@@ -27,6 +27,14 @@ import {
   buildAaplFixtureChain,
   buildAaplFixtureTicks,
 } from "./aaplFixture";
+import {
+  FIXTURE_NVDA_SPOT,
+  FIXTURE_NVDA_OPEN,
+  FIXTURE_NVDA_ZONES,
+  buildNvdaFixtureChain,
+  buildNvdaFixtureTicks,
+} from "./nvdaFixture";
+import { FIXTURE_ES_SPOT, FIXTURE_ES_ZONES, buildEsFixtureChain } from "./esFixture";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -94,8 +102,14 @@ export function registerAtFixtureFromLocation(): void {
     scene,
     symbol: isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX",
     initialSubView,
-    chain: isEs ? buildFixtureChainResponse() : isNvda ? buildAaplFixtureChain() : isAapl ? buildAaplFixtureChain() : buildFixtureChainResponse(),
-    underlyingPrice: isEs ? 5950.25 : isNvda ? 182.42 : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
+    chain: isEs
+      ? buildEsFixtureChain()
+      : isNvda
+        ? buildNvdaFixtureChain()
+        : isAapl
+          ? buildAaplFixtureChain()
+          : buildFixtureChainResponse(),
+    underlyingPrice: isEs ? FIXTURE_ES_SPOT : isNvda ? FIXTURE_NVDA_SPOT : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
     tapStrike:
       sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm"
         ? isAapl
@@ -108,7 +122,13 @@ export function registerAtFixtureFromLocation(): void {
     presentation: {
       regimeLabel: isAapl ? "mild bullish" : FIXTURE_REGIME.label,
       regimeDegraded: false,
-      zones: isAapl ? FIXTURE_AAPL_ZONES : FIXTURE_ZONE_MODEL,
+      zones: isEs
+        ? FIXTURE_ES_ZONES
+        : isNvda
+          ? FIXTURE_NVDA_ZONES
+          : isAapl
+            ? FIXTURE_AAPL_ZONES
+            : FIXTURE_ZONE_MODEL,
       classifiedPct: FIXTURE_CLASSIFIED_PCT,
       headline: isAapl ? "" : FIXTURE_HEADLINE,
       sessionLabel: "Cash session",
@@ -122,27 +142,39 @@ export function registerAtFixtureFromLocation(): void {
   setTokens("at-fixture-dev-token", "");
   setTraderTokens("at-fixture-dev-token", "");
 
-  const spot = isEs ? 5950.25 : isNvda ? 182.42 : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
+  const spot = isEs ? FIXTURE_ES_SPOT : isNvda ? FIXTURE_NVDA_SPOT : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
   const sym = isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX";
+  const close =
+    isNvda ? FIXTURE_NVDA_OPEN : isAapl ? spot - 1.2 : isEs ? spot - 8.5 : spot - 12;
+  const change = spot - close;
+  const changePct = close !== 0 ? (change / close) * 100 : 0;
+  const description = isNvda
+    ? "NVIDIA CORP"
+    : isAapl
+      ? "APPLE INC"
+      : isEs
+        ? "E-MINI S&P 500"
+        : "S&P 500 INDEX";
+  const tick = isAapl ? 0.05 : isNvda ? 0.02 : 0.25;
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,
       [sym]: {
         symbol: sym,
-        description: isAapl ? "APPLE INC" : "S&P 500 INDEX",
+        description,
         last: spot,
         regularLast: spot,
         extendedLast: null,
-        bid: spot - (isAapl ? 0.05 : 0.25),
-        ask: spot + (isAapl ? 0.05 : 0.25),
-        bidSize: 1,
-        askSize: 1,
-        change: 0,
-        changePct: 0,
-        volume: 1_240_000,
-        high: spot + (isAapl ? 3 : 18),
-        low: spot - (isAapl ? 4 : 22),
-        close: spot - (isAapl ? 1.2 : 12),
+        bid: spot - tick,
+        ask: spot + tick,
+        bidSize: isNvda ? 24 : 1,
+        askSize: isNvda ? 18 : 1,
+        change,
+        changePct,
+        volume: isNvda ? 42_800_000 : 1_240_000,
+        high: spot + (isNvda ? 2.8 : isAapl ? 3 : 18),
+        low: spot - (isNvda ? 3.2 : isAapl ? 4 : 22),
+        close,
         ts: Date.now(),
       },
     },
@@ -230,13 +262,21 @@ export function registerAtFixtureFromLocation(): void {
   };
   saveActiveTraderPrefs(isAapl ? "equity" : "index", atPrefs);
 
-  resetFlowAndTicks(isAapl);
+  resetFlowAndTicks(fixtureKind);
 }
 
-export function resetFlowAndTicks(aapl = false): void {
+export function resetFlowAndTicks(kind = "spx"): void {
   const mergeTick = useOptionsStreamStore.getState().mergeTick;
-  if (aapl) {
+  if (kind === "aapl") {
     for (const tick of buildAaplFixtureTicks()) mergeTick(tick);
+    return;
+  }
+  if (kind === "nvda") {
+    for (const tick of buildNvdaFixtureTicks()) mergeTick(tick);
+    return;
+  }
+  if (kind === "es") {
+    for (const t of buildSpxFixtureTicks()) mergeTick(t);
     return;
   }
   for (const t of buildSpxFixtureTicks()) mergeTick(t);

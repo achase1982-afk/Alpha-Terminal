@@ -27,16 +27,23 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): AtGlanceFlo
       setView({ kind: "futures", unavailable: true });
       return;
     }
-    if (AT_GLANCE_FLOW_FIXTURE || mode !== "index") {
+    if (AT_GLANCE_FLOW_FIXTURE) {
       if (mode === "index") {
         const snapshot = buildSpxFlowFixture();
         setView({ kind: "index", snapshot, display: spxFlowDisplayTotals(snapshot) });
+      } else if (mode === "stock") {
+        const sym = symbol.replace(/^\$/, "").toUpperCase();
+        if (sym === "NVDA" || sym === "AAPL") {
+          setView({
+            kind: "stock",
+            tape: buildNvdaTapeFixture(),
+            unavailable: false,
+          });
+        } else {
+          setView({ kind: "stock", tape: buildNvdaTapeFixture(), unavailable: true });
+        }
       } else {
-        setView({
-          kind: "stock",
-          tape: buildNvdaTapeFixture(),
-          unavailable: false,
-        });
+        setView({ kind: "futures", unavailable: true });
       }
       return;
     }

@@ -32,7 +32,7 @@ function formatIndexSubtitle(symbol: string, description?: string): string {
   return "";
 }
 
-export const AtSymbolHeader = memo(function AtSymbolHeader() {
+export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compact?: boolean }) {
   const symbol = useActiveSymbol();
   const { data: quote } = useQuote(symbol);
 
@@ -64,6 +64,58 @@ export const AtSymbolHeader = memo(function AtSymbolHeader() {
 
   const displaySym = quote?.symbol ?? symbol.replace(/^\$/, "");
   const subtitle = formatIndexSubtitle(displaySym, quote?.description ?? undefined);
+
+  if (compact) {
+    return (
+      <div
+        data-at-symbol-header
+        className="w-full border-b border-zinc-800/70 px-2 py-0.5 shrink-0"
+        style={{ background: HEADER_BG, fontFamily: MONO, minHeight: 28 }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-semibold text-white tracking-tight shrink-0">{displaySym}</span>
+          <span
+            className="tabular-nums text-sm font-medium"
+            data-ui-audit="at-header-last"
+            style={{ color: WHITE, fontVariantNumeric: "tabular-nums" }}
+          >
+            {streamLive != null ? fmtSpot(streamLive) : "\u2014"}
+          </span>
+          <span
+            className="tabular-nums text-[10px] font-normal whitespace-nowrap min-w-0 truncate"
+            style={{ color: isUp ? "#22c55e" : isDown ? "#f87171" : DIM }}
+          >
+            {changeStr} {changePctStr}
+          </span>
+          <div className="flex-1" />
+          {expiryOptions.length > 0 && selectedExpiration ? (
+            <Select value={selectedExpiration} onValueChange={pickAtExpiration}>
+              <SelectTrigger
+                data-at-expiry-pill
+                className="h-5 max-w-[5.5rem] rounded-full px-1.5 text-[9px] font-normal shadow-none border [&>svg]:hidden"
+                style={{
+                  background: "transparent",
+                  borderColor: "#3f3f46",
+                  color: GRAY,
+                  fontFamily: MONO,
+                }}
+                aria-label="Option expiration"
+              >
+                <SelectValue>{pillLabel}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {expiryOptions.map((o) => (
+                  <SelectItem key={o.expiration} value={o.expiration} style={{ fontSize: 12 }}>
+                    {o.pillLabel}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

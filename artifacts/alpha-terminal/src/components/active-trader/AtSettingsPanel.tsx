@@ -27,6 +27,7 @@ interface AtSettingsSummaryProps {
   expiryLabel: string;
   underlyingSymbol: string;
   slim?: boolean;
+  glanceSlim?: boolean;
 }
 
 export const AtSettingsSummary = memo(function AtSettingsSummary({
@@ -38,6 +39,7 @@ export const AtSettingsSummary = memo(function AtSettingsSummary({
   expiryLabel,
   underlyingSymbol,
   slim = false,
+  glanceSlim = false,
 }: AtSettingsSummaryProps) {
   const summary = buildAtSettingsSummary(
     prefs,
@@ -64,7 +66,7 @@ export const AtSettingsSummary = memo(function AtSettingsSummary({
       onKeyDown={handleSummaryKey}
       className="w-full flex items-center justify-between px-3 gap-2"
       style={{
-        height: slim ? 28 : 40,
+        height: glanceSlim ? (open ? 28 : 22) : slim ? 28 : 40,
         background: BG_EXP_BAR,
         borderBottom: `1px solid ${BORDER}`,
         fontFamily: MONO,
