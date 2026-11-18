@@ -1,4 +1,8 @@
-import { roundOptionPriceToTick, type LimitTickContext } from "@workspace/order-ticket-math";
+import {
+  optionPremiumTickForSymbol,
+  roundOptionPriceToTick,
+  type LimitTickContext,
+} from "@workspace/order-ticket-math";
 import type { SchwabInstruction } from "./atSchwabOrderBuilder";
 
 export type BracketOffsetMode = "percent" | "points" | "dollars";
@@ -75,6 +79,15 @@ export function computeBracketPrices(input: BracketPriceInput): {
     const delta = modeToPriceDelta(input.tp.mode, input.tp.offset, entry, input.quantity);
     const raw = long ? entry + Math.abs(delta) : entry - Math.abs(delta);
     takeProfit = roundAtPremium(raw, input);
+    if (takeProfit != null) {
+      const sym = input.underlyingSymbol ?? "SPX";
+      const tick = optionPremiumTickForSymbol(sym, entry) ?? 0.01;
+      if (long && takeProfit <= entry) {
+        takeProfit = roundAtPremium(entry + tick, input);
+      } else if (!long && takeProfit >= entry) {
+        takeProfit = roundAtPremium(Math.max(tick, entry - tick), input);
+      }
+    }
   }
 
   let stopLoss: number | null = null;

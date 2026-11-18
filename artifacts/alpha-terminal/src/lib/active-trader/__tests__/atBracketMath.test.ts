@@ -47,6 +47,22 @@ describe("computeBracketPrices — long", () => {
   });
 });
 
+describe("computeBracketPrices — penny pilot bump", () => {
+  it("bumps TP at least one tick when +10% rounds to entry", () => {
+    const { takeProfit } = computeBracketPrices({
+      entryPrice: 0.06,
+      quantity: 1,
+      primaryInstruction: "BUY_TO_OPEN",
+      underlyingSymbol: "AAPL",
+      assetType: "OPTION",
+      tp: { enabled: true, mode: "percent", offset: 10 },
+      sl: { enabled: false, mode: "percent", offset: -10 },
+    });
+    expect(takeProfit).toBeGreaterThan(0.06);
+    expect(takeProfit).toBe(0.07);
+  });
+});
+
 describe("computeBracketPrices — short", () => {
   it("mirrors TP/SL for sell to open", () => {
     const { takeProfit, stopLoss } = computeBracketPrices({

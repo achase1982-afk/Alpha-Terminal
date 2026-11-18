@@ -11,6 +11,8 @@ export interface AtExpiryOption {
 }
 
 interface AtChromeState {
+  keepawayUseMean: boolean;
+  setKeepawayUseMean: (v: boolean) => void;
   subViewIsAt: boolean;
   savedHeaderMode: HeaderMode | null;
   atExpiryOptions: AtExpiryOption[];
@@ -32,6 +34,8 @@ interface AtChromeState {
 let atExpirySelectHandler: ((expiration: string) => void) | null = null;
 
 export const useAtChromeStore = create<AtChromeState>()((set, get) => ({
+  keepawayUseMean: false,
+  setKeepawayUseMean: (v) => set({ keepawayUseMean: v }),
   subViewIsAt: false,
   savedHeaderMode: null,
   atExpiryOptions: [],

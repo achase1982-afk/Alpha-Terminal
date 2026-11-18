@@ -713,6 +713,11 @@ export default function TerminalPage() {
   useUIThemeSync();
   const isWide = useIsTablet();
   const isThreePanel = useIsDesktop();
+  const marketsMobileShellLock = activeBottom === "markets" && !isWide;
+  const mobileTabUsesInnerScroll =
+    marketsMobileShellLock ||
+    (activeBottom === "portfolio" && !isWide) ||
+    (activeBottom === "ai" && !isWide);
 
   // Load watchlists from server on mount so they're shared across devices.
   useEffect(() => {
@@ -1012,11 +1017,11 @@ export default function TerminalPage() {
             ref={scrollRef}
             onScroll={handleScroll}
             className={`app-content flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden ${
-              activeBottom === "markets" && contextTab === "newsChat"
+              mobileTabUsesInnerScroll ||
+              (activeBottom === "markets" && contextTab === "newsChat") ||
+              (activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming)
                 ? "overflow-hidden"
-                : activeBottom === "ai" && aiSubTab === "pulse" && !pulseData && !pulseLoading && !pulseStreaming
-                  ? "overflow-hidden"
-                  : "overflow-y-auto"
+                : "overflow-y-auto"
             }`}
           >
 
@@ -1040,12 +1045,16 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    contextTab === "newsChat"
+                    marketsMobileShellLock || contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
-                  {contextTab === "news" && <NewsTab />}
+                  {contextTab === "news" && (
+                    <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                      <NewsTab />
+                    </div>
+                  )}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
@@ -1060,23 +1069,27 @@ export default function TerminalPage() {
                     <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
                   )}
                   {contextTab === "chart" && (
-                    <>
+                    <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
                       <ChartControls />
-                      <div className="h-[420px] sm:h-[500px] md:h-[580px]">
+                      <div className="h-[420px] sm:h-[500px] md:h-[580px] shrink-0">
                         <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={historyLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
+              </div>
             )}
 
             {activeBottom === "portfolio" && (
-              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              </div>
             )}
 
             {activeBottom === "watchlist" && (
@@ -1110,7 +1123,7 @@ export default function TerminalPage() {
                   </div>
                   <div
                     className={
-                      contextTab === "newsChat"
+                      contextTab === "newsChat" || (contextTab === "options" && atSubViewActive)
                         ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                         : "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-visible"
                     }
@@ -1150,7 +1163,10 @@ export default function TerminalPage() {
             ref={scrollRef}
             onScroll={handleScroll}
             className={`app-content flex min-h-0 flex-1 min-w-0 flex-col pb-4 ${
-              activeBottom === "markets" && contextTab === "newsChat" ? "overflow-hidden" : "overflow-y-auto"
+              mobileTabUsesInnerScroll ||
+              (activeBottom === "markets" && contextTab === "newsChat")
+                ? "overflow-hidden"
+                : "overflow-y-auto"
             }`}
             style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
           >
@@ -1175,12 +1191,16 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    contextTab === "newsChat"
+                    marketsMobileShellLock || contextTab === "newsChat"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
                 >
-                  {contextTab === "news" && <NewsTab />}
+                  {contextTab === "news" && (
+                    <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                      <NewsTab />
+                    </div>
+                  )}
                   {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
@@ -1207,11 +1227,15 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "ai" && (
-              <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
+              </div>
             )}
 
             {activeBottom === "portfolio" && (
-              <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              </div>
             )}
           </main>
         )}

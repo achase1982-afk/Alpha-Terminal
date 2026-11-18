@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  TOOLBAR_H, SUB_HEADER_H, BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
+  BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
@@ -45,13 +45,21 @@ import {
   saveAtSettingsPanelOpen,
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
+import { AtTradeActionBar } from "./AtTradeActionBar";
+import { scrollAtLadderToSpot } from "@/lib/active-trader/atLadderScroll";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 import { AT_LADDER_GRID, AT_LADDER_GROUP_HDR_H, AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
-import { useUICustomizationStore } from "@/lib/ui-customization-store";
+import { useQuote } from "@/hooks/useQuote";
+import { useSpxKeepawayStats } from "@/hooks/useSpxKeepawayStats";
+import {
+  isSpxSymbol,
+  spxKeepawayBoundary,
+  type SpxKeepawayStats,
+} from "@workspace/order-ticket-math";
 
 export interface AtExpirationGroup {
   expiration: string;
@@ -119,22 +127,52 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [regimeDegraded, setRegimeDegraded] = useState(false);
 
   const symbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
+  const spxMode = isSpxSymbol(symbol);
+  const { data: underlyingQuote } = useQuote(symbol);
+  const keepawayUseMean = useAtChromeStore((s) => s.keepawayUseMean);
+  const setKeepawayUseMean = useAtChromeStore((s) => s.setKeepawayUseMean);
+  const fetchedKeepaway = useSpxKeepawayStats(spxMode && !presentation?.skipNetwork);
+  const keepawayStats: SpxKeepawayStats | null = useMemo(() => {
+    if (!spxMode) return null;
+    if (presentation?.skipNetwork) {
+      return {
+        symbol: "SPX",
+        n: 221,
+        startYmd: "2026-01-01",
+        endYmd: "2026-11-17",
+        lowSide: { median: 29.5, mean: 36.6 },
+        highSide: { median: 24.2, mean: 34.6 },
+      };
+    }
+    return fetchedKeepaway;
+  }, [spxMode, presentation?.skipNetwork, fetchedKeepaway]);
+  const sessionHigh = useMemo(() => {
+    const parts = [underlyingQuote?.high, underlyingPrice, underlyingQuote?.last].filter(
+      (x): x is number => x != null && Number.isFinite(x),
+    );
+    return parts.length ? Math.max(...parts) : null;
+  }, [underlyingQuote?.high, underlyingQuote?.last, underlyingPrice]);
+  const sessionLow = useMemo(() => {
+    const parts = [underlyingQuote?.low, underlyingPrice, underlyingQuote?.last].filter(
+      (x): x is number => x != null && Number.isFinite(x),
+    );
+    return parts.length ? Math.min(...parts) : null;
+  }, [underlyingQuote?.low, underlyingQuote?.last, underlyingPrice]);
+  const keepawayPutLine = useMemo(() => {
+    if (!keepawayStats || sessionLow == null) return null;
+    return spxKeepawayBoundary(keepawayStats, "put", sessionLow, sessionHigh ?? sessionLow, keepawayUseMean);
+  }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
+  const keepawayCallLine = useMemo(() => {
+    if (!keepawayStats || sessionHigh == null) return null;
+    return spxKeepawayBoundary(keepawayStats, "call", sessionLow ?? sessionHigh, sessionHigh, keepawayUseMean);
+  }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
   const ladderMode = AT_VERTICAL_LADDER_ENABLED ? prefs.ladderMode : "single";
   const [settingsOpen, setSettingsOpen] = useState(
     () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
   );
   const chromeRef = useRef<HTMLDivElement>(null);
-  const [chromeHeight, setChromeHeight] = useState(TOOLBAR_H);
-
-  useEffect(() => {
-    const node = chromeRef.current;
-    if (!node) return;
-    const ro = new ResizeObserver(() => setChromeHeight(node.offsetHeight));
-    ro.observe(node);
-    setChromeHeight(node.offsetHeight);
-    return () => ro.disconnect();
-  }, [settingsOpen]);
+  const ladderScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (presentation?.skipNetwork) {
@@ -166,8 +204,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!primary?.rows?.length) return [];
     const strikes = primary.rows.map((r) => r.strike);
     const atm = findAtmStrikeIndex(strikes, underlyingPrice);
-  const start = Math.max(0, atm - LADDER_RADIUS);
-    const end = Math.min(primary.rows.length, atm + LADDER_RADIUS + 1);
+    const center = atm >= 0 ? atm : Math.floor(strikes.length / 2);
+    const start = Math.max(0, center - LADDER_RADIUS);
+    const end = Math.min(primary.rows.length, center + LADDER_RADIUS + 1);
     const slice = primary.rows.slice(start, end);
     return slice
       .map((r) => ({ strike: r.strike, call: r.call, put: r.put }))
@@ -270,9 +309,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     },
     [symbolClass],
   );
-
-  const headerMode = useUICustomizationStore((s) => s.headerMode);
-  const atHeaderCompact = headerMode === "collapsed";
 
   const selectedTick = useOptionTick(selected?.contract.streamKey);
   const templatePrimaryInstruction = useMemo((): SchwabInstruction => {
@@ -469,15 +505,26 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const fixtureTight = !!presentation?.skipNetwork;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
-  const chromeTop = stickyOffset;
-  const ladderHeaderTop = chromeTop + chromeHeight;
-  const ladderHdrStack = AT_LADDER_GROUP_HDR_H + ladderRowH;
-  const ladderReserve = fixtureTight ? 32 : atHeaderCompact ? 44 : 80;
-  const ladderMaxHeight = `max(360px, calc(100dvh - ${ladderHeaderTop + ladderHdrStack + ladderReserve}px))`;
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
+  const symbolLabel = underlyingSymbol;
   const pressureHeadline = presentation?.headline?.trim() ? presentation.headline : "";
+
+  const scrollLadderToSpot = useCallback(() => {
+    requestAnimationFrame(() => {
+      scrollAtLadderToSpot(ladderScrollRef.current, underlyingPrice);
+    });
+  }, [underlyingPrice]);
+
+  useEffect(() => {
+    scrollLadderToSpot();
+  }, [symbol, activeExpiration, ladderDataReady, scrollLadderToSpot]);
+
+  useEffect(() => {
+    if (underlyingPrice == null) return;
+    scrollLadderToSpot();
+  }, [underlyingPrice, scrollLadderToSpot]);
 
   if (futuresOnlyMode) {
     return (
@@ -494,47 +541,62 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }
 
   return (
-    <div style={{ background: BG }}>
-      <div ref={chromeRef}>
-        <div className="sticky z-[39]" style={{ top: chromeTop }}>
+    <div
+      data-at-root
+      className="flex flex-1 min-h-0 flex-col overflow-hidden"
+      style={{ background: BG, overscrollBehavior: "none" }}
+    >
+      <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
           <RegimeStrip
             embedded
             accentHex={accentHex}
             zones={zones}
+            underlyingPrice={underlyingPrice}
+            keepawayStats={keepawayStats}
+            keepawayPutLine={keepawayPutLine}
+            keepawayCallLine={keepawayCallLine}
+            keepawayUseMean={keepawayUseMean}
+            onToggleKeepawayMean={() => setKeepawayUseMean(!keepawayUseMean)}
             regimeLabel={presentation?.regimeLabel ?? regimeLabel}
             regimeDegraded={presentation?.regimeDegraded ?? regimeDegraded}
             sessionLabel={presentation?.sessionLabel}
             headline={pressureHeadline}
           />
-          <FilterStrip
-            embedded
-            accentHex={accentHex}
-            filters={laneFilters}
-            onToggle={toggleLane}
-            classifiedPct={classifiedPct}
-            windowLabel={`last ${windowSec}s`}
-          />
-          <AtSettingsExpanded
-            open={settingsOpen}
-            accentHex={accentHex}
-            prefs={prefs}
-            onPrefsChange={onPrefsChange}
-            instrumentLabel={instrumentLabel}
-            onSell={() => selected && handleTradeIntent(selected.contract, "SELL", selected.type)}
-            onBuy={() => selected && handleTradeIntent(selected.contract, "BUY", selected.type)}
-            accountLabel={accountLabel}
-            isPaper={isPaper}
-            primaryInstruction={templatePrimaryInstruction}
-            limitMid={templateLimitMid}
-            autoSendArmBlock={autoSendArmBlock}
-            underlyingSymbol={underlyingSymbol}
-            windowSec={windowSec}
-            onWindowSecChange={setWindowSec}
-          />
-        </div>
+        <FilterStrip
+          embedded
+          accentHex={accentHex}
+          filters={laneFilters}
+          onToggle={toggleLane}
+          classifiedPct={classifiedPct}
+          windowLabel={`last ${windowSec}s`}
+        />
+        <AtSettingsExpanded
+          open={settingsOpen}
+          accentHex={accentHex}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
+          instrumentLabel={instrumentLabel}
+          onSell={() => selected && handleTradeIntent(selected.contract, "SELL", selected.type)}
+          onBuy={() => selected && handleTradeIntent(selected.contract, "BUY", selected.type)}
+          accountLabel={accountLabel}
+          isPaper={isPaper}
+          primaryInstruction={templatePrimaryInstruction}
+          limitMid={templateLimitMid}
+          autoSendArmBlock={autoSendArmBlock}
+          underlyingSymbol={underlyingSymbol}
+          windowSec={windowSec}
+          onWindowSecChange={setWindowSec}
+        />
       </div>
 
-      <div className="sticky z-[36]" style={{ top: ladderHeaderTop, background: BG_HEADER, borderBottom: `1px solid ${BORDER}` }}>
+      <div
+        className="shrink-0 z-[48]"
+        style={{
+          background: BG_HEADER,
+          borderBottom: `1px solid ${BORDER}`,
+          boxShadow: "0 2px 6px rgba(0,0,0,0.55)",
+        }}
+      >
         <AtSettingsSummary
           slim
           open={settingsOpen}
@@ -556,6 +618,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             fontWeight: FW_LIGHT,
             letterSpacing: "0.05em",
             textTransform: "uppercase",
+            background: BG_HEADER,
           }}
         >
           <span className="text-center leading-none font-semibold" style={{ color: DOWN, fontSize: 9 }}>
@@ -584,6 +647,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             letterSpacing: "0.06em",
             textTransform: "uppercase",
             borderTop: `1px solid ${BORDER_ROW}`,
+            background: BG_HEADER,
           }}
         >
           <span />
@@ -596,29 +660,40 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         </div>
       </div>
 
-      <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto", background: AT_LADDER_PANEL_BG }}>
+      <div
+        ref={ladderScrollRef}
+        data-at-ladder-scroll
+        className="at-ladder-scroll flex-1 min-h-0"
+        style={{
+          ...noScrollbar,
+          overflowY: "auto",
+          overflowX: "hidden",
+          overscrollBehavior: "contain",
+          WebkitOverflowScrolling: "touch",
+          background: AT_LADDER_PANEL_BG,
+        }}
+      >
         {ladderDataReady ? (
-        <LadderBody
-          rows={ladderRows}
-          accentHex={accentHex}
-          underlyingPrice={underlyingPrice}
-          zones={zones}
-          laneFilters={laneFilters}
-          tradeStripStrike={tradeStripStrike}
-          tradeContext={tradeContext}
-          ladderMode={ladderMode}
-          rowHeight={ladderRowH}
-          verticalWidth={prefs.verticalWidth}
-          rowByStrike={rowByStrike}
-          onVerticalTap={handleVerticalTap}
-          onQuoteTap={handleQuoteTap}
-          onTradeStripSell={(c, t) => handleTradeIntent(c, "SELL", t)}
-          onTradeStripBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
-          onAddLeg={onAddLeg}
-          positionQtyByKey={positionQtyByKey}
-          flowByKey={flowByKey}
-          symbolLabel={symbol.replace(/^\$/, "").slice(0, 3).toUpperCase()}
-        />
+          <LadderBody
+            rows={ladderRows}
+            accentHex={accentHex}
+            underlyingPrice={underlyingPrice}
+            zones={zones}
+            laneFilters={laneFilters}
+            selectedStrike={tradeStripStrike}
+            ladderMode={ladderMode}
+            rowHeight={ladderRowH}
+            verticalWidth={prefs.verticalWidth}
+            rowByStrike={rowByStrike}
+            onVerticalTap={handleVerticalTap}
+            onQuoteTap={handleQuoteTap}
+            onAddLeg={onAddLeg}
+            positionQtyByKey={positionQtyByKey}
+            flowByKey={flowByKey}
+            symbolLabel={symbolLabel}
+            keepawayPutLine={keepawayPutLine}
+            keepawayCallLine={keepawayCallLine}
+          />
         ) : (
           <>
             {!presentation?.skipNetwork && (
@@ -630,6 +705,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           </>
         )}
       </div>
+
+      {tradeContext ? (
+        <AtTradeActionBar
+          accentHex={accentHex}
+          tradeContext={tradeContext}
+          ladderMode={ladderMode}
+          verticalWidth={prefs.verticalWidth}
+          rowByStrike={rowByStrike}
+          positionQtyByKey={positionQtyByKey}
+          onSell={(c, t) => handleTradeIntent(c, "SELL", t)}
+          onBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
+          onAddLeg={onAddLeg}
+        />
+      ) : null}
     </div>
   );
 });

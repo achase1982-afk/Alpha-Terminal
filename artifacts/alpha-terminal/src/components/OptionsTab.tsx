@@ -1698,9 +1698,16 @@ export function OptionsTab({
     [groups],
   );
 
+  const chainStickyHeader = HEADER_H + SUB_HEADER_H;
+
   return (
-    <div style={{ background: BG }} className="relative">
-      <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+    <div
+      style={{ background: BG }}
+      className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
+    >
+      <div className="shrink-0">
+        <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+      </div>
       {optionsSubView === "at" && (
         <ActiveTraderView
           symbol={symbol}
@@ -1730,9 +1737,10 @@ export function OptionsTab({
       {optionsSubView === "chain" && (
       <>
       {!isFuturesSymbol && (
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
       <div
-        className="flex items-center justify-between w-full px-3 shrink-0 sticky z-40"
-        style={{ top: stickyOffset, height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+        className="flex items-center justify-between w-full px-3 shrink-0 z-40"
+        style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
         <div className="flex items-center gap-1.5">
           <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
@@ -1781,9 +1789,12 @@ export function OptionsTab({
           hasData={!!data}
         />
       </div>
-      )}
 
-      <div className="relative" style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0 }}>
+      <div
+        data-options-chain-scroll
+        className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0, WebkitOverflowScrolling: "touch" }}
+      >
         {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -1853,7 +1864,7 @@ export function OptionsTab({
               showCalls={showCalls}
               showPuts={showPuts}
               columns={activeColumns}
-              stickyTop={stickyOffset + TOOLBAR_H}
+              stickyTop={0}
               onColumnsEditor={() => setColumnsEditorOpen(true)}
               onBuildStrategy={onOpenStrategyBuilder ? handleLayersClick : undefined}
             />
@@ -1865,7 +1876,7 @@ export function OptionsTab({
                   group={group}
                   isOpen={isOpen}
                   onToggle={() => toggleExp(group.expiration)}
-                  stickyTop={stickyOffset + TOOLBAR_H + HEADER_H + SUB_HEADER_H}
+                  stickyTop={chainStickyHeader}
                   underlyingPrice={underlyingPrice}
                   activeColumns={activeColumns}
                   showCalls={showCalls}
@@ -1888,8 +1899,34 @@ export function OptionsTab({
           </div>
         )}
       </div>
-      </>
+      </div>
       )}
+      {isFuturesSymbol && (
+      <div
+        className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0, WebkitOverflowScrolling: "touch" }}
+        data-options-chain-scroll
+      >
+        {futuresChainUnsupported && !hasData && !isLoadingEffective && !error && (
+          <div
+            className="p-12 text-center font-mono flex flex-col items-center max-w-md mx-auto"
+            style={{ color: GRAY }}
+            data-ui-audit="futures-chain-placeholder"
+            data-futures-root={futuresRootForPlaceholder(symbol)}
+          >
+            <span className="text-[11px] leading-relaxed" style={{ fontWeight: FW_NORMAL }}>
+              {futuresChainPlaceholderPrimary()}
+            </span>
+            {futuresSecondary ? (
+              <span className="text-[10px] mt-2 leading-relaxed" style={{ color: DIM, fontWeight: FW_LIGHT }}>
+                {futuresSecondary}
+              </span>
+            ) : null}
+          </div>
+        )}
+      </div>
+      )}
+      </>
 
       {legLimitShake && (
         <div

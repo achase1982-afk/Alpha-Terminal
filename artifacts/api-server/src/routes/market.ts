@@ -25,6 +25,7 @@ import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 import { setBounded } from "../lib/boundedCache.js";
+import { getSpxKeepawayStats } from "../lib/activeTrader/spxKeepawayCache.js";
 
 const router: IRouter = Router();
 
@@ -1973,4 +1974,14 @@ ${rawSource ? `<div class="s">${escH(rawSource)}</div>` : ""}
 
 export { chainCache, getOrFetchChain, CHAIN_CACHE_TTL };
 export type { CachedChain, ParsedContract };
+router.get("/spx-keepaway-stats", async (req, res) => {
+  try {
+    const stats = await getSpxKeepawayStats();
+    return res.json({ stats });
+  } catch (err) {
+    req.log.error({ err }, "spx-keepaway-stats");
+    return res.json({ stats: null });
+  }
+});
+
 export default router;

@@ -21,6 +21,12 @@ import {
   buildSpxFixtureTicks,
   seedSpxFixtureFlow,
 } from "./spxFixture";
+import {
+  FIXTURE_AAPL_SPOT,
+  FIXTURE_AAPL_ZONES,
+  buildAaplFixtureChain,
+  buildAaplFixtureTicks,
+} from "./aaplFixture";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -44,6 +50,8 @@ export function registerAtFixtureFromLocation(): void {
   if (!import.meta.env.DEV) return;
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const fixtureKind = (params.get("fixture") ?? "spx").toLowerCase();
+  const isAapl = fixtureKind === "aapl";
   const sceneParam = params.get("scene") ?? "default";
   const scene = (
     sceneParam === "settings-expanded" ||
@@ -77,21 +85,25 @@ export function registerAtFixtureFromLocation(): void {
   setAtFixtureOverride({
     enabled: true,
     scene,
-    symbol: "SPX",
+    symbol: isAapl ? "AAPL" : "SPX",
     initialSubView,
-    chain: buildFixtureChainResponse(),
-    underlyingPrice: FIXTURE_SPX_SPOT,
+    chain: isAapl ? buildAaplFixtureChain() : buildFixtureChainResponse(),
+    underlyingPrice: isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
     tapStrike:
-      sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm" ? 7545 : undefined,
+      sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm"
+        ? isAapl
+          ? 350
+          : 7545
+        : undefined,
     openReviewOnMount: scene === "confirm",
     settingsPanelOpen: panelOpen,
     verticalStripOnMount: sceneParam === "strip-vertical",
     presentation: {
-      regimeLabel: FIXTURE_REGIME.label,
-      regimeDegraded: FIXTURE_REGIME.degraded,
-      zones: FIXTURE_ZONE_MODEL,
+      regimeLabel: isAapl ? "mild bullish" : FIXTURE_REGIME.label,
+      regimeDegraded: false,
+      zones: isAapl ? FIXTURE_AAPL_ZONES : FIXTURE_ZONE_MODEL,
       classifiedPct: FIXTURE_CLASSIFIED_PCT,
-      headline: FIXTURE_HEADLINE,
+      headline: isAapl ? "" : FIXTURE_HEADLINE,
       sessionLabel: "Cash session",
       skipNetwork: true,
     },
@@ -99,29 +111,31 @@ export function registerAtFixtureFromLocation(): void {
 
   const { setSymbol, setTokens, setTraderTokens } = useTerminalStore.getState();
   useOptionsSettingsStore.getState().setStrikeCount(20);
-  setSymbol("SPX");
+  setSymbol(isAapl ? "AAPL" : "SPX");
   setTokens("at-fixture-dev-token", "");
   setTraderTokens("at-fixture-dev-token", "");
 
+  const spot = isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
+  const sym = isAapl ? "AAPL" : "SPX";
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,
-      SPX: {
-        symbol: "SPX",
-        description: "S&P 500 INDEX",
-        last: FIXTURE_SPX_SPOT,
-        regularLast: FIXTURE_SPX_SPOT,
+      [sym]: {
+        symbol: sym,
+        description: isAapl ? "APPLE INC" : "S&P 500 INDEX",
+        last: spot,
+        regularLast: spot,
         extendedLast: null,
-        bid: FIXTURE_SPX_SPOT - 0.25,
-        ask: FIXTURE_SPX_SPOT + 0.25,
+        bid: spot - (isAapl ? 0.05 : 0.25),
+        ask: spot + (isAapl ? 0.05 : 0.25),
         bidSize: 1,
         askSize: 1,
         change: 0,
         changePct: 0,
         volume: 1_240_000,
-        high: FIXTURE_SPX_SPOT + 18,
-        low: FIXTURE_SPX_SPOT - 22,
-        close: FIXTURE_SPX_SPOT - 12,
+        high: spot + (isAapl ? 3 : 18),
+        low: spot - (isAapl ? 4 : 22),
+        close: spot - (isAapl ? 1.2 : 12),
         ts: Date.now(),
       },
     },
@@ -193,7 +207,7 @@ export function registerAtFixtureFromLocation(): void {
   saveAtSettingsPanelOpen(panelOpen);
 
   const atPrefs = {
-    ...loadActiveTraderPrefs("index"),
+    ...loadActiveTraderPrefs(isAapl ? "equity" : "index"),
     takeProfit: { enabled: true, mode: "percent" as const, offset: 10 },
     stopLoss: {
       enabled: sceneParam === "confirm",
@@ -207,13 +221,17 @@ export function registerAtFixtureFromLocation(): void {
         : ("single" as const),
     verticalWidth: 5 as const,
   };
-  saveActiveTraderPrefs("index", atPrefs);
+  saveActiveTraderPrefs(isAapl ? "equity" : "index", atPrefs);
 
-  resetFlowAndTicks();
+  resetFlowAndTicks(isAapl);
 }
 
-export function resetFlowAndTicks(): void {
+export function resetFlowAndTicks(aapl = false): void {
   const mergeTick = useOptionsStreamStore.getState().mergeTick;
+  if (aapl) {
+    for (const tick of buildAaplFixtureTicks()) mergeTick(tick);
+    return;
+  }
   for (const t of buildSpxFixtureTicks()) mergeTick(t);
   seedSpxFixtureFlow();
 }
