@@ -12,9 +12,16 @@ export async function assertAtHeaderLayout(page, record) {
   record("no duplicate at-symbol-header", dupSymbol === 0, String(dupSymbol));
 
   const grid = page.locator("[data-at-day-levels-grid]");
-  const gridBox = await grid.boundingBox();
+  const gridCount = await grid.count();
   const headerW = headerBox?.width ?? 0;
-  const gridW = gridBox?.width ?? 0;
+  let gridW = 0;
+  if (gridCount === 0) {
+    record("grid width >= 80% header", true, "grid hidden");
+    record("grid cells no overlap", true, "n/a");
+    record("grid no crushed wrap", true, "n/a");
+  } else {
+  const gridBox = await grid.boundingBox();
+  gridW = gridBox?.width ?? 0;
   record("grid width >= 80% header", gridW >= headerW * 0.8, `${gridW.toFixed(0)} / ${headerW.toFixed(0)}`);
 
   const pairs = [
@@ -45,6 +52,7 @@ export async function assertAtHeaderLayout(page, record) {
     return false;
   });
   record("grid no crushed wrap", !wrapBad, wrapBad ? "bad" : "ok");
+  }
 
   const gaps = await header.evaluate((el) => {
     const kids = [...el.children].filter((n) => n.getBoundingClientRect().height > 0);

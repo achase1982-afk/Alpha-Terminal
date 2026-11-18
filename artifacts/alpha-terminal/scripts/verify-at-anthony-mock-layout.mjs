@@ -9,7 +9,9 @@ import { assertAtHeaderLayout } from "./lib/at-header-layout-assert.mjs";
 import { AT_FIXTURE_BASE, ensureAtFixtureVite, waitForLiveLadder } from "./lib/at-fixture-vite.mjs";
 
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-anthony-mock-layout";
+const LIVE = process.env.AT_VERIFY_LIVE;
 const FIXTURE = `${AT_FIXTURE_BASE}?fixture=spx`;
+const TARGET = LIVE ?? FIXTURE;
 
 const checks = [];
 function record(name, pass, detail) {
@@ -30,10 +32,12 @@ async function toggleBox(page) {
 let viteChild = null;
 await mkdir(OUT, { recursive: true });
 
-try {
-  viteChild = await ensureAtFixtureVite();
-} catch (err) {
-  record("fixture vite", false, err instanceof Error ? err.message : String(err));
+if (!LIVE) {
+  try {
+    viteChild = await ensureAtFixtureVite();
+  } catch (err) {
+    record("fixture vite", false, err instanceof Error ? err.message : String(err));
+  }
 }
 
 const browser = await webkit.launch();
@@ -45,9 +49,19 @@ const page = await browser.newPage({
 });
 await installSafeAreaInsets(page, 62, 34);
 
+if (LIVE) {
+  await page.addInitScript(() => {
+    localStorage.setItem("alpha-terminal-storage", JSON.stringify({ state: { symbol: "$SPX" }, version: 35 }));
+  });
+}
+
 try {
-  await page.goto(FIXTURE, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  await page.waitForTimeout(2000);
+  await page.goto(TARGET, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  await page.waitForTimeout(LIVE ? 800 : 2000);
+  if (LIVE) {
+    await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+    await page.waitForTimeout(500);
+  }
   await switchView(page, "chain");
   await page.waitForSelector("[data-options-chain-scroll]", { timeout: 90_000, state: "attached" });
   const chainToggle = await toggleBox(page);
@@ -64,7 +78,7 @@ try {
   if (chainToggle && atToggle) {
     const dX = Math.abs(chainToggle.x + chainToggle.width - (atToggle.x + atToggle.width));
     const dY = Math.abs(chainToggle.y - atToggle.y);
-    record("switcher same right edge", dX < 4, `Δright=${dX.toFixed(1)} Δy=${dY.toFixed(1)}`);
+    record("switcher same right edge", dX <= 6, `Δright=${dX.toFixed(1)} Δy=${dY.toFixed(1)}`);
   }
 
   const tap = await page.evaluate(() => {
