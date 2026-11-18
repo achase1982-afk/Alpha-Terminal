@@ -1,5 +1,5 @@
 import { webkit, devices } from "playwright";
-import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const LIVE = process.env.AT_VERIFY_LIVE ?? "https://alpha-terminal-production-f297.up.railway.app";
@@ -12,7 +12,6 @@ function record(name, pass, detail) {
 }
 
 await mkdir(OUT, { recursive: true });
-let beforeHeight = null;
 
 const browser = await webkit.launch();
 const context = await browser.newContext({
@@ -38,39 +37,47 @@ async function openAt() {
   await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
 }
 
-async function measureHeader(tag) {
+async function measureHeader() {
   const box = await page.locator("[data-at-glance-top]").boundingBox();
   const h = box?.height ?? 0;
-  record(`header height ${tag}`, h > 0 && h <= 200, `${h.toFixed(1)}px`);
+  record("header height", h > 0 && h <= 200, `${h.toFixed(1)}px`);
   return h;
 }
 
 try {
   await openAt();
-  beforeHeight = await measureHeader("after");
+  const headerH = await measureHeader();
 
-  await page.waitForSelector("[data-at-flow-tracks], [data-at-flow-tracks='no-prints'], [data-at-flow-tracks='stale']", {
+  const bg = await page.locator("[data-at-glance-top]").evaluate((el) => getComputedStyle(el).backgroundColor);
+  record("charcoal header bg", /rgb\(27,\s*29,\s*33\)/.test(bg), bg);
+
+  await page.waitForSelector("[data-at-gross-flow], [data-at-gross-flow='no-prints'], [data-at-gross-flow='stale']", {
     timeout: 30_000,
   });
-  const tracksLive = await page.locator("[data-at-flow-net-label]").count();
-  record("net premium label visible", tracksLive > 0, String(tracksLive));
+  const flowNow = await page.locator("[data-at-flow-now]").innerText().catch(() => "");
+  record("FLOW NOW label", /FLOW NOW/.test(flowNow), flowNow);
+
+  const dayStatus = await page.locator("[data-at-day-status]").count();
+  record("DAY status row", dayStatus > 0, String(dayStatus));
+
+  const grid = await page.locator("[data-at-day-levels-grid]").count();
+  record("day low/high grid", grid > 0, String(grid));
 
   const gexInHeader = await page.locator("[data-at-glance-top]").evaluate((el) => /GEX/.test(el.textContent ?? ""));
   record("GEX not in header chrome", !gexInHeader, gexInHeader ? "found GEX" : "ok");
 
-  await page.locator("[data-at-flow-tracks]").first().click({ timeout: 5000 }).catch(() => undefined);
-  await page.waitForSelector("[data-at-glance-flow-detail]", { timeout: 5000 }).catch(() => undefined);
-  const detail = await page.locator("[data-at-detail-gex]").count();
-  record("tap opens GEX detail", detail >= 0, `gex nodes ${detail}`);
+  const orderRow = await page.locator("[data-at-order-settings-row]").count();
+  record("order settings in header", orderRow > 0, String(orderRow));
 
-  await page.screenshot({ path: path.join(OUT, "at-header-flow-440x956.png") });
+  await page.screenshot({ path: path.join(OUT, "at-header-flow-440x956.png"), fullPage: false });
+  await page.screenshot({ path: path.join(OUT, "at-header-full-440x956.png"), fullPage: true });
 } catch (err) {
   record("live capture", false, err instanceof Error ? err.message : String(err));
 }
 
 await writeFile(
   path.join(OUT, "at-header-flow-report.json"),
-  JSON.stringify({ checks, beforeHeight, afterHeight: beforeHeight, live: LIVE }, null, 2),
+  JSON.stringify({ checks, headerH: checks.find((c) => c.name === "header height")?.detail, live: LIVE }, null, 2),
 );
 await browser.close();
 const failed = checks.filter((c) => !c.pass);

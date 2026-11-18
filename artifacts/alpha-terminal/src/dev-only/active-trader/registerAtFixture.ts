@@ -68,13 +68,15 @@ export function registerAtFixtureFromLocation(): void {
     /* ignore */
   }
   const sceneParam = params.get("scene") ?? "default";
+  const headerDownScene = sceneParam === "header-down";
   const scene = (
     sceneParam === "settings-expanded" ||
     sceneParam === "settings-collapsed" ||
     sceneParam === "position" ||
     sceneParam === "focus-off" ||
     sceneParam === "vertical" ||
-    sceneParam === "strip-vertical"
+    sceneParam === "strip-vertical" ||
+    headerDownScene
       ? "default"
       : sceneParam
   ) as AtFixtureOverride["scene"];
@@ -145,7 +147,15 @@ export function registerAtFixtureFromLocation(): void {
   const spot = isEs ? FIXTURE_ES_SPOT : isNvda ? FIXTURE_NVDA_SPOT : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT;
   const sym = isEs ? "/ES" : isNvda ? "NVDA" : isAapl ? "AAPL" : "SPX";
   const close =
-    isNvda ? FIXTURE_NVDA_OPEN : isAapl ? spot - 1.2 : isEs ? spot - 8.5 : spot - 12;
+    headerDownScene && !isNvda && !isAapl && !isEs
+      ? spot / (1 - 0.008)
+      : isNvda
+        ? FIXTURE_NVDA_OPEN
+        : isAapl
+          ? spot - 1.2
+          : isEs
+            ? spot - 8.5
+            : spot - 12;
   const change = spot - close;
   const changePct = close !== 0 ? (change / close) * 100 : 0;
   const description = isNvda
@@ -156,6 +166,22 @@ export function registerAtFixtureFromLocation(): void {
         ? "E-MINI S&P 500"
         : "S&P 500 INDEX";
   const tick = isAapl ? 0.05 : isNvda ? 0.02 : 0.25;
+  if (headerDownScene && !isNvda && !isAapl && !isEs) {
+    window.setInterval(() => {
+      useTerminalStore.setState((s) => {
+        const row = s.streamPrices[sym];
+        if (!row?.last) return s;
+        const next = row.last + 0.25;
+        return {
+          streamPrices: {
+            ...s.streamPrices,
+            [sym]: { ...row, last: next, regularLast: next, ask: next + 0.25, bid: next - 0.25, ts: Date.now() },
+          },
+        };
+      });
+    }, 400);
+  }
+
   useTerminalStore.setState((s) => ({
     streamPrices: {
       ...s.streamPrices,
@@ -172,8 +198,8 @@ export function registerAtFixtureFromLocation(): void {
         change,
         changePct,
         volume: isNvda ? 42_800_000 : 1_240_000,
-        high: spot + (isNvda ? 2.8 : isAapl ? 3 : 18),
-        low: spot - (isNvda ? 3.2 : isAapl ? 4 : 22),
+        high: headerDownScene && !isNvda && !isAapl && !isEs ? 7368 : spot + (isNvda ? 2.8 : isAapl ? 3 : 18),
+        low: headerDownScene && !isNvda && !isAapl && !isEs ? 7288 : spot - (isNvda ? 3.2 : isAapl ? 4 : 22),
         close,
         ts: Date.now(),
       },

@@ -52,7 +52,7 @@ import {
 import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActiveTraderSheetBrackets";
 import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
-import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
+import { AtSettingsExpanded } from "./AtSettingsPanel";
 import { AtGlanceTop } from "./AtGlanceTop";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
 import { atSheetPeekHeightPx } from "@/lib/active-trader/atSheetLayout";
@@ -879,11 +879,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       style={{ background: BG, overscrollBehavior: "none" }}
     >
       <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
-        {subViewChrome ? (
-          <div className="flex items-center justify-end px-2 py-1" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            {subViewChrome}
-          </div>
-        ) : null}
         <AtGlanceTop
           symbol={symbol}
           underlyingPrice={underlyingPrice}
@@ -896,6 +891,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           sessionOpen={underlyingQuote?.close ?? null}
           skipNetwork={!!presentation?.skipNetwork}
           embedded
+          viewSelector={subViewChrome}
+          orderSettings={{
+            prefs,
+            primaryInstruction: settingsSummaryInstruction,
+            limitMid: settingsSummaryLimit,
+            open: settingsOpen,
+            onToggle: toggleSettings,
+          }}
         />
         <AtSettingsExpanded
           open={settingsOpen}
@@ -924,17 +927,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           boxShadow: "0 2px 6px rgba(0,0,0,0.55)",
         }}
       >
-        <AtSettingsSummary
-          slim={false}
-          glanceSlim
-          open={settingsOpen}
-          onToggle={toggleSettings}
-          prefs={prefs}
-          primaryInstruction={settingsSummaryInstruction}
-          limitMid={settingsSummaryLimit}
-          expiryLabel={expiryLabel}
-          underlyingSymbol={underlyingSymbol}
-        />
         <div
           className="grid items-center px-0.5"
           style={{
