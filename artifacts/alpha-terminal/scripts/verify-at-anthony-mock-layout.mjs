@@ -127,8 +127,9 @@ try {
   await switchView(page, "chain");
   await page.waitForTimeout(600);
   const expiryChain = await page.evaluate(() => {
-    const open = document.querySelector('[data-ui-audit="chain-exp-btn"][aria-expanded="true"] span');
-    return open?.textContent?.trim() ?? "";
+    const btn = document.querySelector('[data-ui-audit="chain-exp-btn"]');
+    const span = btn?.querySelector("span");
+    return span?.textContent?.trim() ?? btn?.textContent?.trim() ?? "";
   });
   await page.screenshot({ path: path.join(OUT, "03-chain-return-440x956.png") });
   record("expiry text on chain", expiryChain.length > 0, expiryChain || "none");
@@ -138,8 +139,9 @@ try {
   await switchView(page, "chain");
   await page.waitForTimeout(400);
   const expiryAfter = await page.evaluate(() => {
-    const open = document.querySelector('[data-ui-audit="chain-exp-btn"][aria-expanded="true"] span');
-    return open?.textContent?.trim() ?? "";
+    const btn = document.querySelector('[data-ui-audit="chain-exp-btn"]');
+    const span = btn?.querySelector("span");
+    return span?.textContent?.trim() ?? btn?.textContent?.trim() ?? "";
   });
   record(
     "expiry survives round-trip",
@@ -156,7 +158,10 @@ try {
   record("anthony mock layout", false, err instanceof Error ? err.message : String(err));
 }
 
-await writeFile(path.join(OUT, "report.json"), JSON.stringify({ checks, fixture: FIXTURE }, null, 2));
+await writeFile(
+  path.join(OUT, "report.json"),
+  JSON.stringify({ checks, target: TARGET, live: LIVE ?? null }, null, 2),
+);
 await browser.close();
 if (viteChild) viteChild.kill();
 
