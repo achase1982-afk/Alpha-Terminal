@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { resolveLowZoneSlotDisplay } from "../atLowZoneSlot";
-import { SPX_LOW_ZONE_K_DEFAULT } from "../spxLowZone";
-
 describe("resolveLowZoneSlotDisplay", () => {
   it("returns ref top at K=35 with half-point rounding", () => {
     const d = resolveLowZoneSlotDisplay(7288.12);
