@@ -876,6 +876,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           keepawayCallLine={keepawayCallLine}
           keepawayStats={keepawayStats}
           sessionOpen={underlyingQuote?.close ?? null}
+          skipNetwork={!!presentation?.skipNetwork}
           embedded
         />
         <AtSettingsExpanded
