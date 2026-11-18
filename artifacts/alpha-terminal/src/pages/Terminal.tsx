@@ -852,15 +852,52 @@ export default function TerminalPage() {
 
   useEffect(() => {
     if (!mobileTabUsesInnerScroll && !(activeBottom === "markets" && contextTab === "options")) return;
-    const el = resolveMobileInnerScroller();
-    if (!el) {
-      setIsScrolledRaw(false);
-      return;
+
+    let scrollEl: HTMLElement | null = null;
+    let observer: MutationObserver | null = null;
+
+    const detach = () => {
+      if (!scrollEl) return;
+      scrollEl.removeEventListener("scroll", onScroll);
+      scrollEl = null;
+    };
+
+    const onScroll = () => {
+      if (scrollEl) setIsScrolledRaw(scrollEl.scrollTop > COLLAPSE_PX);
+    };
+
+    const attach = (el: HTMLElement | null) => {
+      detach();
+      if (!el) {
+        setIsScrolledRaw(false);
+        return;
+      }
+      scrollEl = el;
+      onScroll();
+      el.addEventListener("scroll", onScroll, { passive: true });
+    };
+
+    attach(resolveMobileInnerScroller());
+
+    if (!scrollEl && activeBottom === "markets" && contextTab === "options") {
+      const main = document.querySelector("main.app-content");
+      if (main) {
+        observer = new MutationObserver(() => {
+          const found = resolveMobileInnerScroller();
+          if (found) {
+            attach(found);
+            observer?.disconnect();
+            observer = null;
+          }
+        });
+        observer.observe(main, { childList: true, subtree: true });
+      }
     }
-    const onScroll = () => setIsScrolledRaw(el.scrollTop > COLLAPSE_PX);
-    onScroll();
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => el.removeEventListener("scroll", onScroll);
+
+    return () => {
+      detach();
+      observer?.disconnect();
+    };
   }, [mobileTabUsesInnerScroll, activeBottom, contextTab, atSubViewActive, resolveMobileInnerScroller]);
 
   useEffect(() => {

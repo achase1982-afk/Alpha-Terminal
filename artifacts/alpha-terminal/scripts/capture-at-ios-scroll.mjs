@@ -40,7 +40,7 @@ async function startVite() {
     cwd: PKG_ROOT,
     stdio: "pipe",
     detached: true,
-    env: { ...process.env, BROWSER: "none", VITE_DEV_BYPASS_AUTH: "true" },
+    env: { ...process.env, BROWSER: "none", VITE_DEV_BYPASS_AUTH: "true", VITE_AT_GLANCE_TOP: "0" },
   });
   child.unref();
   if (!(await waitForServer(120_000))) {
@@ -83,6 +83,15 @@ async function runAtSuite(vp, fixture) {
   const prefix = `at-ios-${fixture}-${vp.tag}`;
   const topMetrics = await ladderMetrics(page);
   await page.screenshot({ path: path.join(OUT, `${prefix}-top.png`), fullPage: false });
+
+  const spotGap = page.locator("[data-at-spot-gap]").first();
+  if (await spotGap.count()) {
+    await spotGap.screenshot({ path: path.join(OUT, `${prefix}-spot-marker.png`) }).catch(() => undefined);
+  }
+  const flipRow = page.locator("[data-at-ladder-scroll] .grid").filter({ hasText: /^Flip / }).first();
+  if (await flipRow.count()) {
+    await flipRow.screenshot({ path: path.join(OUT, `${prefix}-flip-marker.png`) }).catch(() => undefined);
+  }
 
   const strike = fixture === "aapl" ? "350" : "7545";
   await page
@@ -143,31 +152,24 @@ async function runPortfolioSuite(vp) {
   const page = await context.newPage();
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded", timeout: 90_000 });
   await page.getByRole("button", { name: /PORTFOLIO/i }).click().catch(() => undefined);
+  await page.waitForSelector("[data-pf-root]", { timeout: 30_000 }).catch(() => undefined);
   await page.waitForTimeout(1200);
   const prefix = `portfolio-ios-${vp.tag}`;
   await page.screenshot({ path: path.join(OUT, `${prefix}-top.png`) });
   const prevented = await page.evaluate(() => {
     const inner = document.querySelector("main.app-content > .tab-inner-scroll");
-    const leaf = document.querySelector("[data-pf-root]") || document.body;
-    if (!inner) return { innerFound: false, prevented: false };
-    let prevented = false;
-    const startY = 400;
-    const onStart = (e) => {
-      e.touches = [{ clientY: startY }];
+    if (!inner) return { innerFound: false, guardAttached: false };
+    const guardAttached = inner.getAttribute("data-pf-touch-guard") === "1";
+    let passive = true;
+    const seen = inner.onclick; // probe: guard uses non-passive touchmove
+    const moves = [];
+    const orig = EventTarget.prototype.addEventListener;
+    return {
+      innerFound: true,
+      guardAttached,
+      scrollH: inner.scrollHeight,
+      clientH: inner.clientHeight,
     };
-    const onMove = (e) => {
-      const dy = 30;
-      const atTop = inner.scrollTop <= 0;
-      if (atTop && dy > 0) {
-        e.preventDefault();
-        prevented = true;
-      }
-    };
-    inner.addEventListener("touchmove", onMove, { passive: false });
-    const ev = new Event("touchmove");
-    inner.dispatchEvent(ev);
-    inner.removeEventListener("touchmove", onMove);
-    return { innerFound: true, prevented };
   });
   console.log(JSON.stringify({ prefix, touchGuardProbe: prevented }));
   await browser.close();

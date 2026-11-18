@@ -114,8 +114,8 @@ function BoldSpotCell({ label, value, sub, color }: { label: string; value: stri
 }
 
 export const RegimeStrip = memo(function RegimeStrip({
-  regimeLabel,
-  regimeDegraded,
+  regimeLabel: _regimeLabel,
+  regimeDegraded: _regimeDegraded,
   zones,
   underlyingPrice,
   keepawayStats,
@@ -132,15 +132,6 @@ export const RegimeStrip = memo(function RegimeStrip({
   const [infoOpen, setInfoOpen] = useState(false);
   const session = sessionLabel ?? (isUsEquitiesMarketHoursEt() ? "Cash session" : "Extended");
 
-  const regimeText = regimeLabel ?? "\u2014";
-  const regimeTone = regimeDegraded
-    ? { bg: "rgba(255,255,255,0.06)", color: GRAY, border: BORDER_ROW }
-    : /bear|down|put/i.test(regimeText)
-      ? { bg: "rgba(242,54,69,0.18)", color: DOWN, border: "rgba(242,54,69,0.45)" }
-      : /bull|up|call/i.test(regimeText)
-        ? { bg: "rgba(0,209,102,0.15)", color: UP, border: "rgba(0,209,102,0.4)" }
-        : { bg: "rgba(251,191,36,0.12)", color: GOLD, border: "rgba(251,191,36,0.35)" };
-
   const flashCw = useFlashOnChange(zones.callWall);
   const flashPw = useFlashOnChange(zones.putWall);
   const flashFlip = useFlashOnChange(zones.flip != null ? Math.round(zones.flip) : null);
@@ -153,8 +144,6 @@ export const RegimeStrip = memo(function RegimeStrip({
   const flip =
     zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "none in range";
   const gexVal = formatGexUsd(zones.netGexUsdPer1Pct);
-  const envLabel =
-    zones.env === "damping" ? "Damping" : zones.env === "amplifying" ? "Amplifying" : zones.env === "near_flip" ? "Near flip" : "";
 
   const kLow = keepawayStats
     ? keepawayUseMean
@@ -192,15 +181,14 @@ export const RegimeStrip = memo(function RegimeStrip({
         background: BG_EXP_BAR,
         borderBottom: embedded ? undefined : `1px solid ${BORDER_ROW}`,
         fontFamily: MONO,
-        maxHeight: expanded ? 220 : undefined,
-        overflow: expanded ? "auto" : "hidden",
+        overflow: "hidden",
       }}
     >
-      <div className="w-full flex items-center justify-between gap-2">
+      <div className="w-full flex items-center justify-between gap-1.5">
         <div
           role="button"
           tabIndex={0}
-          className="flex flex-1 items-center gap-2 min-w-0"
+          className="flex items-center gap-1 min-w-0"
           onClick={toggleExpanded}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
@@ -210,23 +198,33 @@ export const RegimeStrip = memo(function RegimeStrip({
           }}
           aria-expanded={expanded}
         >
-          <span
-            className="shrink-0 rounded-full px-2 py-0.5 capitalize truncate max-w-[160px]"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: regimeTone.color,
-              background: regimeTone.bg,
-              border: `1px solid ${regimeTone.border}`,
-            }}
-          >
-            {regimeText}
-          </span>
           <ChevronDown
             className="w-3.5 h-3.5 shrink-0 transition-transform"
             style={{ color: DIM, transform: expanded ? "rotate(180deg)" : undefined }}
           />
+          <span className="truncate" style={{ fontSize: 10, color: GRAY, fontWeight: 500, letterSpacing: "0.06em" }}>
+            KEY LEVELS
+          </span>
         </div>
+        {showKeepaway && onToggleKeepawayMean ? (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleKeepawayMean();
+            }}
+            className="shrink-0 rounded-full px-1.5 py-px"
+            style={{
+              fontSize: 10,
+              color: WHITE,
+              border: `1px solid ${BORDER_ROW}`,
+              background: keepawayUseMean ? "rgba(255,255,255,0.08)" : "transparent",
+              fontWeight: 600,
+            }}
+          >
+            {keepawayUseMean ? "K: avg" : "K: med"}
+          </button>
+        ) : null}
         <button
           type="button"
           aria-label="Key level conventions"
@@ -236,7 +234,7 @@ export const RegimeStrip = memo(function RegimeStrip({
         >
           <Info className="w-3.5 h-3.5" />
         </button>
-        <span className="shrink-0" style={{ fontSize: 10, color: WHITE, fontWeight: 500 }}>
+        <span className="shrink-0 ml-auto" style={{ fontSize: 10, color: WHITE, fontWeight: 500 }}>
           {session}
         </span>
       </div>
@@ -281,27 +279,6 @@ export const RegimeStrip = memo(function RegimeStrip({
             <BoldSpotCell label="CALL WALL" value={cw} color={GOLD} />
           </>
         )}
-        {showKeepaway && onToggleKeepawayMean ? (
-          <div className="col-span-3 flex justify-end">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleKeepawayMean();
-              }}
-              className="rounded-full px-2 py-0.5"
-              style={{
-                fontSize: K_PX,
-                color: WHITE,
-                border: `1px solid ${BORDER_ROW}`,
-                background: keepawayUseMean ? "rgba(255,255,255,0.08)" : "transparent",
-                fontWeight: 600,
-              }}
-            >
-              {keepawayUseMean ? "K: avg" : "K: med"}
-            </button>
-          </div>
-        ) : null}
       </div>
 
       {expanded ? (
@@ -348,9 +325,6 @@ export const RegimeStrip = memo(function RegimeStrip({
             >
               {gexVal}
             </div>
-            {envLabel ? (
-              <div style={{ fontSize: 10, color: GRAY, fontWeight: 500, marginTop: 1 }}>{envLabel}</div>
-            ) : null}
           </button>
         </div>
       ) : null}

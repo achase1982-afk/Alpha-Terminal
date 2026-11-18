@@ -329,8 +329,8 @@ const LadderRowView = memo(function LadderRowView({
             />
           </div>
           <div
-            className="flex items-center justify-start col-start-1 col-end-4 z-[1] pointer-events-none"
-            style={{ paddingLeft: 2, marginTop: 1 }}
+            className="flex items-center justify-center z-[1] pointer-events-none"
+            style={{ gridColumn: "4 / 5", paddingLeft: 2, marginTop: 1 }}
           >
             <span
               className="truncate whitespace-nowrap"
@@ -495,7 +495,10 @@ const LadderRowView = memo(function LadderRowView({
 
 function FlipPill({ flip }: { flip: number }) {
   return (
-    <span className="flex items-start justify-end pr-0.5 col-start-7" style={{ marginTop: -5 }}>
+    <span
+      className="flex items-center justify-center pointer-events-none"
+      style={{ gridColumn: "4 / 6", marginTop: 0, height: 6 }}
+    >
       <span
         className="px-1 rounded-full whitespace-nowrap"
         style={{
@@ -529,21 +532,21 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   return (
     <div style={{ background: AT_LADDER_PANEL_BG }}>
       {props.rows.map((row, i) => {
-        const next = props.rows[i + 1];
+        const prev = props.rows[i - 1];
         const spotBetween =
           props.underlyingPrice != null &&
-          next != null &&
-          row.strike > props.underlyingPrice &&
-          next.strike <= props.underlyingPrice;
+          prev != null &&
+          prev.strike > props.underlyingPrice &&
+          row.strike <= props.underlyingPrice;
         const spotFrac =
           spotBetween && props.underlyingPrice != null
-            ? (row.strike - props.underlyingPrice) / (row.strike - next!.strike)
+            ? (prev.strike - props.underlyingPrice) / (prev.strike - row.strike)
             : 0;
         const flipBetween =
           props.zones.flip != null &&
-          next != null &&
-          row.strike > props.zones.flip &&
-          next.strike <= props.zones.flip;
+          prev != null &&
+          prev.strike > props.zones.flip &&
+          row.strike <= props.zones.flip;
         return (
           <LadderRowView
             key={row.strike}

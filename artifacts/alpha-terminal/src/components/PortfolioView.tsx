@@ -25,7 +25,6 @@ import { SchwabAccountHeader } from "./SchwabAccountHeader";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { resolvePortfolioDisplayAccount } from "@/lib/portfolioDisplayAccount";
 import { useShallow } from "zustand/react/shallow";
-import { findVerticalScrollParent } from "@/lib/findVerticalScrollParent";
 
 const C = {
   bg: "#0c0c0c",
@@ -1725,27 +1724,34 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   useEffect(() => {
     const el = portfolioRootRef.current;
     if (!el) return;
-    const scrollParent = findVerticalScrollParent(el);
+    const scrollParent = el.closest(".tab-inner-scroll") as HTMLElement | null;
     if (!scrollParent) return;
     let startY = 0;
-    const onTouchStart = (e: TouchEvent) => { startY = e.touches[0].clientY; };
+    const onTouchStart = (e: TouchEvent) => {
+      startY = e.touches[0]?.clientY ?? 0;
+    };
     const onTouchMove = (e: TouchEvent) => {
       const target = e.target;
-      if (target instanceof Element && target.closest(".pf-hscroll")) return;
-      const dy = e.touches[0].clientY - startY;
+      if (target instanceof Element) {
+        if (target.closest(".pf-hscroll")) return;
+        if (target.closest("[data-at-settings-expanded]")) return;
+      }
+      const dy = (e.touches[0]?.clientY ?? startY) - startY;
       const atTop = scrollParent.scrollTop <= 0;
       const atBottom = scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 1;
       if ((atTop && dy > 0) || (atBottom && dy < 0)) {
         e.preventDefault();
       }
     };
+    scrollParent.setAttribute("data-pf-touch-guard", "1");
     scrollParent.addEventListener("touchstart", onTouchStart, { passive: true });
     scrollParent.addEventListener("touchmove", onTouchMove, { passive: false });
     return () => {
       scrollParent.removeEventListener("touchstart", onTouchStart);
       scrollParent.removeEventListener("touchmove", onTouchMove);
+      scrollParent.removeAttribute("data-pf-touch-guard");
     };
-  }, []);
+  }, [accessToken, accountsFingerprint, viewSelection, portfolioStatus.status]);
 
   useEffect(() => {
     if (positionsTouchingRef.current) return;

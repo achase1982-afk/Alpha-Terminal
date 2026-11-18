@@ -67,13 +67,13 @@ export function computeSpxKeepawayFromDailyCandles(
   };
 }
 
-/** Index strike grid: floor put boundary, ceil call boundary (half-point aware). */
+/** SPX strike grid: floor put boundary, ceil call boundary on 5-pt increments. */
 export function roundKeepawayPutLine(raw: number): number {
-  return Math.floor(raw * 2) / 2;
+  return Math.floor(raw / 5) * 5;
 }
 
 export function roundKeepawayCallLine(raw: number): number {
-  return Math.ceil(raw * 2) / 2;
+  return Math.ceil(raw / 5) * 5;
 }
 
 export function spxKeepawayBoundary(
