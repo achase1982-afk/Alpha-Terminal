@@ -40,6 +40,12 @@ import {
   legsFromChainSelection,
 } from "@/components/OptionsChainOrderSheet";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
+import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
+import {
+  futuresChainPlaceholderPrimary,
+  futuresChainPlaceholderSecondary,
+  isFuturesDisplaySymbol,
+} from "@/lib/futuresSchwabUi";
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
 
@@ -1239,9 +1245,13 @@ export function OptionsTab({
 }: OptionsTabProps) {
   const atFixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
   const chainFixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
-  const fixtureChain = atFixtureOverride ?? chainFixtureOverride;
+  const futuresEsFixture = import.meta.env.DEV ? getFuturesEsFixtureOverride() : null;
+  const futuresEsFixtureChain = futuresEsFixture
+    ? { chain: futuresEsFixture.chain, underlyingPrice: futuresEsFixture.underlyingPrice }
+    : null;
+  const fixtureChain = atFixtureOverride ?? chainFixtureOverride ?? futuresEsFixtureChain;
   const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
-    () => atFixtureOverride?.initialSubView ?? "chain",
+    () => atFixtureOverride?.initialSubView ?? futuresEsFixture?.initialSubView ?? "chain",
   );
   const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
   const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
@@ -1259,6 +1269,7 @@ export function OptionsTab({
   const { accessToken } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
+  const isFuturesSymbol = isFuturesDisplaySymbol(symbol);
   const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
   const { activeColumnIds } = useOptionsColumnsStore();
@@ -1291,7 +1302,14 @@ export function OptionsTab({
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt } = useGetOptionChain<OptionChainResponse>(
     { symbol, contractType: "ALL", strikeCount },
-    { query: { enabled: !!accessToken && !!symbol && !fixtureChain, staleTime: 30_000, gcTime: 5 * 60_000, retry: 2 } }
+    {
+      query: {
+        enabled: !!accessToken && !!symbol && !fixtureChain,
+        staleTime: 30_000,
+        gcTime: 5 * 60_000,
+        retry: isFuturesSymbol ? false : 2,
+      },
+    },
   );
 
   const data = useMemo(() => {
@@ -1311,7 +1329,7 @@ export function OptionsTab({
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureChain, symbol]);
+  }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol]);
 
   const isLoadingEffective = fixtureChain ? false : isLoading;
 
@@ -1661,6 +1679,10 @@ export function OptionsTab({
   const showPuts = contractType !== "CALL";
   const hasData = data && groups.length > 0;
   const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
+  const futuresChainUnsupported =
+    apiError === "futures_chain_unsupported" ||
+    (data as Record<string, unknown> | undefined)?.error === "futures_chain_unsupported";
+  const futuresSecondary = futuresChainPlaceholderSecondary(symbol);
 
   const selCount = selectedLegs.size;
 
@@ -1778,7 +1800,24 @@ export function OptionsTab({
           </div>
         )}
 
-        {!hasData && !isLoadingEffective && !error && apiError && (
+        {futuresChainUnsupported && !hasData && !isLoadingEffective && !error && (
+          <div
+            className="p-12 text-center font-mono flex flex-col items-center max-w-md mx-auto"
+            style={{ color: GRAY }}
+            data-ui-audit="futures-chain-placeholder"
+          >
+            <span className="text-[11px] leading-relaxed" style={{ fontWeight: FW_NORMAL }}>
+              {futuresChainPlaceholderPrimary()}
+            </span>
+            {futuresSecondary ? (
+              <span className="text-[10px] mt-2 leading-relaxed" style={{ color: DIM, fontWeight: FW_LIGHT }}>
+                {futuresSecondary}
+              </span>
+            ) : null}
+          </div>
+        )}
+
+        {!hasData && !isLoadingEffective && !error && apiError && !futuresChainUnsupported && (
           <div className="p-12 text-center font-mono flex flex-col items-center" style={{ color: GOLD_DIM }}>
             <span className="text-2xl mb-2">{"\u26A0"}</span>
             <span className="text-[10px] tracking-widest" style={{ fontWeight: FW_LIGHT }}>OPTIONS UNAVAILABLE</span>
@@ -1793,7 +1832,7 @@ export function OptionsTab({
           </div>
         )}
 
-        {!isLoadingEffective && !error && !data && accessToken && (
+        {!isLoadingEffective && !error && !data && accessToken && !futuresChainUnsupported && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2 animate-pulse" style={{ color: MUTED }} />
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>LOADING OPTIONS CHAIN...</span>

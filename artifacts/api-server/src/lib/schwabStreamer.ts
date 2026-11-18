@@ -152,8 +152,19 @@ const FUTURES_ROOT_ALIAS: Record<string, string> = {
   "VIX": "VX",
 };
 
+/** Schwab stream / REST full contract, e.g. `/ESZ26`. */
+export const SCHWAB_FUTURES_CONTRACT_RE = /^\/[A-Z0-9]{1,4}[FGHJKMNQUVXZ]\d{2}$/;
+
+export function isSchwabFuturesContractSymbol(displaySymbol: string): boolean {
+  return SCHWAB_FUTURES_CONTRACT_RE.test(displaySymbol.toUpperCase().trim());
+}
+
 export function schwabFuturesKey(displaySymbol: string): string {
-  const rawBare = displaySymbol.replace(/^\//, "");
+  const upper = displaySymbol.toUpperCase().trim();
+  if (isSchwabFuturesContractSymbol(upper)) {
+    return upper;
+  }
+  const rawBare = upper.replace(/^\//, "");
   const bare = FUTURES_ROOT_ALIAS[rawBare] ?? rawBare;
   const now = new Date();
   const y2 = now.getFullYear() % 100;
@@ -770,7 +781,17 @@ export function getSnapshot(): LiveQuote[] {
 }
 
 export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
-  return quoteCache.get(symbol);
+  const upper = symbol.toUpperCase().trim();
+  const direct = quoteCache.get(upper);
+  if (direct) return direct;
+  if (!upper.startsWith("/")) return undefined;
+  if (isSchwabFuturesContractSymbol(upper)) {
+    const display = futuresKeyToDisplay.get(upper);
+    if (display && display !== upper) return quoteCache.get(display);
+    return undefined;
+  }
+  const contract = schwabFuturesKey(upper);
+  return contract !== upper ? quoteCache.get(contract) : undefined;
 }
 
 export function getOptionTick(key: string): OptionTick | undefined {
@@ -1636,6 +1657,10 @@ function processFuturesTick(content: Record<string, unknown>[]) {
     };
 
     quoteCache.set(displaySymbol, quote);
+    const streamKey = rawKey.toUpperCase();
+    if (streamKey !== displaySymbol) {
+      quoteCache.set(streamKey, { ...quote, symbol: streamKey });
+    }
     broadcast("quote", quote);
   }
 }
@@ -2395,8 +2420,12 @@ export function addFuturesSymbols(displaySymbols: string[]) {
   const newKeys: string[] = [];
   for (const ds of displaySymbols) {
     const isFuture = ds.startsWith("/");
-    const key = isFuture ? schwabFuturesKey(ds) : ds;
-    futuresKeyToDisplay.set(key, ds.toUpperCase());
+    const normalized = ds.toUpperCase();
+    const key = isFuture ? schwabFuturesKey(normalized) : normalized;
+    futuresKeyToDisplay.set(key, normalized);
+    if (isFuture && key !== normalized) {
+      futuresKeyToDisplay.set(normalized, normalized);
+    }
     if (!subscribedFuturesSymbols.has(key)) {
       subscribedFuturesSymbols.add(key);
       newKeys.push(key);

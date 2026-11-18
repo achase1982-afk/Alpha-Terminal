@@ -1,3 +1,5 @@
+import { schwabFuturesKey } from "../schwabStreamer.js";
+
 const INDEX_SYMBOL_MAP: Record<string, string> = {
   VIX: "$VIX",
   $VIX: "$VIX",
@@ -11,6 +13,9 @@ const INDEX_SYMBOL_MAP: Record<string, string> = {
 
 export function deskFormatSchwabSymbol(symbol: string): string {
   let upper = symbol.toUpperCase().trim();
+  if (upper.startsWith("/")) {
+    return schwabFuturesKey(upper);
+  }
   if (upper.endsWith(".X") && upper.startsWith("$")) {
     upper = upper.slice(0, -2);
   }

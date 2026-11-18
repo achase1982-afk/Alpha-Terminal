@@ -10,6 +10,7 @@ import {
   addOptionSymbols,
   getAllOptionTicks,
   schwabSymbolHasStreamingMark,
+  schwabFuturesKey,
   type OptionTick,
 } from "../lib/schwabStreamer.js";
 import { streamerSubHold, streamerSubRelease, streamerSubTouch } from "../lib/streamerSubscriptionManager.js";
@@ -89,6 +90,9 @@ const INDEX_SYMBOL_MAP: Record<string, string> = {
 
 function formatSchwabSymbol(symbol: string): string {
   let upper = symbol.toUpperCase().trim();
+  if (upper.startsWith("/")) {
+    return schwabFuturesKey(upper);
+  }
   if (upper.endsWith(".X") && upper.startsWith("$")) {
     upper = upper.slice(0, -2);
   }
@@ -214,7 +218,7 @@ router.get("/quote", async (req, res) => {
   const displaySymbol = symbol.toUpperCase().trim();
   const apiSymbol = formatSchwabSymbol(displaySymbol);
 
-  const schwabCached = getQuoteBySymbol(apiSymbol);
+  const schwabCached = getQuoteBySymbol(displaySymbol) ?? getQuoteBySymbol(apiSymbol);
   if (schwabCached && schwabCached.last !== null) {
     const cachedDesc = apiSymbol === "$DXY"
       ? "Dollar Index (Synthetic)"
@@ -622,6 +626,9 @@ function centerStrikesAroundATM(
 const LARGE_CHAIN_SYMBOLS = new Set(["SPY", "QQQ", "AAPL", "TSLA", "AMZN", "NVDA", "META", "MSFT", "GOOG", "GOOGL", "SPX", "$SPX", "NDX", "$NDX", "RUT", "$RUT", "DJI", "$DJI"]);
 
 async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT", token: string, isFuturesSymbol: boolean, log: any, strikeCount?: number): Promise<{ map: Record<string, unknown>; underlyingPrice?: number } | null> {
+  if (isFuturesSymbol || chainSymbol.startsWith("/")) {
+    return null;
+  }
   const params = new URLSearchParams({
     symbol: chainSymbol,
     contractType,
@@ -671,6 +678,10 @@ async function fetchChainSide(chainSymbol: string, contractType: "CALL" | "PUT",
 async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
+
+  if (isFuturesSymbol) {
+    return null;
+  }
 
   if (isIndexSymbol) {
     const structure = await fetchIndexChainStructure(displaySymbol, token, log);

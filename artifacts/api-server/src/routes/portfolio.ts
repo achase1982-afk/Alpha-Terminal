@@ -40,6 +40,26 @@ interface SchwabOrderLeg {
 
 interface SchwabPlaceOrderBody extends Record<string, unknown> {
   orderLegCollection?: SchwabOrderLeg[];
+  childOrderStrategies?: SchwabPlaceOrderBody[];
+}
+
+function collectOrderLegSymbols(order: SchwabPlaceOrderBody): string[] {
+  const symbols: string[] = [];
+  const walk = (node: SchwabPlaceOrderBody) => {
+    for (const leg of node.orderLegCollection ?? []) {
+      const sym = leg.instrument?.symbol;
+      if (typeof sym === "string" && sym.trim()) symbols.push(sym.trim());
+    }
+    for (const child of node.childOrderStrategies ?? []) {
+      if (child && typeof child === "object") walk(child);
+    }
+  };
+  walk(order);
+  return symbols;
+}
+
+function orderReferencesFuturesSymbol(order: SchwabPlaceOrderBody): boolean {
+  return collectOrderLegSymbols(order).some((sym) => sym.startsWith("/"));
 }
 
 /** Client-supplied journal metadata when logging a trade alongside an order. */
@@ -300,6 +320,14 @@ router.post("/place-order", async (req, res) => {
 
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });
+  }
+
+  if (orderReferencesFuturesSymbol(order)) {
+    return res.status(403).json({
+      error: "futures_orders_unsupported",
+      message:
+        "Futures can be quoted here, but the Schwab Trader API doesn't accept futures or futures-options orders.",
+    });
   }
 
   try {

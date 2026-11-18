@@ -296,6 +296,10 @@ function singleOptionPayload(
 
 /** Build Schwab order JSON for Active Trader templates. */
 export function buildAtSchwabOrderJson(input: AtOrderBuildInput): Record<string, unknown> {
+  const underlying = (input.underlyingSymbol ?? input.symbol).trim();
+  if (underlying.startsWith("/")) {
+    return { error: "futures_orders_unsupported" };
+  }
   const { validationError } = planAtOrderLegs(input);
   if (validationError) {
     return { error: validationError };

@@ -33,6 +33,8 @@ import {
   submitAtSchwabOrder,
 } from "@/lib/active-trader/atPlaceOrder";
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
+import { AtFuturesLiveQuote } from "@/components/active-trader/AtFuturesLiveQuote";
 import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
@@ -102,6 +104,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const primary =
     groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
+  const futuresQuoteMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
     call_buy: true,
@@ -580,7 +583,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       </div>
 
       <div style={{ ...noScrollbar, maxHeight: ladderMaxHeight, overflowY: "auto", background: AT_LADDER_PANEL_BG }}>
-        {ladderDataReady ? (
+        {futuresQuoteMode ? (
+          <AtFuturesLiveQuote symbol={symbol} />
+        ) : ladderDataReady ? (
         <LadderBody
           rows={ladderRows}
           accentHex={accentHex}

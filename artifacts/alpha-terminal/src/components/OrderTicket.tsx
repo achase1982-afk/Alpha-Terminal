@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { FUTURES_ORDER_BLOCK_MESSAGE, isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
 import { useOptionTick, useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
@@ -461,6 +462,7 @@ export function OrderTicket({
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
+  const futuresOrderBlocked = isFuturesDisplaySymbol(symbol);
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isSingleOption = !isMultiLeg && !!optionSymbol;
   const isStockTicket = !isMultiLeg && !optionSymbol;
@@ -1041,6 +1043,7 @@ export function OrderTicket({
   }, [preTradeBlockOnRed, riskChecks, isCloseOrder]);
 
   const isValid = useMemo(() => {
+    if (futuresOrderBlocked) return false;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return false;
     if (quantity <= 0) return false;
     if (!accountHash) return false;
@@ -1050,7 +1053,7 @@ export function OrderTicket({
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
     return true;
-  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit, isCloseOrder]);
+  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit, isCloseOrder, futuresOrderBlocked]);
 
   const buildSchwabOrder = useCallback(() => {
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
@@ -1200,6 +1203,7 @@ export function OrderTicket({
 
   const handleSubmit = useCallback(async () => {
     if (submitInFlightRef.current || stage === "submitting") return;
+    if (futuresOrderBlocked) return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
     if (atTemplatePlan?.validationError) return;
@@ -1292,6 +1296,7 @@ export function OrderTicket({
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
     overallRisk, riskChecks, ticketEconomics, stage, atTemplatePlan?.validationError, atTemplatePrefs, isValid,
+    futuresOrderBlocked,
   ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
@@ -2661,6 +2666,15 @@ export function OrderTicket({
       {/* CTA BAR — matching StrategyBuilder format for multi-leg */}
       {stage === "form" && (
         <div className="shrink-0 px-3 pt-2" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 20px), 20px)", background: BG, borderTop: `1px solid ${BORDER}`, zIndex: 215 }}>
+          {futuresOrderBlocked ? (
+            <p
+              className="mb-2 leading-relaxed"
+              data-testid="futures-order-blocked"
+              style={{ fontSize: S.label, color: GOLD }}
+            >
+              {FUTURES_ORDER_BLOCK_MESSAGE}
+            </p>
+          ) : null}
           {isMultiLeg && strategyLegs ? (
             <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-[12px]" style={{ color: TEXT }}>
               <span>{quantity} spread{quantity !== 1 ? "s" : ""} · {strategyIsCredit ? "Credit" : "Cost"} {estimatedCost != null ? fmtCurrency(Math.abs(estimatedCost)) : "—"}</span>
@@ -3010,12 +3024,25 @@ export function OrderTicket({
               })()}
             </div>
 
+            {futuresOrderBlocked ? (
+              <div
+                className="px-3 py-1.5 flex items-start gap-2"
+                data-testid="futures-order-blocked"
+                style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
+                <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
+                  {FUTURES_ORDER_BLOCK_MESSAGE}
+                </p>
+              </div>
+            ) : (
             <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
               <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
                 This will place a live order with Schwab. Verify all details before confirming.
               </p>
             </div>
+            )}
 
             <div className="flex gap-2 pt-1 pb-4">
               <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>

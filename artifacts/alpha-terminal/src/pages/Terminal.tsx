@@ -51,6 +51,7 @@ import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
+import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
 
 // ---------------------------------------------------------------------------
 // Code splitting. The terminal shipped as a single ~2.6 MB chunk; the views
@@ -364,6 +365,7 @@ export default function TerminalPage() {
     if (import.meta.env.DEV) {
       if (getAtFixtureOverride()?.enabled) return "options";
       if (getChainOrderFixtureOverride()) return "options";
+      if (getFuturesEsFixtureOverride()?.enabled) return "options";
     }
     return "news";
   });
@@ -374,9 +376,17 @@ export default function TerminalPage() {
     if (!import.meta.env.DEV) return;
     const atFx = getAtFixtureOverride();
     const chainFx = getChainOrderFixtureOverride();
-    if (atFx?.enabled || chainFx) {
+    const futuresFx = getFuturesEsFixtureOverride();
+    if (atFx?.enabled || chainFx || futuresFx?.enabled) {
       setActiveBottom("markets");
       setContextTab("options");
+    }
+    if (futuresFx?.openTicketConfirm) {
+      setOrderOpen(true);
+      setOrderSide("BUY");
+      setOrderOptionSymbol(undefined);
+      setOrderStrategyLegs(undefined);
+      setOrderInitialStage("review");
     }
   }, []);
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
