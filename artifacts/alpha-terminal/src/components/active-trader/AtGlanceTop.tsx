@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, type CSSProperties, type PropsWithChildren } from "react";
+import { memo, useState, type CSSProperties, type PropsWithChildren } from "react";
 import {
   BG_EXP_BAR,
   BORDER,
@@ -18,6 +18,7 @@ import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import { loadAtGlanceCompact, saveAtGlanceCompact } from "@/lib/active-trader/atGlanceCompactState";
 import { useSpotDirectionColor } from "@/lib/active-trader/atSpotDirection";
+import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
 
@@ -26,38 +27,14 @@ const NUM_FEAT: CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
+const PAINT_MS = 250;
+
 function fmtMoneyShort(n: number): string {
   const a = Math.abs(n);
   if (a >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
   if (a >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
   if (a >= 1e3) return `${(n / 1e3).toFixed(0)}K`;
   return n.toFixed(0);
-}
-
-function Spark({ bars, positive }: { bars: number[]; positive: boolean }) {
-  const max = Math.max(...bars.map((b) => Math.abs(b)), 1);
-  return (
-    <div className="flex items-center gap-px h-4" style={{ background: "linear-gradient(#2a2a2e,#2a2a2e) 0 50%/100% 1px no-repeat" }}>
-      {bars.slice(-15).map((b, i) => {
-        const h = Math.max(2, Math.round((Math.sqrt(Math.abs(b)) / Math.sqrt(max)) * 14));
-        const up = positive ? b >= 0 : b <= 0;
-        return (
-          <i
-            key={i}
-            style={{
-              display: "block",
-              width: 6,
-              height: h,
-              borderRadius: 1,
-              alignSelf: up ? "flex-end" : "flex-start",
-              background: up ? UP : DOWN_TEXT,
-              opacity: i === bars.length - 1 ? 1 : 0.75,
-            }}
-          />
-        );
-      })}
-    </div>
-  );
 }
 
 export type AtGlanceTopProps = {
@@ -75,33 +52,27 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
   underlyingPrice,
   zones,
-  keepawayPutLine,
-  keepawayCallLine,
-  keepawayStats,
+  keepawayPutLine: _keepawayPutLine,
+  keepawayCallLine: _keepawayCallLine,
+  keepawayStats: _keepawayStats,
   sessionOpen,
 }: AtGlanceTopProps) {
   const [compact, setCompact] = useState(() => loadAtGlanceCompact());
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote } = useQuote(symbol);
-  const spotColor = useSpotDirectionColor(underlyingPrice, 250);
+  const spotShown = useThrottledNumber(underlyingPrice, PAINT_MS);
+  const spotColor = useSpotDirectionColor(underlyingPrice, PAINT_MS, quote?.change ?? null);
   const flow = useDeskFlowStream(symbol, mode === "index" || mode === "stock");
 
-  const spot = underlyingPrice;
-  const sessionLo = quote?.low ?? null;
-  const sessionHi = quote?.high ?? null;
   const open = sessionOpen ?? quote?.close ?? null;
   const fromOpen =
     quote?.change != null && Number.isFinite(quote.change)
       ? quote.change
-      : spot != null && open != null && Number.isFinite(open)
-        ? spot - open
+      : spotShown != null && open != null && Number.isFinite(open)
+        ? spotShown - open
         : null;
 
   const gexStr = `GEX ${formatGexUsd(zones.netGexUsdPer1Pct)}`;
-
-  const spotPx = typeof window !== "undefined" && window.innerWidth <= 400 ? 36 : 40;
-  const wallPx = typeof window !== "undefined" && window.innerWidth <= 400 ? 22 : 26;
-  const midPx = typeof window !== "undefined" && window.innerWidth <= 400 ? 20 : 22;
 
   const toggleCompact = () => {
     setCompact((c) => {
@@ -111,46 +82,47 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     });
   };
 
+  const flowLine =
+    flow.kind === "index"
+      ? `▲ CALLS +${fmtMoneyShort(flow.display.callsBought1m)} · ▲ PUTS ${fmtMoneyShort(flow.display.putsSold1m)}`
+      : flow.kind === "stock"
+        ? `▲ LIFT $${fmtMoneyShort(flow.tape.buyersLift1m)} · ▼ HIT $${fmtMoneyShort(flow.tape.sellersHit1m)}`
+        : null;
+
   if (mode === "futures") {
     return (
-      <div data-at-glance-top className="at-glance px-3 py-2" style={{ background: BG_EXP_BAR, borderBottom: `2px solid ${BORDER}`, maxHeight: "min(210px, 25vh)" }}>
-        <Pane className="text-center" style={{ fontSize: midPx, fontWeight: 500, color: GRAY }}>
-          Futures quote + tape — chain in a follow-up PR
-        </Pane>
-        {spot != null ? (
-          <Pane className="text-center num" style={{ fontSize: spotPx, fontWeight: 600, color: spotColor, ...NUM_FEAT }}>
-            {formatStrikeLevel(spot)}
-          </Pane>
-        ) : null}
+      <div
+        data-at-glance-top
+        className="at-glance px-2 py-1 shrink-0"
+        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: "20vh" }}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="num" style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotColor }}>
+            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
+          </span>
+          <span style={{ fontSize: 10, fontWeight: 400, color: GRAY }}>{symbol.replace(/^\$/, "")} futures</span>
+        </div>
       </div>
     );
   }
 
   if (compact) {
-    const flowLine =
-      flow.kind === "index"
-        ? `CALLS BOUGHT ${fmtMoneyShort(flow.display.callsBought5m)} · PUTS SOLD ${fmtMoneyShort(flow.display.putsSold5m)}`
-        : flow.kind === "stock"
-          ? `LIFT ${fmtMoneyShort(flow.tape.buyersLift5m)} · HIT ${fmtMoneyShort(flow.tape.sellersHit5m)}`
-          : "";
     return (
       <button
         type="button"
         data-at-glance-top
-        className="at-glance w-full px-3 py-1.5 text-left"
-        style={{ background: BG_EXP_BAR, borderBottom: `2px solid ${BORDER}` }}
+        className="at-glance w-full px-2 py-1 text-left shrink-0"
+        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}` }}
         onClick={toggleCompact}
       >
-        <div className="flex items-center justify-between gap-2 num" style={NUM_FEAT}>
-          <span style={{ fontSize: 14, fontWeight: 600, color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : UP }}>
-            {fromOpen != null ? `${fromOpen >= 0 ? "▲" : "▼"} ${Math.abs(fromOpen).toFixed(1)}` : "—"}
+        <div className="flex items-center justify-between gap-1 num" style={NUM_FEAT}>
+          <span style={{ fontSize: 12, fontWeight: 500, color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : UP }}>
+            {fromOpen != null ? `${fromOpen >= 0 ? "▲" : "▼"}${Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 1)}` : "—"}
           </span>
-          <span style={{ fontSize: 12, color: GRAY, fontWeight: 400 }}>{flowLine}</span>
-        </div>
-        <div className="flex items-center justify-between gap-2 mt-1 num" style={NUM_FEAT}>
-          <span style={{ fontSize: 22, fontWeight: 500, color: PUT_WALL }}>{zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}</span>
-          <span style={{ fontSize: 30, fontWeight: 600, color: spotColor }}>{spot != null ? formatStrikeLevel(spot) : "—"}</span>
-          <span style={{ fontSize: 22, fontWeight: 500, color: GOLD }}>{zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}</span>
+          <span style={{ fontSize: 26, fontWeight: 600, color: spotColor }}>
+            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
+          </span>
+          <span style={{ fontSize: 10, color: GRAY, fontWeight: 400 }}>{flowLine}</span>
         </div>
       </button>
     );
@@ -159,125 +131,65 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   return (
     <Pane
       data-at-glance-top
-      className="at-glance px-3 shrink-0"
-      style={{
-        background: BG_EXP_BAR,
-        borderBottom: `2px solid ${BORDER}`,
-      }}
+      className="at-glance px-2 py-0.5 shrink-0"
+      style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: "min(152px, 20vh)" }}
     >
-      <Pane className="flex items-center justify-between gap-2 py-0.5">
-        <Pane className="num" style={{ ...NUM_FEAT, fontSize: midPx, fontWeight: 500, color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : fromOpen != null && fromOpen > 0 ? UP : WHITE }}>
+      <Pane className="flex items-center gap-1.5" style={{ minHeight: 18 }}>
+        <Pane
+          className="num shrink-0"
+          style={{
+            ...NUM_FEAT,
+            fontSize: 11,
+            fontWeight: 500,
+            color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : fromOpen != null && fromOpen > 0 ? UP : WHITE,
+          }}
+        >
           {fromOpen != null ? (
             <>
-              {fromOpen >= 0 ? "▲" : "▼"} {Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 1)}{" "}
-              <span style={{ fontSize: 10, fontWeight: 400, color: GRAY, letterSpacing: "0.06em" }}>FROM OPEN</span>
+              {fromOpen >= 0 ? "▲" : "▼"}
+              {Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 1)}
+              <span style={{ fontSize: 9, fontWeight: 400, color: GRAY, marginLeft: 4 }}>OPEN</span>
             </>
           ) : (
             "—"
           )}
         </Pane>
-        <Pane className="num flex-1 text-center" style={{ ...NUM_FEAT, fontSize: midPx, fontWeight: 500, color: WHITE }}>
+        <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}>
           {gexStr}
         </Pane>
-        <button type="button" onClick={toggleCompact} className="shrink-0 px-1" style={{ fontSize: 10, color: GRAY }} aria-label="Collapse glance strip">
+        {zones.flip != null ? (
+          <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GAMMA_SCENARIO }}>
+            FLIP {formatStrikeLevel(Math.round(zones.flip))}
+          </Pane>
+        ) : null}
+        <button type="button" onClick={toggleCompact} className="shrink-0 px-0.5" style={{ fontSize: 9, color: GRAY }} aria-label="Collapse glance strip">
           −
         </button>
       </Pane>
 
-      <Pane className="grid gap-x-2 py-1" style={{ gridTemplateColumns: "1fr auto 1fr" }}>
-        <Pane className="min-w-0">
-          <Pane style={{ fontSize: 11, fontWeight: 400, letterSpacing: "0.06em", color: GRAY }}>PUT WALL</Pane>
-          <Pane className="num" style={{ ...NUM_FEAT, fontSize: wallPx, fontWeight: 500, color: PUT_WALL, lineHeight: 1.1 }}>
-            {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}
-          </Pane>
-          {mode === "index" && keepawayPutLine != null ? (
-            <Pane style={{ fontSize: midPx, fontWeight: 500, color: WHITE }} className="num">
-              ≤{formatStrikeLevel(keepawayPutLine)}
-              <span style={{ fontSize: 11, color: DOWN_TEXT, marginLeft: 4 }}>PUT SHORTS</span>
-            </Pane>
-          ) : sessionLo != null ? (
-            <Pane style={{ fontSize: midPx, fontWeight: 500, color: WHITE }} className="num">
-              LO {formatStrikeLevel(sessionLo)}
-            </Pane>
-          ) : null}
+      <Pane className="grid gap-x-1 items-end" style={{ gridTemplateColumns: "1fr auto 1fr", minHeight: 40 }}>
+        <Pane className="num" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: PUT_WALL, lineHeight: 1 }}>
+          {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}
         </Pane>
-        <Pane className="text-center px-1">
-          <Pane style={{ fontSize: 11, fontWeight: 400, letterSpacing: "0.06em", color: GRAY }}>{symbol.replace(/^\$/, "")}</Pane>
-          <Pane className="num" style={{ ...NUM_FEAT, fontSize: spotPx, fontWeight: 600, color: spotColor, lineHeight: 1.05 }}>
-            {spot != null ? formatStrikeLevel(spot) : "—"}
+        <Pane className="text-center px-0.5">
+          <Pane style={{ fontSize: 8, fontWeight: 400, letterSpacing: "0.05em", color: GRAY }}>
+            {symbol.replace(/^\$/, "")}
           </Pane>
-          {zones.flip != null ? (
-            <Pane className="num" style={{ ...NUM_FEAT, fontSize: midPx, fontWeight: 500, color: GAMMA_SCENARIO, marginTop: 2 }}>
-              FLIP {formatStrikeLevel(Math.round(zones.flip))}
-            </Pane>
-          ) : (
-            <Pane style={{ fontSize: 13, fontWeight: 500, color: GRAY, marginTop: 2 }}>FLIP none in range</Pane>
-          )}
+          <Pane className="num" style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotColor, lineHeight: 1 }}>
+            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
+          </Pane>
         </Pane>
-        <Pane className="min-w-0 text-right">
-          <Pane style={{ fontSize: 11, fontWeight: 400, letterSpacing: "0.06em", color: GRAY }}>CALL WALL</Pane>
-          <Pane className="num" style={{ ...NUM_FEAT, fontSize: wallPx, fontWeight: 500, color: GOLD, lineHeight: 1.1 }}>
-            {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}
-          </Pane>
-          {mode === "index" && keepawayCallLine != null ? (
-            <Pane style={{ fontSize: midPx, fontWeight: 500, color: WHITE }} className="num">
-              ≥{formatStrikeLevel(keepawayCallLine)}
-              <span style={{ fontSize: 11, color: DOWN_TEXT, marginLeft: 4 }}>CALL SHORTS</span>
-            </Pane>
-          ) : sessionHi != null ? (
-            <Pane style={{ fontSize: midPx, fontWeight: 500, color: WHITE }} className="num">
-              HI {formatStrikeLevel(sessionHi)}
-            </Pane>
-          ) : null}
+        <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: GOLD, lineHeight: 1 }}>
+          {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}
         </Pane>
       </Pane>
 
-      {flow.kind === "index" ? (
-        <Pane className="pt-0.5 pb-1">
-          <Pane className="grid grid-cols-2 gap-2">
-            <Pane className="min-w-0">
-              <Pane style={{ fontSize: 10, fontWeight: 500, color: UP, lineHeight: 1.2 }}>▲ CALLS BOUGHT</Pane>
-              <Pane className="num" style={{ ...NUM_FEAT, fontSize: 22, fontWeight: 500, color: UP }}>
-                +{fmtMoneyShort(flow.display.callsBought1m)}
-                <span style={{ fontSize: 10, color: GRAY, marginLeft: 3 }}>1m</span>
-              </Pane>
-              <Spark bars={flow.display.sparkCalls} positive />
-            </Pane>
-            <Pane className="min-w-0">
-              <Pane style={{ fontSize: 10, fontWeight: 500, color: UP, lineHeight: 1.2 }}>▲ PUTS SOLD</Pane>
-              <Pane className="num" style={{ ...NUM_FEAT, fontSize: 22, fontWeight: 500, color: UP }}>
-                {fmtMoneyShort(flow.display.putsSold1m)}
-                <span style={{ fontSize: 10, color: GRAY, marginLeft: 3 }}>1m</span>
-              </Pane>
-              <Spark bars={flow.display.sparkPuts.map((x) => -Math.abs(x))} positive />
-            </Pane>
-          </Pane>
-          {flow.display.priceNotFollowing ? (
-            <Pane className="mt-0.5 inline-block rounded px-1.5 py-px" style={{ fontSize: 10, fontWeight: 600, background: GOLD, color: "#000" }}>
-              PRICE NOT FOLLOWING
-            </Pane>
-          ) : null}
-        </Pane>
-      ) : null}
-
-      {flow.kind === "stock" ? (
-        <Pane className="pt-0.5 pb-1">
-          <Pane className="grid grid-cols-2 gap-2">
-            <Pane className="min-w-0">
-              <Pane style={{ fontSize: 10, fontWeight: 500, color: UP, lineHeight: 1.2 }}>▲ BUYERS LIFTING ASK</Pane>
-              <Pane className="num" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: UP }}>
-                ${fmtMoneyShort(flow.tape.buyersLift1m)}
-              </Pane>
-              <Spark bars={flow.tape.sparkBuy} positive />
-            </Pane>
-            <Pane className="min-w-0">
-              <Pane style={{ fontSize: 10, fontWeight: 500, color: DOWN_TEXT, lineHeight: 1.2 }}>▼ SELLERS HITTING BID</Pane>
-              <Pane className="num" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: DOWN_TEXT }}>
-                ${fmtMoneyShort(flow.tape.sellersHit1m)}
-              </Pane>
-              <Spark bars={flow.tape.sparkSell} positive={false} />
-            </Pane>
-          </Pane>
+      {flowLine ? (
+        <Pane
+          className="num truncate"
+          style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE, lineHeight: 1.25, paddingBottom: 2 }}
+        >
+          {flowLine}
         </Pane>
       ) : null}
     </Pane>
@@ -290,13 +202,7 @@ function Pane(
 ) {
   const { className, style, onClick, children, ...rest } = props;
   return (
-    <div
-      className={className}
-      style={style}
-      onClick={onClick}
-      role={onClick ? "presentation" : undefined}
-      {...rest}
-    >
+    <div className={className} style={style} onClick={onClick} role={onClick ? "presentation" : undefined} {...rest}>
       {children}
     </div>
   );

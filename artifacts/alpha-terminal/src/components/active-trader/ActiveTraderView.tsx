@@ -48,7 +48,7 @@ import {
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
-import { scrollAtLadderToSpot } from "@/lib/active-trader/atLadderScroll";
+import { scrollAtLadderToSpot, scrollAtLadderToStrike } from "@/lib/active-trader/atLadderScroll";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
@@ -114,7 +114,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const primary =
     groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
-  const futuresOnlyMode = isFuturesDisplaySymbol(symbol);
+  /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
+  const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
     call_buy: true,
@@ -437,11 +438,29 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
   );
 
-  const handleQuoteTap = useCallback((contract: OptionsContract, type: "CALL" | "PUT", _side: "BUY" | "SELL") => {
-    setSelected({ contract, type });
-    setTradeContext({ mode: "single", contract, type });
-    setTradeStripStrike(contract.strike);
-  }, []);
+  const handleQuoteTap = useCallback(
+    (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
+      setSelected({ contract, type });
+      setTradeStripStrike(contract.strike);
+      if (atGlanceTopEnabled()) {
+        setTradeContext(null);
+        requestAnimationFrame(() => {
+          scrollAtLadderToStrike(ladderScrollRef.current, contract.strike, 0.32);
+        });
+        onOpenReview(contract, side, type);
+        return;
+      }
+      setTradeContext({ mode: "single", contract, type });
+    },
+    [onOpenReview],
+  );
+
+  useEffect(() => {
+    if (!tradeStripStrike) return;
+    requestAnimationFrame(() => {
+      scrollAtLadderToStrike(ladderScrollRef.current, tradeStripStrike, 0.32);
+    });
+  }, [tradeStripStrike, tradeContext]);
 
   const handleVerticalTap = useCallback(
     (payload: {
@@ -678,6 +697,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       <div
         ref={ladderScrollRef}
         data-at-ladder-scroll
+        data-selected-strike={tradeStripStrike ?? undefined}
         className="at-ladder-scroll flex-1 min-h-0"
         style={{
           ...noScrollbar,

@@ -1567,6 +1567,19 @@ export function OrderTicket({
     }
   }, [ticketMode, onSwitchToStock, onSwitchToOptions]);
 
+  const [atMobileSheet, setAtMobileSheet] = useState(false);
+  useEffect(() => {
+    if (!isOpen || !atTemplatePrefs) {
+      setAtMobileSheet(false);
+      return;
+    }
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setAtMobileSheet(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [isOpen, atTemplatePrefs]);
+
   if (!isOpen) return null;
 
   const isBuy = side === "BUY";
@@ -1588,8 +1601,52 @@ export function OrderTicket({
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`, fontFamily: SYS_FONT, fontWeight: 300 }}>
+    <>
+      {atMobileSheet ? (
+        <div
+          data-order-ticket-backdrop
+          className="fixed inset-0 z-[209]"
+          style={{ background: "rgba(0,0,0,0.55)" }}
+          onClick={onClose}
+          aria-hidden
+        />
+      ) : null}
+      <div
+        data-order-ticket-sheet={atMobileSheet ? "1" : undefined}
+        className={
+          atMobileSheet
+            ? "fixed inset-x-0 bottom-0 z-[210] flex flex-col max-h-[min(86vh,820px)] animate-in slide-in-from-bottom duration-300"
+            : "fixed inset-0 z-[210] flex flex-col"
+        }
+        style={
+          atMobileSheet
+            ? {
+                background: BG,
+                borderRadius: "16px 16px 0 0",
+                border: `1px solid ${BORDER}`,
+                borderBottom: "none",
+                paddingBottom: "max(env(safe-area-inset-bottom, 34px), 12px)",
+                fontFamily: SYS_FONT,
+                fontWeight: 300,
+                boxShadow: "0 -8px 32px rgba(0,0,0,0.45)",
+              }
+            : {
+                background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`,
+                fontFamily: SYS_FONT,
+                fontWeight: 300,
+              }
+        }
+      >
+      {atMobileSheet && stage === "review" ? (
+        <div className="shrink-0 flex justify-center pt-2 pb-1">
+          <div
+            data-order-ticket-grab
+            style={{ width: 40, height: 4, borderRadius: 2, background: "#71717a" }}
+          />
+        </div>
+      ) : null}
 
+      {!(atMobileSheet && stage === "review") ? (
       <header className="shrink-0 flex items-center justify-between px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div className="flex items-center gap-2">
           <button
@@ -1607,7 +1664,7 @@ export function OrderTicket({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {canToggle ? (
+          {canToggle && !atTemplatePrefs ? (
             <div className="inline-flex p-0.5" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.15)" }}>
               <button
                 onClick={() => handleToggleMode("options")}
@@ -1635,6 +1692,7 @@ export function OrderTicket({
           </button>
         </div>
       </header>
+      ) : null}
 
       {schwabAccounts.length > 1 && stage !== "success" && (
         <div
@@ -1673,7 +1731,7 @@ export function OrderTicket({
         </div>
       )}
 
-      {stage === "form" || stage === "review" ? (
+      {stage === "form" ? (
         <div className="flex-1 overflow-y-auto pb-4">
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 10px 10px" }}>
@@ -2749,10 +2807,23 @@ export function OrderTicket({
 
       {/* REVIEW MODAL */}
       {stage === "review" && (
-        <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+        <div
+          className={atMobileSheet ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "fixed inset-0 z-[220] flex items-end justify-center"}
+          style={atMobileSheet ? undefined : { background: "rgba(0,0,0,0.6)" }}
+          onClick={atMobileSheet ? undefined : onClose}
+        >
           <div
-            className="w-full max-w-lg p-4 space-y-2.5 animate-in slide-in-from-bottom duration-300"
-            style={{ background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }}
+            className={
+              atMobileSheet
+                ? "flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2.5"
+                : "w-full max-w-lg p-4 space-y-2.5 animate-in slide-in-from-bottom duration-300"
+            }
+            style={
+              atMobileSheet
+                ? { background: BG }
+                : { background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }
+            }
+            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <h3 style={{ fontSize: 16, color: WHITE }}>Order Confirmation</h3>
@@ -3045,7 +3116,13 @@ export function OrderTicket({
             )}
 
             <div className="flex gap-2 pt-1 pb-4">
-              <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
+              <button
+                onClick={() => (atMobileSheet ? onClose() : setStage("form"))}
+                className="flex-1"
+                style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}
+              >
+                {atMobileSheet ? "Dismiss" : "Back"}
+              </button>
               <button
                 onClick={confirmDisabled ? undefined : handleSubmit}
                 disabled={
@@ -3073,5 +3150,6 @@ export function OrderTicket({
         </div>
       )}
     </div>
+    </>
   );
 }

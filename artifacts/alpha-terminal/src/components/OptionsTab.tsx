@@ -1706,14 +1706,11 @@ export function OptionsTab({
       style={{ background: BG }}
       className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
     >
-      <div className="shrink-0">
-        <OptionsSubViewToggle
-          view={optionsSubView}
-          onChange={setOptionsSubView}
-          accentHex={accentHex}
-          compact={atGlanceTopEnabled()}
-        />
-      </div>
+      {!atGlanceTopEnabled() ? (
+        <div className="shrink-0" data-at-subview-chrome>
+          <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+        </div>
+      ) : null}
       {optionsSubView === "at" && (
         <ActiveTraderView
           symbol={symbol}

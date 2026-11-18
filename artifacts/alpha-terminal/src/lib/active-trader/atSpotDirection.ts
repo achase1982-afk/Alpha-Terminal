@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { UP, WHITE, DOWN } from "@/components/options/optionsTheme";
 
-const HOLD_MS = 1200;
+const HOLD_MS = 300;
 const REF_MS = 1500;
 const MAX_TICKS = 32;
 
@@ -21,9 +21,11 @@ export function pickSpotColor(
   return WHITE;
 }
 
+/** Session change sign when spot direction is ambiguous (e.g. closed). */
 export function useSpotDirectionColor(
   price: number | null | undefined,
   throttleMs = 250,
+  sessionChange?: number | null,
 ): string {
   const ring = useRef<Sample[]>([]);
   const holdRef = useRef<"up" | "down" | "flat">("flat");
@@ -57,8 +59,13 @@ export function useSpotDirectionColor(
 
     if (now - lastPaint.current < throttleMs) return;
     lastPaint.current = now;
-    setColor(pickSpotColor(price, reference, holdRef.current));
-  }, [price, throttleMs]);
+    let hold = holdRef.current;
+    if (hold === "flat" && sessionChange != null && Number.isFinite(sessionChange)) {
+      if (sessionChange > 0) hold = "up";
+      else if (sessionChange < 0) hold = "down";
+    }
+    setColor(pickSpotColor(price, reference, hold));
+  }, [price, throttleMs, sessionChange]);
 
   return color;
 }

@@ -28,3 +28,19 @@ export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPr
   const centerOffset = container.clientHeight * 0.42;
   container.scrollTop = Math.max(0, targetTop - centerOffset);
 }
+
+/** Keep a selected strike row in the visible band above chrome / trade bar. */
+export function scrollAtLadderToStrike(
+  container: HTMLElement | null,
+  strike: number | null,
+  bandFraction = 0.35,
+): void {
+  if (!container || strike == null || !Number.isFinite(strike)) return;
+  const row = container.querySelector<HTMLElement>(`[data-at-strike="${strike}"]`);
+  if (!row) return;
+  const cRect = container.getBoundingClientRect();
+  const tRect = row.getBoundingClientRect();
+  const rowTop = tRect.top - cRect.top + container.scrollTop;
+  const target = rowTop - container.clientHeight * bandFraction;
+  container.scrollTop = Math.max(0, target);
+}
