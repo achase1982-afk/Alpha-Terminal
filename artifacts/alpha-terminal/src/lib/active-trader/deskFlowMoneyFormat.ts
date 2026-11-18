@@ -9,6 +9,16 @@ export function fmtGlanceMoneyUsd(n: number): string {
   return `${sign}$${a.toFixed(0)}`;
 }
 
+/** Unsigned $ size for “sold …” labels. */
+export function fmtGlanceFlowAmount(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e9) return `${(a / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${(a / 1e6).toFixed(2)}M`;
+  if (a >= 1e3) return `${(a / 1e3).toFixed(1)}K`;
+  if (a === 0) return "0";
+  return a.toFixed(0);
+}
+
 export function fmtGlanceMoneyMagnitude(n: number): string {
   const a = Math.abs(n);
   const core =

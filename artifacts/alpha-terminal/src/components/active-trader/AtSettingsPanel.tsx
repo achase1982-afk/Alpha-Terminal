@@ -1,8 +1,9 @@
 import { memo, useCallback } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import {
-  BG_EXP_BAR, BORDER, DIM, GRAY, WHITE, MONO, FW_LIGHT, FW_NORMAL,
+  BG_EXP_BAR, BORDER, DIM, GOLD, GRAY, WHITE, MONO, FW_LIGHT, FW_NORMAL,
 } from "@/components/options/optionsTheme";
+import { AT_INTERACTIVE, AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import type { ActiveTraderTemplatePrefs, AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { buildAtSettingsSummary } from "@/lib/active-trader/atSummaryFormat";
 import { AtBracketControls } from "./AtBracketControls";
@@ -64,36 +65,50 @@ export const AtSettingsSummary = memo(function AtSettingsSummary({
       type="button"
       onClick={onToggle}
       onKeyDown={handleSummaryKey}
-      className="w-full flex items-center justify-between px-3 gap-2"
+      className="w-full flex items-center justify-between px-2 gap-2"
       style={{
-        height: glanceSlim ? (open ? 28 : 22) : slim ? 28 : 40,
-        background: BG_EXP_BAR,
-        borderBottom: `1px solid ${BORDER}`,
+        minHeight: glanceSlim ? 40 : slim ? 40 : 44,
+        background: glanceSlim ? "rgba(251,191,36,0.06)" : BG_EXP_BAR,
+        borderBottom: `1px solid ${glanceSlim ? `${GOLD}55` : BORDER}`,
+        borderTop: glanceSlim ? `1px solid ${GOLD}33` : undefined,
         fontFamily: MONO,
       }}
       aria-expanded={open}
       data-at-settings-summary
+      data-at-advanced-order-trigger
     >
       <div className="flex items-center gap-1.5 min-w-0 flex-1">
         {open ? (
-          <ChevronDown className="w-3 h-3 shrink-0" style={{ color: DIM }} />
+          <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
         ) : (
-          <ChevronRight className="w-3 h-3 shrink-0" style={{ color: DIM }} />
+          <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: GOLD }} />
         )}
         <span
           className="tracking-wide text-left truncate"
           style={{
-            fontSize: slim ? 10 : 11,
-            color: GRAY,
-            fontWeight: FW_LIGHT,
+            fontSize: glanceSlim ? 11 : slim ? 10 : 11,
+            color: AT_SECONDARY,
+            fontWeight: FW_NORMAL,
             lineHeight: 1.35,
           }}
         >
+          <span style={{ color: AT_LABEL, fontSize: 9, fontWeight: 600, marginRight: 6 }}>ORDER</span>
           {summary}
         </span>
       </div>
-      <span style={{ fontSize: 9, color: DIM, fontWeight: FW_LIGHT, flexShrink: 0 }}>
-        {open ? "Less" : "More"}
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: AT_INTERACTIVE,
+          flexShrink: 0,
+          padding: "6px 10px",
+          borderRadius: 6,
+          border: `1px solid ${GOLD}66`,
+          background: "rgba(255,255,255,0.06)",
+        }}
+      >
+        {open ? "Less" : "Edit"}
       </span>
     </button>
   );

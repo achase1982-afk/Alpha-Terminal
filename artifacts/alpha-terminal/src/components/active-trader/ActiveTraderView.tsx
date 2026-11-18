@@ -3,6 +3,7 @@ import type { OptionsContract } from "@/components/OptionsTab";
 import {
   BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
 } from "@/components/options/optionsTheme";
+import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import {
@@ -35,7 +36,20 @@ import {
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
 import { AtFuturesLiveQuote } from "@/components/active-trader/AtFuturesLiveQuote";
-import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
+import { AT_ORDER_SEND_ENABLED, AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
+import {
+  OptionsChainOrderSheet,
+  legsFromChainSelection,
+} from "@/components/OptionsChainOrderSheet";
+import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
+import {
+  AT_MAX_LADDER_LEGS,
+  atLadderLegKey,
+  quoteSideFromTap,
+  type AtLadderLegPick,
+} from "@/lib/active-trader/atLadderLegKeys";
+import { AtActiveTraderSheetBrackets } from "@/components/active-trader/AtActiveTraderSheetBrackets";
+import { midpointFromBidAsk } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
 import { RegimeStrip } from "./RegimeStrip";
@@ -130,6 +144,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   });
   const [tradeStripStrike, setTradeStripStrike] = useState<number | null>(null);
   const [tradeContext, setTradeContext] = useState<AtTradeContext | null>(null);
+  const [selectedLegs, setSelectedLegs] = useState<Map<string, AtLadderLegPick>>(new Map());
+  const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
+  const [chainSheetCollapsed, setChainSheetCollapsed] = useState(false);
+  const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
   const [regimeDegraded, setRegimeDegraded] = useState(false);
@@ -290,10 +308,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [positions, primary?.rows]);
 
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const accounts = useSchwabAccountStore((s) => s.accounts);
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
   const autoSendBusyRef = useRef(false);
 
-  const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountLabel =
     accounts.length > 0
       ? `Schwab ···${String(accounts[0]?.accountNumber ?? "").slice(-3)}`
@@ -443,25 +461,48 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
   );
 
+  const handleToggleLeg = useCallback((contract: OptionsContract, type: "CALL" | "PUT", side: "bid" | "ask") => {
+    const key = atLadderLegKey(contract, type);
+    setSelectedLegs((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(key);
+      if (existing && existing.side === side) {
+        next.delete(key);
+        setLegQuantities((q) => {
+          const nq = new Map(q);
+          nq.delete(key);
+          return nq;
+        });
+      } else if (existing) {
+        next.set(key, { contract, type, expiration: contract.expiration, side });
+      } else {
+        if (prev.size >= AT_MAX_LADDER_LEGS) {
+          if (legShakeTimerRef.current) clearTimeout(legShakeTimerRef.current);
+          legShakeTimerRef.current = setTimeout(() => undefined, 0);
+          return prev;
+        }
+        next.set(key, { contract, type, expiration: contract.expiration, side });
+      }
+      return next;
+    });
+    setChainSheetCollapsed(false);
+  }, []);
+
   const handleQuoteTap = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
       setSelected({ contract, type });
       setTradeStripStrike(contract.strike);
-      if (atGlanceTopEnabled()) {
-        setTradeContext(null);
-        requestAnimationFrame(() => {
-          scrollAtLadderToStrikeAboveSheet(
-            ladderScrollRef.current,
-            contract.strike,
-            AT_MOBILE_PEEK_MAX_PX,
-          );
-        });
-        onOpenReview(contract, side, type);
-        return;
-      }
-      setTradeContext({ mode: "single", contract, type });
+      setTradeContext(null);
+      handleToggleLeg(contract, type, quoteSideFromTap(side));
+      requestAnimationFrame(() => {
+        scrollAtLadderToStrikeAboveSheet(
+          ladderScrollRef.current,
+          contract.strike,
+          chainSheetCollapsed ? 52 : 280,
+        );
+      });
     },
-    [onOpenReview],
+    [chainSheetCollapsed, handleToggleLeg],
   );
 
   useEffect(() => {
@@ -523,6 +564,98 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (fx.scene !== "strip" || !row?.call) return;
     handleQuoteTap(row.call, "CALL", "BUY");
   }, [primary, handleQuoteTap, handleVerticalTap, prefs.verticalWidth]);
+
+  const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
+
+  const selectedLegKeys = useMemo(() => new Set(selectedLegs.keys()), [selectedLegs]);
+
+  const ticketLegs = useMemo(() => {
+    if (selectedLegs.size === 0) return [];
+    const entries = [...selectedLegs.entries()].map(([key, l]) => {
+      const tick = l.contract.streamKey ? streamTicksForLegs[l.contract.streamKey] : undefined;
+      const merged: OptionsContract = { ...l.contract };
+      if (tick) {
+        if (tick.bid != null) merged.bid = tick.bid;
+        if (tick.ask != null) merged.ask = tick.ask;
+        if (tick.delta != null) merged.delta = tick.delta;
+      }
+      const qty = legQuantities.get(key) ?? 1;
+      return {
+        key,
+        contract: merged,
+        type: l.type,
+        side: l.side,
+        quantity: qty,
+      };
+    });
+    return legsFromChainSelection(
+      entries,
+      symbol,
+      accounts,
+      buildSchwabOptionKey,
+      tradingHash,
+    );
+  }, [selectedLegs, streamTicksForLegs, symbol, accounts, legQuantities, tradingHash]);
+
+  useEffect(() => {
+    if (selectedLegs.size === 0) return;
+    const syms = [...selectedLegs.values()]
+      .map((l) => l.contract.schwabSymbol ?? (l.contract.streamKey ? buildSchwabOptionKey(symbol, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P") : null))
+      .filter((s): s is string => !!s);
+    if (syms.length > 0) void holdSubs.subscribeOptionSymbols?.(syms);
+  }, [selectedLegs, holdSubs, symbol]);
+
+  const handleClearLegs = useCallback(() => {
+    setSelectedLegs(new Map());
+    setLegQuantities(new Map());
+    setChainSheetCollapsed(false);
+    setTradeStripStrike(null);
+  }, []);
+
+  const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
+
+  const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
+    const key = selectionKeyFromLegId(legId);
+    setLegQuantities((prev) => {
+      const next = new Map(prev);
+      next.set(key, Math.max(1, quantity));
+      return next;
+    });
+  }, []);
+
+  const handleSheetRemoveLeg = useCallback((legId: string) => {
+    const key = selectionKeyFromLegId(legId);
+    setSelectedLegs((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+    setLegQuantities((prev) => {
+      const next = new Map(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const sheetBracketEntry = useMemo(() => {
+    if (templateLimitMid != null) return templateLimitMid;
+    if (ticketLegs.length === 0) return null;
+    let net = 0;
+    for (const leg of ticketLegs) {
+      const mid = midpointFromBidAsk(leg.bid, leg.ask);
+      if (mid == null) continue;
+      const sign = leg.direction.startsWith("BUY") ? 1 : -1;
+      net += sign * mid;
+    }
+    return Math.abs(net) > 0 ? Math.abs(net) : null;
+  }, [templateLimitMid, ticketLegs]);
+
+  const atAddLegFromLadder = useCallback(
+    (contract: OptionsContract, type: "CALL" | "PUT") => {
+      handleToggleLeg(contract, type, "ask");
+    },
+    [handleToggleLeg],
+  );
 
   const instrumentLabel = useMemo(() => {
     if (selected) {
@@ -663,7 +796,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             gridTemplateColumns: AT_LADDER_GRID,
             fontFamily: MONO,
             fontSize: 8,
-            color: DIM,
+            color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.05em",
             textTransform: "uppercase",
@@ -691,7 +824,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             gridTemplateColumns: AT_LADDER_GRID,
             fontFamily: MONO,
             fontSize: 9,
-            color: DIM,
+            color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.06em",
             textTransform: "uppercase",
@@ -721,6 +854,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           overscrollBehavior: "contain",
           WebkitOverflowScrolling: "touch",
           background: AT_LADDER_PANEL_BG,
+          paddingBottom: selectedLegs.size > 0 ? (chainSheetCollapsed ? 64 : 200) : 0,
         }}
       >
         {ladderDataReady ? (
@@ -745,7 +879,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             rowByStrike={rowByStrike}
             onVerticalTap={handleVerticalTap}
             onQuoteTap={handleQuoteTap}
-            onAddLeg={onAddLeg}
+            onAddLeg={atAddLegFromLadder}
+            selectedLegKeys={selectedLegKeys}
             positionQtyByKey={positionQtyByKey}
             flowByKey={flowByKey}
             symbolLabel={symbolLabel}
@@ -765,7 +900,33 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         )}
       </div>
 
-      {tradeContext ? (
+      {selectedLegs.size > 0 ? (
+        <span data-at-leg-count className="sr-only">
+          {selectedLegs.size}
+        </span>
+      ) : null}
+      {ticketLegs.length > 0 ? (
+        <OptionsChainOrderSheet
+          legs={ticketLegs}
+          collapsed={chainSheetCollapsed}
+          onCollapsedChange={setChainSheetCollapsed}
+          onClearAll={handleClearLegs}
+          onLegQuantityChange={handleSheetLegQty}
+          onRemoveLeg={handleSheetRemoveLeg}
+          subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
+          demoFixture={blockLiveSend}
+          sendPreviewOnly={!AT_ORDER_SEND_ENABLED || blockLiveSend}
+          extrasAfterLimit={
+            <AtActiveTraderSheetBrackets
+              prefs={prefs}
+              onPrefsChange={onPrefsChange}
+              entryPrice={sheetBracketEntry}
+              underlyingSymbol={underlyingSymbol}
+              primaryInstruction={templatePrimaryInstruction}
+            />
+          }
+        />
+      ) : tradeContext ? (
         <AtTradeActionBar
           accentHex={accentHex}
           tradeContext={tradeContext}
@@ -775,7 +936,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           positionQtyByKey={positionQtyByKey}
           onSell={(c, t) => handleTradeIntent(c, "SELL", t)}
           onBuy={(c, t) => handleTradeIntent(c, "BUY", t)}
-          onAddLeg={onAddLeg}
+          onAddLeg={atAddLegFromLadder}
         />
       ) : null}
     </div>

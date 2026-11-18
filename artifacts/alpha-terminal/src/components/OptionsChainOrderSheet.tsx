@@ -83,6 +83,10 @@ export interface OptionsChainOrderSheetProps {
   demoFixture?: boolean;
   /** Dev fixture: open in-sheet confirm on mount (after quotes/limit hydrate). */
   openReviewOnMount?: boolean;
+  /** TP/SL or other rows below limit (Active Trader). */
+  extrasAfterLimit?: React.ReactNode;
+  /** Show preview send label instead of live Schwab send. */
+  sendPreviewOnly?: boolean;
 }
 
 export function OptionsChainOrderSheet({
@@ -95,6 +99,8 @@ export function OptionsChainOrderSheet({
   subscribeOptionSymbols,
   demoFixture,
   openReviewOnMount,
+  extrasAfterLimit,
+  sendPreviewOnly,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -606,6 +612,8 @@ export function OptionsChainOrderSheet({
                 </div>
               </div>
 
+              {extrasAfterLimit}
+
               {priceError && (
                 <p className="mt-2 text-[10px]" style={{ color: DOWN }}>{priceError}</p>
               )}
@@ -655,7 +663,8 @@ export function OptionsChainOrderSheet({
             setStage("form");
           }}
           onSend={() => void handleSubmit()}
-          sendDisabled={sendLocked}
+          sendDisabled={sendLocked || !!sendPreviewOnly}
+          sendLabel={sendPreviewOnly ? "Sending off (preview)" : "Send to Schwab"}
         />
       )}
     </div>
@@ -707,6 +716,7 @@ function ConfirmPanel({
   onBack,
   onSend,
   sendDisabled,
+  sendLabel = "Send to Schwab",
 }: {
   strategyName: string;
   strategyColor: string;
@@ -723,6 +733,7 @@ function ConfirmPanel({
   onBack: () => void;
   onSend: () => void;
   sendDisabled?: boolean;
+  sendLabel?: string;
 }) {
   const px = reviewLimitSnapped ?? submittedLimit ?? 0;
   const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
@@ -842,7 +853,7 @@ function ConfirmPanel({
             style={{ background: GOLD, color: "#000", borderRadius: 8 }}
             data-testid="chain-sheet-send"
           >
-            Send to Schwab
+            {sendLabel}
           </button>
         </div>
       </div>

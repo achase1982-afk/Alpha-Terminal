@@ -15,6 +15,7 @@ import {
 import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { aggregateSpreadNBBO, verticalStrikes } from "@/lib/active-trader/aggregateSpreadNBBO";
 import { aggregateVerticalFlow } from "@/lib/active-trader/atVerticalFlow";
+import { atLadderLegKey } from "@/lib/active-trader/atLadderLegKeys";
 
 export interface LadderRowModel {
   strike: number;
@@ -48,6 +49,7 @@ interface LadderBodyProps {
     side: "BUY" | "SELL";
     nearContract: OptionsContract;
   }) => void;
+  selectedLegKeys?: ReadonlySet<string>;
 }
 
 export type AtTradeContext =
@@ -125,6 +127,7 @@ function QuoteCell({
   onClick,
   dataAttr,
   sizeLabel,
+  legSelected,
 }: {
   price: number | null;
   tint: "bid" | "ask";
@@ -136,6 +139,7 @@ function QuoteCell({
   onClick?: () => void;
   dataAttr?: string;
   sizeLabel?: string | null;
+  legSelected?: boolean;
 }) {
   const bg = tint === "bid" ? `${DOWN}30` : `${UP}30`;
   return (
@@ -149,8 +153,9 @@ function QuoteCell({
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
         background: bg,
-        border: `1px solid ${BORDER_ROW}`,
-        borderRight: tint === "bid" ? `1px solid ${DOWN}55` : `1px solid ${UP}55`,
+        border: legSelected ? `2px solid ${tint === "bid" ? DOWN : UP}` : `1px solid ${BORDER_ROW}`,
+        borderRight: legSelected ? `2px solid ${tint === "bid" ? DOWN : UP}` : tint === "bid" ? `1px solid ${DOWN}55` : `1px solid ${UP}55`,
+        boxShadow: legSelected ? `inset 0 0 0 1px ${tint === "bid" ? DOWN : UP}88` : undefined,
       }}
       onClick={() => {
         if (onClick) onClick();
@@ -189,6 +194,7 @@ type LadderRowViewProps = {
   onVerticalTap: LadderBodyProps["onVerticalTap"];
   keepawayPutLine?: number | null;
   keepawayCallLine?: number | null;
+  selectedLegKeys?: ReadonlySet<string>;
 };
 
 const LadderRowView = memo(function LadderRowView({
@@ -215,6 +221,7 @@ const LadderRowView = memo(function LadderRowView({
   onVerticalTap,
   keepawayPutLine,
   keepawayCallLine,
+  selectedLegKeys,
 }: LadderRowViewProps) {
   const callTick = useOptionTick(row.call?.streamKey);
   const putTick = useOptionTick(row.put?.streamKey);
@@ -284,11 +291,11 @@ const LadderRowView = memo(function LadderRowView({
   const rowStyle: React.CSSProperties = {
     gridTemplateColumns: AT_LADDER_GRID,
     height: rowHeight,
-    borderBottom: `1px solid ${BORDER_ROW}`,
+    borderBottom: spotRow ? `1px solid ${accentHex}40` : `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
     background: spotRow
-      ? `${accentHex}22`
+      ? `linear-gradient(180deg, ${accentHex}18 0%, ${accentHex}08 100%)`
       : keepawayForbidden
         ? "rgba(255,255,255,0.045)"
         : isSelected
@@ -301,8 +308,11 @@ const LadderRowView = memo(function LadderRowView({
         : isSelected
           ? `inset 0 0 0 1px ${accentHex}55`
           : undefined,
+    borderTop: spotRow ? `1px solid ${accentHex}55` : undefined,
   };
 
+  const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
+  const callKey = row.call ? atLadderLegKey(row.call, "CALL") : null;
   const putBidPx = ladderMode === "vertical" ? putSpread.bid : putTick?.bid ?? null;
   const putAskPx = ladderMode === "vertical" ? putSpread.ask : putTick?.ask ?? null;
   const callBidPx = ladderMode === "vertical" ? callSpread.bid : callTick?.bid ?? null;
@@ -310,52 +320,6 @@ const LadderRowView = memo(function LadderRowView({
 
   return (
     <>
-      {spotBetweenRows && underlyingPrice != null && (
-        <div
-          data-at-spot-gap
-          className="relative w-full grid"
-          style={{ gridTemplateColumns: AT_LADDER_GRID, height: 12 }}
-        >
-          <div
-            className="relative pointer-events-none"
-            style={{ gridColumn: "1 / -1", gridRow: 1, height: 12 }}
-          >
-            <div
-              className="absolute left-0 right-0"
-              style={{
-                top: Math.min(10, Math.max(2, spotFrac * 10)),
-                borderTop: `1px dashed ${accentHex}99`,
-              }}
-            />
-          </div>
-          <div
-            className="flex items-center z-[1] pointer-events-none min-w-0"
-            style={{
-              gridColumn: "1 / 4",
-              gridRow: 1,
-              height: 12,
-              lineHeight: "12px",
-              paddingLeft: 2,
-              alignSelf: "start",
-            }}
-          >
-            <span
-              className="truncate"
-              style={{
-                fontSize: 10,
-                lineHeight: "12px",
-                color: accentHex,
-                background: AT_LADDER_PANEL_BG,
-                padding: "0 2px",
-                fontFamily: MONO,
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {symbolLabel} {underlyingPrice.toFixed(underlyingPrice % 1 === 0 ? 0 : 2)}
-            </span>
-          </div>
-        </div>
-      )}
       {flipBetweenRows && zones.flip != null && (
         <div
           data-at-flip-gap
@@ -386,6 +350,7 @@ const LadderRowView = memo(function LadderRowView({
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && putTick?.bidSize != null ? `×${Math.round(putTick.bidSize)}` : null}
           dataAttr={`put-bid-${row.strike}`}
+          legSelected={!!(putKey && selectedLegKeys?.has(putKey))}
           onClick={
             ladderMode === "vertical" && row.put
               ? () =>
@@ -409,6 +374,7 @@ const LadderRowView = memo(function LadderRowView({
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && putTick?.askSize != null ? `×${Math.round(putTick.askSize)}` : null}
           dataAttr={`put-ask-${row.strike}`}
+          legSelected={!!(putKey && selectedLegKeys?.has(putKey))}
           onClick={
             ladderMode === "vertical" && row.put
               ? () =>
@@ -469,6 +435,7 @@ const LadderRowView = memo(function LadderRowView({
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && callTick?.bidSize != null ? `×${Math.round(callTick.bidSize)}` : null}
           dataAttr={`call-bid-${row.strike}`}
+          legSelected={!!(callKey && selectedLegKeys?.has(callKey))}
           onClick={
             ladderMode === "vertical" && row.call
               ? () =>
@@ -492,6 +459,7 @@ const LadderRowView = memo(function LadderRowView({
           onQuoteTap={onQuoteTap}
           sizeLabel={ladderMode === "single" && callTick?.askSize != null ? `×${Math.round(callTick.askSize)}` : null}
           dataAttr={`call-ask-${row.strike}`}
+          legSelected={!!(callKey && selectedLegKeys?.has(callKey))}
           onClick={
             ladderMode === "vertical" && row.call
               ? () =>
@@ -606,6 +574,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             positionQtyByKey={props.positionQtyByKey}
             workingOrderChips={props.workingOrderChips}
             flowByKey={props.flowByKey}
+            selectedLegKeys={props.selectedLegKeys}
           />
         );
       })}
