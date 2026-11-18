@@ -1793,6 +1793,8 @@ export function OptionsTab({
               ? { strike: atFixtureOverride.tapStrike, type: "CALL" as const }
               : undefined
           }
+          buildLegsFromChain={chainBuildTrayLegs}
+          buildLegQtyFromChain={legQuantities}
         />
       )}
       {optionsSubView === "chain" && (
