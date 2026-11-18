@@ -389,7 +389,7 @@ export function OptionsChainOrderSheet({
         body: JSON.stringify({ accountHash, order }),
       });
       const data = await res.json();
-      const partial = interpretBracketPlaceOrderResult(data);
+      const partial = demoFixture ? interpretBracketPlaceOrderResult(data) : null;
       if (!res.ok || data.error) {
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
@@ -397,9 +397,9 @@ export function OptionsChainOrderSheet({
         setStage("error");
         return;
       }
-      if (partial?.entryAccepted && !partial.exitsAccepted && partial.userMessage) {
+      if (demoFixture && partial?.entryAccepted && !partial.exitsAccepted && partial.userMessage) {
         setOrderId(partial.orderId ?? "—");
-        setErrorMsg(partial.userMessage);
+        setErrorMsg(`${partial.userMessage} (fixture harness — requires broker exit status fields)`);
         setStage("error");
         return;
       }

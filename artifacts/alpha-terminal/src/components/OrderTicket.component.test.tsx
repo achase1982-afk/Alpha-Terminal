@@ -607,6 +607,57 @@ describe("OrderTicket component", () => {
     vi.unstubAllGlobals();
   });
 
+  it("ignores stale optionInstruction after side flip: STO qty 2 no TP on Review and wire", async () => {
+    vi.stubEnv("VITE_AT_ORDER_SEND", "1");
+    vi.resetModules();
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    const { OrderTicket: Ticket } = await import("./OrderTicket");
+
+    const prefs: ActiveTraderTemplatePrefs = {
+      ...atBracketPrefs,
+      template: "Single",
+      takeProfit: { ...atBracketPrefs.takeProfit, enabled: false },
+      stopLoss: { ...atBracketPrefs.stopLoss, enabled: false },
+    };
+
+    render(
+      <Ticket
+        isOpen
+        onClose={() => {}}
+        initialSide="BUY"
+        optionInstruction="BUY_TO_OPEN"
+        atTemplatePrefs={prefs}
+        optionSymbol={OPT}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Sell" }));
+    fireEvent.click(screen.getByLabelText("Increase quantity"));
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "2.60" } });
+    const review = await screen.findByRole("button", { name: "Review" });
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    await screen.findByText("Order Confirmation");
+    expect(screen.getByText(/Sell to open/i)).toBeTruthy();
+    expect(screen.queryByText(/Trigger order summary/i)).toBeNull();
+
+    const send = await screen.findByRole("button", { name: /send to schwab/i });
+    fireEvent.click(send);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+    const payload = JSON.parse(String(init?.body ?? "{}")) as { order?: Record<string, unknown> };
+    const legs = (payload.order?.orderLegCollection ?? []) as { instruction: string; quantity: number }[];
+    expect(legs[0]?.instruction).toBe("SELL_TO_OPEN");
+    expect(legs[0]?.quantity).toBe(2);
+    expect(payload.order?.childOrderStrategies).toBeUndefined();
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
   it("double-tap Send calls place-order exactly once (Active Trader bracket)", async () => {
     vi.stubEnv("VITE_AT_ORDER_SEND", "1");
     vi.resetModules();
