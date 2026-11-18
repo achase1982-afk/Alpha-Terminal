@@ -50,6 +50,14 @@ const leg: StrategyLeg = {
   schwabSymbol: "SPY   261219C00600000",
 };
 
+async function lockLimitAndGetReview() {
+  await waitFor(() => expect(screen.getByTestId("chain-sheet-limit")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Lock limit" }));
+  const review = screen.getByTestId("chain-sheet-review");
+  await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+  return review;
+}
+
 function renderSheet(overrides?: Partial<OptionsChainOrderSheetProps>) {
   const props: OptionsChainOrderSheetProps = {
     legs: [leg],
@@ -127,8 +135,7 @@ describe("OptionsChainOrderSheet", () => {
     const fetchMock = vi.mocked(fetchWithAuth);
     fetchMock.mockClear();
     renderSheet({ sendPreviewOnly: true });
-    const review = screen.getByTestId("chain-sheet-review");
-    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    const review = await lockLimitAndGetReview();
     expect(review.textContent).toMatch(/sending off/i);
     fireEvent.click(review);
     expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
@@ -141,8 +148,7 @@ describe("OptionsChainOrderSheet", () => {
   it("sendPreviewOnly: Review enabled without trading account hash", async () => {
     schwabAccountMock.tradingHash = null;
     renderSheet({ sendPreviewOnly: true });
-    const review = screen.getByTestId("chain-sheet-review");
-    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    await lockLimitAndGetReview();
   });
 
   it("sendPreviewOnly: localStorage bracket overrides stale explicit Single draft", async () => {
@@ -166,8 +172,7 @@ describe("OptionsChainOrderSheet", () => {
       sendPreviewOnly: true,
       atBracketDraft: { prefs: single, primaryInstruction: "BUY_TO_OPEN" },
     });
-    const review = screen.getByTestId("chain-sheet-review");
-    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    const review = await lockLimitAndGetReview();
     fireEvent.click(review);
     expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
     expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);
@@ -190,8 +195,7 @@ describe("OptionsChainOrderSheet", () => {
     };
     saveActiveTraderPrefs("equity", prefs);
     renderSheet({ sendPreviewOnly: true });
-    const review = screen.getByTestId("chain-sheet-review");
-    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    const review = await lockLimitAndGetReview();
     fireEvent.click(review);
     expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
     expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(3);
@@ -216,8 +220,7 @@ describe("OptionsChainOrderSheet", () => {
       sendPreviewOnly: true,
       atBracketDraft: { prefs, primaryInstruction: "SELL_TO_OPEN" },
     });
-    const review = screen.getByTestId("chain-sheet-review");
-    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    const review = await lockLimitAndGetReview();
     fireEvent.click(review);
     expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
     expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);

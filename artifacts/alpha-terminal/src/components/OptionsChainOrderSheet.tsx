@@ -621,7 +621,43 @@ export function OptionsChainOrderSheet({
     const maxLossLabel =
       summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—";
     const mid = summary?.spreadMid != null ? fmt(summary.spreadMid) : null;
-  return (
+
+    if (stage === "review") {
+      return (
+        <div data-testid="options-chain-order-sheet" data-at-approved-ticket>
+          <ConfirmPanel
+            strategyName={strategyId.name}
+            strategyColor={strategyId.color}
+            symbol={symbol}
+            legs={legs}
+            quantity={quantity}
+            timeInForce={timeInForce}
+            isCredit={isCredit}
+            limitTickCtx={limitTickCtx}
+            reviewLimitSnapped={reviewLimitSnapped}
+            submittedLimit={submittedLimit}
+            summary={summary}
+            feeAdjustedNetCash={feeAdjustedNetCash}
+            atBracketConfirm={atBracketConfirm}
+            atExitDurationLabel={
+              effectiveAtBracketDraft
+                ? formatAtExitDuration(effectiveAtBracketDraft.prefs.exitDuration)
+                : undefined
+            }
+            onBack={() => {
+              placeOrderInFlightRef.current = false;
+              setSendLocked(false);
+              setStage("form");
+            }}
+            onSend={() => void handleSubmit()}
+            sendDisabled={sendLocked || !!sendPreviewOnly}
+            sendLabel="Sending off (preview)"
+          />
+        </div>
+      );
+    }
+
+    return (
       <AtApprovedMobileOrderSheet
         legs={legs}
         collapsed={collapsed}
@@ -648,8 +684,9 @@ export function OptionsChainOrderSheet({
         orderType={orderType}
         onOrderTypeChange={setOrderType}
         limitTickCtx={limitTickCtx}
-        sendLabel={limitLocked ? "Send to Schwab" : "Lock limit to send"}
+        sendLabel={limitLocked ? "Review (sending off)" : "Lock limit to send"}
         sendDisabled={!limitLocked || !isValid}
+        primaryActionTestId="chain-sheet-review"
         onSend={() => {
           if (!limitLocked) return;
           validateAndReview();

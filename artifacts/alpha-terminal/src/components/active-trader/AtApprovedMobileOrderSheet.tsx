@@ -60,6 +60,7 @@ export type AtApprovedMobileOrderSheetProps = {
   sendDisabled: boolean;
   onSend: () => void;
   onAdvancedOrders?: () => void;
+  primaryActionTestId?: string;
 };
 
 export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderSheet({
@@ -88,6 +89,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   sendDisabled,
   onSend,
   onAdvancedOrders,
+  primaryActionTestId,
 }: AtApprovedMobileOrderSheetProps) {
   if (legs.length === 0) return null;
 
@@ -274,6 +276,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           type="button"
           disabled={sendDisabled}
           onClick={onSend}
+          data-testid={primaryActionTestId}
           className="w-full py-2.5 rounded-lg font-semibold disabled:opacity-45"
           style={{
             fontSize: 13,
