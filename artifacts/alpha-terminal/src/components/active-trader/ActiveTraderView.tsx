@@ -367,8 +367,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     ) {
       return { ...ladderHeatSource, label: "Quotes degraded", sourceFresh: false };
     }
+    const label = ladderHeatSource.label.trim();
+    if (!label) {
+      const staleCount = quoteAudit.counts.stale + quoteAudit.counts.crossed + quoteAudit.counts.incomplete;
+      const fallback =
+        staleCount > 0 || quoteAudit.nearAtmHasInvalid ? "Quotes degraded" : "Snapshot · prior session";
+      return { ...ladderHeatSource, label: fallback, sourceFresh: false };
+    }
     return ladderHeatSource;
-  }, [ladderHeatSource, quoteAudit.nearAtmHasInvalid]);
+  }, [ladderHeatSource, quoteAudit.nearAtmHasInvalid, quoteAudit.counts]);
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
