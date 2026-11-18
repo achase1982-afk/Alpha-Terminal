@@ -12,6 +12,24 @@ export function quoteSideState(bid: number | null | undefined, ask: number | nul
   return "ok";
 }
 
+/** Chain / AT display: strict two-sided book with bid>0, ask>0, fresh rx timestamp. */
+export const CHAIN_QUOTE_FRESH_MS = 12_000;
+
+export function chainDisplayQuoteState(
+  bid: number | null | undefined,
+  ask: number | null | undefined,
+  rxMs: number | null | undefined,
+  nowMs = Date.now(),
+  staleAfterMs = CHAIN_QUOTE_FRESH_MS,
+): QuoteSideState | "stale" {
+  if (rxMs == null || !Number.isFinite(rxMs) || rxMs <= 0) return "stale";
+  if (nowMs - rxMs > staleAfterMs) return "stale";
+  if (bid == null || ask == null || !Number.isFinite(bid) || !Number.isFinite(ask)) return "incomplete";
+  if (bid <= 0 || ask <= 0) return "incomplete";
+  if (bid > ask) return "crossed";
+  return "ok";
+}
+
 /** Midpoint when ask > 0, bid ≥ 0, and bid ≤ ask; never normalizes crossed books. */
 export function midpointFromBidAsk(bid: number | null | undefined, ask: number | null | undefined): number | null {
   if (quoteSideState(bid, ask) !== "ok") return null;

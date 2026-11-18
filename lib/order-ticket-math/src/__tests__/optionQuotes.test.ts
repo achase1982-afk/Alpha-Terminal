@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateSpreadNBBO,
+  chainDisplayQuoteState,
   midpointFromBidAsk,
   quoteSideState,
   resolvePairedBidAsk,
@@ -15,6 +16,13 @@ describe("optionQuotes", () => {
   it("computes midpoint only when bid <= ask", () => {
     expect(midpointFromBidAsk(9.5, 11.2)).toBeCloseTo(10.35, 5);
     expect(midpointFromBidAsk(null, 1)).toBeNull();
+  });
+
+  it("chain display requires bid>0 and ask>0", () => {
+    expect(chainDisplayQuoteState(0, 0.2, Date.now())).toBe("incomplete");
+    expect(chainDisplayQuoteState(1.1, 1.2, Date.now())).toBe("ok");
+    expect(chainDisplayQuoteState(1.2, 1.1, Date.now())).toBe("crossed");
+    expect(chainDisplayQuoteState(1.1, 1.2, Date.now() - 20_000)).toBe("stale");
   });
 
   it("treats zero bid with positive ask as a usable two-sided quote", () => {

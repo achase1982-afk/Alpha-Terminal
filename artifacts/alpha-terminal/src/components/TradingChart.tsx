@@ -313,11 +313,13 @@ export function TradingChart({ symbol, data, isLoading, error, timedOut, tokenEx
               <span className="text-yellow-500/80">SESSION EXPIRED — REFRESHING...</span>
               <span className="text-muted-foreground/50 text-[10px]">Open the sidebar to reconnect if this persists</span>
             </>
-          ) : (isNotFoundError(error) || timedOut) ? (
+          ) : !isLoading && (isNotFoundError(error) || timedOut) ? (
             <>
               <span className="text-red-500/70 tracking-widest">SYMBOL NOT FOUND OR UNSUPPORTED BY API</span>
               <span className="text-muted-foreground/50 text-[10px]">Try a valid equity ticker (e.g. AAPL, MSFT, SPY)</span>
             </>
+          ) : !isLoading && error && !isNotFoundError(error) ? (
+            <span className="text-yellow-500/80 tracking-widest">UNABLE TO LOAD CHART — RETRY</span>
           ) : (
             <span className="text-muted-foreground">AWAITING MARKET DATA...</span>
           )}

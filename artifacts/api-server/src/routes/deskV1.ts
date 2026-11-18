@@ -2,6 +2,10 @@ import { Router, type IRouter, type Response } from "express";
 import { deskBearerAuth } from "../middleware/deskBearerAuth.js";
 import { buildDeskHealthFeeds, deskSummarizeFeedsHealth } from "../lib/desk/deskFeedFreshness.js";
 import { deskEnvelope } from "../lib/desk/deskEnvelope.js";
+import {
+  annotateDeskQuoteRows,
+  deskQuotesEnvelopeAsOfMs,
+} from "../lib/desk/deskQuoteRowMeta.js";
 import { deskFetchSchwabQuotes } from "../lib/desk/deskSchwabQuotes.js";
 import { deskFetchSchwabChain } from "../lib/desk/deskSchwabChains.js";
 import { deskFetchSchwabBars } from "../lib/desk/deskSchwabBars.js";
@@ -119,9 +123,11 @@ router.get("/quotes", async (req, res) => {
       res.status(status).json({ error: r.error ?? "alpaca_paper_fetch_failed", source: "alpaca_paper" });
       return;
     }
-    const payload = { quotes: r.quotes, session_date };
+    const quotes = annotateDeskQuoteRows(r.quotes as Record<string, unknown>[], "alpaca_paper");
+    const asOfMs = deskQuotesEnvelopeAsOfMs(quotes, r.asOfMs);
+    const payload = { quotes, session_date };
     void deskPersistSnapshot("quotes", payload);
-    res.json(deskEnvelope(payload, "alpaca_paper", r.asOfMs, "alpaca_paper"));
+    res.json(deskEnvelope(payload, "alpaca_paper", asOfMs, "alpaca_paper"));
     return;
   }
 
@@ -155,19 +161,23 @@ router.get("/quotes", async (req, res) => {
 
   const schwabApp = deskSchwabRestAppFromDeskSource(resolved.source);
   const { quotes, asOfMs, app } = await deskFetchSchwabQuotes(symbols, schwabApp);
-  const quotesWithStream = quotes.map((q) => ({
-    ...q,
-    not_streaming: !schwabSymbolHasStreamingMark(q.symbol),
-  }));
+  const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
+  const quotesWithStream = annotateDeskQuoteRows(
+    quotes.map((q) => ({
+      ...(q as Record<string, unknown>),
+      not_streaming: !schwabSymbolHasStreamingMark(q.symbol),
+    })),
+    feed,
+  );
+  const envelopeAsOf = deskQuotesEnvelopeAsOfMs(quotesWithStream, asOfMs);
   const payload = {
     quotes: quotesWithStream,
     session_date,
-    not_streaming: quotesWithStream.some((q) => q.not_streaming),
+    not_streaming: quotesWithStream.some((q) => q.not_streaming === true),
   };
   void deskPersistSnapshot("quotes", payload);
   const sourceLabel = app === "app2" ? "schwab2" : "schwab";
-  const feed = app === "app2" ? "schwab2_rest" : "schwab_quotes_rest";
-  res.json(deskEnvelope(payload, sourceLabel, asOfMs, feed));
+  res.json(deskEnvelope(payload, sourceLabel, envelopeAsOf, feed));
 });
 
 router.get("/tape/spx/stream", (_req, res) => {
