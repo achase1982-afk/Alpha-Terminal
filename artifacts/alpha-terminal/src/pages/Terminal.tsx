@@ -77,6 +77,7 @@ function OptionsTab(props: ComponentProps<typeof import("@/components/OptionsTab
   return (
     <LazyRouteView
       viewName="Options"
+      freshImportOnRetry
       fallback={<LazyViewFallback />}
       loader={() => import("@/components/OptionsTab").then((m) => ({ default: m.OptionsTab }))}
       render={(C, key) => <C key={key} {...props} />}
@@ -97,6 +98,7 @@ function NewsTab() {
   return (
     <LazyRouteView
       viewName="News"
+      freshImportOnRetry
       fallback={<LazyViewFallback />}
       loader={() => import("@/components/NewsTab").then((m) => ({ default: m.NewsTab }))}
       render={(C, key) => <C key={key} />}
@@ -107,6 +109,7 @@ function PortfolioView(props: ComponentProps<typeof import("@/components/Portfol
   return (
     <LazyRouteView
       viewName="Portfolio"
+      freshImportOnRetry
       fallback={<LazyViewFallback />}
       loader={() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView }))}
       render={(C, key) => <C key={key} {...props} />}
@@ -167,6 +170,7 @@ function OrderTicket(props: ComponentProps<typeof import("@/components/OrderTick
   return (
     <LazyRouteView
       viewName="Order ticket"
+      freshImportOnRetry
       fallback={null}
       loader={() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket }))}
       render={(C, key) => <C key={key} {...props} />}
