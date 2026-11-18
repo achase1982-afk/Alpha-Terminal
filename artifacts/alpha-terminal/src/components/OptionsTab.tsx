@@ -37,6 +37,7 @@ import {
   atLadderRestQuery,
   growAtLadderSide,
   mergeAtChainLegs,
+  trimAtChainLegsToDepth,
 } from "@/lib/active-trader/atLadderWindow";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
@@ -1458,7 +1459,14 @@ export function OptionsTab({
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
-        placeholderData: (previous: OptionChainResponse | undefined) => previous,
+        placeholderData: (previous: OptionChainResponse | undefined) => {
+          if (!previous) return undefined;
+          if (optionsSubView === "at") {
+            const count = Math.max(previous.calls?.length ?? 0, previous.puts?.length ?? 0);
+            if (count < 20) return undefined;
+          }
+          return previous;
+        },
       },
     });
 
@@ -1506,13 +1514,14 @@ export function OptionsTab({
           ? prev!.puts
           : [];
       atBookRef.current = { symbol, ymd, calls: mergedCalls, puts: mergedPuts };
-      calls = mergedCalls;
-      puts = mergedPuts;
+      const trimSpot = rawData.underlyingPrice ?? null;
+      calls = trimAtChainLegsToDepth(mergedCalls, trimSpot, atDepth.above, atDepth.below);
+      puts = trimAtChainLegsToDepth(mergedPuts, trimSpot, atDepth.above, atDepth.below);
     }
     if (contractType === "CALL") puts = [];
     else if (contractType === "PUT") calls = [];
     return { ...rawData, calls, puts };
-  }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol, optionsSubView, atExpiration]);
+  }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol, optionsSubView, atExpiration, atDepth.above, atDepth.below]);
 
   const isLoadingEffective = fixtureChain ? false : isLoading;
 

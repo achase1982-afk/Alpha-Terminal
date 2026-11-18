@@ -9,6 +9,7 @@ import { isIndexSymbol } from "./atGlanceMode";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
+  defaultFixtureLadderVolumeSamples,
   ladderVolumeHeatFixtureSamples,
   type AtLadderVolumeHeatFixtureScene,
 } from "./atLadderVolumeHeatFixture";
@@ -91,7 +92,8 @@ type RestChainLeg = {
 
 function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[], want: Set<string>, now: number): void {
   for (const leg of legs) {
-    const key = (leg.streamKey ?? leg.schwabSymbol ?? "").trim();
+    const rawKey = leg.streamKey ?? leg.schwabSymbol ?? "";
+    const key = want.has(rawKey) ? rawKey : rawKey.trim();
     if (!key || (want.size > 0 && !want.has(key))) continue;
     useOptionsStreamStore.getState().mergeTick({
       key,
@@ -143,20 +145,35 @@ function restWindowPath(
   return `/api/market/options?${q.toString()}`;
 }
 
+export type AtLadderSeedContractVolume = {
+  key: string;
+  volume?: number | null;
+  volumeSampledAt?: number | null;
+};
+
 export function useAtLadderVolumeHeat(input: {
   symbol: string;
   streamKeys: string[];
   skipNetwork?: boolean;
-  /** Visible expiry window. Polled about once a second only when the stream goes quiet. */
+  /** Visible expiry window. Polled when the stream volume feed goes quiet. */
   restWindow?: { fromDate: string; toDate: string; strikeCount: number; range: string };
+  /** Initial chain contract volumes so the first live tick computes a delta immediately. */
+  seedContracts?: readonly AtLadderSeedContractVolume[];
 }): { heatByKey: Record<string, LadderHeatCellView>; source: AtLadderHeatSourceMeta } {
-  const engineRef = useRef(new AtLadderVolumeHeatEngine({ scaleFloorContracts: 150 }));
+  const engineRef = useRef(
+    new AtLadderVolumeHeatEngine({
+      scaleFloorContracts: 25,
+      staleAfterMs: 35_000,
+      emaAlpha: 0.28,
+    }),
+  );
   const [heatByKey, setHeatByKey] = useState<Record<string, LadderHeatCellView>>({});
   const [tick, setTick] = useState(0);
   const streamKeysRef = useRef(input.streamKeys);
   streamKeysRef.current = input.streamKeys;
   const volumeSigRef = useRef(new Map<string, string>());
   const streamRxRef = useRef<number | null>(null);
+  const streamVolRxRef = useRef<number | null>(null);
   const restWriteRef = useRef(false);
   const restWindowRef = useRef(input.restWindow);
   restWindowRef.current = input.restWindow;
@@ -168,10 +185,10 @@ export function useAtLadderVolumeHeat(input: {
   const heatScene = (scene ?? "") as AtLadderVolumeHeatFixtureScene;
 
   const mode: AtLadderHeatSourceMeta["kind"] = useMemo(() => {
-    if (fx && heatScene.startsWith("heat-")) return "fixture";
+    if (fx) return "fixture";
     if (input.skipNetwork) return "off";
     return isIndexSymbol(input.symbol) ? "stream" : "poll";
-  }, [fx, heatScene, input.skipNetwork, input.symbol]);
+  }, [fx, input.skipNetwork, input.symbol]);
 
   const schedulePaintRef = useRef<(() => void) | null>(null);
 
@@ -186,17 +203,17 @@ export function useAtLadderVolumeHeat(input: {
     let paintPending = false;
     let lastPaintMs = 0;
 
-    const flushPaint = (now: number) => {
+    const flushPaint = (rafNow: number) => {
       raf = 0;
       if (!paintPending) return;
-      if (now - lastPaintMs < HEAT_PAINT_MIN_MS) {
+      if (rafNow - lastPaintMs < HEAT_PAINT_MIN_MS) {
         raf = requestAnimationFrame(flushPaint);
         return;
       }
       paintPending = false;
-      lastPaintMs = now;
+      lastPaintMs = rafNow;
       const keys = streamKeysRef.current;
-      engineRef.current.setNowMs(now);
+      engineRef.current.setNowMs(Date.now());
       const next = engineRef.current.snapshot(keys);
       setHeatByKey((prev) => (heatMapsEqual(prev, next) ? prev : next));
       setTick((n) => n + 1);
@@ -222,37 +239,98 @@ export function useAtLadderVolumeHeat(input: {
   }, [mode]);
 
   useEffect(() => {
-    if (mode !== "fixture" || !heatScene.startsWith("heat-")) return;
+    if (mode !== "fixture") return;
     const engine = engineRef.current;
-    const samples = ladderVolumeHeatFixtureSamples(heatScene);
+    const isNamedHeatScene = heatScene.startsWith("heat-");
+    const samples = isNamedHeatScene
+      ? ladderVolumeHeatFixtureSamples(heatScene)
+      : defaultFixtureLadderVolumeSamples();
+    if (!samples.length) return;
+    const cumByContract = new Map<string, number>();
+    const deltaByContract = new Map<string, number>();
     const base = Date.now();
     let lastRx = base;
     for (const s of samples) {
       const rx = s.sampleMs ?? base + (s.offsetMs ?? 0);
       lastRx = Math.max(lastRx, rx);
+      const prev = cumByContract.get(s.contract);
+      if (prev != null && s.cumulativeVol > prev) {
+        deltaByContract.set(s.contract, s.cumulativeVol - prev);
+      }
+      cumByContract.set(s.contract, s.cumulativeVol);
       engine.setNowMs(lastRx);
       engine.ingestCumulative(s.contract, s.cumulativeVol, rx);
     }
     engine.setNowMs(Math.max(Date.now(), lastRx + 50));
     schedulePaintRef.current?.();
+    if (isNamedHeatScene) return;
+
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      engine.setNowMs(now);
+      for (const [contract, step] of deltaByContract) {
+        const nextCum = (cumByContract.get(contract) ?? 2_000) + Math.max(1, Math.round(step * 0.12));
+        cumByContract.set(contract, nextCum);
+        engine.ingestCumulative(contract, nextCum, now);
+      }
+      schedulePaintRef.current?.();
+    }, 2_500);
+    return () => window.clearInterval(id);
   }, [mode, heatScene]);
+
+  useEffect(() => {
+    if (mode === "off" || mode === "fixture" || !input.seedContracts?.length) return;
+    const engine = engineRef.current;
+    const now = Date.now();
+    let seeded = false;
+    for (const c of input.seedContracts) {
+      if (!c.key || c.volume == null || !Number.isFinite(c.volume) || c.volume < 0) continue;
+      const rx = c.volumeSampledAt != null && c.volumeSampledAt > 0 ? c.volumeSampledAt : now;
+      const sig = `seed|${c.volume}`;
+      if (volumeSigRef.current.has(c.key)) continue;
+      volumeSigRef.current.set(c.key, sig);
+      engine.ingestCumulative(c.key, c.volume, rx);
+      seeded = true;
+    }
+    if (seeded) schedulePaintRef.current?.();
+  }, [mode, input.seedContracts]);
 
   useEffect(() => {
     if (mode !== "stream") return;
     const engine = engineRef.current;
 
+    const normalizeSampleMs = (rawMs: number | null | undefined, nowMs: number): number => {
+      if (rawMs == null || !Number.isFinite(rawMs) || rawMs <= 0) return nowMs;
+      return Math.min(nowMs, Math.max(rawMs, nowMs - 5_000));
+    };
+
     const ingestVolumeSamples = () => {
       const ticks = useOptionsStreamStore.getState().ticks;
       const keys = streamKeysRef.current;
+      const nowMs = Date.now();
       let ingested = false;
       for (const key of keys) {
-        const sample = ticks[key]?.volumeSample;
-        if (!sample) continue;
-        const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
-        if (volumeSigRef.current.get(key) === sig) continue;
-        volumeSigRef.current.set(key, sig);
-        engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
-        ingested = true;
+        const t = ticks[key];
+        if (!t) continue;
+        const sample = t.volumeSample;
+        if (sample) {
+          const rx = normalizeSampleMs(sample.tradeTimeMs, nowMs);
+          const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
+          if (volumeSigRef.current.get(key) === sig) continue;
+          volumeSigRef.current.set(key, sig);
+          engine.ingestCumulative(key, sample.cumulativeVol, rx);
+          streamVolRxRef.current = nowMs;
+          ingested = true;
+          continue;
+        }
+        if (t.volume != null && Number.isFinite(t.volume) && t.volume >= 0) {
+          const sig = `vol|${t.volume}`;
+          if (volumeSigRef.current.get(key) === sig) continue;
+          volumeSigRef.current.set(key, sig);
+          const rx = normalizeSampleMs(t.tradeTime ?? t.ts, nowMs);
+          engine.ingestCumulative(key, t.volume, rx);
+          ingested = true;
+        }
       }
       return ingested;
     };
@@ -271,28 +349,45 @@ export function useAtLadderVolumeHeat(input: {
     const unsub = useOptionsStreamStore.subscribe((state, prev) => {
       if (restWriteRef.current) return;
       const keys = streamKeysRef.current;
+      const nowMs = Date.now();
       for (const key of keys) {
         const ts = state.ticks[key]?.ts;
         if (ts && ts !== prev.ticks[key]?.ts) {
-          streamRxRef.current = Date.now();
+          streamRxRef.current = nowMs;
           break;
         }
       }
       let ingested = false;
       for (const key of keys) {
-        const sample = state.ticks[key]?.volumeSample;
-        const prevSample = prev.ticks[key]?.volumeSample;
+        const curr = state.ticks[key];
+        const prevTick = prev.ticks[key];
+        if (!curr) continue;
+        const sample = curr.volumeSample;
+        const prevSample = prevTick?.volumeSample;
         if (
-          !sample ||
-          (prevSample?.cumulativeVol === sample.cumulativeVol &&
-            prevSample?.tradeTimeMs === sample.tradeTimeMs)
+          sample &&
+          (prevSample?.cumulativeVol !== sample.cumulativeVol ||
+            prevSample?.tradeTimeMs !== sample.tradeTimeMs)
         ) {
+          const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
+          volumeSigRef.current.set(key, sig);
+          engine.ingestCumulative(key, sample.cumulativeVol, normalizeSampleMs(sample.tradeTimeMs, nowMs));
+          streamVolRxRef.current = nowMs;
+          ingested = true;
           continue;
         }
-        const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
-        volumeSigRef.current.set(key, sig);
-        engine.ingestCumulative(key, sample.cumulativeVol, sample.tradeTimeMs);
-        ingested = true;
+        if (
+          curr.volume != null &&
+          Number.isFinite(curr.volume) &&
+          curr.volume >= 0 &&
+          curr.volume !== prevTick?.volume
+        ) {
+          const sig = `vol|${curr.volume}`;
+          volumeSigRef.current.set(key, sig);
+          engine.ingestCumulative(key, curr.volume, normalizeSampleMs(curr.tradeTime ?? curr.ts, nowMs));
+          streamVolRxRef.current = nowMs;
+          ingested = true;
+        }
       }
       if (ingested) schedulePaintRef.current?.();
     });
@@ -388,20 +483,35 @@ export function useAtLadderVolumeHeat(input: {
       }
     };
 
+    let lastRestPollAt = 0;
+    const initialKick = window.setTimeout(() => {
+      const now = Date.now();
+      const volRx = streamVolRxRef.current;
+      if (volRx != null && now - volRx <= 2_000) return;
+      lastRestPollAt = now;
+      void poll();
+    }, 600);
     const id = window.setInterval(() => {
       const now = Date.now();
       const rx = streamRxRef.current;
+      const volRx = streamVolRxRef.current;
       const wsFresh = rx != null && now - rx <= 12_000;
-      if (wsFresh) {
+      const wsVolFresh = volRx != null && now - volRx <= 3_500;
+      if (wsFresh && wsVolFresh) {
         setRestActive(false);
         return;
       }
-      if (rx == null && now - armedAt < 4_000) return;
+      if (rx == null && now - armedAt < 800) return;
+      const minGap = wsFresh ? 1_800 : AT_LADDER_HEAT_POLL_MS;
+      if (now - lastRestPollAt < minGap) return;
+      lastRestPollAt = now;
+      if (wsFresh) setRestActive(false);
       void poll();
     }, AT_LADDER_HEAT_POLL_MS);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(initialKick);
       window.clearInterval(id);
     };
   }, [

@@ -152,7 +152,8 @@ export function mergeOptionTickFromSchwab(
     const field8 = numOrNull(item["8"]);
     if (field8 != null && field8 >= 0 && Number.isFinite(field8)) {
       nextVolume = field8;
-      const trade39 = schwabFieldPresent(item, "39") ? numOrNull(item["39"]) : null;
+      const hasField39 = schwabFieldPresent(item, "39");
+      const trade39 = hasField39 ? numOrNull(item["39"]) : null;
       const prevVol = existing?.volume;
       const prevTrade = existing?.lastVolumeTradeTimeMs;
       const increased = prevVol == null || field8 > prevVol;
@@ -161,6 +162,13 @@ export function mergeOptionTickFromSchwab(
       if (trade39 != null && trade39 > 0 && increased && !equalResend) {
         volumeSample = { cumulativeVol: field8, tradeTimeMs: trade39 };
         lastVolumeTradeTimeMs = trade39;
+      } else if (!hasField39 && prevVol != null && field8 > prevVol && now > 0) {
+        const sampleMs =
+          existing?.tradeTime != null && existing.tradeTime > 0
+            ? Math.max(existing.tradeTime, now)
+            : now;
+        volumeSample = { cumulativeVol: field8, tradeTimeMs: sampleMs };
+        lastVolumeTradeTimeMs = sampleMs;
       } else if (prevVol === field8 && trade39 != null && trade39 > 0) {
         lastVolumeTradeTimeMs = prevTrade ?? trade39;
       }

@@ -1,7 +1,13 @@
 import { memo, useCallback, useRef } from "react";
-import { GRAY, MONO, FW_NORMAL } from "@/components/options/optionsTheme";
-import { AT_HEADER_BG, AT_LABEL } from "@/lib/active-trader/atChromeContrast";
-import { BG_EXP_BAR } from "@/components/options/optionsTheme";
+import { GRAY, MONO, FW_NORMAL, BG_EXP_BAR, WHITE } from "@/components/options/optionsTheme";
+import {
+  AT_HEADER_BG,
+  AT_LABEL,
+  AT_TOGGLE_KNOB_BOTTOM,
+  AT_TOGGLE_KNOB_TOP,
+  AT_TOGGLE_TRACK_BOTTOM,
+  AT_TOGGLE_TRACK_TOP,
+} from "@/lib/active-trader/atChromeContrast";
 
 export type OptionsSubView = "chain" | "at";
 
@@ -17,11 +23,10 @@ const PILL_W_PX = 38;
 const PILL_H_PX = 22;
 const CHROME_H_PX = 26;
 const HIT_MIN_PX = 44;
-const TRACK_BG = "#1f1f23";
-const KNOB = "#ececef";
-const TRACK_INSET = "inset 0 2px 4px rgba(0,0,0,0.55), inset 0 0 0 0.5px rgba(255,255,255,0.06)";
+const TRACK_INSET =
+  "inset 0 2px 4px rgba(0,0,0,0.65), inset 0 0 0 1px rgba(255,255,255,0.08)";
 const KNOB_SHADOW =
-  "0 2px 5px rgba(0,0,0,0.45), 0 0 0 0.5px rgba(255,255,255,0.2), inset 0 -1px 0 rgba(0,0,0,0.08)";
+  "0 1px 3px rgba(0,0,0,0.6), 0 0 0 0.5px rgba(255,255,255,0.14), inset 0 1px 0 rgba(255,255,255,0.12)";
 
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
@@ -87,7 +92,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           fontFamily: MONO,
           fontSize: 9,
           fontWeight: 500,
-          color: !atActive ? GRAY : AT_LABEL,
+          color: !atActive ? WHITE : AT_LABEL,
           lineHeight: 1,
           whiteSpace: "nowrap",
         }}
@@ -129,7 +134,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           style={{
             width: PILL_W_PX,
             height: PILL_H_PX,
-            background: `linear-gradient(180deg, ${TRACK_BG} 0%, #18181b 100%)`,
+            background: `linear-gradient(180deg, ${AT_TOGGLE_TRACK_TOP} 0%, ${AT_TOGGLE_TRACK_BOTTOM} 100%)`,
             boxShadow: TRACK_INSET,
           }}
         >
@@ -141,7 +146,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
               height: PILL_H_PX - 4,
               top: 2,
               left: atActive ? PILL_W_PX - (PILL_H_PX - 2) : 2,
-              background: `linear-gradient(180deg, ${KNOB} 0%, #d4d4d8 100%)`,
+              background: `linear-gradient(180deg, ${AT_TOGGLE_KNOB_TOP} 0%, ${AT_TOGGLE_KNOB_BOTTOM} 100%)`,
               boxShadow: KNOB_SHADOW,
               transition: "left 160ms cubic-bezier(0.33, 1, 0.68, 1)",
             }}
@@ -165,7 +170,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           fontFamily: MONO,
           fontSize: 9,
           fontWeight: FW_NORMAL,
-          color: atActive ? GRAY : AT_LABEL,
+          color: atActive ? WHITE : AT_LABEL,
           lineHeight: 1,
           whiteSpace: "nowrap",
         }}

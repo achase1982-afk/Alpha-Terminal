@@ -76,6 +76,7 @@ export interface PriceHistoryResponse {
 export interface OptionContract {
   strike: number;
   expiration: string;
+  schwabSymbol?: string;
   bid?: number;
   ask?: number;
   bidSize?: number;
