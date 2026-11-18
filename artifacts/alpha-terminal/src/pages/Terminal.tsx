@@ -51,6 +51,7 @@ import {
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
 import { FuturesTradeBlockedNotice } from "@/components/FuturesTradeBlockedNotice";
@@ -590,8 +591,8 @@ export default function TerminalPage() {
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
     setOrderIsClose(false);
-    setOrderInitialStage("review");
-    setOrderConfirmDisabled(false);
+    setOrderInitialStage("form");
+    setOrderConfirmDisabled(!atOrderSendAllowed());
     setOrderOpen(true);
   }, []);
 

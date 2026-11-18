@@ -5,7 +5,6 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
   IPHONE_17_PRO_MAX,
-  SECONDARY_VIEWPORT,
   installSafeAreaInsets,
   layoutMetricsScript,
 } from "./lib/iphone17ProMax.js";
@@ -21,7 +20,13 @@ async function ensureVite() {
     cwd: PKG,
     detached: true,
     stdio: "ignore",
-    env: { ...process.env, BROWSER: "none", VITE_DEV_BYPASS_AUTH: "true", VITE_AT_GLANCE_TOP: "1" },
+    env: {
+      ...process.env,
+      BROWSER: "none",
+      VITE_DEV_BYPASS_AUTH: "true",
+      VITE_AT_GLANCE_TOP: "1",
+      VITE_AT_ORDER_SEND: "0",
+    },
   });
   child.unref();
   for (let i = 0; i < 120; i++) {
@@ -68,26 +73,30 @@ async function runFixture(vp, fixture, useSafeArea) {
   await page.waitForTimeout(120);
   await snap("b-mid-animation", false);
   await tapPromise;
-  await page.waitForSelector("[data-order-ticket-sheet]", { timeout: 20_000 }).catch(() => undefined);
-  await page.waitForTimeout(350);
+  await page.waitForSelector('[data-at-sheet-detent="peek"]', { timeout: 20_000 });
+  await page.waitForTimeout(400);
   const openM = await snap("c-sheet-open");
-  const tpLine = page.getByText(/Take profit/i).first();
-  const tpVisible = await tpLine.isVisible().catch(() => false);
+  await page.waitForSelector("[data-at-mobile-peek]", { timeout: 10_000 });
+  const tpVisible = await page.getByText("Take profit").first().isVisible().catch(() => false);
   if (!tpVisible) {
-    await page.getByText(/Template/i).first().click().catch(() => undefined);
+    await page.locator('[data-at-mobile-peek] input[type="checkbox"]').first().check().catch(() => undefined);
+  }
+  await snap("d-tp-visible");
+  const limitInput = page.locator('[data-at-mobile-peek] input[inputmode="decimal"]');
+  const limitVal = await limitInput.inputValue().catch(() => "");
+  if (!limitVal?.trim()) {
+    await limitInput.fill("3.50");
     await page.waitForTimeout(150);
   }
-  await snap("d-tp-expanded");
+  await page.getByTestId("at-mobile-review").click({ timeout: 10_000 });
+  await page.waitForSelector('[data-at-sheet-detent="confirm"]', { timeout: 15_000 });
+  await page.waitForTimeout(350);
   await snap("e-ticket-full");
   const backdrop = page.locator("[data-order-ticket-backdrop]");
   if (await backdrop.count()) {
     await backdrop.click({ timeout: 5000, position: { x: 40, y: 80 } }).catch(() => undefined);
   } else {
-    await page
-      .locator("[data-order-ticket-sheet] button")
-      .first()
-      .click({ timeout: 3000 })
-      .catch(() => undefined);
+    await page.getByTestId("at-mobile-review").click({ timeout: 3000 }).catch(() => undefined);
   }
   await page.waitForSelector("[data-order-ticket-sheet]", { state: "detached", timeout: 8000 }).catch(() => undefined);
   await page.waitForTimeout(400);
@@ -103,10 +112,6 @@ const report = { capturedAt: new Date().toISOString(), primary: IPHONE_17_PRO_MA
 
 for (const fx of ["spx", "nvda", "es"]) {
   report.fixtures.push(await runFixture(IPHONE_17_PRO_MAX, fx, true));
-}
-
-for (const fx of ["spx", "nvda"]) {
-  report.fixtures.push(await runFixture(SECONDARY_VIEWPORT, fx, false));
 }
 
 await writeFile(path.join(OUT, "glance-order-flow.json"), JSON.stringify(report, null, 2));

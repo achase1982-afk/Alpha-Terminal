@@ -48,7 +48,12 @@ import {
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
-import { scrollAtLadderToSpot, scrollAtLadderToStrike } from "@/lib/active-trader/atLadderScroll";
+import {
+  scrollAtLadderToSpot,
+  scrollAtLadderToStrike,
+  scrollAtLadderToStrikeAboveSheet,
+} from "@/lib/active-trader/atLadderScroll";
+import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
@@ -445,7 +450,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (atGlanceTopEnabled()) {
         setTradeContext(null);
         requestAnimationFrame(() => {
-          scrollAtLadderToStrike(ladderScrollRef.current, contract.strike, 0.32);
+          scrollAtLadderToStrikeAboveSheet(
+            ladderScrollRef.current,
+            contract.strike,
+            AT_MOBILE_PEEK_MAX_PX,
+          );
         });
         onOpenReview(contract, side, type);
         return;
@@ -461,6 +470,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       scrollAtLadderToStrike(ladderScrollRef.current, tradeStripStrike, 0.32);
     });
   }, [tradeStripStrike, tradeContext]);
+
+  useEffect(() => {
+    const onSheet = (ev: Event) => {
+      const peekPx = (ev as CustomEvent<{ peekPx?: number }>).detail?.peekPx ?? AT_MOBILE_PEEK_MAX_PX;
+      if (tradeStripStrike == null) return;
+      requestAnimationFrame(() => {
+        scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, tradeStripStrike, peekPx);
+      });
+    };
+    window.addEventListener("at-mobile-sheet-open", onSheet);
+    return () => window.removeEventListener("at-mobile-sheet-open", onSheet);
+  }, [tradeStripStrike]);
 
   const handleVerticalTap = useCallback(
     (payload: {
@@ -709,6 +730,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         {ladderDataReady ? (
+          <div
+            style={{
+              minHeight: "100%",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: ladderRows.length <= 14 ? "center" : "flex-start",
+            }}
+          >
           <LadderBody
             rows={ladderRows}
             accentHex={accentHex}
@@ -729,6 +758,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
           />
+          </div>
         ) : (
           <>
             {!presentation?.skipNetwork && (

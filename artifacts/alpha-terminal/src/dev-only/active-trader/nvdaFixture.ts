@@ -41,7 +41,9 @@ function row(strike: number, callBid: number, callAsk: number, putBid: number, p
 }
 
 export function buildNvdaFixtureGroups(): AtExpirationGroup[] {
-  const strikes = [192.5, 190, 187.5, 185, 182.5, 180, 177.5, 175, 172.5, 170, 167.5];
+  const strikes = [
+    200, 197.5, 195, 192.5, 190, 187.5, 185, 182.5, 180, 177.5, 175, 172.5, 170, 167.5, 165, 162.5, 160,
+  ];
   const rows = strikes.map((s) => {
     const dist = Math.abs(s - FIXTURE_NVDA_SPOT);
     const mid = Math.max(0.04, 1.85 - dist * 0.22);
