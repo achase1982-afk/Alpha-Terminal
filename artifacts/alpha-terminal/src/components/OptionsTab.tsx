@@ -31,6 +31,7 @@ import {
 import { ActiveTraderView } from "@/components/active-trader/ActiveTraderView";
 import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
 import { resolveAtmStrike } from "@workspace/order-ticket-math";
@@ -1705,9 +1706,11 @@ export function OptionsTab({
       style={{ background: BG }}
       className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
     >
-      <div className="shrink-0">
-        <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
-      </div>
+      {!atGlanceTopEnabled() ? (
+        <div className="shrink-0" data-at-subview-chrome>
+          <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
+        </div>
+      ) : null}
       {optionsSubView === "at" && (
         <ActiveTraderView
           symbol={symbol}

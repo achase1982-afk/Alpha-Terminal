@@ -9,16 +9,18 @@ interface OptionsSubViewToggleProps {
   view: OptionsSubView;
   onChange: (v: OptionsSubView) => void;
   accentHex: string;
+  compact?: boolean;
 }
 
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
   onChange,
+  compact,
 }: OptionsSubViewToggleProps) {
   const seg =
-    "px-4 py-1 text-center rounded-full border text-[11px] tracking-wide transition-colors whitespace-nowrap font-normal";
+    "px-3 py-0.5 text-center rounded-full border text-[10px] tracking-wide transition-colors whitespace-nowrap font-normal";
   return (
-    <div className="flex justify-center px-3 mt-1.5 mb-0.5">
+    <div className={compact ? "flex justify-center px-2 py-0" : "flex justify-center px-3 mt-1.5 mb-0.5"}>
       <div
         className="inline-flex gap-1 p-0.5 rounded-full"
         data-at-subview-toggle

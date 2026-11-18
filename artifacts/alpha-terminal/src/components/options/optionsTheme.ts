@@ -18,6 +18,9 @@ export const GOLD = "#fbbf24";
 export const GOLD_DIM = "#b8941c";
 export const UP = "#00d166";
 export const DOWN = "#f23645";
+/** Small red text on dark (AAA at 12px). */
+export const DOWN_TEXT = "#ff6b74";
+export const PUT_WALL = "#14b8a6";
 export const WHITE = "#f0f0f0";
 export const GRAY = "#a1a1aa";
 export const DIM = "#52525b";

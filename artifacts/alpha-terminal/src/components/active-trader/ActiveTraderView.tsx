@@ -39,6 +39,8 @@ import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import { toast } from "@/hooks/use-toast";
 import { AtSettingsExpanded, AtSettingsSummary } from "./AtSettingsPanel";
 import { RegimeStrip } from "./RegimeStrip";
+import { AtGlanceTop } from "./AtGlanceTop";
+import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { FilterStrip } from "./FilterStrip";
 import {
   loadAtSettingsPanelOpen,
@@ -46,7 +48,12 @@ import {
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { AtTradeActionBar } from "./AtTradeActionBar";
-import { scrollAtLadderToSpot } from "@/lib/active-trader/atLadderScroll";
+import {
+  scrollAtLadderToSpot,
+  scrollAtLadderToStrike,
+  scrollAtLadderToStrikeAboveSheet,
+} from "@/lib/active-trader/atLadderScroll";
+import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { AT_LADDER_PANEL_BG } from "@/lib/active-trader/atLadderLayout";
@@ -100,7 +107,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   groups,
   activeExpiration,
   underlyingPrice,
-  stickyOffset,
+  stickyOffset: _stickyOffset,
   accentHex,
   holdSubs,
   onAddLeg,
@@ -112,7 +119,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const primary =
     groups.find((g) => g.expiration === activeExpiration) ?? groups[0];
   const ladderDataReady = !!(primary && primary.rows.length > 0);
-  const futuresOnlyMode = isFuturesDisplaySymbol(symbol);
+  /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
+  const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
   const [laneFilters, setLaneFilters] = useState<Record<LaneFilterKey, boolean>>({
     call_buy: true,
@@ -435,11 +443,45 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [prefs, tradingHash, blockLiveSend, onOpenReview, symbol],
   );
 
-  const handleQuoteTap = useCallback((contract: OptionsContract, type: "CALL" | "PUT", _side: "BUY" | "SELL") => {
-    setSelected({ contract, type });
-    setTradeContext({ mode: "single", contract, type });
-    setTradeStripStrike(contract.strike);
-  }, []);
+  const handleQuoteTap = useCallback(
+    (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
+      setSelected({ contract, type });
+      setTradeStripStrike(contract.strike);
+      if (atGlanceTopEnabled()) {
+        setTradeContext(null);
+        requestAnimationFrame(() => {
+          scrollAtLadderToStrikeAboveSheet(
+            ladderScrollRef.current,
+            contract.strike,
+            AT_MOBILE_PEEK_MAX_PX,
+          );
+        });
+        onOpenReview(contract, side, type);
+        return;
+      }
+      setTradeContext({ mode: "single", contract, type });
+    },
+    [onOpenReview],
+  );
+
+  useEffect(() => {
+    if (!tradeStripStrike) return;
+    requestAnimationFrame(() => {
+      scrollAtLadderToStrike(ladderScrollRef.current, tradeStripStrike, 0.32);
+    });
+  }, [tradeStripStrike, tradeContext]);
+
+  useEffect(() => {
+    const onSheet = (ev: Event) => {
+      const peekPx = (ev as CustomEvent<{ peekPx?: number }>).detail?.peekPx ?? AT_MOBILE_PEEK_MAX_PX;
+      if (tradeStripStrike == null) return;
+      requestAnimationFrame(() => {
+        scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, tradeStripStrike, peekPx);
+      });
+    };
+    window.addEventListener("at-mobile-sheet-open", onSheet);
+    return () => window.removeEventListener("at-mobile-sheet-open", onSheet);
+  }, [tradeStripStrike]);
 
   const handleVerticalTap = useCallback(
     (payload: {
@@ -499,6 +541,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     });
   }, []);
 
+  const glanceTop = atGlanceTopEnabled();
   const fixtureTight = !!presentation?.skipNetwork;
   const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
 
@@ -524,13 +567,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   if (futuresOnlyMode) {
     return (
-      <div
-        className="flex flex-col"
-        style={{
-          background: BG,
-          minHeight: `max(440px, calc(100dvh - ${stickyOffset + 72}px))`,
-        }}
-      >
+      <div className="flex flex-1 min-h-0 flex-col overflow-hidden" style={{ background: BG }}>
         <AtFuturesLiveQuote symbol={symbol} layout="fill" />
       </div>
     );
@@ -543,6 +580,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       style={{ background: BG, overscrollBehavior: "none" }}
     >
       <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
+        {glanceTop ? (
+          <AtGlanceTop
+            symbol={symbol}
+            underlyingPrice={underlyingPrice}
+            zones={zones}
+            keepawayPutLine={keepawayPutLine}
+            keepawayCallLine={keepawayCallLine}
+            keepawayStats={keepawayStats}
+            sessionOpen={underlyingQuote?.close ?? null}
+            embedded
+          />
+        ) : (
           <RegimeStrip
             embedded
             accentHex={accentHex}
@@ -558,14 +607,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             sessionLabel={presentation?.sessionLabel}
             headline={pressureHeadline}
           />
-        <FilterStrip
-          embedded
-          accentHex={accentHex}
-          filters={laneFilters}
-          onToggle={toggleLane}
-          classifiedPct={classifiedPct}
-          windowLabel={`last ${windowSec}s`}
-        />
+        )}
+        {!glanceTop ? (
+          <FilterStrip
+            embedded
+            accentHex={accentHex}
+            filters={laneFilters}
+            onToggle={toggleLane}
+            classifiedPct={classifiedPct}
+            windowLabel={`last ${windowSec}s`}
+          />
+        ) : null}
         <AtSettingsExpanded
           open={settingsOpen}
           accentHex={accentHex}
@@ -594,7 +646,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         <AtSettingsSummary
-          slim
+          slim={!glanceTop}
+          glanceSlim={glanceTop}
           open={settingsOpen}
           onToggle={toggleSettings}
           prefs={prefs}
@@ -659,6 +712,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       <div
         ref={ladderScrollRef}
         data-at-ladder-scroll
+        data-selected-strike={tradeStripStrike ?? undefined}
         className="at-ladder-scroll flex-1 min-h-0"
         style={{
           ...noScrollbar,
@@ -670,6 +724,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         {ladderDataReady ? (
+          <div
+            style={{
+              minHeight: "100%",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: ladderRows.length <= 14 ? "center" : "flex-start",
+            }}
+          >
           <LadderBody
             rows={ladderRows}
             accentHex={accentHex}
@@ -690,6 +752,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             keepawayPutLine={keepawayPutLine}
             keepawayCallLine={keepawayCallLine}
           />
+          </div>
         ) : (
           <>
             {!presentation?.skipNetwork && (

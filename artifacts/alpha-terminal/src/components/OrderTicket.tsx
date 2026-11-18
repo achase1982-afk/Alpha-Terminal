@@ -19,6 +19,7 @@ import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
 import { useTicketOptionHold } from "@/hooks/useTicketOptionHold";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { atBracketPreviewPrices } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   buildAtSchwabOrderJson,
@@ -27,7 +28,16 @@ import {
   type SchwabInstruction,
 } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { buildAtTriggerConfirmSummary } from "@/lib/active-trader/atTriggerConfirmSummary";
-import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
+import {
+  formatAtExitDuration,
+  formatAtMobileContractLabel,
+  formatAtMobilePinnedSummary,
+} from "@/lib/active-trader/atSummaryFormat";
+import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
+import {
+  AtMobileGlanceOrderSheet,
+  AT_MOBILE_PEEK_MAX_PX,
+} from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import {
   aggregateSpreadNBBO,
@@ -51,7 +61,7 @@ import { useGetOptionChain } from "@workspace/api-client-react";
 import {
   X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
   ShieldX, Lock, Unlock,
-  Sparkles, ArrowLeft,
+  Sparkles, ArrowLeft, ChevronLeft,
 } from "lucide-react";
 
 type OrderSide = "BUY" | "SELL";
@@ -462,7 +472,8 @@ export function OrderTicket({
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const { data: quote } = useQuote(symbol);
-  const futuresOrderBlocked = isFuturesDisplaySymbol(symbol);
+  const atFixtureDev = import.meta.env.DEV && getAtFixtureOverride()?.enabled && !!atTemplatePrefs;
+  const futuresOrderBlocked = isFuturesDisplaySymbol(symbol) && !atFixtureDev;
   const isMultiLeg = !!strategyLegs && strategyLegs.length >= 1;
   const isSingleOption = !isMultiLeg && !!optionSymbol;
   const isStockTicket = !isMultiLeg && !optionSymbol;
@@ -1203,6 +1214,7 @@ export function OrderTicket({
 
   const handleSubmit = useCallback(async () => {
     if (submitInFlightRef.current || stage === "submitting") return;
+    if (atTemplatePrefs && !atSendLive) return;
     if (futuresOrderBlocked) return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
@@ -1567,6 +1579,93 @@ export function OrderTicket({
     }
   }, [ticketMode, onSwitchToStock, onSwitchToOptions]);
 
+  const [atMobileSheet, setAtMobileSheet] = useState(false);
+  const [atMobileDetent, setAtMobileDetent] = useState<"peek" | "confirm">("peek");
+  const [mobileTpEnabled, setMobileTpEnabled] = useState(true);
+  const atMobileSheetRef = useRef<HTMLDivElement>(null);
+  const [mobileDimBottomPx, setMobileDimBottomPx] = useState(AT_MOBILE_PEEK_MAX_PX);
+  const atSendLive = atOrderSendAllowed();
+  const atMobileGlance = atMobileSheet && !!atTemplatePrefs;
+
+  const atMobileContractLabel = useMemo(
+    () => formatAtMobileContractLabel(optionSymbol, symbol),
+    [optionSymbol, symbol],
+  );
+
+  const atMobilePinnedLine = useMemo(
+    () =>
+      formatAtMobilePinnedSummary({
+        optionSymbol,
+        underlying: symbol,
+        side,
+        quantity: atTemplatePrefs?.qty ?? quantity,
+        limit: submittedLimitDisplay || limitPrice,
+        takeProfit: atBracketSummary?.takeProfit ?? null,
+      }),
+    [
+      optionSymbol,
+      symbol,
+      side,
+      quantity,
+      atTemplatePrefs?.qty,
+      submittedLimitDisplay,
+      limitPrice,
+      atBracketSummary?.takeProfit,
+    ],
+  );
+
+  useEffect(() => {
+    if (!isOpen || !atTemplatePrefs) {
+      setAtMobileSheet(false);
+      return;
+    }
+    if (typeof window.matchMedia !== "function") {
+      setAtMobileSheet(false);
+      return;
+    }
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setAtMobileSheet(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [isOpen, atTemplatePrefs]);
+
+  useEffect(() => {
+    if (!isOpen || !atTemplatePrefs) return;
+    setQuantity(atTemplatePrefs.qty);
+    setMobileTpEnabled(atTemplatePrefs.takeProfit.enabled);
+  }, [isOpen, atTemplatePrefs]);
+
+  useEffect(() => {
+    if (!isOpen || !atMobileSheet || !atTemplatePrefs) return;
+    setAtMobileDetent(stage === "review" ? "confirm" : "peek");
+  }, [stage, isOpen, atMobileSheet, atTemplatePrefs]);
+
+  useEffect(() => {
+    if (!isOpen || !atMobileSheet || !atTemplatePrefs) return;
+    const peekPx = atMobileDetent === "confirm" ? 640 : AT_MOBILE_PEEK_MAX_PX;
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent("at-mobile-sheet-open", { detail: { peekPx } }));
+    });
+  }, [isOpen, atMobileSheet, atTemplatePrefs, atMobileDetent]);
+
+  useEffect(() => {
+    if (!atMobileSheet || !atMobileSheetRef.current) return;
+    const el = atMobileSheetRef.current;
+    const sync = () => setMobileDimBottomPx(Math.round(el.getBoundingClientRect().height));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [atMobileSheet, atMobileDetent, stage]);
+
+  useEffect(() => {
+    if (stage === "error" && atMobileSheet && atTemplatePrefs) {
+      setStage("form");
+      setAtMobileDetent("peek");
+    }
+  }, [stage, atMobileSheet, atTemplatePrefs]);
+
   if (!isOpen) return null;
 
   const isBuy = side === "BUY";
@@ -1588,8 +1687,86 @@ export function OrderTicket({
   };
 
   return (
-    <div className="fixed inset-0 z-[210] flex flex-col" style={{ background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`, fontFamily: SYS_FONT, fontWeight: 300 }}>
+    <>
+      {atMobileSheet ? (
+        <div
+          data-order-ticket-backdrop
+          className="fixed inset-x-0 top-0 z-[209]"
+          style={{
+            bottom: mobileDimBottomPx,
+            background: "rgba(0,0,0,0.28)",
+            transition: "bottom 320ms cubic-bezier(0.32, 0.72, 0, 1)",
+          }}
+          onClick={onClose}
+          aria-hidden
+        />
+      ) : null}
+      <div
+        ref={atMobileSheet ? atMobileSheetRef : undefined}
+        data-order-ticket-sheet={atMobileSheet ? "1" : undefined}
+        data-at-sheet-detent={atMobileSheet && atTemplatePrefs ? atMobileDetent : undefined}
+        className={
+          atMobileSheet
+            ? "fixed inset-x-0 bottom-0 z-[210] flex flex-col animate-in slide-in-from-bottom duration-300"
+            : "fixed inset-0 z-[210] flex flex-col"
+        }
+        style={
+          atMobileSheet
+            ? {
+                background: BG,
+                borderRadius: "16px 16px 0 0",
+                border: `1px solid ${BORDER}`,
+                borderBottom: "none",
+                paddingBottom: "max(env(safe-area-inset-bottom, 34px), 12px)",
+                fontFamily: SYS_FONT,
+                fontWeight: 300,
+                boxShadow: "0 -8px 32px rgba(0,0,0,0.35)",
+                maxHeight:
+                  atTemplatePrefs && atMobileDetent === "peek"
+                    ? "min(45vh, 430px)"
+                    : atTemplatePrefs
+                      ? "min(78vh, 640px)"
+                      : "min(86vh, 820px)",
+                transition: "max-height 320ms cubic-bezier(0.32, 0.72, 0, 1)",
+              }
+            : {
+                background: `radial-gradient(circle at top, #141821 0%, ${BG} 55%)`,
+                fontFamily: SYS_FONT,
+                fontWeight: 300,
+              }
+        }
+      >
+      {atMobileSheet && atTemplatePrefs ? (
+        <div className="shrink-0 flex justify-center pt-2 pb-1">
+          <button
+            type="button"
+            data-order-ticket-grab
+            aria-label={atMobileDetent === "peek" ? "Expand review" : "Peek sheet"}
+            onClick={() =>
+              atMobileDetent === "peek" && stage === "form"
+                ? setStage("review")
+                : atMobileDetent === "confirm"
+                  ? setStage("form")
+                  : undefined
+            }
+            className="flex justify-center w-full py-1"
+          >
+            <div style={{ width: 40, height: 4, borderRadius: 2, background: "#71717a" }} />
+          </button>
+        </div>
+      ) : null}
 
+      {atMobileGlance && stage === "form" && (
+        <div
+          data-at-pinned-strike
+          className="shrink-0 px-3 pb-1.5"
+          style={{ fontSize: 12, color: MUTED, borderBottom: `1px solid ${BORDER}` }}
+        >
+          <span style={{ color: WHITE, fontWeight: 500 }}>{atMobileContractLabel}</span>
+        </div>
+      )}
+
+      {!(atMobileSheet && atTemplatePrefs) ? (
       <header className="shrink-0 flex items-center justify-between px-3 py-1.5" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div className="flex items-center gap-2">
           <button
@@ -1607,7 +1784,7 @@ export function OrderTicket({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {canToggle ? (
+          {canToggle && !atTemplatePrefs ? (
             <div className="inline-flex p-0.5" style={{ borderRadius: 999, border: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.15)" }}>
               <button
                 onClick={() => handleToggleMode("options")}
@@ -1620,11 +1797,11 @@ export function OrderTicket({
                 style={{ fontSize: S.badge, borderRadius: 999, background: ticketMode === "stock" ? `${GOLD}22` : "transparent", color: ticketMode === "stock" ? GOLD : MUTED, fontWeight: ticketMode === "stock" ? 500 : 300 }}
               >Stock</button>
             </div>
-          ) : (
+          ) : isMultiLeg && strategyLegs ? (
             <span style={{ fontSize: S.label, color: MUTED }}>
-              {strategyLegs!.length}-leg {strategyIsCredit ? "credit" : "debit"}
+              {strategyLegs.length}-leg {strategyIsCredit ? "credit" : "debit"}
             </span>
-          )}
+          ) : null}
           <button
             onClick={onClose}
             aria-label="Close"
@@ -1635,6 +1812,7 @@ export function OrderTicket({
           </button>
         </div>
       </header>
+      ) : null}
 
       {schwabAccounts.length > 1 && stage !== "success" && (
         <div
@@ -1673,7 +1851,25 @@ export function OrderTicket({
         </div>
       )}
 
-      {stage === "form" || stage === "review" ? (
+      {stage === "form" ? (
+        atMobileGlance ? (
+          <AtMobileGlanceOrderSheet
+            contractLabel={atMobileContractLabel}
+            side={side}
+            onSideChange={setSide}
+            quantity={quantity}
+            onQuantityChange={setQuantity}
+            limitDisplay={limitPrice || submittedLimitDisplay || ""}
+            onLimitChange={setLimitPrice}
+            takeProfitEnabled={mobileTpEnabled}
+            onTakeProfitEnabled={setMobileTpEnabled}
+            takeProfitPrice={
+              atBracketSummary?.takeProfit != null ? atBracketSummary.takeProfit.toFixed(2) : null
+            }
+            onReview={() => setStage("review")}
+            reviewBlocked={!!atTemplatePlan?.validationError}
+          />
+        ) : (
         <div className="flex-1 overflow-y-auto pb-4">
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 10px 10px" }}>
@@ -2612,7 +2808,8 @@ export function OrderTicket({
 
           </div>
         </div>
-      ) : stage === "submitting" ? (
+        )
+      ) : stage === "review" && atMobileGlance ? null : stage === "submitting" ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-4">
           <Loader2 className="w-10 h-10 animate-spin" style={{ color: GOLD }} />
           <p style={{ fontSize: 16, color: TEXT }}>Submitting order…</p>
@@ -2637,6 +2834,23 @@ export function OrderTicket({
             Done
           </button>
         </div>
+      ) : stage === "error" && atMobileGlance ? (
+        <AtMobileGlanceOrderSheet
+          contractLabel={atMobileContractLabel}
+          side={side}
+          onSideChange={setSide}
+          quantity={quantity}
+          onQuantityChange={setQuantity}
+          limitDisplay={limitPrice || submittedLimitDisplay || ""}
+          onLimitChange={setLimitPrice}
+          takeProfitEnabled={mobileTpEnabled}
+          onTakeProfitEnabled={setMobileTpEnabled}
+          takeProfitPrice={
+            atBracketSummary?.takeProfit != null ? atBracketSummary.takeProfit.toFixed(2) : null
+          }
+          onReview={() => setStage("review")}
+          reviewBlocked={!!atTemplatePlan?.validationError}
+        />
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6">
           <div className="w-14 h-14 flex items-center justify-center" style={{ borderRadius: "50%", background: `${DOWN}12`, border: `1px solid ${DOWN}40` }}>
@@ -2664,7 +2878,7 @@ export function OrderTicket({
       )}
 
       {/* CTA BAR — matching StrategyBuilder format for multi-leg */}
-      {stage === "form" && (
+      {stage === "form" && !(atMobileSheet && atTemplatePrefs) && (
         <div className="shrink-0 px-3 pt-2" style={{ paddingBottom: "max(env(safe-area-inset-bottom, 20px), 20px)", background: BG, borderTop: `1px solid ${BORDER}`, zIndex: 215 }}>
           {futuresOrderBlocked ? (
             <p
@@ -2749,16 +2963,58 @@ export function OrderTicket({
 
       {/* REVIEW MODAL */}
       {stage === "review" && (
-        <div className="fixed inset-0 z-[220] flex items-end justify-center" style={{ background: "rgba(0,0,0,0.6)" }}>
+        <div
+          className={atMobileSheet && atTemplatePrefs ? "flex-1 min-h-0 flex flex-col overflow-hidden" : "fixed inset-0 z-[220] flex items-end justify-center"}
+          style={atMobileSheet && atTemplatePrefs ? undefined : { background: "rgba(0,0,0,0.6)" }}
+          onClick={atMobileSheet && atTemplatePrefs ? undefined : onClose}
+        >
           <div
-            className="w-full max-w-lg p-4 space-y-2.5 animate-in slide-in-from-bottom duration-300"
-            style={{ background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }}
+            className={
+              atMobileSheet && atTemplatePrefs
+                ? "flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-2.5"
+                : "w-full max-w-lg p-4 space-y-2.5 animate-in slide-in-from-bottom duration-300"
+            }
+            style={
+              atMobileSheet && atTemplatePrefs
+                ? { background: BG }
+                : { background: BG, borderRadius: "20px 20px 0 0", border: `1px solid ${BORDER}`, borderBottom: "none" }
+            }
+            onClick={(e) => e.stopPropagation()}
           >
+            {atMobileGlance ? (
+              <div
+                className="sticky top-0 z-[2] -mx-3 px-3 py-1.5 mb-1"
+                data-at-confirm-pinned
+                style={{ background: BG, borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}
+              >
+                <span style={{ color: MUTED, display: "block", fontSize: 11 }}>{atMobileContractLabel}</span>
+                <span className="num" style={{ color: WHITE, fontWeight: 600 }}>{atMobilePinnedLine}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
-              <h3 style={{ fontSize: 16, color: WHITE }}>Order Confirmation</h3>
-              <button onClick={() => setStage("form")} className="w-7 h-7 flex items-center justify-center" style={{ borderRadius: "50%", border: `1px solid ${BORDER}`, background: "transparent", color: MUTED }}>
-                <X className="w-3.5 h-3.5" />
-              </button>
+              {atMobileGlance ? (
+                <button
+                  type="button"
+                  onClick={() => setStage("form")}
+                  className="flex items-center gap-1.5 min-h-[32px] pr-2"
+                  style={{ color: MUTED, fontSize: 14 }}
+                  data-testid="at-mobile-review-back"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  <span style={{ color: WHITE, fontWeight: 600 }}>Order Confirmation</span>
+                </button>
+              ) : (
+                <>
+                  <h3 style={{ fontSize: 16, color: WHITE }}>Order Confirmation</h3>
+                  <button
+                    onClick={() => setStage("form")}
+                    className="w-7 h-7 flex items-center justify-center"
+                    style={{ borderRadius: "50%", border: `1px solid ${BORDER}`, background: "transparent", color: MUTED }}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="space-y-1 p-3" style={{ background: CARD_GRAD, borderRadius: R_CARD, border: `1px solid ${BORDER}` }}>
@@ -3024,54 +3280,94 @@ export function OrderTicket({
               })()}
             </div>
 
-            {futuresOrderBlocked ? (
-              <div
-                className="px-3 py-1.5 flex items-start gap-2"
-                data-testid="futures-order-blocked"
-                style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
-                <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
-                  {FUTURES_ORDER_BLOCK_MESSAGE}
-                </p>
-              </div>
-            ) : (
-            <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
-              <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
-                This will place a live order with Schwab. Verify all details before confirming.
-              </p>
-            </div>
-            )}
+            {!atMobileGlance &&
+              (futuresOrderBlocked ? (
+                <div
+                  className="px-3 py-1.5 flex items-start gap-2"
+                  data-testid="futures-order-blocked"
+                  style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
+                  <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
+                    {FUTURES_ORDER_BLOCK_MESSAGE}
+                  </p>
+                </div>
+              ) : (
+                <div className="px-3 py-1.5 flex items-start gap-2" style={{ background: `${GOLD}08`, borderRadius: 10, border: `1px solid ${GOLD}1a` }}>
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" style={{ color: GOLD }} />
+                  <p className="leading-relaxed" style={{ fontSize: S.label, color: `${GOLD}cc` }}>
+                    This will place a live order with Schwab. Verify all details before confirming.
+                  </p>
+                </div>
+              ))}
 
-            <div className="flex gap-2 pt-1 pb-4">
-              <button onClick={() => setStage("form")} className="flex-1" style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}>Back</button>
-              <button
-                onClick={confirmDisabled ? undefined : handleSubmit}
-                disabled={
-                  !!confirmDisabled
-                  || submitInFlight
-                  || !isValid
-                  || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
-                  || !!atTemplatePlan?.validationError
-                }
-                className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-40"
-                style={{
-                  fontSize: 16,
-                  height: 42,
-                  borderRadius: 999,
-                  border: "none",
-                  background: CTA_GRAD,
-                  color: BG,
-                  fontFamily: SYS_FONT,
-                }}
-              >
-                Send to Schwab
-              </button>
-            </div>
+            {!atMobileGlance && (
+              <div className="flex gap-2 pt-1 pb-4">
+                <button
+                  onClick={() => (atMobileSheet ? onClose() : setStage("form"))}
+                  className="flex-1"
+                  style={{ fontSize: S.heading, height: 40, background: "transparent", color: TEXT, border: `1px solid ${BORDER}`, borderRadius: 999 }}
+                >
+                  {atMobileSheet ? "Dismiss" : "Back"}
+                </button>
+                <button
+                  onClick={confirmDisabled || (atTemplatePrefs && !atSendLive) ? undefined : handleSubmit}
+                  disabled={
+                    !!confirmDisabled
+                    || (atTemplatePrefs && !atSendLive)
+                    || submitInFlight
+                    || !isValid
+                    || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
+                    || !!atTemplatePlan?.validationError
+                  }
+                  className="flex-[2] tracking-[0.04em] active:scale-[0.98] transition-transform disabled:opacity-40"
+                  style={{
+                    fontSize: 16,
+                    height: 42,
+                    borderRadius: 999,
+                    border: "none",
+                    background: CTA_GRAD,
+                    color: BG,
+                    fontFamily: SYS_FONT,
+                  }}
+                >
+                  {atTemplatePrefs && !atSendLive ? "Sending off (preview)" : "Send to Schwab"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
+
+      {stage === "review" && atMobileGlance && (
+        <div
+          className="shrink-0 px-3 pt-2"
+          style={{
+            paddingBottom: "max(env(safe-area-inset-bottom, 34px), 12px)",
+            borderTop: `1px solid ${BORDER}`,
+            background: BG,
+          }}
+        >
+          <button
+            type="button"
+            disabled
+            data-testid="at-mobile-send-preview"
+            className="w-full tracking-wide disabled:opacity-60"
+            style={{
+              height: 44,
+              borderRadius: 999,
+              border: `1px solid ${BORDER}`,
+              background: "transparent",
+              color: MUTED,
+              fontSize: 16,
+              fontWeight: 500,
+            }}
+          >
+            Sending off (preview)
+          </button>
+        </div>
+      )}
     </div>
+    </>
   );
 }

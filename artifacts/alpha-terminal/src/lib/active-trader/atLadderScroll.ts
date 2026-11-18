@@ -28,3 +28,41 @@ export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPr
   const centerOffset = container.clientHeight * 0.42;
   container.scrollTop = Math.max(0, targetTop - centerOffset);
 }
+
+/** Keep a selected strike row in the visible band above chrome / trade bar. */
+export function scrollAtLadderToStrike(
+  container: HTMLElement | null,
+  strike: number | null,
+  bandFraction = 0.35,
+): void {
+  if (!container || strike == null || !Number.isFinite(strike)) return;
+  const row = container.querySelector<HTMLElement>(`[data-at-strike="${strike}"]`);
+  if (!row) return;
+  const cRect = container.getBoundingClientRect();
+  const tRect = row.getBoundingClientRect();
+  const rowTop = tRect.top - cRect.top + container.scrollTop;
+  const target = rowTop - container.clientHeight * bandFraction;
+  container.scrollTop = Math.max(0, target);
+}
+
+/**
+ * Position selected strike in the ladder band between top chrome and a bottom peek sheet,
+ * keeping ~2 strike rows visible on each side when possible.
+ */
+export function scrollAtLadderToStrikeAboveSheet(
+  container: HTMLElement | null,
+  strike: number | null,
+  sheetHeightPx: number,
+): void {
+  if (!container || strike == null || !Number.isFinite(strike)) return;
+  const glance = document.querySelector<HTMLElement>("[data-at-glance-top]");
+  const header = document.querySelector<HTMLElement>("[data-at-symbol-header]");
+  const chromeBottom = Math.max(
+    glance?.getBoundingClientRect().bottom ?? 0,
+    header?.getBoundingClientRect().bottom ?? 0,
+  );
+  const ladderTop = container.getBoundingClientRect().top;
+  const visiblePx = Math.max(120, window.innerHeight - sheetHeightPx - chromeBottom - (ladderTop - chromeBottom));
+  const bandFraction = Math.min(0.38, Math.max(0.14, visiblePx / Math.max(container.clientHeight, 1) * 0.42));
+  scrollAtLadderToStrike(container, strike, bandFraction);
+}
