@@ -97,7 +97,7 @@ async function runFlow(height) {
   );
 
   if (height <= 658) {
-    const expand = page.getByRole("button", { name: "Expand" });
+    const expand = page.getByRole("button", { name: "Expand", exact: true });
     if ((await expand.count()) > 0) {
       await expand.click();
       await page.waitForTimeout(400);

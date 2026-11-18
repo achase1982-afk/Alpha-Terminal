@@ -1877,7 +1877,15 @@ export function OrderTicket({
               atBracketSummary?.takeProfit != null ? atBracketSummary.takeProfit.toFixed(2) : null
             }
             onReview={() => setStage("review")}
-            reviewBlocked={!!atTemplatePlan?.validationError}
+            reviewBlocked={!!atTemplatePlan?.validationError || preTradeGate.shouldBlockReview}
+            reviewBlockReason={
+              preTradeGate.shouldBlockReview
+                ? riskChecks
+                    .filter((c) => preTradeGate.blockingCheckIds.includes(c.id))
+                    .map((c) => `${c.label}: ${c.detail}`)
+                    .join(" · ") || "Risk check failed"
+                : atTemplatePlan?.validationError ?? undefined
+            }
           />
         ) : (
         <div className="flex-1 overflow-y-auto pb-4">

@@ -280,6 +280,37 @@ describe("buildAtSchwabOrderJson", () => {
     expect(child.price).toBe(planned.legs[1].price);
   });
 
+  it("BTO bracket uses STC on child legs with matching qty and symbol", () => {
+    const sym = "AAPL  250117C00200000";
+    const o = buildAtSchwabOrderJson({
+      ...base,
+      symbol: sym,
+      primaryInstruction: "BUY_TO_OPEN",
+      quantity: 2,
+      template: "TRG w/ bracket",
+      takeProfit: { enabled: true, mode: "points", offset: 0.5 },
+      stopLoss: { enabled: false, mode: "percent", offset: -10 },
+    });
+    const entry = (o.orderLegCollection as { instruction: string; quantity: number; instrument: { symbol: string } }[])[0];
+    expect(entry.instruction).toBe("BUY_TO_OPEN");
+    expect(entry.quantity).toBe(2);
+    expect(entry.instrument.symbol).toBe(sym);
+    expect(o.orderStrategyType).toBe("TRIGGER");
+    const child = (o.childOrderStrategies as Record<string, unknown>[])[0];
+  const exitLegs =
+      child.orderStrategyType === "OCO"
+        ? ((child.childOrderStrategies as Record<string, unknown>[])[0].orderLegCollection as {
+            instruction: string;
+            quantity: number;
+            instrument: { symbol: string };
+          }[])
+        : (child.orderLegCollection as { instruction: string; quantity: number; instrument: { symbol: string } }[]);
+    const tpLeg = exitLegs[0];
+    expect(tpLeg.instruction).toBe("SELL_TO_CLOSE");
+    expect(tpLeg.quantity).toBe(2);
+    expect(tpLeg.instrument.symbol).toBe(sym);
+  });
+
   it("short STO bracket uses BTC on child legs", () => {
     const o = buildAtSchwabOrderJson({
       ...base,

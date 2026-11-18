@@ -20,6 +20,7 @@ type Props = {
   onReview: () => void;
   /** Validation blocks review — show disabled preview CTA instead of Review. */
   reviewBlocked?: boolean;
+  reviewBlockReason?: string;
 };
 
 export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
@@ -35,6 +36,7 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
   takeProfitPrice,
   onReview,
   reviewBlocked,
+  reviewBlockReason,
 }: Props) {
   const sideColor = side === "BUY" ? UP : DOWN;
 
@@ -123,6 +125,7 @@ export const AtMobileGlanceOrderSheet = memo(function AtMobileGlanceOrderSheet({
         <button
           type="button"
           disabled
+          title={reviewBlockReason}
           className="w-full mt-1 tracking-wide disabled:opacity-60"
           style={{
             height: 44,
