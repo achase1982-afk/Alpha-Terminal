@@ -57,6 +57,7 @@ import {
   buildChainSheetAtBracketConfirm,
   type ChainSheetAtBracketConfirm,
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
+import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -135,19 +136,45 @@ function atSymbolClass(symbol: string): "index" | "equity" {
   return u.includes("SPX") || u.startsWith("$") ? "index" : "equity";
 }
 
-/** Same draft as AT settings bar / ticket — explicit prop or localStorage when preview-only single leg. */
+function bracketPrefsActive(prefs: ActiveTraderTemplatePrefs): boolean {
+  return (
+    prefs.template !== "Single" || !!(prefs.takeProfit?.enabled || prefs.stopLoss?.enabled)
+  );
+}
+
+function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | undefined {
+  const trimmed = leg.schwabSymbol?.trim();
+  if (trimmed) return trimmed;
+  const built = buildSchwabOptionKey(
+    underlying,
+    leg.expiration,
+    leg.strike,
+    leg.optionType === "CALL" ? "C" : "P",
+  );
+  const key = built.trim();
+  return key || undefined;
+}
+
+/** Same draft as AT settings bar / ticket — preview uses localStorage when bracket active. */
 function resolveAtBracketDraft(
   explicit: OptionsChainOrderSheetProps["atBracketDraft"],
   legs: StrategyLeg[],
   symbol: string,
   sendPreviewOnly?: boolean,
 ): OptionsChainOrderSheetProps["atBracketDraft"] {
+  if (sendPreviewOnly && legs.length === 1) {
+    const stored = loadActiveTraderPrefs(atSymbolClass(symbol));
+    if (bracketPrefsActive(stored)) {
+      return {
+        prefs: stored,
+        primaryInstruction: legs[0]!.direction as SchwabInstruction,
+      };
+    }
+  }
   if (explicit) return explicit;
   if (!sendPreviewOnly || legs.length !== 1) return undefined;
   const prefs = loadActiveTraderPrefs(atSymbolClass(symbol));
-  const bracketActive =
-    prefs.template !== "Single" || prefs.takeProfit.enabled || prefs.stopLoss.enabled;
-  if (!bracketActive) return undefined;
+  if (!bracketPrefsActive(prefs)) return undefined;
   return {
     prefs,
     primaryInstruction: legs[0]!.direction as SchwabInstruction,
@@ -418,7 +445,8 @@ export function OptionsChainOrderSheet({
     setPriceError("");
     const draft = resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly);
     if (draft) {
-      const sym = legs[0]?.schwabSymbol;
+      const leg = legs[0];
+      const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
       const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
       setAtBracketConfirmSnapshot(
         sym
@@ -430,7 +458,11 @@ export function OptionsChainOrderSheet({
               optionSymbol: sym,
               underlyingSymbol: symbol.replace(/^\$/, ""),
             })
-          : null,
+          : {
+              mode: "unsupported",
+              testId: "at-chain-bracket-unsupported",
+              message: "Missing option symbol — cannot preview bracket exits on this leg.",
+            },
       );
     } else {
       setAtBracketConfirmSnapshot(null);
@@ -522,8 +554,54 @@ export function OptionsChainOrderSheet({
     [atBracketDraft, legs, symbol, sendPreviewOnly],
   );
 
-  const atBracketConfirm =
-    stage === "review" ? atBracketConfirmSnapshot : null;
+  const atBracketConfirm = useMemo((): ChainSheetAtBracketConfirm | null => {
+    if (stage !== "review") return null;
+    const snap = atBracketConfirmSnapshot;
+    if (snap?.mode === "trigger" || snap?.mode === "unsupported") return snap;
+
+    const draft = effectiveAtBracketDraft;
+    if (!draft || !bracketPrefsActive(draft.prefs)) return snap;
+
+    const leg = legs[0];
+    const px = reviewLimitSnapped;
+    if (!leg || px == null || px <= 0) return snap;
+
+    const sym = primaryLegOptionSymbol(leg, symbol);
+    if (!sym) {
+      return {
+        mode: "unsupported",
+        testId: "at-chain-bracket-unsupported",
+        message: "Missing option symbol — cannot preview bracket exits on this leg.",
+      };
+    }
+
+    const built = buildChainSheetAtBracketConfirm({
+      prefs: draft.prefs,
+      legCount: draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs),
+      primaryInstruction: draft.primaryInstruction,
+      limitPrice: px,
+      optionSymbol: sym,
+      underlyingSymbol: symbol.replace(/^\$/, ""),
+    });
+
+    if (built.mode === "trigger" || built.mode === "unsupported") return built;
+    if (bracketPrefsActive(draft.prefs)) {
+      return {
+        mode: "unsupported",
+        testId: "at-chain-bracket-unsupported",
+        message: "Bracket exit preview could not be built for this draft.",
+      };
+    }
+    return snap;
+  }, [
+    stage,
+    atBracketConfirmSnapshot,
+    effectiveAtBracketDraft,
+    legs,
+    symbol,
+    reviewLimitSnapped,
+    draftDistinctLegCount,
+  ]);
 
   if (legs.length === 0) return null;
 
