@@ -1936,20 +1936,10 @@ export function OptionsTab({
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
   const chainViewChrome = (
-    <OptionsSubViewToggle
-      placement="chain-toolbar"
-      view={optionsSubView}
-      onChange={setOptionsSubView}
-      accentHex={accentHex}
-    />
+    <OptionsSubViewToggle placement="chain-toolbar" view={optionsSubView} onChange={setOptionsSubView} />
   );
   const atViewChrome = (
-    <OptionsSubViewToggle
-      placement="at-header"
-      view={optionsSubView}
-      onChange={setOptionsSubView}
-      accentHex={accentHex}
-    />
+    <OptionsSubViewToggle placement="at-header" view={optionsSubView} onChange={setOptionsSubView} />
   );
 
   return (
