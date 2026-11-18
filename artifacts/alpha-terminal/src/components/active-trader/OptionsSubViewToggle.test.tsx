@@ -8,19 +8,20 @@ describe("OptionsSubViewToggle", () => {
     cleanup();
   });
 
-  it("renders segmented switch with ≥44px tap target and no visible select", () => {
+  it("renders compact visual (~102×26) with invisible ≥44px hit target", () => {
     const { container } = render(<OptionsSubViewToggle view="chain" onChange={vi.fn()} />);
-    const toggle = screen.getByRole("switch", { name: "Options view" });
-    const box = toggle as HTMLButtonElement;
-    expect(box.style.minHeight).toBe("44px");
+    const hit = screen.getByRole("switch", { name: "Options view" });
+    expect(hit.hasAttribute("data-at-subview-hit")).toBe(true);
+    expect((hit as HTMLButtonElement).style.minHeight).toBe("44px");
+    expect((hit as HTMLButtonElement).style.minWidth).toBe("44px");
+    const visual = container.querySelector("[data-at-subview-toggle]") as HTMLElement;
+    expect(visual?.getAttribute("data-at-subview-visual-w")).toBe("102");
+    expect(visual?.getAttribute("data-at-subview-visual-h")).toBe("26");
     expect(container.querySelector('[data-at-subview-segment="chain"]')?.textContent).toBe("Chain");
-    expect(container.querySelector('[data-at-subview-segment="at"]')?.textContent).toBe("AT");
     expect(container.querySelector("svg")).toBeNull();
-    const fallback = container.querySelector("[data-at-subview-select-fallback]") as HTMLSelectElement;
-    expect(fallback.className).toContain("sr-only");
   });
 
-  it("flips view when tapping anywhere on the control", () => {
+  it("flips view when tapping hit layer", () => {
     const onChange = vi.fn();
     render(<OptionsSubViewToggle view="chain" onChange={onChange} />);
     fireEvent.click(screen.getByRole("switch", { name: "Options view" }));

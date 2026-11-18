@@ -25,8 +25,20 @@ const page = await (await browser.newContext({
 })).newPage();
 await installSafeAreaInsets(page);
 
+await page.addInitScript(() => {
+  try {
+    localStorage.setItem(
+      "alpha-terminal-storage",
+      JSON.stringify({ state: { symbol: "$SPX" }, version: 35 }),
+    );
+    sessionStorage.setItem("alpha_session_tab", "markets");
+  } catch {
+    /* ignore */
+  }
+});
 await page.goto(TARGET, { waitUntil: "domcontentloaded", timeout: 120_000 });
-await page.waitForSelector("[data-at-subview-toggle]", { timeout: 90_000 });
+await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 90_000 }).catch(() => undefined);
+await page.waitForSelector("[data-at-subview-toggle]", { timeout: 120_000 });
 await page.waitForTimeout(400);
 
 if (TARGET.includes("127.0.0.1:5173") && !TARGET.includes("/dev/active-trader")) {
@@ -36,14 +48,14 @@ if (TARGET.includes("127.0.0.1:5173") && !TARGET.includes("/dev/active-trader"))
 
 const onChain = await page.locator('[data-at-subview-value="chain"]').first().isVisible().catch(() => false);
 if (!onChain) {
-  await page.locator("[data-at-subview-toggle]").first().click({ force: true });
+  await page.locator("[data-at-subview-hit]").first().click({ force: true });
   await page.waitForTimeout(400);
 }
 
 await page.screenshot({ path: path.join(OUT, "subview-toggle-chain-440x956.png"), fullPage: false });
 
-const toggle = page.locator("[data-at-subview-toggle]").first();
-const box = await toggle.boundingBox();
+const hit = page.locator("[data-at-subview-hit]").first();
+const box = await hit.boundingBox();
 if (box) {
   await page.mouse.move(box.x + box.width * 0.75, box.y + box.height / 2);
   await page.mouse.down();
@@ -58,14 +70,20 @@ await page.waitForTimeout(500);
 await page.screenshot({ path: path.join(OUT, "subview-toggle-at-440x956.png"), fullPage: false });
 
 const metrics = await page.evaluate(() => {
-  const toggle = document.querySelector("[data-at-subview-toggle]");
+  const visual = document.querySelector("[data-at-subview-toggle]");
+  const hit = document.querySelector("[data-at-subview-hit]");
+  const chrome = document.querySelector("[data-at-subview-chrome]");
   const header = document.querySelector("[data-at-glance-top]");
   const chain = document.querySelector("[data-options-chain-scroll]");
-  const r = toggle?.getBoundingClientRect();
+  const vr = visual?.getBoundingClientRect();
+  const hitR = hit?.getBoundingClientRect();
+  const cr = chrome?.getBoundingClientRect();
   const hr = header?.getBoundingClientRect();
   return {
-    toggle: r ? { w: r.width, h: r.height, right: r.right } : null,
-    overlapHeader: r && hr ? r.bottom > hr.top && r.top < hr.bottom && r.right > hr.left : false,
+    visual: vr ? { w: vr.width, h: vr.height, right: vr.right } : null,
+    hit: hitR ? { w: hitR.width, h: hitR.height } : null,
+    layout: cr ? { w: cr.width, h: cr.height } : null,
+    overlapHeader: vr && hr ? vr.bottom > hr.top && vr.top < hr.bottom && vr.right > hr.left : false,
     hasChainScroll: !!chain,
     noSelectChevron: !document.querySelector("[data-at-subview-toggle] svg"),
   };
