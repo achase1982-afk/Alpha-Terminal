@@ -41,20 +41,21 @@ async function openChain() {
   await page.waitForSelector('[id^="options-exp-panel-"]', { timeout: 90_000 });
 }
 
-async function clickPutAsks(count) {
+let putAskRowCursor = 0;
+async function clickNextPutAsk() {
   const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
-  const total = await asks.count();
-  for (let row = 0; row < count && row * 2 + 1 < total; row += 1) {
-    await asks.nth(row * 2 + 1).click({ timeout: 10_000 });
-    await page.waitForTimeout(300);
-  }
+  const idx = putAskRowCursor * 2 + 1;
+  if (idx >= (await asks.count())) throw new Error("no more put ask rows");
+  await asks.nth(idx).click({ timeout: 10_000, force: true });
+  putAskRowCursor += 1;
+  await page.waitForTimeout(300);
 }
 
 try {
   placeOrderPosts = 0;
   await openChain();
   const scrollY0 = await page.evaluate(() => document.querySelector("[data-options-chain-scroll]")?.scrollTop ?? 0);
-  await clickPutAsks(1);
+  await clickNextPutAsk();
   const sheetClosed = (await page.getByTestId("options-chain-order-sheet").count()) === 0;
   const strip = (await page.locator("[data-chain-draft-strip]").count()) > 0;
   const pressed = await page.locator('button[aria-pressed="true"]').count();
@@ -62,13 +63,13 @@ try {
   record("first cell outlined", pressed === 1, `pressed=${pressed}`);
   await page.screenshot({ path: path.join(OUT, "chain-draft-first-tap-956.png") });
 
-  await clickPutAsks(3);
+  for (let i = 0; i < 3; i += 1) await clickNextPutAsk();
   const legs = await page.locator("[data-chain-draft-leg]").count();
   const stillClosed = (await page.getByTestId("options-chain-order-sheet").count()) === 0;
   record("legs 2-4 no sheet", legs >= 4 && stillClosed, `legs=${legs}`);
   await page.screenshot({ path: path.join(OUT, "chain-draft-4-legs-956.png") });
 
-  await clickPutAsks(1);
+  await clickNextPutAsk();
   await page.waitForTimeout(400);
   const legCountAfter5 = await page.locator("[data-chain-draft-leg]").count();
   const limitMsg = (await page.locator("[data-chain-leg-limit-msg]").count()) > 0;
@@ -77,7 +78,7 @@ try {
 
   await page.locator("[data-chain-draft-leg]").first().getByLabel("Remove leg").click();
   await page.waitForTimeout(300);
-  await clickPutAsks(1);
+  await clickNextPutAsk();
   const legCountAfterSwap = await page.locator("[data-chain-draft-leg]").count();
   record("remove and add", legCountAfterSwap === 4, `legs=${legCountAfterSwap}`);
 
