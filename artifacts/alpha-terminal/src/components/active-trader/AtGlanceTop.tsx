@@ -1,4 +1,5 @@
 import { memo, useState, type CSSProperties, type PropsWithChildren } from "react";
+import { Info } from "lucide-react";
 import {
   BG_EXP_BAR,
   BORDER,
@@ -22,8 +23,9 @@ import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
-import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
+import { AT_LABEL, AT_SECONDARY, AT_INTERACTIVE } from "@/lib/active-trader/atChromeContrast";
 import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
+import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -179,6 +181,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       : null;
 
   const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
+  const [lowZoneInfo, setLowZoneInfo] = useState(false);
+  const zoneTone = sessionLevels.zoneEmphasisFull ? AT_INTERACTIVE : AT_SECONDARY;
 
   return (
     <Pane
@@ -286,15 +290,42 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               <span style={{ color: AT_LABEL, fontSize: 10 }} aria-hidden>
                 ·
               </span>
-              <Pane
-                className="num shrink-0"
-                data-at-low-zone-slot
-                data-at-low-zone-status={sessionLevels.lowZone.status}
-                style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: AT_SECONDARY }}
-              >
-                {sessionLevels.lowZoneText}
+              <Pane className="shrink-0 inline-flex items-center gap-0.5">
+                <Pane
+                  className="num"
+                  data-at-low-zone-ref
+                  data-at-low-zone-slot
+                  data-at-low-zone-status={sessionLevels.lowZone.status}
+                  style={{
+                    ...NUM_FEAT,
+                    fontSize: 10,
+                    fontWeight: sessionLevels.zoneEmphasisFull ? 600 : 500,
+                    color: zoneTone,
+                  }}
+                >
+                  {sessionLevels.lowZoneText}
+                </Pane>
+                {sessionLevels.lowZone.status === "band" ? (
+                  <button
+                    type="button"
+                    aria-label="Low zone reference info"
+                    onClick={() => setLowZoneInfo((v) => !v)}
+                    className="p-0.5 rounded shrink-0"
+                    style={{ color: lowZoneInfo ? WHITE : AT_SECONDARY }}
+                  >
+                    <Info className="w-3 h-3" aria-hidden />
+                  </button>
+                ) : null}
               </Pane>
             </>
+          ) : null}
+          {lowZoneInfo ? (
+            <Pane
+              data-at-low-zone-tooltip
+              style={{ flexBasis: "100%", fontSize: 9, lineHeight: 1.25, color: AT_SECONDARY }}
+            >
+              {LOW_ZONE_REF_TOOLTIP}
+            </Pane>
           ) : null}
         </Pane>
       ) : null}
