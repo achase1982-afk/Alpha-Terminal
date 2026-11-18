@@ -18,6 +18,11 @@ export type DeskBar = {
   volume: number;
 };
 
+export type DeskSchwabBarsRange = {
+  startMs?: number;
+  endMs?: number;
+};
+
 function mapTimeframe(tf: string): {
   periodType: string;
   period: string;
@@ -36,26 +41,67 @@ function mapTimeframe(tf: string): {
   }
 }
 
+/** Parse ISO calendar date (YYYY-MM-DD) or full ISO timestamp for desk /bars queries. */
+export function parseDeskBarIsoDate(raw: string, endOfDay = false): number | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const suffix = endOfDay ? "T23:59:59.999-05:00" : "T00:00:00-05:00";
+    const t = Date.parse(`${trimmed}${suffix}`);
+    return Number.isFinite(t) ? t : null;
+  }
+  const t = Date.parse(trimmed);
+  return Number.isFinite(t) ? t : null;
+}
+
+export function buildSchwabPriceHistoryParams(
+  apiSymbol: string,
+  timeframe: string,
+  range?: DeskSchwabBarsRange,
+): URLSearchParams | null {
+  const mapped = mapTimeframe(timeframe);
+  if (!mapped) return null;
+
+  const params = new URLSearchParams({
+    symbol: apiSymbol,
+    frequencyType: mapped.frequencyType,
+    frequency: mapped.frequency,
+    needExtendedHoursData: "false",
+  });
+
+  const useRange = range?.startMs != null || range?.endMs != null;
+  if (useRange) {
+    const startMs = range?.startMs ?? 0;
+    const endMs = range?.endMs ?? Date.now();
+    params.set("startDate", String(startMs));
+    params.set("endDate", String(endMs));
+    if (timeframe === "1d" && startMs > 0 && endMs - startMs > 10 * 365.25 * 86_400_000) {
+      params.set("periodType", "year");
+      params.set("period", "20");
+    } else {
+      params.set("periodType", mapped.periodType);
+      params.set("period", mapped.period);
+    }
+  } else {
+    params.set("periodType", mapped.periodType);
+    params.set("period", mapped.period);
+  }
+
+  return params;
+}
+
 export async function deskFetchSchwabBars(
   symbol: string,
   timeframe: string,
   limit: number,
   preferred: DeskSchwabRestApp = "app2",
+  range?: DeskSchwabBarsRange,
 ): Promise<{ bars: DeskBar[]; asOfMs: number; app: DeskSchwabRestApp; fellBack: boolean }> {
-  const mapped = mapTimeframe(timeframe);
-  if (!mapped) {
+  const apiSymbol = deskFormatSchwabSymbol(symbol);
+  const params = buildSchwabPriceHistoryParams(apiSymbol, timeframe, range);
+  if (!params) {
     return { bars: [], asOfMs: Date.now(), app: preferred, fellBack: false };
   }
-
-  const apiSymbol = deskFormatSchwabSymbol(symbol);
-  const params = new URLSearchParams({
-    symbol: apiSymbol,
-    periodType: mapped.periodType,
-    period: mapped.period,
-    frequencyType: mapped.frequencyType,
-    frequency: mapped.frequency,
-    needExtendedHoursData: "false",
-  });
 
   const url = `${SCHWAB_API_BASE}/pricehistory?${params.toString()}`;
   const { res, app, fellBack, token } = await deskSchwabRestFetch(
