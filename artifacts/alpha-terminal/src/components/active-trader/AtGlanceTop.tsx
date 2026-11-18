@@ -1,6 +1,6 @@
-import { memo, useState, type CSSProperties, type PropsWithChildren, type ReactNode } from "react";
+import { memo, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { BORDER, DOWN_TEXT, GAMMA_SCENARIO, GOLD, PUT_WALL, UP, WHITE } from "@/components/options/optionsTheme";
+import { BORDER, GAMMA_SCENARIO, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
@@ -8,7 +8,6 @@ import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
-import { resolveSessionChangeDisplay } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
 import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
@@ -17,6 +16,7 @@ import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
+import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
 import { AtGlanceFlowDetail } from "./AtGlanceFlowDetail";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
@@ -31,13 +31,13 @@ const NUM_FEAT: CSSProperties = {
 };
 
 const SPOT_PAINT_MS = 250;
-const MAX_GLANCE_PX = 191;
 
-const DIVIDER: CSSProperties = {
-  height: 1,
-  background: BORDER,
-  opacity: 0.55,
-  margin: "2px 0",
+const cellLine: CSSProperties = {
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  lineHeight: 1.15,
+  fontSize: 8,
 };
 
 export type AtGlanceTopProps = {
@@ -62,6 +62,29 @@ export type AtGlanceTopProps = {
   };
 };
 
+function LevelsCell({
+  label,
+  value,
+  dataAttrs,
+  title,
+  valueTone = WHITE,
+}: {
+  label: string;
+  value: string;
+  dataAttrs?: Record<string, string>;
+  title?: string;
+  valueTone?: string;
+}) {
+  return (
+    <div {...dataAttrs} title={title} style={cellLine}>
+      <span style={{ color: AT_LABEL }}>{label} </span>
+      <span className="num" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 600 }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
 export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
   underlyingPrice,
@@ -74,12 +97,15 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
-  const flowClosed = sessionClosed || flowSessionClosed;
+  const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
   const tickCue = useSpotTickCue(liveSpot, SPOT_PAINT_MS);
 
-  const sessionChange = resolveSessionChangeDisplay(quote, restQuote);
+  const sessionChange = useMemo(
+    () => resolveAtHeaderSessionChange(quote, restQuote, spotShown),
+    [quote, restQuote, spotShown],
+  );
   const dayStatus = resolveDayStatus(sessionChange);
   const dayLabel = dayStatusLabel(dayStatus);
 
@@ -90,8 +116,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const [flowDetailOpen, setFlowDetailOpen] = useState(false);
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
-  const flipLabel =
-    zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
+  const flipLabel = zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
 
   const orderLine =
     orderSettings != null
@@ -102,148 +127,159 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         )
       : null;
 
+  const lowZoneVal =
+    sessionLevels.lowZone.status === "value" ? formatRefZoneHalf(sessionLevels.lowZone.top) : "\u2014";
+  const highZoneVal =
+    sessionLevels.highZone.status === "value" ? formatRefZoneHalf(sessionLevels.highZone.bottom) : "\u2014";
+  const zoneValTone = sessionLevels.zoneEmphasisFull ? WHITE : AT_SECONDARY;
+
   return (
-    <Pane
+    <header
       data-at-glance-top
-      className="at-glance px-1.5 py-0.5 shrink-0"
+      className="at-glance shrink-0 w-full"
       style={{
         background: AT_HEADER_BG,
         borderBottom: `1px solid ${BORDER}`,
-        maxHeight: `min(${MAX_GLANCE_PX}px, 22vh)`,
+        padding: "3px 6px 4px",
         overflow: "hidden",
       }}
     >
-      <Pane className="flex items-center gap-1 min-w-0" style={{ minHeight: 16, lineHeight: 1.1 }}>
-        <Pane className="flex items-baseline gap-1 min-w-0 flex-1">
-          <span style={{ fontSize: 10, fontWeight: 600, color: WHITE, letterSpacing: "0.04em" }}>{symLabel}</span>
+      <span data-at-glance-chrome-version="anthony-v2" className="sr-only" aria-hidden />
+
+      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 15, lineHeight: 1.1 }}>
+        <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">
+          <span style={{ fontSize: 11, fontWeight: 700, color: WHITE, letterSpacing: "0.03em" }}>{symLabel}</span>
           <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 11, fontWeight: 700, color: WHITE }}>
             {spotLabel}
           </span>
           {tickCue.glyph ? (
-            <span data-at-tick-cue style={{ fontSize: 9, color: tickCue.color, lineHeight: 1 }}>
+            <span data-at-tick-cue style={{ fontSize: 8, color: tickCue.color, lineHeight: 1 }}>
               {tickCue.glyph}
             </span>
           ) : null}
           <span
             data-at-day-status={dayStatus.kind}
-            className="truncate"
+            className="shrink-0"
             style={{
               fontSize: 9,
               fontWeight: 600,
               color: dayStatusColor(dayStatus),
-              marginLeft: 4,
+              marginLeft: 3,
+              whiteSpace: "nowrap",
             }}
           >
             {dayLabel}
           </span>
-        </Pane>
+        </div>
         {viewSelector ? (
-          <Pane data-at-header-view-selector className="shrink-0">
+          <div data-at-header-view-selector className="shrink-0">
             {viewSelector}
-          </Pane>
+          </div>
         ) : null}
-      </Pane>
-
-      <div style={DIVIDER} aria-hidden />
+      </div>
 
       {sessionLevels.showRow && mode !== "futures" ? (
-        <Pane
+        <div
           data-at-day-levels-grid
-          className="grid"
           style={{
-            gridTemplateColumns: "1fr 1px 1fr",
-            gridTemplateRows: "auto auto",
-            columnGap: 6,
-            rowGap: 1,
-            fontSize: 8,
-            lineHeight: 1.2,
+            display: "flex",
+            alignItems: "stretch",
+            width: "100%",
+            marginTop: 2,
+            columnGap: 0,
           }}
         >
-          <Pane data-at-day-low data-at-day-low-kind={sessionLevels.dayLow.kind}>
-            <span style={{ color: AT_LABEL }}>Day low </span>
-            <span className="num" style={{ ...NUM_FEAT, color: WHITE, fontWeight: 600 }}>
-              {sessionLevels.dayLowValue}
-            </span>
-          </Pane>
-          <div style={{ gridRow: "1 / 3", background: BORDER, opacity: 0.45 }} aria-hidden />
-          <Pane data-at-day-high data-at-day-high-kind={sessionLevels.dayHigh.kind}>
-            <span style={{ color: AT_LABEL }}>Day high </span>
-            <span className="num" style={{ ...NUM_FEAT, color: WHITE, fontWeight: 600 }}>
-              {sessionLevels.dayHighValue}
-            </span>
-          </Pane>
-          <Pane data-at-low-zone-ref title={LOW_ZONE_REF_TOOLTIP}>
-            <span style={{ color: AT_LABEL }}>Low zone top </span>
-            <span
-              className="num"
-              data-at-low-zone-slot
-              style={{
-                ...NUM_FEAT,
-                color: sessionLevels.zoneEmphasisFull ? WHITE : AT_SECONDARY,
-                fontWeight: sessionLevels.zoneEmphasisFull ? 600 : 500,
+          <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+            <LevelsCell
+              label="Day low"
+              value={sessionLevels.dayLowValue}
+              dataAttrs={{
+                "data-at-day-low": "",
+                "data-at-day-low-kind": sessionLevels.dayLow.kind,
               }}
-            >
-              {sessionLevels.lowZone.status === "value"
-                ? formatRefZoneHalf(sessionLevels.lowZone.top)
-                : "\u2014"}
-            </span>
-          </Pane>
-          <Pane data-at-high-zone-ref title={SPX_REF_ZONE_TOOLTIP}>
-            <span style={{ color: AT_LABEL }}>High zone bottom </span>
-            <span className="num" data-at-high-zone-slot style={{ ...NUM_FEAT, color: WHITE, fontWeight: 600 }}>
-              {sessionLevels.highZone.status === "value"
-                ? formatRefZoneHalf(sessionLevels.highZone.bottom)
-                : "\u2014"}
-            </span>
-          </Pane>
-        </Pane>
+            />
+            <LevelsCell
+              label="Low zone top"
+              value={lowZoneVal}
+              dataAttrs={{ "data-at-low-zone-ref": "", "data-at-low-zone-slot": "" }}
+              title={LOW_ZONE_REF_TOOLTIP}
+              valueTone={zoneValTone}
+            />
+          </div>
+          <div
+            aria-hidden
+            data-at-day-levels-divider
+            style={{ flex: "0 0 1px", width: 1, background: BORDER, opacity: 0.55, margin: "0 5px" }}
+          />
+          <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+            <LevelsCell
+              label="Day high"
+              value={sessionLevels.dayHighValue}
+              dataAttrs={{
+                "data-at-day-high": "",
+                "data-at-day-high-kind": sessionLevels.dayHigh.kind,
+              }}
+            />
+            <LevelsCell
+              label="High zone bottom"
+              value={highZoneVal}
+              dataAttrs={{ "data-at-high-zone-ref": "", "data-at-high-zone-slot": "" }}
+              title={SPX_REF_ZONE_TOOLTIP}
+            />
+          </div>
+        </div>
       ) : null}
 
-      <div style={DIVIDER} aria-hidden />
+      <div data-at-glance-flow-band style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
+        <div className="flex items-center justify-between gap-1" style={{ minHeight: 11, fontSize: 8, lineHeight: 1.1 }}>
+          <span data-at-flow-now style={{ fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+            FLOW NOW · {flowWindowSec}s
+          </span>
+          <span
+            data-at-gamma-flip
+            className="num"
+            style={{ ...NUM_FEAT, fontWeight: 600, color: GAMMA_SCENARIO, fontSize: 8, whiteSpace: "nowrap" }}
+          >
+            Gamma flip {flipLabel}
+          </span>
+        </div>
 
-      <Pane className="flex items-center justify-between gap-1" style={{ minHeight: 12, fontSize: 8, lineHeight: 1.1 }}>
-        <span data-at-flow-now style={{ fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em" }}>
-          FLOW NOW · {flowWindowSec}s
-        </span>
-        <span data-at-gamma-flip className="num" style={{ ...NUM_FEAT, fontWeight: 600, color: GAMMA_SCENARIO, fontSize: 8 }}>
-          Gamma flip {flipLabel}
-        </span>
-      </Pane>
-
-      <Pane data-at-glance-flow-row style={{ marginTop: 1, minHeight: 32, maxHeight: 36, overflow: "hidden" }}>
-        <AtGlanceGrossFlow
-          glance={netPremium}
-          callWall={zones.callWall}
-          putWall={zones.putWall}
-          onOpenDetail={() => setFlowDetailOpen(true)}
-        />
-      </Pane>
+        <div data-at-glance-flow-row style={{ minHeight: 30 }}>
+          <AtGlanceGrossFlow
+            glance={netPremium}
+            callWall={zones.callWall}
+            putWall={zones.putWall}
+            forceDashAmounts={flowDashShell}
+            onOpenDetail={() => setFlowDetailOpen(true)}
+          />
+        </div>
+      </div>
 
       {orderLine != null && orderSettings != null ? (
-        <>
-          <div style={DIVIDER} aria-hidden />
-          <button
-            type="button"
-            data-at-order-settings-row
-            data-at-settings-summary
-            data-at-advanced-order-trigger
-            className="w-full flex items-center justify-between gap-1 min-w-0"
-            style={{
-              minHeight: 22,
-              padding: 0,
-              background: "transparent",
-              border: "none",
-              fontSize: 8,
-              color: AT_SECONDARY,
-              lineHeight: 1.2,
-            }}
-            onClick={orderSettings.onToggle}
-            aria-expanded={orderSettings.open}
-          >
-            <span className="truncate text-left">{orderLine}</span>
-            <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
-          </button>
-        </>
+        <button
+          type="button"
+          data-at-order-settings-row
+          data-at-settings-summary
+          data-at-advanced-order-trigger
+          className="w-full flex items-center justify-between gap-1 min-w-0"
+          style={{
+            marginTop: 3,
+            minHeight: 18,
+            padding: 0,
+            background: "transparent",
+            border: "none",
+            borderTop: `1px solid ${BORDER}`,
+            paddingTop: 2,
+            fontSize: 8,
+            color: AT_SECONDARY,
+            lineHeight: 1.2,
+          }}
+          onClick={orderSettings.onToggle}
+          aria-expanded={orderSettings.open}
+        >
+          <span className="truncate text-left">{orderLine}</span>
+          <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
+        </button>
       ) : null}
 
       <AtGlanceFlowDetail
@@ -253,18 +289,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         flowAgg={flow}
         gexLabel={null}
       />
-    </Pane>
+    </header>
   );
 });
-
-function Pane(
-  props: PropsWithChildren<{ className?: string; style?: CSSProperties; onClick?: () => void }> &
-    Record<string, unknown>,
-) {
-  const { className, style, onClick, children, ...rest } = props;
-  return (
-    <div className={className} style={style} onClick={onClick} role={onClick ? "presentation" : undefined} {...rest}>
-      {children}
-    </div>
-  );
-}
