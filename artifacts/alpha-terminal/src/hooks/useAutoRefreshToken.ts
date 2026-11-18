@@ -7,12 +7,14 @@ import {
   schwabRefreshErrorDetail,
   syncSchwabTokensFromServer,
 } from "@/lib/schwabTokenSync";
+import { isServerHeldBrokerageSession } from "@/lib/schwabBrokerageSession";
 
 const REFRESH_INTERVAL_MS = 25 * 60 * 1000; // 25 minutes — server also refreshes ~5 min before expiry
 
 function schwabSessionActive(): boolean {
   const { accessToken, traderAccessToken, refreshToken, traderRefreshToken } =
     useTerminalStore.getState();
+  if (isServerHeldBrokerageSession(accessToken, traderAccessToken)) return false;
   return !!(accessToken || traderAccessToken || refreshToken || traderRefreshToken);
 }
 

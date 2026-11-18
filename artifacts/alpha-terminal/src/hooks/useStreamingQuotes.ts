@@ -20,6 +20,7 @@ import { useTerminalStore } from "@/lib/store";
 import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
+import { schwabAccessTokenForRequest } from "@/lib/schwabBrokerageSession";
 
 const API_BASE = "/api";
 
@@ -56,10 +57,14 @@ export function useStreamingQuotes() {
   // ── Tell the server to (re)start its Schwab WS with this token ────────────
   async function startServerStream(token: string) {
     try {
+      const accessTok = schwabAccessTokenForRequest(token);
       await fetchWithAuth(`${API_BASE}/stream/start`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ accessToken: token, symbols: allSymbols() }),
+        body:    JSON.stringify({
+          ...(accessTok ? { accessToken: accessTok } : {}),
+          symbols: allSymbols(),
+        }),
       });
     } catch (err) {
       console.warn("[streaming] startServerStream failed:", err);
