@@ -92,16 +92,27 @@ async function openAt(height) {
   await page.setViewportSize({ width: 440, height });
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
-  const viewSel = page.getByLabel("Options view");
-  if ((await viewSel.count()) > 0) {
-    await viewSel.selectOption("at");
-  } else {
-    await page.getByRole("button", { name: "Active Trader", exact: true }).click({ timeout: 90_000 });
-  }
+  const viewSel = page.locator('[data-at-view-selector] select, select[aria-label="Options view"]');
+  await viewSel.first().waitFor({ state: "attached", timeout: 90_000 });
+  await viewSel.first().selectOption("at");
   await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
   await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, {
     timeout: 90_000,
   });
+}
+
+async function ensureSheetOpen() {
+  await page.waitForSelector("[data-testid='options-chain-order-sheet']", { timeout: 20_000 });
+  const collapsed = page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='false']");
+  if ((await collapsed.count()) > 0) {
+    await collapsed.first().click();
+    await page.waitForTimeout(300);
+  }
+  const expand = page.getByRole("button", { name: "Expand", exact: true });
+  if ((await expand.count()) > 0) {
+    await expand.click();
+    await page.waitForTimeout(350);
+  }
 }
 
 async function atmAskSelector() {
@@ -174,37 +185,36 @@ async function runCase(templateCase, height) {
     return;
   }
   await page.locator(askSel).click({ timeout: 15_000 });
-  await page
-    .waitForSelector("[data-at-mobile-peek], [data-at-sheet-detent='peek']", { timeout: 20_000 })
-    .catch(() => undefined);
-  await page.waitForTimeout(500);
-
-  const tpCheckbox = page.locator('[data-at-mobile-peek] input[type="checkbox"]').first();
-  if ((await tpCheckbox.count()) > 0 && !(await tpCheckbox.isChecked())) {
-    await tpCheckbox.check().catch(() => undefined);
+  await page.waitForTimeout(600);
+  await ensureSheetOpen();
+  if (height <= 658) {
+    await page.evaluate(() => {
+      const sheet = document.querySelector("[data-testid='options-chain-order-sheet']");
+      if (sheet instanceof HTMLElement) sheet.style.height = "min(85vh, 520px)";
+    });
+    await page.waitForTimeout(250);
   }
 
-  const mobileReview = page.getByTestId("at-mobile-review");
   const chainReview = page.getByTestId("chain-sheet-review");
-  if ((await mobileReview.count()) > 0) {
-    await mobileReview.waitFor({ state: "visible", timeout: 12_000 });
-    await mobileReview.click();
-  } else if ((await chainReview.count()) > 0) {
-    record(`Review CTA (${tag})`, false, "mobile peek missing; chain sheet path not asserted for AT templates");
-    process.exitCode = 1;
-    return;
-  } else {
-    const peekText = await page.locator("[data-at-mobile-peek]").innerText().catch(() => "");
-    record(`Review CTA (${tag})`, false, peekText.slice(0, 120) || "at-mobile-review missing");
+  if ((await chainReview.count()) === 0) {
+    record(`Review CTA (${tag})`, false, "chain-sheet-review missing");
     process.exitCode = 1;
     await page.screenshot({ path: path.join(OUT, `live-at-c4-${templateCase}-${height}px-fail.png`) });
     return;
   }
-
-  await page.waitForSelector("[data-at-sheet-detent='confirm'], [data-order-ticket-sheet]", { timeout: 15_000 });
+  await chainReview.scrollIntoViewIfNeeded();
+  await chainReview.waitFor({ state: "visible", timeout: 15_000 });
+  await page
+    .waitForFunction(() => {
+      const b = document.querySelector('[data-testid="chain-sheet-review"]');
+      return b instanceof HTMLButtonElement && !b.disabled;
+    }, undefined, { timeout: 15_000 })
+    .catch(() => undefined);
+  await chainReview.click();
+  await page.waitForSelector("[data-testid='chain-sheet-confirm']", { timeout: 15_000 });
   await page.waitForTimeout(400);
 
-  const confirmRoot = page.getByTestId("at-trigger-confirm");
+  const confirmRoot = page.getByTestId("chain-sheet-confirm").getByTestId("at-trigger-confirm");
   const hasConfirm = (await confirmRoot.count()) > 0;
   record(`Review trigger summary (${tag})`, hasConfirm, hasConfirm ? "scoped confirm" : "missing at-trigger-confirm");
 
@@ -219,14 +229,23 @@ async function runCase(templateCase, height) {
     record(`OCO pair note (${tag})`, ocoNote, ocoNote ? "present" : "missing");
   }
 
-  const sendBtn = page.getByTestId("at-mobile-send-preview");
+  const sendBtn = page.getByTestId("chain-sheet-send");
   const sendVisible = (await sendBtn.count()) > 0;
   const sendDisabled = sendVisible ? await sendBtn.isDisabled() : false;
+  const sendLabel = sendVisible ? ((await sendBtn.textContent()) ?? "") : "";
   record(
     `Send disabled (${tag})`,
     sendVisible && sendDisabled,
-    sendVisible ? `disabled=${sendDisabled}` : "no preview send",
+    sendVisible ? `disabled=${sendDisabled} label=${sendLabel.trim()}` : "no chain-sheet-send",
   );
+
+  const qtyOk = await confirmRoot.evaluate((root, expectedQty) => {
+    const rows = [...root.querySelectorAll('[data-testid="at-trigger-confirm-row"]')];
+  const lines = rows.map((r) => r.textContent ?? "");
+    return lines.every((t) => new RegExp(`[−+]${expectedQty}\\b`).test(t) || new RegExp(`\\b${expectedQty}\\b`).test(t));
+  }, INDEX_DEFAULTS.qty);
+  record(`Template qty on rows (${tag})`, qtyOk, `qty=${INDEX_DEFAULTS.qty}`);
+  if (!qtyOk) process.exitCode = 1;
 
   if (!hasConfirm) {
     record(`hard-fail scope (${tag})`, false, "confirm not in review panel");

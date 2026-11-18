@@ -1075,6 +1075,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
           demoFixture={blockLiveSend}
           sendPreviewOnly
+          atBracketDraft={{
+            prefs,
+            primaryInstruction: settingsSummaryInstruction,
+          }}
           extrasAfterLimit={({ limitPerShare, isCredit, legCount }) => (
             <AtActiveTraderSheetBrackets
               prefs={prefs}
