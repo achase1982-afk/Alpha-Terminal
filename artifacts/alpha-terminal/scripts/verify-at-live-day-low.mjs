@@ -36,30 +36,21 @@ async function runHeight(height) {
   await page.waitForSelector("[data-at-glance-top]", { timeout: 90_000 });
   await page.waitForSelector("[data-at-day-low-zone]", { timeout: 90_000 });
 
-  const dayLow = await page.locator("[data-at-day-low]").innerText();
-  const zoneRef = await page.locator("[data-at-low-zone-ref]").innerText();
-  const noZero =
-    !/\b0\.00\b/.test(dayLow) &&
-    !/\b0\.00\b/.test(zoneRef) &&
-    !zoneRef.includes("Low zone (ref) 0");
-  record(`no zero placeholder (${height}px)`, noZero, `${dayLow.trim()} | ${zoneRef.trim()}`);
+  const dayLowRow = await page.locator("[data-at-day-low]").innerText();
+  const lowZoneSlot = await page.locator("[data-at-low-zone-slot]").innerText();
+  const walls =
+    (await page.locator('[data-at-glance-top]').innerText()).includes("PUT") &&
+    (await page.locator('[data-at-glance-top]').innerText()).includes("CALL");
 
-  const hasLabel = /Day low/.test(dayLow) && /Low zone \(ref\)/.test(zoneRef);
-  record(`labels present (${height}px)`, hasLabel, "ok");
+  const noZeroLevel = !/\b0\.00\b/.test(dayLowRow) && !/Day low 0\b/.test(dayLowRow);
+  record(`no overnight zero (${height}px)`, noZeroLevel, dayLowRow.trim());
 
-  await page.getByRole("button", { name: "Low zone reference info" }).click();
-  const tip = await page.locator("[data-at-low-zone-tooltip]").innerText();
-  const tipOk =
-    tip.includes("FINAL daily lows") && tip.includes("NOT a forecast") && tip.includes("not a safe level");
-  record(`tooltip copy (${height}px)`, tipOk, tip.slice(0, 80));
+  const dayLowOk = /Day low|Prev low/.test(dayLowRow);
+  record(`day low label (${height}px)`, dayLowOk, dayLowRow.trim());
 
-  const contrast = await page.evaluate(() => {
-    const el = document.querySelector("[data-at-low-zone-ref]");
-    if (!el) return null;
-    const color = getComputedStyle(el).color;
-    return color;
-  });
-  record(`zone readable (${height}px)`, contrast != null, contrast ?? "missing");
+  record(`low zone pending (${height}px)`, /Low zone: pending/.test(lowZoneSlot), lowZoneSlot.trim());
+
+  record(`walls present (${height}px)`, walls, walls ? "PUT/CALL" : "missing");
 
   await page.screenshot({ path: path.join(OUT, `live-at-day-low-${height}px.png`) });
 }

@@ -1,5 +1,4 @@
 import { memo, useState, type CSSProperties, type PropsWithChildren } from "react";
-import { Info } from "lucide-react";
 import {
   BG_EXP_BAR,
   BORDER,
@@ -23,10 +22,8 @@ import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
-import { AT_LABEL, AT_SECONDARY, AT_INTERACTIVE } from "@/lib/active-trader/atChromeContrast";
-import { useSpxLowZone } from "@/hooks/useSpxLowZone";
-import { SPX_LOW_ZONE_TOOLTIP } from "@/lib/active-trader/spxLowZone";
-import { isSpxSymbol } from "@workspace/order-ticket-math";
+import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
+import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -181,10 +178,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       ? `KA ${keepawayPutLine != null ? formatStrikeLevel(keepawayPutLine) : "—"}/${keepawayCallLine != null ? formatStrikeLevel(keepawayCallLine) : "—"}`
       : null;
 
-  const spxLowZone = useSpxLowZone(symbol, { skipNetwork });
-  const showLowZone = isSpxSymbol(symbol);
-  const [lowZoneInfo, setLowZoneInfo] = useState(false);
-  const lowZoneTone = spxLowZone.emphasisFull ? AT_INTERACTIVE : AT_SECONDARY;
+  const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
 
   return (
     <Pane
@@ -273,46 +267,34 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         ) : null}
       </Pane>
 
-      {showLowZone ? (
+      {sessionLevels.showRow ? (
         <Pane
           data-at-day-low-zone
-          className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-0.5"
-          style={{ minHeight: 14, lineHeight: 1.15, marginTop: 2 }}
+          className="flex flex-wrap items-center gap-x-1.5 px-0.5"
+          style={{ minHeight: 14, lineHeight: 1.2, marginTop: 2 }}
         >
           <Pane
             className="num shrink-0"
             data-at-day-low
-            style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: lowZoneTone }}
+            data-at-day-low-kind={sessionLevels.dayLow.kind}
+            style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}
           >
-            <span style={{ color: AT_LABEL, fontWeight: 500 }}>Day low </span>
-            {spxLowZone.sessionLowLabel}
+            {sessionLevels.dayLowText}
           </Pane>
-          <Pane className="shrink-0 inline-flex items-center gap-0.5" style={{ fontSize: 10 }}>
-            <Pane
-              className="num"
-              data-at-low-zone-ref
-              style={{ ...NUM_FEAT, fontWeight: spxLowZone.emphasisFull ? 600 : 500, color: lowZoneTone }}
-            >
-              <span style={{ color: AT_LABEL, fontWeight: 500 }}>Low zone (ref) </span>
-              {spxLowZone.lowZoneLabel}
-            </Pane>
-            <button
-              type="button"
-              aria-label="Low zone reference info"
-              onClick={() => setLowZoneInfo((v) => !v)}
-              className="p-0.5 rounded shrink-0"
-              style={{ color: lowZoneInfo ? WHITE : AT_SECONDARY }}
-            >
-              <Info className="w-3 h-3" aria-hidden />
-            </button>
-          </Pane>
-          {lowZoneInfo ? (
-            <Pane
-              data-at-low-zone-tooltip
-              style={{ flexBasis: "100%", fontSize: 9, lineHeight: 1.25, color: AT_SECONDARY, fontWeight: 400 }}
-            >
-              {SPX_LOW_ZONE_TOOLTIP}
-            </Pane>
+          {sessionLevels.lowZone.status !== "hidden" ? (
+            <>
+              <span style={{ color: AT_LABEL, fontSize: 10 }} aria-hidden>
+                ·
+              </span>
+              <Pane
+                className="num shrink-0"
+                data-at-low-zone-slot
+                data-at-low-zone-status={sessionLevels.lowZone.status}
+                style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: AT_SECONDARY }}
+              >
+                {sessionLevels.lowZoneText}
+              </Pane>
+            </>
           ) : null}
         </Pane>
       ) : null}
