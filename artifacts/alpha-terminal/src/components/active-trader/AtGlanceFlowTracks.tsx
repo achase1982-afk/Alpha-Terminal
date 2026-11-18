@@ -3,7 +3,7 @@ import { DOWN_TEXT, UP, WHITE } from "@/components/options/optionsTheme";
 import { AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import type { DeskNetPremiumGlance, FlowTrackView } from "@/lib/active-trader/deskFlowNetPremium";
 
-const TRACK_H = 20;
+const TRACK_H = 14;
 
 function trackColor(t: FlowTrackView): string {
   if (t.direction === "buy") return UP;
@@ -121,16 +121,13 @@ export const AtGlanceFlowTracks = memo(function AtGlanceFlowTracks({ glance, onO
           {glance.streamNote}
         </div>
       ) : null}
-      <div className="flex flex-col gap-0.5" style={{ maxHeight: TRACK_H * 2 + 4 }}>
+      <div className="flex flex-col gap-px" style={{ maxHeight: TRACK_H * 2 + 2 }}>
         <FlowTrackBar track={glance.calls} sharedScale={scale} />
         <FlowTrackBar track={glance.puts} sharedScale={scale} />
       </div>
-      <div
-        data-at-flow-net-label
-        style={{ fontSize: 8, fontWeight: 500, color: AT_LABEL, marginTop: 2, letterSpacing: "0.04em" }}
-      >
+      <span data-at-flow-net-label className="sr-only">
         Est. net premium · {glance.windowLabel} rolling
-      </div>
+      </span>
     </button>
   );
 });

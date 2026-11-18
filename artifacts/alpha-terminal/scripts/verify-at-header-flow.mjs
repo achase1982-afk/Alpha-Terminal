@@ -52,8 +52,8 @@ try {
   await page.waitForSelector("[data-at-flow-tracks], [data-at-flow-tracks='no-prints'], [data-at-flow-tracks='stale']", {
     timeout: 30_000,
   });
-  const tracksLive = await page.locator("[data-at-flow-net-label]").count();
-  record("net premium label visible", tracksLive > 0, String(tracksLive));
+  const tracksLive = await page.locator("[data-at-flow-tracks='live'], [data-at-flow-tracks='no-prints']").count();
+  record("flow tracks visible", tracksLive > 0, String(tracksLive));
 
   const gexInHeader = await page.locator("[data-at-glance-top]").evaluate((el) => /GEX/.test(el.textContent ?? ""));
   record("GEX not in header chrome", !gexInHeader, gexInHeader ? "found GEX" : "ok");

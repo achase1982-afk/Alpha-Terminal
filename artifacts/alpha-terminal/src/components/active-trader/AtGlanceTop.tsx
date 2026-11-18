@@ -109,7 +109,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     >
       <Pane
         className="flex items-center gap-1"
-        style={{ minHeight: 16, lineHeight: 1.1 }}
+        style={{ minHeight: 14, lineHeight: 1.05 }}
       >
         {zones.flip != null ? (
           <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 600, color: GAMMA_SCENARIO }}>
@@ -137,11 +137,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         className="grid gap-x-0.5 items-end"
         style={{
           gridTemplateColumns: showWalls ? "1fr auto 1fr" : "1fr",
-          minHeight: 30,
+          minHeight: 28,
         }}
       >
         {showWalls ? (
-          <Pane className="num text-left" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 600, color: PUT_WALL, lineHeight: 1 }}>
+          <Pane className="num text-left" style={{ ...NUM_FEAT, fontSize: 18, fontWeight: 600, color: PUT_WALL, lineHeight: 1 }}>
             <span style={{ fontSize: 8, fontWeight: 500, color: AT_LABEL, display: "block", marginBottom: 0 }}>PUT</span>
             {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "\u2014"}
           </Pane>
@@ -161,13 +161,13 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <Pane
             className="num"
             data-ui-audit="at-glance-spot"
-            style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 700, color: spotColor, lineHeight: 1 }}
+            style={{ ...NUM_FEAT, fontSize: 26, fontWeight: 700, color: spotColor, lineHeight: 1 }}
           >
             {spotLabel}
           </Pane>
         </Pane>
         {showWalls ? (
-          <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 600, color: GOLD, lineHeight: 1 }}>
+          <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 18, fontWeight: 600, color: GOLD, lineHeight: 1 }}>
             <span style={{ fontSize: 8, fontWeight: 500, color: AT_LABEL, display: "block", marginBottom: 0 }}>CALL</span>
             {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "\u2014"}
           </Pane>
@@ -178,7 +178,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         <Pane
           data-at-day-low-zone
           className="flex flex-wrap items-center gap-x-2 gap-y-0.5 px-0.5"
-          style={{ minHeight: 13, lineHeight: 1.12, marginTop: 1 }}
+          style={{ minHeight: 12, lineHeight: 1.1, marginTop: 0 }}
         >
           <Pane
             className="num shrink-0"
@@ -222,7 +222,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </Pane>
       ) : null}
 
-      <Pane data-at-glance-flow-row style={{ marginTop: 2, minHeight: 44, maxHeight: 52, overflow: "hidden" }}>
+      <Pane data-at-glance-flow-row style={{ marginTop: 1, minHeight: 30, maxHeight: 32, overflow: "hidden" }}>
         <AtGlanceFlowTracks glance={netPremium} onOpenDetail={() => setFlowDetailOpen(true)} />
       </Pane>
 
