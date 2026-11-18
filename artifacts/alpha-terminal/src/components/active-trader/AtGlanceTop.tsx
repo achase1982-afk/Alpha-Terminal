@@ -32,7 +32,7 @@ const NUM_FEAT: CSSProperties = {
 };
 
 const SPOT_PAINT_MS = 250;
-const MAX_GLANCE_PX = 191;
+const MAX_GLANCE_PX = 110;
 
 function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
   const [detailOn, setDetailOn] = useState(true); // default open — 5m / this hr fit via wrap
@@ -57,23 +57,28 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
     );
   }
   if (!copy.line1m) return null;
+  const flowBlock = (text: string, fontSize: number, color: string) => (
+    <span
+      className="num block"
+      style={{
+        ...NUM_FEAT,
+        fontSize,
+        fontWeight: 500,
+        color,
+        lineHeight: 1.2,
+        whiteSpace: "pre-line",
+        wordBreak: "break-word",
+      }}
+    >
+      {text}
+    </span>
+  );
+
   const detailLine = (label: string, text: string | null) =>
     text ? (
-      <Pane
-        key={label}
-        className="num"
-        style={{
-          ...NUM_FEAT,
-          fontSize: 8.5,
-          fontWeight: 500,
-          color: GRAY,
-          lineHeight: 1.25,
-          whiteSpace: "normal",
-          wordBreak: "break-word",
-        }}
-      >
-        <span style={{ color: DIM, fontSize: 8, marginRight: 4 }}>{label}</span>
-        {text}
+      <Pane key={label} className="num flex gap-1 items-start">
+        <span style={{ color: DIM, fontSize: 7.5, fontWeight: 500, flexShrink: 0, paddingTop: 1 }}>{label}</span>
+        {flowBlock(text, 7.5, GRAY)}
       </Pane>
     ) : null;
 
@@ -84,18 +89,11 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
         className="num w-full text-left"
         data-at-glance-flow="live"
         onClick={() => setDetailOn((v) => !v)}
-        style={{
-          ...NUM_FEAT,
-          fontSize: 10,
-          fontWeight: 500,
-          color: WHITE,
-          whiteSpace: "normal",
-          wordBreak: "break-word",
-        }}
+        style={{ ...NUM_FEAT, fontWeight: 500, color: WHITE }}
       >
-        <span style={{ color: GRAY, fontSize: 9, fontWeight: 400, marginRight: 4 }}>1m</span>
-        {copy.line1m}
-        <span style={{ color: GRAY, fontSize: 8, marginLeft: 6 }}>{detailOn ? "▴" : "▾"}</span>
+        <span style={{ color: GRAY, fontSize: 8, fontWeight: 500, marginRight: 4 }}>1m</span>
+        {flowBlock(copy.line1m, 8.5, WHITE)}
+        <span style={{ color: GRAY, fontSize: 7, marginLeft: 4 }}>{detailOn ? "▴" : "▾"}</span>
       </button>
       {detailOn ? (
         <Pane className="pt-0.5 space-y-0.5" data-at-glance-flow-detail>

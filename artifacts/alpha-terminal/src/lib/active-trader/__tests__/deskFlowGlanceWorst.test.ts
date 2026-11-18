@@ -27,8 +27,9 @@ describe("glance flow worst-case width", () => {
       lastRxMs: null,
     };
     const row = formatGlanceMoneyRow(agg);
-    expect(row.line5m).toContain("1.23B");
-    expect(row.lineHr).toContain("1.23B");
+    expect(row.line1m).toContain("Calls bought +1.23B");
+    expect(row.line5m).toContain("sold 1.23B");
+    expect(row.lineHr).toContain("Puts bought");
     expect(row.line5m).not.toMatch(/\.\.\./);
   });
 });

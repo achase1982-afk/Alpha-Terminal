@@ -110,6 +110,39 @@ function worstCaseAggregate(symbol: string): DeskFlowAggregate {
       put_sell: WORST_USD,
       rx_ts_ms: now,
     });
+  } else if (mode === "stock" || mode === "futures") {
+    const sym = deskFlowStreamSymbol(symbol);
+    const mult = mode === "futures" ? 50 : undefined;
+    internal = reduceDeskFlowFrame(internal, {
+      type: "tape_1s",
+      sym,
+      bucket_ms: now - 5_000,
+      buy_$: WORST_USD,
+      sell_$: WORST_USD,
+      n_prints: 8,
+      futures_mult: mult,
+      rx_ts_ms: now,
+    });
+    internal = reduceDeskFlowFrame(internal, {
+      type: "tape_60s",
+      sym,
+      bar_start_ms: now - 120_000,
+      buy_$: WORST_USD,
+      sell_$: WORST_USD,
+      n_prints: 40,
+      futures_mult: mult,
+      rx_ts_ms: now,
+    });
+    internal = reduceDeskFlowFrame(internal, {
+      type: "tape_60s",
+      sym,
+      bar_start_ms: now - 3_600_000,
+      buy_$: WORST_USD,
+      sell_$: WORST_USD,
+      n_prints: 200,
+      futures_mult: mult,
+      rx_ts_ms: now,
+    });
   }
   return deskFlowAggregatorProject(internal);
 }
