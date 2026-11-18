@@ -31,7 +31,8 @@ record("SPX walls 7340", spxGamma.zones?.callWall === 7340 && spxGamma.zones?.pu
 for (const sym of ["$NVDA", "$SPY", "$QQQ"]) {
   const g = await gammaGlance(sym);
   metrics[sym] = g;
-  record(`${sym} gamma glance`, !g.unavailable, g.unavailable ? "unavailable" : `rows=${g.rowCount}`);
+  const ok = !g.unavailable && g.zones?.netGexUsdPer1Pct != null;
+  record(`${sym} gamma glance`, ok, ok ? `rows=${g.rowCount}` : "unavailable");
 }
 
 const browser = await webkit.launch();

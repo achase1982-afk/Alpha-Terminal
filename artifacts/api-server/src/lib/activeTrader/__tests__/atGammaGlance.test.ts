@@ -38,6 +38,10 @@ vi.mock("../../desk/deskEt.js", () => ({
   deskSessionDateEt: () => "2026-11-17",
 }));
 
+vi.mock("../../desk/addons/unusualWhales/deskUwLiveFeeds.js", () => ({
+  refreshDeskUwLiveFeeds: vi.fn().mockResolvedValue(undefined),
+}));
+
 describe("buildAtGammaGlancePayload", () => {
   beforeEach(() => {
     resetAtGammaGlanceCacheForTests();

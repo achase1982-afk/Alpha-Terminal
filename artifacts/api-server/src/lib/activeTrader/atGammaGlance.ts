@@ -5,6 +5,8 @@ import {
   deskUwExtractRows,
 } from "../desk/addons/unusualWhales/deskUwGamma.js";
 import { deskSessionDateEt } from "../desk/deskEt.js";
+import { priorNyTradingSessionYmd } from "../getMarketContext.js";
+import { refreshDeskUwLiveFeeds } from "../desk/addons/unusualWhales/deskUwLiveFeeds.js";
 import { computeZonesFromUwGamma0dte } from "@workspace/order-ticket-math";
 
 export const AT_GAMMA_GLANCE_TICKERS = new Set(["SPX", "SPY", "QQQ", "NVDA"]);
@@ -37,12 +39,21 @@ export function resetAtGammaGlanceCacheForTests(): void {
   appCache.clear();
 }
 
-async function loadUwGamma0dteSnapshot(ticker: string, expiry: string) {
-  let snap = deskGetCachedLiveGamma0dte(expiry, ticker);
-  if (snap?.data?.data?.length) return snap;
-  await deskRefreshLiveGamma0dte(expiry, ticker);
-  snap = deskGetCachedLiveGamma0dte(expiry, ticker);
-  return snap;
+function expiryCandidates(sessionDate: string): string[] {
+  const prior = priorNyTradingSessionYmd(sessionDate);
+  return prior && prior !== sessionDate ? [sessionDate, prior] : [sessionDate];
+}
+
+async function loadUwGamma0dteSnapshot(ticker: string, sessionDate: string) {
+  await refreshDeskUwLiveFeeds(true);
+  for (const expiry of expiryCandidates(sessionDate)) {
+    let snap = deskGetCachedLiveGamma0dte(expiry, ticker);
+    if (snap?.data?.data?.length) return snap;
+    await deskRefreshLiveGamma0dte(expiry, ticker);
+    snap = deskGetCachedLiveGamma0dte(expiry, ticker);
+    if (snap?.data?.data?.length) return snap;
+  }
+  return null;
 }
 
 export async function buildAtGammaGlancePayload(tickerRaw: string): Promise<AtGammaGlancePayload> {
