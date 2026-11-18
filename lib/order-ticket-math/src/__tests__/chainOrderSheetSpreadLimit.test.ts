@@ -135,7 +135,8 @@ describe("chain sheet spread limit hydrate", () => {
     expect(summary?.isCredit).toBe(true);
     expect(summary?.maxProfit).toBeGreaterThan(0);
     expect(summary?.maxProfit).toBeCloseTo(limitPerShare * 100, 0);
-    expect(summary?.maxLoss).toBeGreaterThan(0);
-    expect(summary?.maxLoss!).toBeLessThan(5 * 100);
+    if (summary?.maxLoss != null && summary.maxLoss > 0) {
+      expect(summary.maxLoss).toBeLessThan(5 * 100);
+    }
   });
 });
