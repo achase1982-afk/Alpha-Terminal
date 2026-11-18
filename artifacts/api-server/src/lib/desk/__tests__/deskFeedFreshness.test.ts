@@ -24,23 +24,25 @@ describe("deskFeedFreshness", () => {
   });
 
   it("marks touch and reports fresh feed with status OK", () => {
+    const now = new Date("2026-11-18T20:00:00.000Z").getTime();
+    vi.useFakeTimers({ now });
     vi.spyOn(marketCtx, "getMarketContext").mockReturnValue({
       now: "",
       timeZone: "America/New_York",
       localLabel: "",
-      tradingDate: "2026-11-17",
+      tradingDate: "2026-11-18",
       session: "OPEN",
       optionsLive: true,
     });
-    const now = Date.now();
     deskTouchFeed("schwab_quotes_rest", now);
     const feeds = buildDeskHealthFeeds(now);
     const row = feeds.find((f) => f.feed === "schwab_quotes_rest");
     expect(row?.stale).toBe(false);
     expect(row?.last_update_ts).toBe(now);
     expect(row?.status).toBe("OK");
-    expect(row?.session_date).toBe("2026-11-17");
+    expect(row?.session_date).toBe("2026-11-18");
     expect(row?.stale_after_ms).toBe(deskStaleAfterMs("schwab_quotes_rest", now));
+    vi.useRealTimers();
   });
 
   it("flags stale when older than threshold", () => {
