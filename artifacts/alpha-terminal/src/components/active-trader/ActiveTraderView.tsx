@@ -119,6 +119,12 @@ interface ActiveTraderViewProps {
   chainQuoteTs?: number;
   /** Shared Chain / Active Trader selector (toolbar placement). */
   subViewChrome?: React.ReactNode;
+  /** Chain fetch / brokerage state for skeleton messaging. */
+  ladderPlug?: {
+    chainLoading?: boolean;
+    chainError?: string | null;
+    brokerLinked?: boolean;
+  };
   /** Legs built on the chain subview, applied when AT mounts or chain legs change. */
   buildLegsFromChain?: AtLadderLegPick[];
   buildLegQtyFromChain?: Map<string, number>;
@@ -155,6 +161,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   settingsPanelInitiallyOpen,
   chainQuoteTs: chainQuoteTsProp,
   subViewChrome,
+  ladderPlug,
   buildLegsFromChain,
   buildLegQtyFromChain,
 }: ActiveTraderViewProps) {
@@ -166,6 +173,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return tradable[0] ?? null;
   }, [groups, activeExpiration]);
   const ladderDataReady = !!(primary && primary.rows.length > 0);
+  const ladderWaitMessage = useMemo(() => {
+    if (ladderDataReady || presentation?.skipNetwork) return null;
+    if (ladderPlug?.chainLoading) return "Loading option chain…";
+    if (ladderPlug?.chainError) return ladderPlug.chainError;
+    if (ladderPlug?.brokerLinked === false) return "Connect Schwab to load the ladder.";
+    return "Waiting for live chain and stream quotes…";
+  }, [ladderDataReady, presentation?.skipNetwork, ladderPlug]);
   const noTradableExpirations = groups.length > 0 && !groups.some((g) => g.dte >= 0);
   /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
   const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
@@ -1111,11 +1125,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           </div>
         ) : (
           <>
-            {!presentation?.skipNetwork && (
+            {ladderWaitMessage ? (
               <p className="px-3 py-2 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
-                Waiting for live chain and stream quotes…
+                {ladderWaitMessage}
               </p>
-            )}
+            ) : null}
             <AtLadderSkeleton accentHex={accentHex} underlyingPrice={underlyingPrice} />
           </>
         )}

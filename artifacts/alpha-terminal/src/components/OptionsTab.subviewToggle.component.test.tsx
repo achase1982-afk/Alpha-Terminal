@@ -14,7 +14,11 @@ vi.mock("@/components/dashboard/widgetSymbolContext", () => ({
   useActiveSymbol: () => "AAPL",
 }));
 
-const terminalState = { accessToken: "tok", streamPrices: {} as Record<string, unknown> };
+const terminalState = {
+  accessToken: "tok",
+  traderAccessToken: null as string | null,
+  streamPrices: {} as Record<string, unknown>,
+};
 vi.mock("@/lib/store", () => ({
   useTerminalStore: (sel: (s: typeof terminalState) => unknown) => sel(terminalState),
 }));
@@ -104,6 +108,7 @@ vi.mock("@workspace/api-client-react", () => ({
     error: null,
     isFetching: false,
     dataUpdatedAt: Date.now(),
+    refetch: vi.fn(),
   }),
 }));
 

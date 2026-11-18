@@ -1004,7 +1004,7 @@ function buildIndexChainFromStreaming(
 
 router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = schwabAccessTokenFromRequest(req);
+  const accessToken = schwabAccessTokenFromRequest(req, true);
   const contractType = (req.query["contractType"] as string) ?? "ALL";
   const strikeCount = parseInt(req.query["strikeCount"] as string) || 10;
 
