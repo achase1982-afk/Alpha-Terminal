@@ -50,7 +50,7 @@ interface LadderBodyProps {
     side: "BUY" | "SELL";
     nearContract: OptionsContract;
   }) => void;
-  selectedLegKeys?: ReadonlySet<string>;
+  selectedQuoteCells?: ReadonlySet<string>;
   chainQuoteTs?: number;
   expiryLabel: string;
 }
@@ -166,14 +166,14 @@ function QuoteCell({
       data-at-quote={dataAttr}
       className="w-full h-full flex flex-col items-end justify-center px-1 active:opacity-80"
       style={{
-        fontSize: 12,
-        fontWeight: 500,
+        fontSize: 14,
+        fontWeight: 600,
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
         background: bg,
-        border: legSelected ? `2px solid ${tint === "bid" ? DOWN : UP}` : `1px solid ${BORDER_ROW}`,
-        borderRight: legSelected ? `2px solid ${tint === "bid" ? DOWN : UP}` : tint === "bid" ? `1px solid ${DOWN}55` : `1px solid ${UP}55`,
-        boxShadow: legSelected ? `inset 0 0 0 1px ${tint === "bid" ? DOWN : UP}88` : undefined,
+        border: legSelected ? `2px solid #f5f5f5` : `1px solid ${BORDER_ROW}`,
+        borderRight: legSelected ? `2px solid #f5f5f5` : tint === "bid" ? `1px solid ${DOWN}55` : `1px solid ${UP}55`,
+        boxShadow: legSelected ? "inset 0 0 0 1px rgba(255,255,255,0.35)" : undefined,
       }}
       onClick={() => {
         if (onClick) onClick();
@@ -213,6 +213,7 @@ type LadderRowViewProps = {
   keepawayPutLine?: number | null;
   keepawayCallLine?: number | null;
   selectedLegKeys?: ReadonlySet<string>;
+  selectedQuoteCells?: ReadonlySet<string>;
   chainQuoteTs?: number;
   expiryLabel: string;
 };
@@ -241,7 +242,7 @@ const LadderRowView = memo(function LadderRowView({
   onVerticalTap,
   keepawayPutLine,
   keepawayCallLine,
-  selectedLegKeys,
+  selectedQuoteCells,
   chainQuoteTs = 0,
   expiryLabel,
 }: LadderRowViewProps) {
@@ -363,53 +364,53 @@ const LadderRowView = memo(function LadderRowView({
         </div>
       )}
       <div className="grid items-stretch w-full" style={rowStyle}>
-        <FlowBarCell flow={putFlow} laneFilters={laneFilters} side="put" maxFlow={maxFlow} />
+        <FlowBarCell flow={callFlow} laneFilters={laneFilters} side="call" maxFlow={maxFlow} />
         <QuoteCell
-          price={putBidPx}
+          price={callBidPx}
           tint="bid"
           strike={row.strike}
-          leg={row.put}
-          type="PUT"
+          leg={row.call}
+          type="CALL"
           side="SELL"
           expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
-          sizeLabel={ladderMode === "single" && putTick?.bidSize != null ? `×${Math.round(putTick.bidSize)}` : null}
-          dataAttr={`put-bid-${row.strike}`}
-          legSelected={!!(putKey && selectedLegKeys?.has(putKey))}
+          sizeLabel={ladderMode === "single" && callTick?.bidSize != null ? `×${Math.round(callTick.bidSize)}` : null}
+          dataAttr={`call-bid-${row.strike}`}
+          legSelected={!!(callKey && selectedQuoteCells?.has(`${callKey}|bid`))}
           onClick={
-            ladderMode === "vertical" && row.put
+            ladderMode === "vertical" && row.call
               ? () =>
                   onVerticalTap({
                     anchorStrike: row.strike,
-                    farStrike: putFarStrike,
-                    type: "PUT",
+                    farStrike: callFarStrike,
+                    type: "CALL",
                     side: "SELL",
-                    nearContract: row.put!,
+                    nearContract: row.call!,
                   })
               : undefined
           }
         />
         <QuoteCell
-          price={putAskPx}
+          price={callAskPx}
           tint="ask"
           strike={row.strike}
-          leg={row.put}
-          type="PUT"
+          leg={row.call}
+          type="CALL"
           side="BUY"
           expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
-          sizeLabel={ladderMode === "single" && putTick?.askSize != null ? `×${Math.round(putTick.askSize)}` : null}
-          dataAttr={`put-ask-${row.strike}`}
-          legSelected={!!(putKey && selectedLegKeys?.has(putKey))}
+          sizeLabel={ladderMode === "single" && callTick?.askSize != null ? `×${Math.round(callTick.askSize)}` : null}
+          dataAttr={`call-ask-${row.strike}`}
+          legSelected={!!(callKey && selectedQuoteCells?.has(`${callKey}|ask`))}
           onClick={
-            ladderMode === "vertical" && row.put
+            ladderMode === "vertical" && row.call
               ? () =>
                   onVerticalTap({
                     anchorStrike: row.strike,
-                    farStrike: putFarStrike,
-                    type: "PUT",
+                    farStrike: callFarStrike,
+                    type: "CALL",
                     side: "BUY",
-                    nearContract: row.put!,
+                    nearContract: row.call!,
                   })
               : undefined
           }
@@ -420,7 +421,7 @@ const LadderRowView = memo(function LadderRowView({
             width: STRIKE_W,
             background: spotRow ? accentHex : AT_LADDER_PANEL_BG,
             color: spotRow ? "#080808" : WHITE,
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: spotRow ? 600 : 500,
             border: spotRow ? `1px solid ${accentHex}` : `1px solid ${BORDER_ROW}`,
             fontVariantNumeric: "tabular-nums",
@@ -452,56 +453,56 @@ const LadderRowView = memo(function LadderRowView({
           {spotRow && !isCallWall && !isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}
         </div>
         <QuoteCell
-          price={callBidPx}
+          price={putBidPx}
           tint="bid"
           strike={row.strike}
-          leg={row.call}
-          type="CALL"
+          leg={row.put}
+          type="PUT"
           side="SELL"
           expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
-          sizeLabel={ladderMode === "single" && callTick?.bidSize != null ? `×${Math.round(callTick.bidSize)}` : null}
-          dataAttr={`call-bid-${row.strike}`}
-          legSelected={!!(callKey && selectedLegKeys?.has(callKey))}
+          sizeLabel={ladderMode === "single" && putTick?.bidSize != null ? `×${Math.round(putTick.bidSize)}` : null}
+          dataAttr={`put-bid-${row.strike}`}
+          legSelected={!!(putKey && selectedQuoteCells?.has(`${putKey}|bid`))}
           onClick={
-            ladderMode === "vertical" && row.call
+            ladderMode === "vertical" && row.put
               ? () =>
                   onVerticalTap({
                     anchorStrike: row.strike,
-                    farStrike: callFarStrike,
-                    type: "CALL",
+                    farStrike: putFarStrike,
+                    type: "PUT",
                     side: "SELL",
-                    nearContract: row.call!,
+                    nearContract: row.put!,
                   })
               : undefined
           }
         />
         <QuoteCell
-          price={callAskPx}
+          price={putAskPx}
           tint="ask"
           strike={row.strike}
-          leg={row.call}
-          type="CALL"
+          leg={row.put}
+          type="PUT"
           side="BUY"
           expiryLabel={expiryLabel}
           onQuoteTap={onQuoteTap}
-          sizeLabel={ladderMode === "single" && callTick?.askSize != null ? `×${Math.round(callTick.askSize)}` : null}
-          dataAttr={`call-ask-${row.strike}`}
-          legSelected={!!(callKey && selectedLegKeys?.has(callKey))}
+          sizeLabel={ladderMode === "single" && putTick?.askSize != null ? `×${Math.round(putTick.askSize)}` : null}
+          dataAttr={`put-ask-${row.strike}`}
+          legSelected={!!(putKey && selectedQuoteCells?.has(`${putKey}|ask`))}
           onClick={
-            ladderMode === "vertical" && row.call
+            ladderMode === "vertical" && row.put
               ? () =>
                   onVerticalTap({
                     anchorStrike: row.strike,
-                    farStrike: callFarStrike,
-                    type: "CALL",
+                    farStrike: putFarStrike,
+                    type: "PUT",
                     side: "BUY",
-                    nearContract: row.call!,
+                    nearContract: row.put!,
                   })
               : undefined
           }
         />
-        <FlowBarCell flow={callFlow} laneFilters={laneFilters} side="call" maxFlow={maxFlow} />
+        <FlowBarCell flow={putFlow} laneFilters={laneFilters} side="put" maxFlow={maxFlow} />
       </div>
     </>
   );
@@ -602,7 +603,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             positionQtyByKey={props.positionQtyByKey}
             workingOrderChips={props.workingOrderChips}
             flowByKey={props.flowByKey}
-            selectedLegKeys={props.selectedLegKeys}
+            selectedQuoteCells={props.selectedQuoteCells}
             chainQuoteTs={props.chainQuoteTs}
             expiryLabel={props.expiryLabel}
           />

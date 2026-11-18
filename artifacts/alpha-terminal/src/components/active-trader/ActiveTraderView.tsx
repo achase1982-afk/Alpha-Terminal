@@ -41,6 +41,7 @@ import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
 } from "@/components/OptionsChainOrderSheet";
+import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import {
   AT_MAX_LADDER_LEGS,
@@ -114,6 +115,8 @@ interface ActiveTraderViewProps {
   settingsPanelInitiallyOpen?: boolean;
   /** REST chain fetch timestamp — used when stream quotes are empty or zero. */
   chainQuoteTs?: number;
+  /** Shared Chain / Active Trader selector (toolbar placement). */
+  subViewChrome?: React.ReactNode;
 }
 
 export const ActiveTraderView = memo(function ActiveTraderView({
@@ -130,6 +133,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   initialTradeSelection,
   settingsPanelInitiallyOpen,
   chainQuoteTs: chainQuoteTsProp,
+  subViewChrome,
 }: ActiveTraderViewProps) {
   const primary = useMemo(() => {
     const tradable = groups.filter((g) => g.dte >= 0);
@@ -527,8 +531,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       }
       return next;
     });
-    setChainSheetCollapsed(false);
-    setChainSheetPeek(true);
+    setChainSheetCollapsed(true);
   }, []);
 
   const handleQuoteTap = useCallback(
@@ -609,7 +612,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const streamTicksForLegs = useOptionsStreamStore((s) => s.ticks);
 
-  const selectedLegKeys = useMemo(() => new Set(selectedLegs.keys()), [selectedLegs]);
+  const selectedQuoteCells = useMemo(() => {
+    const s = new Set<string>();
+    for (const [key, leg] of selectedLegs) {
+      s.add(`${key}|${leg.side}`);
+    }
+    return s;
+  }, [selectedLegs]);
+  const trayLegs = useMemo(() => [...selectedLegs.values()], [selectedLegs]);
 
   const ticketLegs = useMemo(() => {
     if (selectedLegs.size === 0) return [];
@@ -811,6 +821,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       style={{ background: BG, overscrollBehavior: "none" }}
     >
       <div ref={chromeRef} className="shrink-0 z-[50]" style={{ background: BG_EXP_BAR }}>
+        {subViewChrome ? (
+          <div className="flex items-center justify-end px-2 py-1" style={{ borderBottom: `1px solid ${BORDER}` }}>
+            {subViewChrome}
+          </div>
+        ) : null}
         <AtGlanceTop
           symbol={symbol}
           underlyingPrice={underlyingPrice}
@@ -875,18 +890,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             background: BG_HEADER,
           }}
         >
-          <span className="text-center leading-none font-semibold" style={{ color: DOWN, fontSize: 9 }}>
-            Put flow
+          <span className="text-center leading-none font-semibold" style={{ color: UP, fontSize: 9 }}>
+            Call flow
           </span>
-          <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
-            Puts
-          </span>
-          <span />
           <span className="text-center col-span-2 font-bold" style={{ color: UP, fontSize: 10 }}>
             Calls
           </span>
-          <span className="text-center leading-none font-semibold" style={{ color: UP, fontSize: 9 }}>
-            Call flow
+          <span />
+          <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
+            Puts
+          </span>
+          <span className="text-center leading-none font-semibold" style={{ color: DOWN, fontSize: 9 }}>
+            Put flow
           </span>
         </div>
         <div
@@ -913,6 +928,15 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           <span />
         </div>
       </div>
+
+      <AtLegBuildTray
+        legs={trayLegs}
+        qtyByKey={legQuantities}
+        onRemove={(key) => {
+          const leg = selectedLegs.get(key);
+          if (leg) handleToggleLeg(leg.contract, leg.type, leg.side);
+        }}
+      />
 
       <div className="relative flex-1 min-h-0">
       <div
@@ -950,7 +974,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             onVerticalTap={handleVerticalTap}
             onQuoteTap={handleQuoteTap}
             onAddLeg={atAddLegFromLadder}
-            selectedLegKeys={selectedLegKeys}
+            selectedQuoteCells={selectedQuoteCells}
             positionQtyByKey={positionQtyByKey}
             flowByKey={flowByKey}
             symbolLabel={symbolLabel}

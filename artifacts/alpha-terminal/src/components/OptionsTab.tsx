@@ -1709,17 +1709,18 @@ export function OptionsTab({
   );
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
+  const subViewChrome = (
+    <OptionsSubViewToggle toolbar view={optionsSubView} onChange={setOptionsSubView} />
+  );
 
   return (
     <div
       style={{ background: BG }}
       className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
     >
-      <div className="shrink-0" data-at-subview-chrome>
-        <OptionsSubViewToggle view={optionsSubView} onChange={setOptionsSubView} accentHex={accentHex} />
-      </div>
       {optionsSubView === "at" && (
         <ActiveTraderView
+          subViewChrome={subViewChrome}
           symbol={symbol}
           groups={atGroups}
           activeExpiration={atExpiration ?? undefined}
@@ -1753,7 +1754,8 @@ export function OptionsTab({
         className="flex items-center justify-between w-full px-3 shrink-0 z-40"
         style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
       >
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          {subViewChrome}
           <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
           {isCustomMode ? (
             <div className="flex items-center gap-1">

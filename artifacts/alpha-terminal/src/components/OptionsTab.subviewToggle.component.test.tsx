@@ -141,10 +141,10 @@ describe("OptionsTab subview toggle", () => {
 
     expect(screen.queryByTestId("active-trader-pane")).toBeNull();
 
-    expect(screen.getByRole("button", { name: "Active Trader" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Chain" })).toBeTruthy();
+    const viewSelect = screen.getByLabelText("Options view");
+    expect(viewSelect).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Active Trader" }));
+    fireEvent.change(viewSelect, { target: { value: "at" } });
 
     await waitFor(() => {
       expect(screen.getByTestId("active-trader-pane")).toBeTruthy();

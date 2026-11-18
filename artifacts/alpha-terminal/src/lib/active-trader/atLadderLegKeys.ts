@@ -13,6 +13,20 @@ export function atLadderLegKey(contract: OptionsContract, type: "CALL" | "PUT"):
   return `${contract.expiration}|${contract.strike}|${type}`;
 }
 
+export function atLadderQuoteCellKey(
+  contract: OptionsContract,
+  type: "CALL" | "PUT",
+  quoteSide: "bid" | "ask",
+): string {
+  return `${atLadderLegKey(contract, type)}|${quoteSide}`;
+}
+
+/** Signed display qty for ladder cell: +N buy / −N sell (open). */
+export function atSignedLegQty(side: "bid" | "ask", qty: number): string {
+  const n = Math.max(1, qty);
+  return side === "ask" ? `+${n}` : `−${n}`;
+}
+
 export function quoteSideFromTap(side: "BUY" | "SELL"): "bid" | "ask" {
   return side === "SELL" ? "bid" : "ask";
 }
