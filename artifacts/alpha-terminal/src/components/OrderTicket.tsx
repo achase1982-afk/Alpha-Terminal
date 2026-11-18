@@ -1756,13 +1756,13 @@ export function OrderTicket({
         </div>
       ) : null}
 
-      {atMobileGlance && stage === "review" && (
+      {atMobileGlance && stage === "form" && (
         <div
           data-at-pinned-strike
           className="shrink-0 px-3 pb-1.5"
           style={{ fontSize: 12, color: MUTED, borderBottom: `1px solid ${BORDER}` }}
         >
-          <span style={{ color: WHITE, fontWeight: 500 }}>{atMobilePinnedLine}</span>
+          <span style={{ color: WHITE, fontWeight: 500 }}>{atMobileContractLabel}</span>
         </div>
       )}
 
@@ -2981,6 +2981,16 @@ export function OrderTicket({
             }
             onClick={(e) => e.stopPropagation()}
           >
+            {atMobileGlance ? (
+              <div
+                className="sticky top-0 z-[2] -mx-3 px-3 py-1.5 mb-1"
+                data-at-confirm-pinned
+                style={{ background: BG, borderBottom: `1px solid ${BORDER}`, fontSize: 12 }}
+              >
+                <span style={{ color: MUTED, display: "block", fontSize: 11 }}>{atMobileContractLabel}</span>
+                <span className="num" style={{ color: WHITE, fontWeight: 600 }}>{atMobilePinnedLine}</span>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between">
               {atMobileGlance ? (
                 <button

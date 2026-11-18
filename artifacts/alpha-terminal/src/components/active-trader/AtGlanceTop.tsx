@@ -23,6 +23,7 @@ import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
 import { formatGlanceMoneyRow } from "@/lib/active-trader/deskFlowGlanceCopy";
+import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
 
 const NUM_FEAT: CSSProperties = {
   fontFeatureSettings: '"tnum" 1, "ss01" 1, "cv09" 1',
@@ -30,6 +31,56 @@ const NUM_FEAT: CSSProperties = {
 };
 
 const SPOT_PAINT_MS = 250;
+const MAX_GLANCE_PX = 191;
+
+function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
+  const [detailOn, setDetailOn] = useState(true);
+  const copy = formatGlanceMoneyRow(agg);
+  if (copy.unsupported) {
+    return (
+      <Pane className="num truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.2 }}>
+        {copy.line1m}
+      </Pane>
+    );
+  }
+  if (copy.noPrints) {
+    return (
+      <Pane
+        className="num flex items-center gap-1.5"
+        data-at-glance-flow="no-prints"
+        style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.2 }}
+      >
+        <span style={{ color: WHITE }}>—</span>
+        <span style={{ fontSize: 9, fontWeight: 400 }}>no prints</span>
+      </Pane>
+    );
+  }
+  if (!copy.line1m) return null;
+  return (
+    <Pane style={{ lineHeight: 1.15 }}>
+      <button
+        type="button"
+        className="num w-full text-left truncate"
+        data-at-glance-flow="live"
+        onClick={() => setDetailOn((v) => !v)}
+        style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}
+      >
+        <span style={{ color: GRAY, fontSize: 9, fontWeight: 400, marginRight: 4 }}>1m</span>
+        {copy.line1m}
+        <span style={{ color: GRAY, fontSize: 8, marginLeft: 6 }}>{detailOn ? "▴" : "▾"}</span>
+      </button>
+      {detailOn && copy.lineDetail ? (
+        <Pane
+          className="num truncate pt-0.5"
+          data-at-glance-flow-detail
+          style={{ ...NUM_FEAT, fontSize: 9, fontWeight: 500, color: GRAY }}
+        >
+          {copy.lineDetail}
+        </Pane>
+      ) : null}
+    </Pane>
+  );
+}
 
 export type AtGlanceTopProps = {
   symbol: string;
@@ -41,39 +92,6 @@ export type AtGlanceTopProps = {
   sessionOpen?: number | null;
   embedded?: boolean;
 };
-
-function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
-  const { line, noPrints, unsupported } = formatGlanceMoneyRow(agg);
-  if (unsupported) {
-    return (
-      <Pane className="num truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.25, paddingBottom: 2 }}>
-        {line}
-      </Pane>
-    );
-  }
-  if (!line && noPrints) {
-    return (
-      <Pane
-        className="num flex items-center gap-1.5"
-        data-at-glance-flow="no-prints"
-        style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GRAY, lineHeight: 1.25, paddingBottom: 2 }}
-      >
-        <span style={{ color: WHITE }}>—</span>
-        <span style={{ fontSize: 9, fontWeight: 400 }}>no prints</span>
-      </Pane>
-    );
-  }
-  if (!line) return null;
-  return (
-    <Pane
-      className="num truncate"
-      data-at-glance-flow="live"
-      style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE, lineHeight: 1.25, paddingBottom: 2 }}
-    >
-      {line}
-    </Pane>
-  );
-}
 
 export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
@@ -90,8 +108,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const flow = useDeskFlowStream(symbol, true);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
-  const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS, quote?.change ?? null);
+  const spotColor = useSpotDirectionColor(liveSpot, SPOT_PAINT_MS);
   const flowCopy = formatGlanceMoneyRow(flow);
+  const spotLabel = formatAtGlanceSpot(symbol, spotShown);
 
   const open = sessionOpen ?? quote?.close ?? null;
   const fromOpen =
@@ -101,7 +120,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         ? spotShown - open
         : null;
 
-  const gexStr = `GEX ${formatGexUsd(zones.netGexUsdPer1Pct)}`;
+  const gexStr = mode === "futures" ? null : `GEX ${formatGexUsd(zones.netGexUsdPer1Pct)}`;
+  const showWalls = mode !== "futures" || zones.putWall != null || zones.callWall != null;
 
   const toggleCompact = () => {
     setCompact((c) => {
@@ -113,28 +133,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
   const compactFlow =
     flowCopy.unsupported
-      ? flowCopy.line
+      ? flowCopy.line1m
       : flowCopy.noPrints
         ? "no prints"
-        : flowCopy.line;
-
-  if (mode === "futures") {
-    return (
-      <div
-        data-at-glance-top
-        className="at-glance px-2 py-1 shrink-0"
-        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: "20vh" }}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className="num" style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotColor }}>
-            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
-          </span>
-          <span style={{ fontSize: 10, fontWeight: 400, color: GRAY }}>{symbol.replace(/^\$/, "")}</span>
-        </div>
-        <MoneyRow agg={flow} />
-      </div>
-    );
-  }
+        : flowCopy.line1m;
 
   if (compact) {
     return (
@@ -142,15 +144,15 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         type="button"
         data-at-glance-top
         className="at-glance w-full px-2 py-1 text-left shrink-0"
-        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}` }}
+        style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: MAX_GLANCE_PX }}
         onClick={toggleCompact}
       >
         <div className="flex items-center justify-between gap-1 num" style={NUM_FEAT}>
           <span style={{ fontSize: 12, fontWeight: 500, color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : UP }}>
-            {fromOpen != null ? `${fromOpen >= 0 ? "▲" : "▼"}${Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 1)}` : "—"}
+            {fromOpen != null ? `${fromOpen >= 0 ? "▲" : "▼"}${Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 2)}` : "—"}
           </span>
           <span style={{ fontSize: 26, fontWeight: 600, color: spotColor }}>
-            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
+            {spotLabel}
           </span>
           <span style={{ fontSize: 10, color: flowCopy.noPrints && !flowCopy.unsupported ? GRAY : WHITE, fontWeight: 400 }}>
             {flowCopy.noPrints && !flowCopy.unsupported ? "—" : compactFlow ?? "—"}
@@ -164,56 +166,74 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     <Pane
       data-at-glance-top
       className="at-glance px-2 py-0.5 shrink-0"
-      style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: "min(152px, 20vh)" }}
+      style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: `min(${MAX_GLANCE_PX}px, 20vh)` }}
     >
-      <Pane className="flex items-center gap-1.5" style={{ minHeight: 18 }}>
-        <Pane
-          className="num shrink-0"
-          style={{
-            ...NUM_FEAT,
-            fontSize: 11,
-            fontWeight: 500,
-            color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : fromOpen != null && fromOpen > 0 ? UP : WHITE,
-          }}
-        >
-          {fromOpen != null ? (
-            <>
-              {fromOpen >= 0 ? "▲" : "▼"}
-              {Math.abs(fromOpen).toFixed(mode === "stock" ? 2 : 1)}
-              <span style={{ fontSize: 9, fontWeight: 400, color: GRAY, marginLeft: 4 }}>OPEN</span>
-            </>
-          ) : (
-            "—"
-          )}
+      {mode !== "futures" ? (
+        <Pane className="flex items-center gap-1.5" style={{ minHeight: 16 }}>
+          <Pane
+            className="num shrink-0"
+            style={{
+              ...NUM_FEAT,
+              fontSize: 11,
+              fontWeight: 500,
+              color: fromOpen != null && fromOpen < 0 ? DOWN_TEXT : fromOpen != null && fromOpen > 0 ? UP : WHITE,
+            }}
+          >
+            {fromOpen != null ? (
+              <>
+                {fromOpen >= 0 ? "▲" : "▼"}
+                {Math.abs(fromOpen).toFixed(2)}
+                <span style={{ fontSize: 9, fontWeight: 400, color: GRAY, marginLeft: 4 }}>OPEN</span>
+              </>
+            ) : (
+              "—"
+            )}
+          </Pane>
+          <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}>
+            {gexStr}
+          </Pane>
+          {zones.flip != null ? (
+            <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GAMMA_SCENARIO }}>
+              FLIP {formatStrikeLevel(Math.round(zones.flip))}
+            </Pane>
+          ) : null}
+          <button type="button" onClick={toggleCompact} className="shrink-0 px-0.5" style={{ fontSize: 9, color: GRAY }} aria-label="Collapse glance strip">
+            −
+          </button>
         </Pane>
-        <Pane className="num flex-1 text-center truncate" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: WHITE }}>
-          {gexStr}
+      ) : (
+        <Pane className="flex items-center justify-end" style={{ minHeight: 14 }}>
+          <button type="button" onClick={toggleCompact} className="shrink-0 px-0.5" style={{ fontSize: 9, color: GRAY }} aria-label="Collapse glance strip">
+            −
+          </button>
         </Pane>
-        {zones.flip != null ? (
-          <Pane className="num shrink-0" style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 500, color: GAMMA_SCENARIO }}>
-            FLIP {formatStrikeLevel(Math.round(zones.flip))}
+      )}
+
+      <Pane
+        className="grid gap-x-1 items-end"
+        style={{
+          gridTemplateColumns: showWalls ? "1fr auto 1fr" : "1fr",
+          minHeight: 36,
+        }}
+      >
+        {showWalls ? (
+          <Pane className="num" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: PUT_WALL, lineHeight: 1 }}>
+            {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}
           </Pane>
         ) : null}
-        <button type="button" onClick={toggleCompact} className="shrink-0 px-0.5" style={{ fontSize: 9, color: GRAY }} aria-label="Collapse glance strip">
-          −
-        </button>
-      </Pane>
-
-      <Pane className="grid gap-x-1 items-end" style={{ gridTemplateColumns: "1fr auto 1fr", minHeight: 40 }}>
-        <Pane className="num" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: PUT_WALL, lineHeight: 1 }}>
-          {zones.putWall != null ? formatStrikeLevel(zones.putWall) : "—"}
-        </Pane>
-        <Pane className="text-center px-0.5">
+        <Pane className="text-center px-0.5" style={showWalls ? undefined : { gridColumn: "1 / -1" }}>
           <Pane style={{ fontSize: 8, fontWeight: 400, letterSpacing: "0.05em", color: GRAY }}>
             {symbol.replace(/^\$/, "")}
           </Pane>
           <Pane className="num" style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotColor, lineHeight: 1 }}>
-            {spotShown != null ? formatStrikeLevel(spotShown) : "—"}
+            {spotLabel}
           </Pane>
         </Pane>
-        <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: GOLD, lineHeight: 1 }}>
-          {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}
-        </Pane>
+        {showWalls ? (
+          <Pane className="num text-right" style={{ ...NUM_FEAT, fontSize: 20, fontWeight: 500, color: GOLD, lineHeight: 1 }}>
+            {zones.callWall != null ? formatStrikeLevel(zones.callWall) : "—"}
+          </Pane>
+        ) : null}
       </Pane>
 
       <MoneyRow agg={flow} />
