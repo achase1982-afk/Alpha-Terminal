@@ -237,7 +237,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
       <div data-at-glance-flow-band style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
         <div className="flex items-center justify-between gap-1" style={{ minHeight: 13, lineHeight: 1.1 }}>
-          <span style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
+          <span className="flex items-center gap-1.5 min-w-0" style={{ flex: "1 1 auto" }}>
             <span
               data-at-flow-now
               style={{ fontWeight: 600, color: AT_LABEL, fontSize: 10, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
@@ -247,12 +247,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {ladderHeatSource?.label ? (
               <span
                 data-at-ladder-heat-source
-                data-at-ladder-heat-stale={ladderHeatSource.stale ? "1" : "0"}
+                data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}
                 style={{
                   fontSize: 8,
                   fontWeight: 600,
                   letterSpacing: "0.03em",
-                  color: ladderHeatSource.stale ? GAMMA_SCENARIO : AT_SECONDARY,
+                  color: AT_SECONDARY,
                   whiteSpace: "nowrap",
                 }}
               >

@@ -200,4 +200,15 @@ export class AtLadderVolumeHeatEngine {
     if (contracts30s <= 0) return "quiet";
     return "live";
   }
+
+  /** Last ingest on the ladder heat feed (stream tick or poll body), for freshness gating. */
+  getSourceLastRxMs(): number | null {
+    return this.sourceLastRxMs;
+  }
+
+  /** True when the feed timestamp is inside the stale window (independent of cell quiet/live). */
+  isSourceFresh(nowMs: number = this.nowMs): boolean {
+    if (!this.sourceLive || this.sourceLastRxMs == null) return false;
+    return nowMs - this.sourceLastRxMs <= this.staleAfterMs;
+  }
 }

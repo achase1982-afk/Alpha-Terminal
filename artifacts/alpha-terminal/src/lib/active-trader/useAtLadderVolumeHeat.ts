@@ -17,15 +17,16 @@ export const AT_LADDER_HEAT_POLL_MS = 1_000;
 
 export type AtLadderHeatSourceMeta = {
   kind: "stream" | "poll" | "fixture" | "off";
+  /** Shown in glance header only while the feed is fresh (never when stale/unavailable). */
   label: string;
-  stale: boolean;
+  sourceFresh: boolean;
+  lastSourceRxMs: number | null;
   pollMs?: number;
 };
 
-function heatSourceLabel(meta: AtLadderHeatSourceMeta): string {
-  if (meta.stale) return "Stale · ladder heat";
-  if (meta.kind === "stream") return "Live · stream";
-  if (meta.kind === "poll") return `Live · ~${Math.round((meta.pollMs ?? AT_LADDER_HEAT_POLL_MS) / 1000)}s poll`;
+function liveBadgeLabel(kind: AtLadderHeatSourceMeta["kind"], pollMs?: number): string {
+  if (kind === "stream") return "Live · stream";
+  if (kind === "poll") return `Live · ~${Math.round((pollMs ?? AT_LADDER_HEAT_POLL_MS) / 1000)}s poll`;
   return "";
 }
 
@@ -142,16 +143,22 @@ export function useAtLadderVolumeHeat(input: {
   }, [input.streamKeys, tick]);
 
   const source: AtLadderHeatSourceMeta = useMemo(() => {
-    const stale = Object.values(heatByKey).some((c) => c.availability === "stale");
+    const engine = engineRef.current;
+    const now = Date.now();
+    engine.setNowMs(now);
+    const sourceFresh = engine.isSourceFresh(now);
+    const lastSourceRxMs = engine.getSourceLastRxMs();
+    const showLive =
+      sourceFresh && (mode === "stream" || mode === "poll" || mode === "fixture");
     const base: AtLadderHeatSourceMeta = {
       kind: mode,
-      label: "",
-      stale,
+      label: showLive ? liveBadgeLabel(mode, mode === "poll" ? AT_LADDER_HEAT_POLL_MS : undefined) : "",
+      sourceFresh,
+      lastSourceRxMs,
       pollMs: mode === "poll" ? AT_LADDER_HEAT_POLL_MS : undefined,
     };
-    base.label = heatSourceLabel(base);
     return base;
-  }, [heatByKey, mode]);
+  }, [heatByKey, mode, tick]);
 
   return { heatByKey, source };
 }

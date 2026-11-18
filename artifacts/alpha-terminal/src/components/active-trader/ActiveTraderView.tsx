@@ -972,7 +972,22 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         >
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>
-          <span className="text-center" style={{ color: WHITE, fontWeight: 600 }}>Strike</span>
+          <span className="text-center flex flex-col justify-center leading-tight" style={{ color: WHITE, fontWeight: 600 }}>
+            <span>Strike</span>
+            <span
+              data-at-ladder-heat-caption
+              style={{
+                fontSize: 6,
+                fontWeight: 500,
+                color: AT_LABEL,
+                letterSpacing: "0.02em",
+                textTransform: "none",
+                marginTop: 1,
+              }}
+            >
+              Contracts traded · last 30s
+            </span>
+          </span>
           <span className="text-right pr-1">Bid</span>
           <span className="text-right pr-1">Ask</span>
         </div>
