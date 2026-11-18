@@ -1,4 +1,5 @@
 import { midpointFromBidAsk, resolvePairedBidAsk, type PairedQuoteSource } from "./optionQuotes.js";
+import { sanitizeOptionGreek } from "./optionGreeks.js";
 
 export interface StreamOptionTick {
   bid?: number | null;
@@ -70,17 +71,33 @@ export function mergeLegStreamQuotes<
     contractAsk: leg.ask ?? undefined,
     contractTs: leg.contractTs,
   });
-  if (!pair) return leg;
+  const greek = (kind: "delta" | "gamma" | "theta" | "vega" | "iv", raw: number | null | undefined) =>
+    sanitizeOptionGreek(kind, raw ?? undefined);
+
+  if (!pair) {
+    return {
+      ...leg,
+      bid: leg.bid != null && leg.bid > 0 ? leg.bid : null,
+      ask: leg.ask != null && leg.ask > 0 ? leg.ask : null,
+      delta: greek("delta", tick?.delta ?? leg.delta) ?? null,
+      gamma: greek("gamma", tick?.gamma ?? leg.gamma) ?? null,
+      theta: greek("theta", tick?.theta ?? leg.theta) ?? null,
+      vega: greek("vega", tick?.vega ?? leg.vega) ?? null,
+      iv: greek("iv", tick?.iv ?? leg.iv) ?? null,
+    };
+  }
+  const bid = pair.crossed ? null : pair.bid > 0 ? pair.bid : null;
+  const ask = pair.crossed ? null : pair.ask > 0 ? pair.ask : null;
   return {
     ...leg,
-    bid: pair.crossed ? null : pair.bid,
-    ask: pair.crossed ? null : pair.ask,
+    bid,
+    ask,
     quoteCrossed: pair.crossed,
-    delta: tick?.delta ?? leg.delta ?? null,
-    gamma: tick?.gamma ?? leg.gamma ?? null,
-    theta: tick?.theta ?? leg.theta ?? null,
-    vega: tick?.vega ?? leg.vega ?? null,
-    iv: tick?.iv ?? leg.iv ?? null,
+    delta: greek("delta", tick?.delta ?? leg.delta) ?? null,
+    gamma: greek("gamma", tick?.gamma ?? leg.gamma) ?? null,
+    theta: greek("theta", tick?.theta ?? leg.theta) ?? null,
+    vega: greek("vega", tick?.vega ?? leg.vega) ?? null,
+    iv: greek("iv", tick?.iv ?? leg.iv) ?? null,
   };
 }
 

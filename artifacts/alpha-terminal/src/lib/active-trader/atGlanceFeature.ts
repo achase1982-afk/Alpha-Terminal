@@ -1,16 +1,7 @@
-/** Glance strip redesign (draft; desk live-flow SSE in prod). */
+/** Glance top is the default Active Trader chrome; set VITE_AT_GLANCE_TOP=0 to restore legacy KEY LEVELS. */
 export function atGlanceTopEnabled(): boolean {
-  if (import.meta.env.VITE_AT_GLANCE_TOP === "1") return true;
   if (import.meta.env.VITE_AT_GLANCE_TOP === "0") return false;
-  if (import.meta.env.DEV && typeof window !== "undefined") {
-    if (window.location.pathname.includes("/dev/active-trader")) return true;
-    try {
-      if (localStorage.getItem("at_glance_top") === "1") return true;
-    } catch {
-      /* ignore */
-    }
-  }
-  return false;
+  return true;
 }
 
 function devRoute(): boolean {

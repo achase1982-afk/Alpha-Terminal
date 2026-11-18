@@ -46,6 +46,35 @@ function pairComplete(bid?: number, ask?: number): bid is number {
   );
 }
 
+function positiveQuoteSide(v?: number | null): number | null {
+  return v != null && Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function pickSidePrice(
+  field: "streamBid" | "streamAsk" | "contractBid" | "contractAsk",
+  source: PairedQuoteSource,
+  prefer: "stream" | "contract",
+): number | null {
+  const streamKey = field.startsWith("stream") ? (field === "streamBid" ? "streamBid" : "streamAsk") : null;
+  const streamVal = positiveQuoteSide(streamKey ? source[streamKey] : undefined);
+  const contractKey = field.startsWith("contract")
+    ? field === "contractBid"
+      ? "contractBid"
+      : "contractAsk"
+    : field === "streamBid"
+      ? "contractBid"
+      : "contractAsk";
+  const contractVal = positiveQuoteSide(source[contractKey]);
+  if (streamVal != null && contractVal != null) {
+    const streamTs = source.streamTs ?? 0;
+    const contractTs = source.contractTs ?? 0;
+    if (streamTs > 0 && (contractTs <= 0 || streamTs >= contractTs)) return streamVal;
+    if (contractTs > 0 && streamTs <= contractTs) return contractVal;
+    return prefer === "stream" ? streamVal : contractVal;
+  }
+  return streamVal ?? contractVal;
+}
+
 /**
  * Bid and ask from the same source — never mix streamed and stored legs field-by-field.
  * Prefers the stream when it has a complete pair (assumed fresher when `streamTs` is set).
@@ -71,7 +100,19 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
   }
   if (streamOk) return pick(source.streamBid!, source.streamAsk!, "stream");
   if (contractOk) return pick(source.contractBid!, source.contractAsk!, "contract");
-  return null;
+
+  const bid = pickSidePrice("streamBid", source, "stream");
+  const ask = pickSidePrice("streamAsk", source, "stream");
+  if (bid == null && ask == null) return null;
+  const resolvedBid = bid ?? 0;
+  const resolvedAsk = ask ?? 0;
+  const fromStream = bid != null && positiveQuoteSide(source.streamBid) === bid;
+  return {
+    bid: resolvedBid,
+    ask: resolvedAsk,
+    source: fromStream ? "stream" : "contract",
+    crossed: bid != null && ask != null && resolvedBid > resolvedAsk,
+  };
 }
 
 export interface SpreadNBBO {

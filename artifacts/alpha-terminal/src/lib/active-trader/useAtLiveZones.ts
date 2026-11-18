@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
+import { sanitizeOptionGreek } from "@workspace/order-ticket-math";
 import {
   computeZoneModel,
   type ChainRowForZones,
@@ -36,12 +37,18 @@ export function useAtLiveZones(
     const rows: ChainRowForZones[] = chainRows.map((r) => {
       const cTick = r.call?.streamKey ? ticks[r.call.streamKey] : undefined;
       const pTick = r.put?.streamKey ? ticks[r.put.streamKey] : undefined;
+      const callGamma =
+        sanitizeOptionGreek("gamma", cTick?.gamma ?? undefined) ??
+        sanitizeOptionGreek("gamma", r.call?.gamma ?? undefined);
+      const putGamma =
+        sanitizeOptionGreek("gamma", pTick?.gamma ?? undefined) ??
+        sanitizeOptionGreek("gamma", r.put?.gamma ?? undefined);
       return {
         strike: r.strike,
         callOi: cTick?.openInterest ?? r.call?.openInterest ?? 0,
         putOi: pTick?.openInterest ?? r.put?.openInterest ?? 0,
-        callGamma: cTick?.gamma ?? r.call?.gamma ?? null,
-        putGamma: pTick?.gamma ?? r.put?.gamma ?? null,
+        callGamma: callGamma ?? null,
+        putGamma: putGamma ?? null,
       };
     });
     return computeZoneModel(rows, underlyingPrice);

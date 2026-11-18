@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { sanitizeOptionGreek } from "@workspace/order-ticket-math";
 
 export interface OptionTick {
   key: string;
@@ -36,18 +37,42 @@ function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTic
     const v = incoming[f] as number | null;
     if (v == null || Number.isNaN(v)) continue;
     switch (f) {
-      case "bid": next.bid = v; break;
-      case "ask": next.ask = v; break;
+      case "bid":
+        if (v > 0) next.bid = v;
+        break;
+      case "ask":
+        if (v > 0) next.ask = v;
+        break;
       case "last": next.last = v; break;
       case "bidSize": next.bidSize = v; break;
       case "askSize": next.askSize = v; break;
       case "volume": next.volume = v; break;
       case "openInterest": next.openInterest = v; break;
-      case "iv": next.iv = v; break;
-      case "delta": next.delta = v; break;
-      case "gamma": next.gamma = v; break;
-      case "theta": next.theta = v; break;
-      case "vega": next.vega = v; break;
+      case "iv": {
+        const iv = sanitizeOptionGreek("iv", v);
+        if (iv != null) next.iv = iv;
+        break;
+      }
+      case "delta": {
+        const d = sanitizeOptionGreek("delta", v);
+        if (d != null) next.delta = d;
+        break;
+      }
+      case "gamma": {
+        const g = sanitizeOptionGreek("gamma", v);
+        if (g != null) next.gamma = g;
+        break;
+      }
+      case "theta": {
+        const t = sanitizeOptionGreek("theta", v);
+        if (t != null) next.theta = t;
+        break;
+      }
+      case "vega": {
+        const ve = sanitizeOptionGreek("vega", v);
+        if (ve != null) next.vega = ve;
+        break;
+      }
       case "mark": next.mark = v; break;
       case "change": next.change = v; break;
       case "lastSize": next.lastSize = v; break;

@@ -13,8 +13,11 @@ import {
   inferSchwabComplexOrderStrategyType,
   midpointFromBidAsk,
   chainLegHydrateKey,
+  quoteSideState,
+  formatNetGreekDisplay,
   type LimitTickContext,
 } from "@workspace/order-ticket-math";
+import { AT_SHEET_FULL_VH, AT_SHEET_PEEK_VH } from "@/lib/active-trader/atSheetLayout";
 import {
   resolveChainLegInstructions,
   type SchwabAccountRow,
@@ -90,6 +93,9 @@ export interface OptionsChainOrderSheetProps {
     | ((ctx: { limitPerShare: number | null; isCredit: boolean; legCount: number }) => React.ReactNode);
   /** Show preview send label instead of live Schwab send. */
   sendPreviewOnly?: boolean;
+  /** Compact peek height (~38vh) vs full sheet (~58vh). */
+  sheetPeek?: boolean;
+  onSheetPeekChange?: (peek: boolean) => void;
 }
 
 export function OptionsChainOrderSheet({
@@ -104,6 +110,8 @@ export function OptionsChainOrderSheet({
   openReviewOnMount,
   extrasAfterLimit,
   sendPreviewOnly,
+  sheetPeek = true,
+  onSheetPeekChange,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const underlyingSpot = useTerminalStore((s) => {
@@ -250,11 +258,22 @@ export function OptionsChainOrderSheet({
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
   const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
 
+  const allLegsQuoted = useMemo(
+    () => pricedLegs.length > 0 && pricedLegs.every((l) => quoteSideState(l.bid, l.ask) === "ok"),
+    [pricedLegs],
+  );
+
   useEffect(() => {
-    if (legs.length === 0 || stage !== "form" || spreadPrices?.spreadMid == null) return;
+    if (legs.length === 0 || stage !== "form") return;
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
+      if (!limitUserEditedRef.current && !allLegsQuoted) {
+        setLimitPrice("");
+      }
+    }
+    if (!allLegsQuoted || spreadPrices?.spreadMid == null) return;
+    if (keyChanged) {
       if (!limitUserEditedRef.current) {
         setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
       }
@@ -263,7 +282,7 @@ export function OptionsChainOrderSheet({
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice]);
+  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -400,9 +419,7 @@ export function OptionsChainOrderSheet({
 
   if (legs.length === 0) return null;
 
-  const sheetHeight = collapsed
-    ? 52
-    : "min(58vh, calc(100dvh - 168px - env(safe-area-inset-bottom, 0px)))";
+  const sheetHeight = collapsed ? 52 : sheetPeek ? AT_SHEET_PEEK_VH : AT_SHEET_FULL_VH;
 
   return (
     <div
@@ -436,6 +453,16 @@ export function OptionsChainOrderSheet({
           </span>
         </div>
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+          {!collapsed && onSheetPeekChange ? (
+            <button
+              type="button"
+              className="text-[9px] px-1.5 py-0.5 tracking-wider"
+              style={{ color: GRAY, border: `1px solid ${BORDER}`, borderRadius: 6 }}
+              onClick={() => onSheetPeekChange(!sheetPeek)}
+            >
+              {sheetPeek ? "Expand" : "Peek"}
+            </button>
+          ) : null}
           {summary?.spreadMid != null && (
             <span className="text-[11px] tabular-nums" style={{ color: WHITE }}>
               Mid {fmt(summary.spreadMid)}
@@ -507,10 +534,10 @@ export function OptionsChainOrderSheet({
                 className="flex flex-wrap gap-x-3 gap-y-1 py-2 text-[13px]"
                 style={{ borderBottom: `1px dashed ${DIVIDER}`, color: GRAY }}
               >
-                <span style={VALUE_STYLE}>Δ {fmt(summary?.netDelta, 1)}</span>
-                <span style={VALUE_STYLE}>Γ {fmt(summary?.netGamma, 2)}</span>
-                <span style={VALUE_STYLE}>Θ {fmt(summary?.netTheta, 2)}</span>
-                <span style={VALUE_STYLE}>V {fmt(summary?.netVega, 2)}</span>
+                <span style={VALUE_STYLE}>Δ {formatNetGreekDisplay(summary?.netDelta, 1) ?? "—"}</span>
+                <span style={VALUE_STYLE}>Γ {formatNetGreekDisplay(summary?.netGamma, 2) ?? "—"}</span>
+                <span style={VALUE_STYLE}>Θ {formatNetGreekDisplay(summary?.netTheta, 2) ?? "—"}</span>
+                <span style={VALUE_STYLE}>V {formatNetGreekDisplay(summary?.netVega, 2) ?? "—"}</span>
                 {summary?.pop != null && (
                   <span style={VALUE_STYLE}>POP {summary.pop.toFixed(0)}%</span>
                 )}
@@ -525,6 +552,7 @@ export function OptionsChainOrderSheet({
                 {pricedLegs.map((leg) => {
                   const isBuy = leg.direction.startsWith("BUY");
                   const mid = midpointFromBidAsk(leg.bid, leg.ask);
+                  const quoteOk = quoteSideState(leg.bid, leg.ask) === "ok";
                   const typeLabel = leg.optionType === "CALL" ? "Call" : "Put";
                   return (
                     <div
@@ -538,9 +566,10 @@ export function OptionsChainOrderSheet({
                       <span className="flex-1 min-w-0 text-[13px] tabular-nums truncate" style={{ color: WHITE }}>
                         {leg.strike} {typeLabel}
                       </span>
-                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: MUTED }}>
-                        {leg.bid != null ? fmt(leg.bid) : "—"} / {leg.ask != null ? fmt(leg.ask) : "—"}
-                        {mid != null ? ` · ${fmt(mid)}` : ""}
+                      <span className="text-[11px] tabular-nums shrink-0" style={{ color: quoteOk ? MUTED : DOWN }}>
+                        {quoteOk
+                          ? `${leg.bid != null && leg.bid > 0 ? fmt(leg.bid) : "—"} / ${leg.ask != null && leg.ask > 0 ? fmt(leg.ask) : "—"}${mid != null ? ` · ${fmt(mid)}` : ""}`
+                          : "No quote"}
                       </span>
                       <LegQtyStepper
                         qty={leg.quantity}
@@ -955,7 +984,20 @@ function LegQtyStepper({ qty, onChange }: { qty: number; onChange: (q: number) =
 export function legsFromChainSelection(
   entries: Array<{
     key: string;
-    contract: { strike: number; expiration: string; schwabSymbol?: string; streamKey?: string; bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number };
+    contract: {
+      strike: number;
+      expiration: string;
+      schwabSymbol?: string;
+      streamKey?: string;
+      bid?: number;
+      ask?: number;
+      delta?: number;
+      gamma?: number;
+      theta?: number;
+      vega?: number;
+      iv?: number;
+      contractTs?: number;
+    };
     type: "CALL" | "PUT";
     side: "bid" | "ask";
     quantity?: number;
@@ -990,6 +1032,7 @@ export function legsFromChainSelection(
       vega: l.contract.vega,
       iv: l.contract.iv,
       schwabSymbol,
+      contractTs: l.contract.contractTs,
     };
     for (const [idx, slice] of slices.entries()) {
       rows.push({
