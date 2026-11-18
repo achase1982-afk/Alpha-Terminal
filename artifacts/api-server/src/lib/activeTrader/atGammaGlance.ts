@@ -6,6 +6,7 @@ import {
 } from "../desk/addons/unusualWhales/deskUwGamma.js";
 import { deskSessionDateEt } from "../desk/deskEt.js";
 import { priorNyTradingSessionYmd } from "../getMarketContext.js";
+import { NYSE_EARLY_CLOSE_2026 } from "../nyseCalendar2026.js";
 import { refreshDeskUwLiveFeeds } from "../desk/addons/unusualWhales/deskUwLiveFeeds.js";
 import { computeZonesFromUwGamma0dte } from "@workspace/order-ticket-math";
 
@@ -33,6 +34,12 @@ function formatEtTimeShort(ms: number): string {
     timeZone: "America/New_York",
     hour12: true,
   });
+}
+
+/** Display label for last regular 0DTE snapshot when the cash session is closed. */
+function closedSessionAsOfLabel(expiryYmd: string): string {
+  const early = NYSE_EARLY_CLOSE_2026.includes(expiryYmd);
+  return early ? "1:00 PM" : "4:15 PM";
 }
 
 export function resetAtGammaGlanceCacheForTests(): void {
@@ -107,7 +114,8 @@ export async function buildAtGammaGlancePayload(tickerRaw: string): Promise<AtGa
 
   const rows = deskUwExtractRows(snap0.data);
   const asOfMs = snap0.asOfMs;
-  const asOfEt = formatEtTimeShort(asOfMs);
+  const expiryYmd = snap0.expiry ?? sessionDate;
+  const asOfEt = sessionClosed ? closedSessionAsOfLabel(expiryYmd) : formatEtTimeShort(asOfMs);
   const zones = computeZonesFromUwGamma0dte(rows, { spot: null, asOfLabel: asOfEt });
   const glanceCaption = sessionClosed ? `Closed \u00b7 as of ${asOfEt}` : undefined;
   const payload: AtGammaGlancePayload = {
