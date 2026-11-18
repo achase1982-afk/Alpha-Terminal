@@ -2,8 +2,9 @@ import { memo, useRef } from "react";
 import { DOWN_TEXT, GOLD, PUT_WALL, UP } from "@/components/options/optionsTheme";
 import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import type { DeskNetPremiumGlance } from "@/lib/active-trader/deskFlowNetPremium";
-import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
+import type { ZoneModel } from "@/lib/active-trader/zonesModel";
+import { resolveCallWallDisplay, resolvePutWallDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 
 const TRACK_H = 15;
 const SIDE_COL_W = 30;
@@ -31,7 +32,7 @@ function GrossFlowTrack({
   boughtUsd,
   sharedScale,
   wallLabel,
-  wallValue,
+  wallText,
   wallColor,
   dashAmounts,
 }: {
@@ -40,15 +41,13 @@ function GrossFlowTrack({
   boughtUsd: number;
   sharedScale: number;
   wallLabel: string;
-  wallValue: number | null | undefined;
+  wallText: string;
   wallColor: string;
   dashAmounts: boolean;
 }) {
   const sellFill = grossBarFill(soldUsd, sharedScale);
   const buyFill = grossBarFill(boughtUsd, sharedScale);
   const sideTag = side === "calls" ? "CALL" : "PUT";
-
-  const wallStrike = wallValue != null ? formatStrikeLevel(wallValue) : "\u2014";
 
   return (
     <div data-at-gross-flow-row={side} className="flex items-center min-w-0" style={{ height: TRACK_H, gap: 4 }}>
@@ -121,10 +120,10 @@ function GrossFlowTrack({
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
-        title={`${wallLabel} ${wallStrike}`}
+        title={`${wallLabel} ${wallText}`}
       >
         <span style={{ fontWeight: 600, color: AT_LABEL }}>{wallLabel} </span>
-        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>{wallStrike}</span>
+        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>{wallText}</span>
       </div>
     </div>
   );
@@ -132,8 +131,7 @@ function GrossFlowTrack({
 
 export type AtGlanceGrossFlowProps = {
   glance: DeskNetPremiumGlance;
-  callWall?: number | null;
-  putWall?: number | null;
+  zones: ZoneModel;
   /** When market is closed, keep rows but dash sold/bought amounts. */
   forceDashAmounts?: boolean;
   onOpenDetail?: () => void;
@@ -141,11 +139,12 @@ export type AtGlanceGrossFlowProps = {
 
 export const AtGlanceGrossFlow = memo(function AtGlanceGrossFlow({
   glance,
-  callWall,
-  putWall,
+  zones,
   forceDashAmounts,
   onOpenDetail,
 }: AtGlanceGrossFlowProps) {
+  const callWallCol = resolveCallWallDisplay(zones);
+  const putWallCol = resolvePutWallDisplay(zones);
   const scaleRef = useRef(SCALE_FLOOR);
 
   const shell =
@@ -195,8 +194,8 @@ export const AtGlanceGrossFlow = memo(function AtGlanceGrossFlow({
           soldUsd={soldC}
           boughtUsd={buyC}
           sharedScale={sharedScale}
-          wallLabel="Call wall"
-          wallValue={callWall}
+          wallLabel={callWallCol.label}
+          wallText={callWallCol.value}
           wallColor={GOLD}
           dashAmounts={shell}
         />
@@ -205,8 +204,8 @@ export const AtGlanceGrossFlow = memo(function AtGlanceGrossFlow({
           soldUsd={soldP}
           boughtUsd={buyP}
           sharedScale={sharedScale}
-          wallLabel="Put wall"
-          wallValue={putWall}
+          wallLabel={putWallCol.label}
+          wallText={putWallCol.value}
           wallColor={PUT_WALL}
           dashAmounts={shell}
         />

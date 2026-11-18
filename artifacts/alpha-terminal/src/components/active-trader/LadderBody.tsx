@@ -7,6 +7,7 @@ import {
 import { useOptionTick } from "@/lib/options-stream-store";
 import type { FlowLaneCounts } from "@/lib/active-trader/flowClassifier";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
+import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
   AT_LADDER_GRID,
   AT_LADDER_PANEL_BG,
@@ -270,8 +271,7 @@ const LadderRowView = memo(function LadderRowView({
 
   const spotRow =
     underlyingPrice != null && Math.abs(row.strike - underlyingPrice) < Math.max(underlyingPrice * 0.0005, 0.05);
-  const isCallWall = zones.callWall != null && Math.abs(row.strike - zones.callWall) < 0.001;
-  const isPutWall = zones.putWall != null && Math.abs(row.strike - zones.putWall) < 0.001;
+  const zoneTag = ladderStrikeZoneTag(zones, row.strike);
 
   const strikePositionQty = (() => {
     const keys = [row.call?.streamKey, row.put?.streamKey].filter(Boolean) as string[];
@@ -315,7 +315,22 @@ const LadderRowView = memo(function LadderRowView({
     borderBottom: `1px solid ${BORDER_ROW}`,
     fontFamily: MONO,
     position: "relative",
-    background: keepawayForbidden ? "rgba(255,255,255,0.045)" : AT_LADDER_PANEL_BG,
+    background: spotRow
+      ? `linear-gradient(180deg, ${accentHex}18 0%, ${accentHex}08 100%)`
+      : keepawayForbidden
+        ? "rgba(255,255,255,0.045)"
+        : isSelected
+          ? "rgba(251,191,36,0.12)"
+          : AT_LADDER_PANEL_BG,
+    boxShadow:
+      zoneTag === "CALL WALL"
+        ? `inset 4px 0 0 ${UP}`
+        : zoneTag === "PUT WALL"
+          ? `inset 4px 0 0 ${DOWN}`
+          : isSelected
+            ? `inset 0 0 0 1px ${accentHex}55`
+            : undefined,
+    borderTop: spotRow ? `1px solid ${accentHex}55` : undefined,
   };
 
   const putKey = row.put ? atLadderLegKey(row.put, "PUT") : null;
@@ -430,9 +445,12 @@ const LadderRowView = memo(function LadderRowView({
               {Math.abs(strikePositionQty)}
             </span>
           )}
-          {isCallWall && <span style={{ fontSize: 7, opacity: 0.65 }}>CALL WALL</span>}
-          {isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>PUT WALL</span>}
-          {spotRow && !isCallWall && !isPutWall && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}
+          {zoneTag ? (
+            <span data-at-strike-zone-tag style={{ fontSize: 7, opacity: 0.65 }}>
+              {zoneTag}
+            </span>
+          ) : null}
+          {spotRow && !zoneTag && <span style={{ fontSize: 7, opacity: 0.65 }}>{symbolLabel}</span>}
         </div>
         <QuoteCell
           price={putBidPx}
