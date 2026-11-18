@@ -93,13 +93,13 @@ try {
   });
   record("toggle tap target ≥44px", tap.w >= 44 && tap.h >= 44, `${tap.w?.toFixed?.(0) ?? 0}×${tap.h?.toFixed?.(0) ?? 0}`);
 
-  const noBlackPill = await page.evaluate(() => {
+  const jetBlackTrack = await page.evaluate(() => {
     const el = document.querySelector("[data-at-subview-toggle]");
     if (!el) return false;
     const bg = getComputedStyle(el).backgroundColor;
-    return !/rgb\(12,\s*12,\s*12\)/.test(bg);
+    return bg === "rgb(0, 0, 0)";
   });
-  record("AT toggle not black pill", noBlackPill, noBlackPill ? "charcoal/gray" : "black");
+  record("toggle jet-black track", jetBlackTrack, jetBlackTrack ? "rgb(0,0,0)" : "not jet black");
 
   const metricRow = await page.evaluate(() => {
     const caption = document.querySelector("[data-at-ladder-heat-caption]");

@@ -12,7 +12,9 @@ describe("OptionsSubViewToggle", () => {
     const { container } = render(<OptionsSubViewToggle view="chain" onChange={vi.fn()} />);
     const toggle = screen.getByRole("switch", { name: "Options view" });
     const box = toggle as HTMLButtonElement;
-    expect(box.style.minHeight).toBe("44px");
+    expect(box.style.minHeight).toBe("30px");
+    const chrome = container.querySelector("[data-at-subview-chrome]") as HTMLElement;
+    expect(chrome.style.minHeight).toBe("44px");
     expect(container.querySelector('[data-at-subview-segment="chain"]')?.textContent).toBe("Chain");
     expect(container.querySelector('[data-at-subview-segment="at"]')?.textContent).toBe("AT");
     expect(container.querySelector("svg")).toBeNull();

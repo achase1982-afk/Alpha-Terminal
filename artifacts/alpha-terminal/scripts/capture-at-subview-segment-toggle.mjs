@@ -9,7 +9,7 @@ import { AT_FIXTURE_BASE, ensureAtFixtureVite, waitForLiveLadder } from "./lib/a
 
 const OUT = process.env.AT_VERIFY_OUT ?? "/opt/cursor/artifacts/at-subview-segment-toggle";
 const LIVE = process.env.AT_VERIFY_LIVE;
-const FIXTURE = `${new URL(AT_FIXTURE_BASE).origin}/dev/chain-order-sheet?scene=1-leg`;
+const FIXTURE = `${AT_FIXTURE_BASE}?fixture=spx&scene=chain`;
 const TARGET = LIVE ?? FIXTURE;
 
 await mkdir(OUT, { recursive: true });
@@ -19,17 +19,25 @@ if (!LIVE) {
 }
 
 const browser = await webkit.launch();
-const page = await (await browser.newContext({
+const context = await browser.newContext({
   viewport: { width: 440, height: 956 },
   deviceScaleFactor: 3,
-})).newPage();
-await installSafeAreaInsets(page);
+  isMobile: true,
+  hasTouch: true,
+});
+const page = await context.newPage();
+await installSafeAreaInsets(page, 62, 34);
 
 await page.goto(TARGET, { waitUntil: "domcontentloaded", timeout: 120_000 });
-await page.waitForSelector("[data-at-subview-toggle]", { timeout: 90_000 });
+await page.waitForTimeout(LIVE ? 800 : 2000);
+if (LIVE) {
+  await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await page.waitForTimeout(500);
+}
+await page.waitForSelector("[data-at-subview-toggle]", { timeout: 90_000, state: "visible" });
 await page.waitForTimeout(400);
 
-if (TARGET.includes("127.0.0.1:5173") && !TARGET.includes("/dev/active-trader")) {
+if (TARGET.includes("127.0.0.1:5173") && TARGET.includes("/dev/chain-order-sheet")) {
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 }).catch(() => undefined);
   await page.waitForSelector("[data-at-subview-toggle]", { timeout: 60_000 });
 }

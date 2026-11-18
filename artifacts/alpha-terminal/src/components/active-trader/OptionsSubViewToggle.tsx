@@ -1,5 +1,5 @@
 import { memo, useCallback, useRef } from "react";
-import { BORDER, GRAY, MONO, FW_NORMAL, GOLD } from "@/components/options/optionsTheme";
+import { GRAY, MONO, FW_NORMAL, GOLD } from "@/components/options/optionsTheme";
 
 export type OptionsSubView = "chain" | "at";
 
@@ -14,8 +14,12 @@ interface OptionsSubViewToggleProps {
 
 const MIN_TAP = 44;
 const SWIPE_PX = 28;
+/** Slim iOS track height inside the 44px tap target (matches prior dropdown vertical slot). */
+const TRACK_H_PX = 30;
 /** Fixed width keeps Chain ↔ AT switch from shifting header layout (440px WebKit). */
-const TRACK_W_PX = 136;
+const TRACK_W_PX = 112;
+const TRACK_INSET_PX = 2;
+const PILL_ON_LABEL = "#0a0a0a";
 
 export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
   view,
@@ -80,33 +84,35 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
         onPointerDown={onPointerDown}
         onPointerUp={onPointerUp}
         onClick={onClick}
-        className="relative inline-flex items-stretch rounded-md border cursor-pointer select-none overflow-hidden"
+        className="relative inline-flex items-stretch rounded-full cursor-pointer select-none overflow-hidden"
         style={{
           fontFamily: MONO,
           fontWeight: FW_NORMAL,
           background: "#000000",
-          borderColor: BORDER,
-          minHeight: MIN_TAP,
+          border: "none",
+          height: TRACK_H_PX,
+          minHeight: TRACK_H_PX,
           minWidth: MIN_TAP,
           width: TRACK_W_PX,
-          padding: 2,
+          padding: TRACK_INSET_PX,
           boxSizing: "border-box",
           touchAction: "pan-y",
+          boxShadow: "none",
         }}
       >
         <span
           aria-hidden
-          className="pointer-events-none absolute rounded-[5px]"
+          className="pointer-events-none absolute rounded-full"
           style={{
-            top: 2,
-            bottom: 2,
-            width: "calc(50% - 2px)",
-            left: 2,
-            transform: atActive ? "translateX(calc(100% + 0px))" : "translateX(0)",
-            transition: "transform 150ms ease-out",
-            background: `${accentHex}1f`,
-            border: `1px solid ${accentHex}66`,
-            boxShadow: atActive ? `0 0 10px ${accentHex}22` : "none",
+            top: TRACK_INSET_PX,
+            bottom: TRACK_INSET_PX,
+            width: `calc(50% - ${TRACK_INSET_PX}px)`,
+            left: TRACK_INSET_PX,
+            transform: atActive ? "translateX(calc(100%))" : "translateX(0)",
+            transition: "transform 180ms cubic-bezier(0.33, 1, 0.68, 1)",
+            background: accentHex,
+            border: "none",
+            boxShadow: "none",
           }}
         />
         <span
@@ -115,9 +121,10 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: !atActive ? accentHex : GRAY,
-            minHeight: MIN_TAP - 4,
+            color: !atActive ? PILL_ON_LABEL : GRAY,
+            minHeight: TRACK_H_PX - TRACK_INSET_PX * 2,
             letterSpacing: "0.02em",
+            transition: "color 180ms ease-out",
           }}
         >
           Chain
@@ -128,9 +135,10 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           style={{
             fontSize: 11,
             fontWeight: 600,
-            color: atActive ? accentHex : GRAY,
-            minHeight: MIN_TAP - 4,
+            color: atActive ? PILL_ON_LABEL : GRAY,
+            minHeight: TRACK_H_PX - TRACK_INSET_PX * 2,
             letterSpacing: "0.02em",
+            transition: "color 180ms ease-out",
           }}
         >
           AT
