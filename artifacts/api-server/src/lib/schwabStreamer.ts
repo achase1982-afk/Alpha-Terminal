@@ -53,6 +53,12 @@ import {
   setFuturesActiveSymbolForRoot,
 } from "./futuresFrontMonth.js";
 import {
+  clearClassShareDisplayRegistry,
+  getClassShareDisplaysForKey,
+  registerClassShareDisplayFromCaller,
+} from "./classShareDisplayRegistry.js";
+import { classShareSchwabStreamKey, isClassShareSymbol } from "./classShareSymbology.js";
+import {
   streamerWireSimulatorApplyPayload,
   streamerWireSimulatorDeskLevelOneKeysOnWire,
   streamerWireSimulatorLiveLevelOneOptionsCount,
@@ -238,6 +244,19 @@ const SCHWAB_INDEX_NORM: Record<string, string> = {
 export function normalizeEquityKey(sym: string): string {
   const upper = sym.toUpperCase();
   return SCHWAB_INDEX_NORM[upper] ?? upper;
+}
+
+export function equityStreamKeyFromCaller(callerOrWire: string): string {
+  const upper = callerOrWire.toUpperCase().trim();
+  const indexed = normalizeEquityKey(upper);
+  if (isClassShareSymbol(indexed)) return classShareSchwabStreamKey(indexed);
+  return indexed;
+}
+
+function prepareEquitySubscribeFromCaller(callerSymbol: string): string {
+  const upper = callerSymbol.toUpperCase().trim();
+  registerClassShareDisplayFromCaller(upper);
+  return equityStreamKeyFromCaller(upper);
 }
 
 function numOrNull(val: unknown): number | null {
@@ -836,6 +855,15 @@ export function getQuoteBySymbol(symbol: string): LiveQuote | undefined {
   const upper = symbol.toUpperCase().trim();
   const direct = quoteCache.get(upper);
   if (direct) return direct;
+  if (isClassShareSymbol(upper)) {
+    const streamKey = classShareSchwabStreamKey(upper);
+    const viaStream = quoteCache.get(streamKey);
+    if (viaStream) return { ...viaStream, symbol: upper };
+    for (const d of getClassShareDisplaysForKey(streamKey)) {
+      const cached = quoteCache.get(d);
+      if (cached) return { ...cached, symbol: upper };
+    }
+  }
   if (!upper.startsWith("/")) return undefined;
   if (isSchwabFuturesContractSymbol(upper)) {
     const mapped = getFuturesDisplaysForKey(upper);
@@ -1235,13 +1263,13 @@ function sendDeskTimesaleFuturesUnsubs(wireKeys: string[]): void {
 
 /** Returns true when this module performed the ADD (caller should release). */
 export function deskFlowStreamerEnsureEquityL1(sym: string): boolean {
-  const n = normalizeEquityKey(sym);
-  const appHas = subscribedSymbols.has(n);
-  const first = deskOwnerHold(deskEquityL1Owners, n, "live_flow");
+  const wire = prepareEquitySubscribeFromCaller(sym);
+  const appHas = subscribedSymbols.has(wire);
+  const first = deskOwnerHold(deskEquityL1Owners, wire, "live_flow");
   if (first && !appHas) {
-    if (!deskAddedEquitySymbols.has(n)) {
-      deskAddedEquitySymbols.add(n);
-      if (connectionState === "connected") batchDeskAdd(sendDeskEquityAdd, [n]);
+    if (!deskAddedEquitySymbols.has(wire)) {
+      deskAddedEquitySymbols.add(wire);
+      if (connectionState === "connected") batchDeskAdd(sendDeskEquityAdd, [wire]);
     }
     return true;
   }
@@ -1249,32 +1277,32 @@ export function deskFlowStreamerEnsureEquityL1(sym: string): boolean {
 }
 
 export function deskFlowStreamerReleaseEquityL1(sym: string): void {
-  const n = normalizeEquityKey(sym);
-  const last = deskOwnerRelease(deskEquityL1Owners, n, "live_flow");
-  if (!last || deskEquityL1Owners.has(n)) return;
-  deskAddedEquitySymbols.delete(n);
-  if (!subscribedSymbols.has(n) && connectionState === "connected") {
-    sendDeskEquityUnsubs([n]);
+  const wire = equityStreamKeyFromCaller(sym);
+  const last = deskOwnerRelease(deskEquityL1Owners, wire, "live_flow");
+  if (!last || deskEquityL1Owners.has(wire)) return;
+  deskAddedEquitySymbols.delete(wire);
+  if (!subscribedSymbols.has(wire) && connectionState === "connected") {
+    sendDeskEquityUnsubs([wire]);
   }
 }
 
 export function deskFlowStreamerEnsureTimesaleEquity(sym: string): boolean {
-  const n = normalizeEquityKey(sym);
-  const appHas = subscribedTimesaleEquitySymbols.has(n);
-  const first = deskOwnerHold(deskTimesaleEquityOwners, n, "live_flow");
+  const wire = prepareEquitySubscribeFromCaller(sym);
+  const appHas = subscribedTimesaleEquitySymbols.has(wire);
+  const first = deskOwnerHold(deskTimesaleEquityOwners, wire, "live_flow");
   if (first && !appHas && connectionState === "connected") {
-    sendDeskTimesaleEquityAdd([n]);
+    sendDeskTimesaleEquityAdd([wire]);
     return true;
   }
   return false;
 }
 
 export function deskFlowStreamerReleaseTimesaleEquity(sym: string): void {
-  const n = normalizeEquityKey(sym);
-  const last = deskOwnerRelease(deskTimesaleEquityOwners, n, "live_flow");
-  if (!last || deskTimesaleEquityOwners.has(n)) return;
-  if (!subscribedTimesaleEquitySymbols.has(n) && connectionState === "connected") {
-    sendDeskTimesaleEquityUnsubs([n]);
+  const wire = equityStreamKeyFromCaller(sym);
+  const last = deskOwnerRelease(deskTimesaleEquityOwners, wire, "live_flow");
+  if (!last || deskTimesaleEquityOwners.has(wire)) return;
+  if (!subscribedTimesaleEquitySymbols.has(wire) && connectionState === "connected") {
+    sendDeskTimesaleEquityUnsubs([wire]);
   }
 }
 
@@ -1423,7 +1451,7 @@ function batchDeskAdd(send: (batch: string[]) => void, all: string[]): void {
 export function deskStreamerAddEquity(symbols: string[]): number {
   const added: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = prepareEquitySubscribeFromCaller(s);
     const first = deskOwnerHold(deskEquityL1Owners, normalized, "tape_universe");
     if (first && !deskAddedEquitySymbols.has(normalized)) {
       deskAddedEquitySymbols.add(normalized);
@@ -1842,9 +1870,13 @@ function processEquityTick(content: Record<string, unknown>[]) {
   for (const item of content) {
     const rawKey = item["key"] as string;
     if (!rawKey) continue;
-    const symbol = normalizeEquityKey(rawKey);
+    const streamKey = normalizeEquityKey(rawKey);
 
-    const existing = quoteCache.get(symbol);
+    const mappedDisplays = getClassShareDisplaysForKey(streamKey);
+    const displayTargets =
+      mappedDisplays.size > 0 ? [...mappedDisplays] : [streamKey];
+
+    const existing = quoteCache.get(displayTargets[0]!) ?? quoteCache.get(streamKey);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
     const regularLast = numOrNull(item["29"]) ?? existing?.regularLast ?? null;
     const close = numOrNull(item["12"]) ?? existing?.close ?? null;
@@ -1859,8 +1891,8 @@ function processEquityTick(content: Record<string, unknown>[]) {
       changePct = (change / close) * 100;
     }
 
-    const quote: LiveQuote = {
-      symbol,
+    const baseQuote: LiveQuote = {
+      symbol: streamKey,
       last,
       regularLast,
       extendedLast: last,
@@ -1878,9 +1910,15 @@ function processEquityTick(content: Record<string, unknown>[]) {
       quoteSource: "SCHWAB",
     };
 
-    quoteCache.set(symbol, quote);
-    broadcast("quote", quote);
-    deskLiveFlowTapeOnEquityL1(symbol, item, now);
+    if (streamKey !== displayTargets[0]) {
+      quoteCache.set(streamKey, baseQuote);
+    }
+    for (const displaySymbol of displayTargets) {
+      const quote: LiveQuote = { ...baseQuote, symbol: displaySymbol };
+      quoteCache.set(displaySymbol, quote);
+      broadcast("quote", quote);
+    }
+    deskLiveFlowTapeOnEquityL1(streamKey, item, now);
   }
 }
 
@@ -2705,7 +2743,9 @@ async function connectSchwabStreamer() {
 
 export async function startStreamer(_token?: string, symbols?: string[]): Promise<void> {
   if (symbols?.length) {
-    for (const s of symbols) subscribedSymbols.add(normalizeEquityKey(s));
+    for (const s of symbols) {
+      subscribedSymbols.add(prepareEquitySubscribeFromCaller(s));
+    }
   }
 
   if (!getValidAccessToken("trader")) {
@@ -2772,6 +2812,7 @@ export function stopStreamer() {
   deskAddedOptionsBookSymbols.clear();
   clearFuturesDisplayRegistry();
   clearFuturesActiveSymbolCache();
+  clearClassShareDisplayRegistry();
   deskEquityL1Owners.clear();
   deskTimesaleEquityOwners.clear();
   deskFuturesL1WireOwners.clear();
@@ -2785,7 +2826,7 @@ export function stopStreamer() {
 export function addSymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = prepareEquitySubscribeFromCaller(s);
     if (!subscribedSymbols.has(normalized)) {
       subscribedSymbols.add(normalized);
       newSyms.push(normalized);
@@ -2934,7 +2975,7 @@ export function addFuturesOptionSymbols(symbols: string[]) {
 export function addTimesaleEquitySymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = equityStreamKeyFromCaller(s);
     if (!subscribedTimesaleEquitySymbols.has(normalized)) {
       subscribedTimesaleEquitySymbols.add(normalized);
       newSyms.push(normalized);
@@ -2949,7 +2990,7 @@ export function addTimesaleEquitySymbols(symbols: string[]) {
 export function addChartEquitySymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = equityStreamKeyFromCaller(s);
     if (!subscribedChartEquitySymbols.has(normalized)) {
       subscribedChartEquitySymbols.add(normalized);
       newSyms.push(normalized);
@@ -2963,7 +3004,7 @@ export function addChartEquitySymbols(symbols: string[]) {
 export function addNyseBookSymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = equityStreamKeyFromCaller(s);
     if (!subscribedNyseBookSymbols.has(normalized)) {
       subscribedNyseBookSymbols.add(normalized);
       newSyms.push(normalized);
@@ -2977,7 +3018,7 @@ export function addNyseBookSymbols(symbols: string[]) {
 export function addNasdaqBookSymbols(symbols: string[]) {
   const newSyms: string[] = [];
   for (const s of symbols) {
-    const normalized = normalizeEquityKey(s);
+    const normalized = equityStreamKeyFromCaller(s);
     if (!subscribedNasdaqBookSymbols.has(normalized)) {
       subscribedNasdaqBookSymbols.add(normalized);
       newSyms.push(normalized);
@@ -3027,6 +3068,7 @@ export function __deskStreamerWireTestUnprime(): void {
 export function __schwabFuturesStreamerTestReset(): void {
   clearFuturesDisplayRegistry();
   clearFuturesActiveSymbolCache();
+  clearClassShareDisplayRegistry();
   for (const key of [...quoteCache.keys()]) {
     if (key.startsWith("/")) quoteCache.delete(key);
   }
@@ -3034,6 +3076,17 @@ export function __schwabFuturesStreamerTestReset(): void {
 
 export function __schwabFuturesProcessTickForTests(content: Record<string, unknown>[]): void {
   processFuturesTick(content);
+}
+
+export function __schwabClassShareTestReset(): void {
+  clearClassShareDisplayRegistry();
+  for (const key of [...quoteCache.keys()]) {
+    if (isClassShareSymbol(key)) quoteCache.delete(key);
+  }
+}
+
+export function __schwabEquityProcessTickForTests(content: Record<string, unknown>[]): void {
+  processEquityTick(content);
 }
 
 registerDeskStreamerHealthReaders(getStreamerStatus, isConnected);

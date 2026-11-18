@@ -1,3 +1,4 @@
+import { classShareSchwabStreamKey, isClassShareSymbol } from "../classShareSymbology.js";
 import { schwabFuturesKey } from "../schwabStreamer.js";
 
 const INDEX_SYMBOL_MAP: Record<string, string> = {
@@ -19,7 +20,9 @@ export function deskFormatSchwabSymbol(symbol: string): string {
   if (upper.endsWith(".X") && upper.startsWith("$")) {
     upper = upper.slice(0, -2);
   }
-  return INDEX_SYMBOL_MAP[upper] ?? upper;
+  const mapped = INDEX_SYMBOL_MAP[upper] ?? upper;
+  if (isClassShareSymbol(mapped)) return classShareSchwabStreamKey(mapped);
+  return mapped;
 }
 
 export function deskIsIndex(symbol: string): boolean {

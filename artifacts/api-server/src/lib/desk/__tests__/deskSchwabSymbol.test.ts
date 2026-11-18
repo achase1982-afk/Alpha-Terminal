@@ -14,4 +14,10 @@ describe("deskFormatSchwabSymbol futures roots", () => {
   it("passes futures contracts through unchanged", () => {
     expect(deskFormatSchwabSymbol("/ESZ26")).toBe("/ESZ26");
   });
+
+  it("maps class shares to Schwab slash symbology", () => {
+    expect(deskFormatSchwabSymbol("BRK.B")).toBe("BRK/B");
+    expect(deskFormatSchwabSymbol("BRK/B")).toBe("BRK/B");
+    expect(deskFormatSchwabSymbol("BF.B")).toBe("BF/B");
+  });
 });

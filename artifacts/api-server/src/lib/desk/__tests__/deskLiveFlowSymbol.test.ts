@@ -33,4 +33,19 @@ describe("parseDeskFlowSymbol", () => {
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.parsed.sym).toBe("VIX");
   });
+
+  it("parses class shares in dot and slash form", () => {
+    const dot = parseDeskFlowSymbol("BRK.B");
+    expect(dot.ok).toBe(true);
+    if (dot.ok) {
+      expect(dot.parsed.kind).toBe("equity");
+      expect(dot.parsed.sym).toBe("BRK.B");
+    }
+    const slash = parseDeskFlowSymbol("BRK/B");
+    expect(slash.ok).toBe(true);
+    if (slash.ok) {
+      expect(slash.parsed.kind).toBe("equity");
+      expect(slash.parsed.sym).toBe("BRK/B");
+    }
+  });
 });

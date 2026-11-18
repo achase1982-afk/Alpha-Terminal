@@ -157,7 +157,7 @@ router.get("/quotes", async (req, res) => {
   const { quotes, asOfMs, app } = await deskFetchSchwabQuotes(symbols, schwabApp);
   const quotesWithStream = quotes.map((q) => ({
     ...q,
-    not_streaming: !schwabSymbolHasStreamingMark(deskFormatSchwabSymbol(q.symbol)),
+    not_streaming: !schwabSymbolHasStreamingMark(q.symbol),
   }));
   const payload = {
     quotes: quotesWithStream,

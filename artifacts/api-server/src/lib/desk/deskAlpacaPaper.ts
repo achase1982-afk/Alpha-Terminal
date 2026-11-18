@@ -5,6 +5,7 @@ import {
   deskMarkFeedNotConfigured,
   deskTouchFeed,
 } from "./deskFeedFreshness.js";
+import { classShareForVendor } from "../classShareSymbology.js";
 import { logger } from "../logger.js";
 
 const ALPACA_DATA = "https://data.alpaca.markets";
@@ -63,9 +64,10 @@ export async function deskAlpacaPaperQuotes(
   let latest = Date.now();
 
   for (const raw of symbols) {
-    const sym = raw.trim().toUpperCase();
-    if (!sym) continue;
-    const res = await fetch(`${ALPACA_DATA}/v2/stocks/${encodeURIComponent(sym)}/quotes/latest`, {
+    const display = raw.trim().toUpperCase();
+    if (!display) continue;
+    const apiSym = classShareForVendor(display, "alpaca_paper");
+    const res = await fetch(`${ALPACA_DATA}/v2/stocks/${encodeURIComponent(apiSym)}/quotes/latest`, {
       headers: paperHeaders(keyId, secret),
       signal: AbortSignal.timeout(12_000),
     });
@@ -80,7 +82,7 @@ export async function deskAlpacaPaperQuotes(
     }
     const json = (await res.json()) as { quote?: Record<string, unknown> };
     if (json.quote) {
-      out.push({ symbol: sym, ...json.quote });
+      out.push({ symbol: display, ...json.quote });
       const t = json.quote["t"] as string | undefined;
       if (t) latest = Math.max(latest, Date.parse(t));
     }
@@ -104,10 +106,11 @@ export async function deskAlpacaPaperBars(
     return { ok: false, bars: [], asOfMs: Date.now(), status: 503, error: "not_configured" };
   }
 
-  const sym = symbol.trim().toUpperCase();
+  const display = symbol.trim().toUpperCase();
+  const apiSym = classShareForVendor(display, "alpaca_paper");
   const tf = timeframe === "1d" || timeframe === "daily" ? "1Day" : "1Min";
   const start = new Date(Date.now() - limit * 86_400_000).toISOString();
-  const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(sym)}/bars?timeframe=${tf}&start=${encodeURIComponent(start)}&limit=${limit}&adjustment=raw&feed=iex`;
+  const url = `${ALPACA_DATA}/v2/stocks/${encodeURIComponent(apiSym)}/bars?timeframe=${tf}&start=${encodeURIComponent(start)}&limit=${limit}&adjustment=raw&feed=iex`;
   const res = await fetch(url, {
     headers: paperHeaders(keyId, secret),
     signal: AbortSignal.timeout(15_000),
@@ -122,7 +125,9 @@ export async function deskAlpacaPaperBars(
     return { ok: false, bars: [], asOfMs: Date.now(), status: res.status, error: `alpaca_paper_http_${res.status}` };
   }
   const json = (await res.json()) as { bars?: unknown[] };
-  const bars = json.bars ?? [];
+  const bars = (json.bars ?? []).map((bar) =>
+    bar && typeof bar === "object" ? { ...(bar as Record<string, unknown>), symbol: display } : bar,
+  );
   const touch = Date.now();
   deskTouchFeed("alpaca_paper", touch, SOURCE);
   return { ok: true, bars, asOfMs: touch };

@@ -5,6 +5,7 @@ import {
   deskLiveFlowWsFanoutEnabled,
 } from "./deskLiveFlowConfig.js";
 import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
+import { deskFlowEquityWireKeysMatch } from "./deskLiveFlowSymbol.js";
 import { deskLiveFlowSubsAcquire, deskLiveFlowSubsRelease } from "./deskLiveFlowSubs.js";
 import { deskLiveFlowTapeDropSymbol } from "./deskLiveFlowTape.js";
 
@@ -30,6 +31,7 @@ export function deskLiveFlowResetSeqForTests(): void {
 type SseClient = {
   res: Response;
   symbol: string;
+  kind: DeskFlowAssetKind;
   pending: string[];
   paused: boolean;
   dropped: number;
@@ -106,11 +108,21 @@ function normFlowSym(s: string): string {
   return s.replace(/^\$/, "").toUpperCase();
 }
 
+function frameMatchesClient(client: SseClient, frameSym: string): boolean {
+  if (client.symbol === "ALL") return true;
+  if (client.kind === "equity") return deskFlowEquityWireKeysMatch(client.symbol, frameSym);
+  return normFlowSym(client.symbol) === normFlowSym(frameSym);
+}
+
 export function deskLiveFlowBroadcastFrame(frame: DeskLiveFlowFrame): void {
-  const line = `data: ${JSON.stringify(frame)}\n\n`;
-  const fsym = normFlowSym(String(frame.sym ?? ""));
+  const fsym = String(frame.sym ?? "");
   for (const c of sseClients) {
-    if (c.symbol !== "ALL" && normFlowSym(c.symbol) !== fsym) continue;
+    if (!frameMatchesClient(c, fsym)) continue;
+    const outbound =
+      c.kind === "equity" && c.symbol !== fsym
+        ? ({ ...frame, sym: c.symbol } as DeskLiveFlowFrame)
+        : frame;
+    const line = `data: ${JSON.stringify(outbound)}\n\n`;
     c.pending.push(line);
     dropIfSlow(c);
     flushClient(c);
@@ -136,13 +148,13 @@ export function registerDeskLiveFlowSse(res: Response, symbol: string, kind: Des
     "X-Desk-Flow-Asset": kind,
   });
   res.write(": connected\n\n");
-  const client: SseClient = { res, symbol: sym, pending: [], paused: false, dropped: 0, onDrain: null };
+  const client: SseClient = { res, symbol: sym, kind, pending: [], paused: false, dropped: 0, onDrain: null };
   sseClients.add(client);
   ensureHeartbeat();
   res.on("close", () => {
     sseClients.delete(client);
     deskLiveFlowSubsRelease(sym, kind);
-    if (kind !== "spx") deskLiveFlowTapeDropSymbol(sym);
+    if (kind !== "spx") deskLiveFlowTapeDropSymbol(sym, kind);
   });
 }
 
