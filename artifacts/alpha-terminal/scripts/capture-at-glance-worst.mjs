@@ -1,14 +1,15 @@
 import { webkit } from "playwright";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { spawn, execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { installSafeAreaInsets, layoutMetricsScript } from "./lib/iphone17ProMax.js";
+import { glanceStackOverlapScript, installSafeAreaInsets, layoutMetricsScript } from "./lib/iphone17ProMax.js";
 
 const PKG = path.dirname(fileURLToPath(import.meta.url)) + "/..";
 const OUT = "/opt/cursor/artifacts";
 const BASE = "http://127.0.0.1:3000/dev/active-trader";
 const FIXTURES = ["spx", "nvda", "es"];
+const WINDOWS = ["1m", "5m", "hr"];
 
 const VITE_ENV = {
   ...process.env,
@@ -52,37 +53,41 @@ const browser = await webkit.launch();
 const report = [];
 
 for (const fx of FIXTURES) {
-  const ctx = await browser.newContext({
-    viewport: { width: 440, height: 956 },
-    deviceScaleFactor: 3,
-    isMobile: true,
-    hasTouch: true,
-  });
-  const page = await ctx.newPage();
-  await installSafeAreaInsets(page, 62, 34);
-  await page.goto(`${BASE}?fixture=${fx}`, { waitUntil: "domcontentloaded", timeout: 90_000 });
-  await page.waitForSelector("[data-at-glance-flow-detail]", { timeout: 30_000 });
-  await page.waitForSelector("[data-at-glance-flow='live']", { timeout: 10_000 });
-  const flowText = await page.locator("[data-at-glance-flow='live']").innerText();
-  const detailText = await page.locator("[data-at-glance-flow-detail]").innerText();
-  const all = `${flowText}\n${detailText}`;
-  if (!all.includes("1.23B")) {
-    throw new Error(`${fx}: worst-case flow missing 1.23B (got: ${all.slice(0, 160)})`);
-  }
-  if (fx === "spx" && !all.includes("Calls bought")) {
-    throw new Error("SPX missing plain Calls bought copy");
-  }
-  if ((fx === "nvda" || fx === "es") && !all.includes("Bought at ask")) {
-    throw new Error(`${fx} missing plain tape copy`);
-  }
-  await page.waitForTimeout(400);
+  for (const win of WINDOWS) {
+    const ctx = await browser.newContext({
+      viewport: { width: 440, height: 956 },
+      deviceScaleFactor: 3,
+      isMobile: true,
+      hasTouch: true,
+    });
+    const page = await ctx.newPage();
+    await installSafeAreaInsets(page, 62, 34);
+    await page.goto(`${BASE}?fixture=${fx}`, { waitUntil: "domcontentloaded", timeout: 90_000 });
+    await page.waitForSelector("[data-at-glance-flow='live']", { timeout: 30_000 });
+    await page.locator(`[data-at-glance-flow-seg="${win}"]`).click();
+    await page.waitForSelector(`[data-at-glance-flow-window="${win}"]`, { timeout: 5_000 });
+    const bodyText = await page.locator("[data-at-glance-flow-body]").innerText();
+    if (!bodyText.includes("1.23B")) {
+      throw new Error(`${fx}/${win}: missing 1.23B in body: ${bodyText.slice(0, 120)}`);
+    }
+    const stack = await page.evaluate(glanceStackOverlapScript());
+    if (!stack.ok) {
+      throw new Error(`${fx}/${win}: glance overlap ${stack.overlapPx}px (glancePx=${stack.glancePx})`);
+    }
   const m = await page.evaluate(layoutMetricsScript());
-  const file = `glance-worst-${fx}-440x956@3x.png`;
-  await page.screenshot({ path: path.join(OUT, file) });
-  report.push({ fixture: fx, file, ...m, flowSnippet: flowText.slice(0, 80) });
-  await ctx.close();
+    if (m.glancePx > 110) {
+      throw new Error(`${fx}/${win}: glancePx ${m.glancePx} > 110`);
+    }
+    await page.waitForTimeout(300);
+    const file = `glance-worst-${fx}-${win}-440x956@3x.png`;
+    await page.screenshot({ path: path.join(OUT, file) });
+    report.push({ fixture: fx, window: win, file, stack, ...m, flowSnippet: bodyText.slice(0, 72) });
+    await ctx.close();
+  }
 }
 
 await browser.close();
 vite.kill();
+const jsonPath = path.join(OUT, "glance-worst-capture-report.json");
+await writeFile(jsonPath, JSON.stringify({ capturedAt: new Date().toISOString(), report }, null, 2));
 console.log(JSON.stringify({ capturedAt: new Date().toISOString(), report }, null, 2));

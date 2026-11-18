@@ -33,9 +33,11 @@ const NUM_FEAT: CSSProperties = {
 
 const SPOT_PAINT_MS = 250;
 const MAX_GLANCE_PX = 110;
+const FLOW_WINDOWS = ["1m", "5m", "hr"] as const;
+type FlowWindow = (typeof FLOW_WINDOWS)[number];
 
 function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
-  const [detailOn, setDetailOn] = useState(true); // default open — 5m / this hr fit via wrap
+  const [flowWindow, setFlowWindow] = useState<FlowWindow>("1m");
   const copy = formatGlanceMoneyRow(agg);
   if (copy.unsupported) {
     return (
@@ -57,50 +59,70 @@ function MoneyRow({ agg }: { agg: ReturnType<typeof useDeskFlowStream> }) {
     );
   }
   if (!copy.line1m) return null;
-  const flowBlock = (text: string, fontSize: number, color: string) => (
-    <span
-      className="num block"
-      style={{
-        ...NUM_FEAT,
-        fontSize,
-        fontWeight: 500,
-        color,
-        lineHeight: 1.2,
-        whiteSpace: "pre-line",
-        wordBreak: "break-word",
-      }}
-    >
-      {text}
-    </span>
-  );
 
-  const detailLine = (label: string, text: string | null) =>
-    text ? (
-      <Pane key={label} className="num flex gap-1 items-start">
-        <span style={{ color: DIM, fontSize: 7.5, fontWeight: 500, flexShrink: 0, paddingTop: 1 }}>{label}</span>
-        {flowBlock(text, 7.5, GRAY)}
-      </Pane>
-    ) : null;
+  const body =
+    flowWindow === "1m" ? copy.line1m : flowWindow === "5m" ? copy.line5m : copy.lineHr;
+
+  const cycleWindow = () => {
+    setFlowWindow((w) => {
+      const i = FLOW_WINDOWS.indexOf(w);
+      return FLOW_WINDOWS[(i + 1) % FLOW_WINDOWS.length];
+    });
+  };
 
   return (
-    <Pane style={{ lineHeight: 1.15 }}>
+    <Pane
+      data-at-glance-flow="live"
+      data-at-glance-flow-window={flowWindow}
+      style={{ lineHeight: 1.15, overflow: "hidden", maxHeight: 40 }}
+    >
+      <Pane
+        className="num flex items-center justify-center gap-0.5 mb-0.5"
+        data-at-glance-flow-seg
+        style={{ ...NUM_FEAT, fontSize: 7.5 }}
+      >
+        {FLOW_WINDOWS.map((w, i) => (
+          <Pane key={w} className="inline-flex items-center gap-0.5">
+            {i > 0 ? (
+              <span style={{ color: DIM, fontSize: 7, userSelect: "none" }} aria-hidden>
+                ·
+              </span>
+            ) : null}
+            <button
+              type="button"
+              data-at-glance-flow-seg={w}
+              onClick={() => setFlowWindow(w)}
+              style={{
+                fontSize: 7.5,
+                fontWeight: flowWindow === w ? 600 : 400,
+                color: flowWindow === w ? WHITE : GRAY,
+                padding: "0 2px",
+                background: flowWindow === w ? "rgba(255,255,255,0.08)" : "transparent",
+                borderRadius: 3,
+              }}
+            >
+              {w}
+            </button>
+          </Pane>
+        ))}
+      </Pane>
       <button
         type="button"
         className="num w-full text-left"
-        data-at-glance-flow="live"
-        onClick={() => setDetailOn((v) => !v)}
-        style={{ ...NUM_FEAT, fontWeight: 500, color: WHITE }}
+        data-at-glance-flow-body
+        onClick={cycleWindow}
+        style={{
+          ...NUM_FEAT,
+          fontSize: 8,
+          fontWeight: 500,
+          color: WHITE,
+          lineHeight: 1.2,
+          whiteSpace: "pre-line",
+          wordBreak: "break-word",
+        }}
       >
-        <span style={{ color: GRAY, fontSize: 8, fontWeight: 500, marginRight: 4 }}>1m</span>
-        {flowBlock(copy.line1m, 8.5, WHITE)}
-        <span style={{ color: GRAY, fontSize: 7, marginLeft: 4 }}>{detailOn ? "▴" : "▾"}</span>
+        {body}
       </button>
-      {detailOn ? (
-        <Pane className="pt-0.5 space-y-0.5" data-at-glance-flow-detail>
-          {detailLine("5m", copy.line5m)}
-          {detailLine("this hr", copy.lineHr)}
-        </Pane>
-      ) : null}
     </Pane>
   );
 }
@@ -189,7 +211,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
     <Pane
       data-at-glance-top
       className="at-glance px-2 py-0.5 shrink-0"
-      style={{ background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, maxHeight: `min(${MAX_GLANCE_PX}px, 20vh)` }}
+      style={{
+        background: BG_EXP_BAR,
+        borderBottom: `1px solid ${BORDER}`,
+        maxHeight: `min(${MAX_GLANCE_PX}px, 20vh)`,
+        overflow: "hidden",
+      }}
     >
       {mode !== "futures" ? (
         <Pane className="flex items-center gap-1.5" style={{ minHeight: 16 }}>

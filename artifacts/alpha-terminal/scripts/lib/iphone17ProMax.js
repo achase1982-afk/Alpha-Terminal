@@ -30,6 +30,40 @@ export async function installSafeAreaInsets(page, top = 62, bottom = 34) {
   );
 }
 
+/** DOM assert: glance must not paint over bracket row or ladder column headers. */
+export function glanceStackOverlapScript() {
+  return `(() => {
+    const glance = document.querySelector("[data-at-glance-top]");
+    if (!glance) return { ok: false, reason: "no_glance" };
+    const g = glance.getBoundingClientRect();
+    const selectors = [
+      "[data-at-settings-summary]",
+      '[data-ui-audit="at-puts-hdr"]',
+      "[data-at-symbol-header]",
+    ];
+    let worstOverlap = 0;
+    let nextTop = null;
+    for (const sel of selectors) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      const top = el.getBoundingClientRect().top;
+      if (top < g.top + 2) continue;
+      const overlap = g.bottom - top;
+      if (overlap > worstOverlap) {
+        worstOverlap = overlap;
+        nextTop = Math.round(top);
+      }
+    }
+    return {
+      ok: worstOverlap <= 0.5,
+      overlapPx: Math.round(worstOverlap),
+      glancePx: Math.round(g.height),
+      glanceBottom: Math.round(g.bottom),
+      nextTop,
+    };
+  })()`;
+}
+
 export function layoutMetricsScript() {
   return `(() => {
     const r = (el) => (el ? Math.round(el.getBoundingClientRect().height) : 0);
