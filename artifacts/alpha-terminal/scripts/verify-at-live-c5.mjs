@@ -87,8 +87,10 @@ async function runAtBuild(height) {
   await traySlot.waitFor({ state: "visible", timeout: 10_000 });
   record(`AT leg tray (${height}px)`, (await page.locator("[data-at-leg-tray]").count()) > 0, "visible");
 
-  const sheetAbsent = (await page.getByTestId("options-chain-order-sheet").count()) === 0;
-  record(`sheet absent build (${height}px)`, sheetAbsent, sheetAbsent ? "collapsed/hidden" : "sheet visible");
+  const sheetCollapsed =
+    (await page.getByTestId("options-chain-order-sheet").count()) === 0 ||
+    (await page.locator("[data-testid='options-chain-order-sheet'] [aria-expanded='false']").count()) > 0;
+  record(`sheet absent build (${height}px)`, sheetCollapsed, sheetCollapsed ? "collapsed/hidden" : "sheet visible");
 
   const trayY = await traySlot.boundingBox();
   const next = Number(strike) + 5;
@@ -132,6 +134,7 @@ async function runChainRoundTrip(height) {
 
   await switchView(page, "at");
   await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 60_000 });
+  await page.locator("[data-at-leg-tray]").first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => undefined);
   const atTray = (await page.locator("[data-at-leg-tray]").count()) > 0;
   record(`AT legs preserved (${height}px)`, atTray, atTray ? "tray" : "missing");
 

@@ -122,6 +122,22 @@ interface ActiveTraderViewProps {
   buildLegQtyFromChain?: Map<string, number>;
 }
 
+function selectedLegsFromChain(
+  buildLegsFromChain: AtLadderLegPick[] | undefined,
+): Map<string, AtLadderLegPick> {
+  const next = new Map<string, AtLadderLegPick>();
+  if (!buildLegsFromChain?.length) return next;
+  for (const leg of buildLegsFromChain) {
+    next.set(atLadderLegKey(leg.contract, leg.type), {
+      contract: leg.contract,
+      type: leg.type,
+      expiration: leg.expiration,
+      side: leg.side,
+    });
+  }
+  return next;
+}
+
 export const ActiveTraderView = memo(function ActiveTraderView({
   symbol,
   groups,
@@ -160,8 +176,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   });
   const [tradeStripStrike, setTradeStripStrike] = useState<number | null>(null);
   const [tradeContext, setTradeContext] = useState<AtTradeContext | null>(null);
-  const [selectedLegs, setSelectedLegs] = useState<Map<string, AtLadderLegPick>>(new Map());
-  const [legQuantities, setLegQuantities] = useState<Map<string, number>>(new Map());
+  const [selectedLegs, setSelectedLegs] = useState(() => selectedLegsFromChain(buildLegsFromChain));
+  const [legQuantities, setLegQuantities] = useState(
+    () => (buildLegQtyFromChain ? new Map(buildLegQtyFromChain) : new Map<string, number>()),
+  );
   const [chainSheetCollapsed, setChainSheetCollapsed] = useState(true);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
