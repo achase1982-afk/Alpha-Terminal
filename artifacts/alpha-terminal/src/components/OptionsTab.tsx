@@ -1927,6 +1927,7 @@ export function OptionsTab({
       </div>
       )}
       </>
+      )}
 
       {legLimitShake && (
         <div

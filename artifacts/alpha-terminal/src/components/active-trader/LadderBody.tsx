@@ -514,22 +514,28 @@ const LadderRowView = memo(function LadderRowView({
 function FlipPill({ flip }: { flip: number }) {
   return (
     <span
-      className="flex items-center justify-end pointer-events-none"
+      className="flex items-center justify-end pointer-events-none overflow-hidden"
       style={{
         gridColumn: "6 / 8",
         gridRow: 1,
         height: 12,
+        maxHeight: 12,
         lineHeight: "12px",
         paddingRight: 2,
-        alignSelf: "start",
-        marginTop: -1,
+        alignSelf: "center",
       }}
     >
       <span
-        className="px-1 rounded-full whitespace-nowrap"
+        className="rounded-full whitespace-nowrap"
         style={{
-          fontSize: 9,
-          lineHeight: "12px",
+          fontSize: 8,
+          lineHeight: "10px",
+          height: 10,
+          maxHeight: 10,
+          padding: "0 3px",
+          boxSizing: "border-box",
+          display: "inline-flex",
+          alignItems: "center",
           color: GAMMA_SCENARIO,
           border: `1px solid ${GAMMA_SCENARIO}`,
           background: BG,
