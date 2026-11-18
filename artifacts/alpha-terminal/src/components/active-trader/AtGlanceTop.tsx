@@ -22,6 +22,7 @@ import { AtGlanceFlowDetail } from "./AtGlanceFlowDetail";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { formatGlanceOrderSettingsLine } from "@/lib/active-trader/atSummaryFormat";
+import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
 
 export const AT_HEADER_BG = "#1b1d21";
 
@@ -62,6 +63,7 @@ export type AtGlanceTopProps = {
     open: boolean;
     onToggle: () => void;
   };
+  ladderHeatSource?: AtLadderHeatSourceMeta;
 };
 
 function LevelsCell({
@@ -95,6 +97,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   skipNetwork,
   viewSelector,
   orderSettings,
+  ladderHeatSource,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
@@ -234,11 +237,28 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
       <div data-at-glance-flow-band style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
         <div className="flex items-center justify-between gap-1" style={{ minHeight: 13, lineHeight: 1.1 }}>
-          <span
-            data-at-flow-now
-            style={{ fontWeight: 600, color: AT_LABEL, fontSize: 10, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
-          >
-            FLOW NOW · {flowWindowSec}s
+          <span style={{ display: "flex", flexDirection: "column", gap: 0, minWidth: 0 }}>
+            <span
+              data-at-flow-now
+              style={{ fontWeight: 600, color: AT_LABEL, fontSize: 10, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
+            >
+              FLOW NOW · {flowWindowSec}s
+            </span>
+            {ladderHeatSource?.label ? (
+              <span
+                data-at-ladder-heat-source
+                data-at-ladder-heat-stale={ladderHeatSource.stale ? "1" : "0"}
+                style={{
+                  fontSize: 8,
+                  fontWeight: 600,
+                  letterSpacing: "0.03em",
+                  color: ladderHeatSource.stale ? GAMMA_SCENARIO : AT_SECONDARY,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {ladderHeatSource.label}
+              </span>
+            ) : null}
           </span>
           <span
             data-at-gamma-flip

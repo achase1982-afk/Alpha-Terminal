@@ -35,15 +35,20 @@ await openAt(page);
 const noTicket = (await page.locator("[data-at-approved-ticket]").count()) === 0;
 record("empty: no ticket footer", noTicket, noTicket ? "ok" : "sheet visible");
 
-const heatUnavailable = await page.evaluate(() => {
+const heatStates = await page.evaluate(() => {
   const pairs = [...document.querySelectorAll("[data-at-quote-heat]")].slice(0, 12);
-  if (pairs.length < 6) return false;
-  return pairs.every((el) => el.getAttribute("data-at-quote-heat-state") === "unavailable");
+  const states = pairs.map((el) => el.getAttribute("data-at-quote-heat-state"));
+  const unavailable = states.filter((s) => s === "unavailable").length;
+  return { count: pairs.length, unavailable, states: states.slice(0, 4) };
 });
-record("ladder heat unavailable (no L1 proxy)", heatUnavailable, heatUnavailable ? "ok" : "live/fixture heat");
+record(
+  "ladder heat not dollar-unavailable",
+  heatStates.count > 5 && heatStates.unavailable < heatStates.count,
+  JSON.stringify(heatStates),
+);
 
-const unavailableLabels = await page.locator("[data-at-quote-heat-label]").count();
-record("explicit Unavailable labels", unavailableLabels > 5, `labels=${unavailableLabels}`);
+const heatTag = await page.locator("[data-at-ladder-heat-source]").innerText().catch(() => "");
+record("ladder heat source tag", heatTag.includes("Live"), heatTag || "missing");
 
 const quoteNeutral = await page.evaluate(() => {
   const btns = [...document.querySelectorAll("[data-at-quote]")].slice(0, 6);

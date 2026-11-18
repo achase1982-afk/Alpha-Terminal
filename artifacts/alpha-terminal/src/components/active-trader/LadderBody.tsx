@@ -13,7 +13,7 @@ import {
   AT_LADDER_PANEL_BG,
   AT_LADDER_ROW_H,
 } from "@/lib/active-trader/atLadderLayout";
-import type { LadderHeatCellView } from "@/lib/active-trader/atLadderPremiumHeatEngine";
+import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
 import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import { aggregateSpreadNBBO, verticalStrikes } from "@/lib/active-trader/aggregateSpreadNBBO";
 import { atLadderLegKey } from "@/lib/active-trader/atLadderLegKeys";
@@ -68,7 +68,7 @@ export type AtTradeContext =
       nearContract: OptionsContract;
     };
 
-const EMPTY_HEAT: LadderHeatCellView = { availability: "unavailable", premiumUsd: 0, intensity: 0 };
+const EMPTY_HEAT: LadderHeatCellView = { availability: "unavailable", contracts30s: 0, intensity: 0 };
 
 function fmtPx(n: number | null | undefined): string {
   if (n == null || !Number.isFinite(n) || n < 0) return "—";
@@ -87,7 +87,7 @@ function mergeLegHeat(
   const far = heatByKey[farKey] ?? EMPTY_HEAT;
   return {
     availability: near.availability,
-    premiumUsd: near.premiumUsd + far.premiumUsd,
+    contracts30s: near.contracts30s + far.contracts30s,
     intensity: Math.max(near.intensity, far.intensity),
   };
 }
@@ -104,7 +104,10 @@ function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSPrope
     };
   }
   if (view.availability === "quiet") {
-    return { background: AT_LADDER_PANEL_BG };
+    return {
+      background: AT_LADDER_PANEL_BG,
+      boxShadow: `inset 0 0 0 1px rgba(${rgb}, 0.06)`,
+    };
   }
   const alpha = 0.1 + view.intensity * 0.82;
   return {

@@ -12,7 +12,7 @@ import {
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
-import { useAtLadderPremiumHeat } from "@/lib/active-trader/useAtLadderPremiumHeat";
+import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -330,7 +330,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   );
 
   const { flowByKey } = useFlowByKey(streamKeys, windowSec * 1000);
-  const heatByKey = useAtLadderPremiumHeat(streamKeys);
+  const { heatByKey, source: ladderHeatSource } = useAtLadderVolumeHeat({
+    symbol,
+    streamKeys,
+    skipNetwork: presentation?.skipNetwork,
+  });
 
   const { zones, sessionClosed: glanceSessionClosed } = useAtLiveZones(
     symbol,
@@ -900,6 +904,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             open: settingsOpen,
             onToggle: toggleSettings,
           }}
+          ladderHeatSource={ladderHeatSource}
         />
         <AtSettingsExpanded
           open={settingsOpen}

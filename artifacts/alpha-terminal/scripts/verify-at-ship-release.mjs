@@ -134,14 +134,24 @@ try {
     return hot.length >= 1;
   });
   await fixtureHeatScene(page, "heat-fade", () => {
-    const quiet = [...document.querySelectorAll("[data-at-quote-heat-state]")].every(
-      (el) => el.getAttribute("data-at-quote-heat-state") !== "live" || el.getAttribute("data-at-quote-heat-state") === "quiet",
-    );
-    return quiet;
+    const live = document.querySelectorAll("[data-at-quote-heat-state='live']").length;
+    return live === 0;
+  });
+  await fixtureHeatScene(page, "heat-reset", () => {
+    const q = document.querySelectorAll("[data-at-quote-heat-state='quiet'], [data-at-quote-heat-state='live']").length;
+    return q > 0;
+  });
+  await fixtureHeatScene(page, "heat-backwards", () => {
+    const live = document.querySelectorAll("[data-at-quote-heat-state='live']").length;
+    return live >= 1;
+  });
+  await fixtureHeatScene(page, "heat-reconnect-gap", () => {
+    const stale = document.querySelectorAll("[data-at-quote-heat-state='stale']").length;
+    return stale >= 1;
   });
 
   if (process.env.AT_VERIFY_INCLUDE_LIVE !== "1") {
-    record("production heat Unavailable", true, "skipped pre-deploy (set AT_VERIFY_INCLUDE_LIVE=1)");
+    record("production ladder volume heat", true, "skipped pre-deploy (set AT_VERIFY_INCLUDE_LIVE=1)");
   } else {
   const livePage = await browser.newPage({
     viewport: { width: 440, height: 956 },
@@ -157,12 +167,27 @@ try {
   await livePage.waitForTimeout(500);
   await livePage.locator('[data-at-view-selector] select').first().selectOption("at");
   await livePage.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
-  const liveHeat = await livePage.evaluate(() => {
-    const pairs = [...document.querySelectorAll("[data-at-quote-heat]")].slice(0, 8);
-    return pairs.length > 3 && pairs.every((el) => el.getAttribute("data-at-quote-heat-state") === "unavailable");
+  const spxHeat = await livePage.evaluate(() => {
+    const tag = document.querySelector("[data-at-ladder-heat-source]")?.textContent?.trim() ?? "";
+    const states = [...document.querySelectorAll("[data-at-quote-heat]")].slice(0, 8).map((el) =>
+      el.getAttribute("data-at-quote-heat-state"),
+    );
+    const unavailable = states.filter((s) => s === "unavailable").length;
+    return { tag, states, ok: tag.includes("stream") && unavailable < states.length };
   });
-  record("production heat Unavailable", liveHeat, liveHeat ? "ok" : "not gated");
-  await livePage.screenshot({ path: path.join(OUT, "ship-live-heat-unavailable-440x956.png") });
+  record("SPX live heat stream", spxHeat.ok, JSON.stringify(spxHeat));
+  await livePage.screenshot({ path: path.join(OUT, "ship-live-spx-volume-heat-440x956.png") });
+
+  await livePage.locator('[data-at-view-selector] select').first().selectOption("options").catch(() => undefined);
+  await livePage.getByRole("combobox", { name: /symbol/i }).first().fill("NVDA").catch(() => undefined);
+  await livePage.keyboard.press("Enter").catch(() => undefined);
+  await livePage.waitForTimeout(800);
+  await livePage.locator('[data-at-view-selector] select').first().selectOption("at").catch(() => undefined);
+  await livePage.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 }).catch(() => undefined);
+  const nvdaTag = await livePage.locator("[data-at-ladder-heat-source]").innerText().catch(() => "");
+  record("NVDA live heat poll tag", nvdaTag.includes("poll"), nvdaTag || "missing");
+  await livePage.screenshot({ path: path.join(OUT, "ship-live-nvda-volume-heat-440x956.png") });
+  }
 
   await browser.close();
   browser = null;
