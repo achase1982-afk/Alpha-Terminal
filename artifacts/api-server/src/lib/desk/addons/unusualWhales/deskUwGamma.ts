@@ -104,7 +104,8 @@ export async function deskRefreshLiveGamma0dte(
     }
     const exp = deskUwNormalizeExpiry(expiry);
     const sym = ticker.toUpperCase();
-    const marketDate = deskSessionDateEt(new Date());
+    // UW `date` is the trading session for the chain; for 0DTE it matches `exp`.
+    const marketDate = exp;
     const res = await deskUwFetchExpiryStrikePages(sym, marketDate, exp);
     if (!res.ok) {
       deskApplyUwHttpFeedStatus("live_gamma_0dte", res.status, "unusual_whales", res.retryAfterSec);
