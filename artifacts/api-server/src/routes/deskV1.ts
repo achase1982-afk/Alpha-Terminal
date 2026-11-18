@@ -41,6 +41,12 @@ import { deskAlpacaMarketBars, deskAlpacaMarketQuotes } from "../lib/desk/deskAl
 import { deskResolveSource } from "../lib/desk/deskSources.js";
 import { deskSchwabRestAppFromDeskSource } from "../lib/desk/deskSchwabRestCredential.js";
 import { buildDeskSchwabOAuthHealth } from "../lib/desk/deskSchwabOAuthHealth.js";
+import { registerDeskLiveFlowSse } from "../lib/desk/deskLiveFlowHub.js";
+import {
+  deskLiveFlowEnabled,
+  deskLiveFlowTimesaleDebugEnabled,
+} from "../lib/desk/deskLiveFlowConfig.js";
+import { deskLiveFlowTimesaleRecent } from "../lib/desk/deskLiveFlowTimesale.js";
 
 const router: IRouter = Router();
 
@@ -164,6 +170,33 @@ router.get("/quotes", async (req, res) => {
 
 router.get("/tape/spx/stream", (_req, res) => {
   registerDeskSpxSse(res as Response);
+});
+
+router.get("/stream/flow", (req, res) => {
+  if (!deskLiveFlowEnabled()) {
+    res.status(503).json({ error: "live_flow_disabled", source: "desk" });
+    return;
+  }
+  const raw = (req.query["symbol"] as string | undefined) ?? "SPX";
+  const sym = raw.trim().toUpperCase().replace(/^\$/, "");
+  if (sym !== "SPX") {
+    res.status(400).json({ error: "unsupported_symbol", allowed: ["SPX"] });
+    return;
+  }
+  registerDeskLiveFlowSse(res as Response, sym);
+});
+
+router.get("/debug/timesale_raw", (req, res) => {
+  if (!deskLiveFlowTimesaleDebugEnabled()) {
+    res.status(404).json({ error: "timesale_debug_disabled" });
+    return;
+  }
+  const limitRaw = req.query["limit"];
+  const limit = limitRaw != null ? Number(limitRaw) : 50;
+  res.json({
+    enabled: true,
+    frames: deskLiveFlowTimesaleRecent(Number.isFinite(limit) ? limit : 50),
+  });
 });
 
 router.get("/tape/spx/raw", async (req, res) => {

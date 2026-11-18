@@ -26,6 +26,8 @@ import { getAlphaVantageKey } from "./deskAlphaVantage.js";
 import { getMarketauxKey } from "./deskMarketaux.js";
 import { getStocknewsKey } from "./deskStocknews.js";
 import { getEodhdKey } from "./deskEodhd.js";
+import { deskLiveFlowEnabled, deskLiveFlowTimesaleDebugEnabled } from "./deskLiveFlowConfig.js";
+import { startDeskLiveFlowTimesaleDebug } from "./deskLiveFlowTimesale.js";
 
 /** Desk feed registry bootstrap (optional providers + streamer symbol subs). */
 export function initDeskMarketFeeds(): void {
@@ -83,4 +85,12 @@ export function initDeskMarketFeeds(): void {
   startDeskTapeUniverse();
   startDeskBackgroundPollers();
   startDeskRetentionJobs();
+
+  if (deskLiveFlowEnabled() && deskLiveFlowTimesaleDebugEnabled()) {
+    void startDeskLiveFlowTimesaleDebug();
+    const retry = setInterval(() => {
+      void startDeskLiveFlowTimesaleDebug();
+    }, 60_000);
+    retry.unref?.();
+  }
 }

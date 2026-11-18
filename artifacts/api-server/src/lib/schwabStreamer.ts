@@ -259,6 +259,7 @@ let subscribedOptionsBookSymbols = new Set<string>();
 const deskAddedEquitySymbols = new Set<string>();
 const deskAddedOptionSymbols = new Set<string>();
 const deskAddedOptionsBookSymbols = new Set<string>();
+const deskAddedTimesaleOptionSymbols = new Set<string>();
 const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
 const DESK_ADD_BATCH = 500;
@@ -1134,6 +1135,33 @@ function sendDeskOptionsBookUnsubs(symbols: string[]): void {
     sendStreamerJson({ requests: [req] });
     logger.info({ count: symbols.length }, "Schwab streamer: desk OPTIONS_BOOK UNSUBS");
   }
+}
+
+function sendDeskTimesaleOptionAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("TIMESALE_OPTIONS", "ADD", {
+    keys: symbols.join(","),
+    fields: "0,1,2,3,4,5,6,7,8,9,10",
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 3) }, "Schwab streamer: desk TIMESALE_OPTIONS ADD");
+  }
+}
+
+/** Debug-only: ADD TIMESALE_OPTIONS on existing login (no second connection). */
+export function deskStreamerAddTimesaleOptions(symbols: string[]): number {
+  const added: string[] = [];
+  for (const s of symbols) {
+    const k = s.trim();
+    if (!k || deskAddedTimesaleOptionSymbols.has(k)) continue;
+    deskAddedTimesaleOptionSymbols.add(k);
+    added.push(k);
+  }
+  if (added.length > 0 && connectionState === "connected") {
+    sendDeskTimesaleOptionAdd(added);
+  }
+  return added.length;
 }
 
 function sendDeskOptionUnsubs(symbols: string[]): void {
@@ -2085,6 +2113,10 @@ function handleMessage(raw: string) {
         processNasdaqBook(item.content);
       } else if (item.service === "OPTIONS_BOOK") {
         processOptionsBook(item.content);
+      } else if (item.service === "TIMESALE_OPTIONS") {
+        void import("./desk/deskLiveFlowTimesale.js").then((m) => {
+          m.deskLiveFlowTimesalePushRaw(item.service, item.content);
+        });
       } else {
         const keys = item.content?.map((c: Record<string, unknown>) => c["key"]).slice(0, 3);
         logger.info({ service: item.service, sampleKeys: keys }, "Schwab streamer: unhandled data service");

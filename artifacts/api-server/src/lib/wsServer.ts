@@ -20,6 +20,7 @@ import {
   collectPortfolioStreamSymbols,
   overlayPortfolioMarksFromStream,
 } from "./portfolioStreamMarkOverlay.js";
+import { registerDeskLiveFlowWsFanout } from "./desk/deskLiveFlowHub.js";
 import {
   streamerSubApplyManagedOptionsSubscriptions,
   streamerSubHold,
@@ -653,6 +654,7 @@ export function initWsServer(httpServer: HttpServer) {
   const wss = new WebSocketServer({ noServer: true });
 
   registerWsBroadcast(broadcastToClients);
+  registerDeskLiveFlowWsFanout(broadcastToClients);
   registerPortfolioErrorBroadcast((data) => broadcastToClients("portfolio_error", data));
 
   httpServer.on("upgrade", async (req: IncomingMessage, socket: Duplex, head: Buffer) => {

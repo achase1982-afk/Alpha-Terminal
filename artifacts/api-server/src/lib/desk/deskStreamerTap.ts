@@ -9,6 +9,8 @@ import { deskTapeRxNsNumber, deskStringifyTapeJson } from "./deskJsonBigInt.js";
 import { filterDeskTapeStreamerMessage } from "./deskTapeFrameFilter.js";
 import { deskCaptureInboundFrame } from "./deskSpxTapeRaw.js";
 import { logger } from "../logger.js";
+import { deskLiveFlowEnabled } from "./deskLiveFlowConfig.js";
+import { deskLiveFlowOnInbound } from "./deskLiveFlowEngine.js";
 
 export type DeskStreamerFrame = {
   rx_ns: number;
@@ -129,6 +131,9 @@ export function onSchwabInboundFrame(raw: string): void {
   });
   broadcastFrame(frame);
   maybeTouchFeedsFromFrame(filtered, frame.rx_utc_ms);
+  if (deskLiveFlowEnabled()) {
+    deskLiveFlowOnInbound(filtered, frame.rx_utc_ms);
+  }
 }
 
 export function onSchwabOutboundFrame(raw: string): void {
