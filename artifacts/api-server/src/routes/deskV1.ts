@@ -47,6 +47,7 @@ import {
   deskLiveFlowTimesaleDebugEnabled,
 } from "../lib/desk/deskLiveFlowConfig.js";
 import { deskLiveFlowTimesaleRecent } from "../lib/desk/deskLiveFlowTimesale.js";
+import { parseDeskFlowSymbol } from "../lib/desk/deskLiveFlowSymbol.js";
 
 const router: IRouter = Router();
 
@@ -178,12 +179,12 @@ router.get("/stream/flow", (req, res) => {
     return;
   }
   const raw = (req.query["symbol"] as string | undefined) ?? "SPX";
-  const sym = raw.trim().toUpperCase().replace(/^\$/, "");
-  if (sym !== "SPX") {
-    res.status(400).json({ error: "unsupported_symbol", allowed: ["SPX"] });
+  const parsed = parseDeskFlowSymbol(raw);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error, source: "desk" });
     return;
   }
-  registerDeskLiveFlowSse(res as Response, sym);
+  registerDeskLiveFlowSse(res as Response, parsed.parsed.sym, parsed.parsed.kind);
 });
 
 router.get("/debug/timesale_raw", (req, res) => {

@@ -36,7 +36,7 @@ describe("deskLiveFlow SSE framing", () => {
 
   it("writes SSE data lines with JSON payload", () => {
     const res = mockRes();
-    registerDeskLiveFlowSse(res, "SPX");
+    registerDeskLiveFlowSse(res, "SPX", "spx");
     expect(res.writeHead).toHaveBeenCalled();
     expect(res.chunks.some((c) => c.includes(": connected"))).toBe(true);
 

@@ -4,6 +4,8 @@ import {
   DESK_LIVE_FLOW_SSE_HEARTBEAT_MS,
   deskLiveFlowWsFanoutEnabled,
 } from "./deskLiveFlowConfig.js";
+import type { DeskFlowAssetKind } from "./deskLiveFlowSymbol.js";
+import { deskLiveFlowSubsAcquire, deskLiveFlowSubsRelease } from "./deskLiveFlowSubs.js";
 
 export type DeskLiveFlowFrame = {
   type: string;
@@ -99,19 +101,29 @@ export function deskLiveFlowBroadcastFrame(frame: DeskLiveFlowFrame): void {
   }
 }
 
-export function registerDeskLiveFlowSse(res: Response, symbol: string): void {
-  const sym = symbol.trim().toUpperCase().replace(/^\$/, "") || "SPX";
+export function registerDeskLiveFlowSse(res: Response, symbol: string, kind: DeskFlowAssetKind): void {
+  const sym =
+    kind === "futures"
+      ? symbol.trim().toUpperCase().startsWith("/")
+        ? symbol.trim().toUpperCase()
+        : `/${symbol.trim().toUpperCase()}`
+      : symbol.trim().toUpperCase().replace(/^\$/, "") || "SPX";
+  deskLiveFlowSubsAcquire(sym, kind);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
+    "X-Desk-Flow-Asset": kind,
   });
   res.write(": connected\n\n");
   const client: SseClient = { res, symbol: sym, pending: [], paused: false, dropped: 0 };
   sseClients.add(client);
   ensureHeartbeat();
-  res.on("close", () => sseClients.delete(client));
+  res.on("close", () => {
+    sseClients.delete(client);
+    deskLiveFlowSubsRelease(sym, kind);
+  });
 }
 
 export function deskLiveFlowSseClientCountForTests(): number {

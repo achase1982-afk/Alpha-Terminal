@@ -260,6 +260,14 @@ const deskAddedEquitySymbols = new Set<string>();
 const deskAddedOptionSymbols = new Set<string>();
 const deskAddedOptionsBookSymbols = new Set<string>();
 const deskAddedTimesaleOptionSymbols = new Set<string>();
+/** Desk live-flow on-demand (ADD only; released when SSE clients disconnect). */
+const deskFlowTimesaleEquitySymbols = new Set<string>();
+const deskFlowTimesaleFuturesSymbols = new Set<string>();
+const deskFlowEquityL1Owned = new Set<string>();
+const deskFlowFuturesL1Owned = new Set<string>();
+
+type TimesaleFuturesListener = (ev: SchwabTimesaleEquityEvent & { displaySymbol: string }) => void;
+const timesaleFuturesListeners = new Set<TimesaleFuturesListener>();
 const DESK_EQ_FIELDS = Array.from({ length: 52 }, (_, i) => i).join(",");
 const DESK_OPT_FIELDS = Array.from({ length: 56 }, (_, i) => i).join(",");
 const DESK_ADD_BATCH = 500;
@@ -1102,6 +1110,165 @@ function sendDeskEquityAdd(symbols: string[]): void {
   }
 }
 
+function sendDeskEquityUnsubs(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("LEVELONE_EQUITIES", "UNSUBS", {
+    keys: symbols.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk LEVELONE_EQUITIES UNSUBS");
+  }
+}
+
+function sendDeskTimesaleEquityAdd(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("TIMESALE_EQUITY", "ADD", {
+    keys: symbols.join(","),
+    fields: TIMESALE_EQUITY_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length, sample: symbols.slice(0, 3) }, "Schwab streamer: desk TIMESALE_EQUITY ADD");
+  }
+}
+
+function sendDeskTimesaleEquityUnsubs(symbols: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
+  const req = buildRequest("TIMESALE_EQUITY", "UNSUBS", {
+    keys: symbols.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: symbols.length }, "Schwab streamer: desk TIMESALE_EQUITY UNSUBS");
+  }
+}
+
+function sendDeskFuturesAdd(wireKeys: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !wireKeys.length) return;
+  const req = buildRequest("LEVELONE_FUTURES", "ADD", {
+    keys: wireKeys.join(","),
+    fields: FUT_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: wireKeys.length, sample: wireKeys.slice(0, 3) }, "Schwab streamer: desk LEVELONE_FUTURES ADD");
+  }
+}
+
+function sendDeskFuturesUnsubs(wireKeys: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !wireKeys.length) return;
+  const req = buildRequest("LEVELONE_FUTURES", "UNSUBS", {
+    keys: wireKeys.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: wireKeys.length }, "Schwab streamer: desk LEVELONE_FUTURES UNSUBS");
+  }
+}
+
+function sendDeskTimesaleFuturesAdd(wireKeys: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !wireKeys.length) return;
+  const req = buildRequest("TIMESALE_FUTURES", "ADD", {
+    keys: wireKeys.join(","),
+    fields: TIMESALE_EQUITY_FIELDS,
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: wireKeys.length, sample: wireKeys.slice(0, 3) }, "Schwab streamer: desk TIMESALE_FUTURES ADD");
+  }
+}
+
+function sendDeskTimesaleFuturesUnsubs(wireKeys: string[]): void {
+  if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !wireKeys.length) return;
+  const req = buildRequest("TIMESALE_FUTURES", "UNSUBS", {
+    keys: wireKeys.join(","),
+  });
+  if (req) {
+    sendStreamerJson({ requests: [req] });
+    logger.info({ count: wireKeys.length }, "Schwab streamer: desk TIMESALE_FUTURES UNSUBS");
+  }
+}
+
+/** Returns true when this module performed the ADD (caller should release). */
+export function deskFlowStreamerEnsureEquityL1(sym: string): boolean {
+  const n = normalizeEquityKey(sym);
+  if (subscribedSymbols.has(n) || deskAddedEquitySymbols.has(n)) return false;
+  deskStreamerAddEquity([n]);
+  deskFlowEquityL1Owned.add(n);
+  return true;
+}
+
+export function deskFlowStreamerReleaseEquityL1(sym: string): void {
+  const n = normalizeEquityKey(sym);
+  if (!deskFlowEquityL1Owned.has(n)) return;
+  deskFlowEquityL1Owned.delete(n);
+  deskAddedEquitySymbols.delete(n);
+  if (!subscribedSymbols.has(n) && connectionState === "connected") {
+    sendDeskEquityUnsubs([n]);
+  }
+}
+
+export function deskFlowStreamerEnsureTimesaleEquity(sym: string): boolean {
+  const n = normalizeEquityKey(sym);
+  if (subscribedTimesaleEquitySymbols.has(n) || deskFlowTimesaleEquitySymbols.has(n)) return false;
+  deskFlowTimesaleEquitySymbols.add(n);
+  if (connectionState === "connected") sendDeskTimesaleEquityAdd([n]);
+  return true;
+}
+
+export function deskFlowStreamerReleaseTimesaleEquity(sym: string): void {
+  const n = normalizeEquityKey(sym);
+  if (!deskFlowTimesaleEquitySymbols.has(n)) return;
+  deskFlowTimesaleEquitySymbols.delete(n);
+  if (!subscribedTimesaleEquitySymbols.has(n) && connectionState === "connected") {
+    sendDeskTimesaleEquityUnsubs([n]);
+  }
+}
+
+export function deskFlowStreamerEnsureFuturesL1(displaySymbol: string): boolean {
+  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const key = schwabFuturesKey(ds);
+  addFuturesDisplay(key, ds);
+  if (subscribedFuturesSymbols.has(key) || deskFlowFuturesL1Owned.has(key)) return false;
+  deskFlowFuturesL1Owned.add(key);
+  if (connectionState === "connected") sendDeskFuturesAdd([key]);
+  return true;
+}
+
+export function deskFlowStreamerReleaseFuturesL1(displaySymbol: string): void {
+  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const key = schwabFuturesKey(ds);
+  if (!deskFlowFuturesL1Owned.has(key)) return;
+  deskFlowFuturesL1Owned.delete(key);
+  if (!subscribedFuturesSymbols.has(key) && connectionState === "connected") {
+    sendDeskFuturesUnsubs([key]);
+  }
+}
+
+export function deskFlowStreamerEnsureTimesaleFutures(displaySymbol: string): boolean {
+  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const key = schwabFuturesKey(ds);
+  addFuturesDisplay(key, ds);
+  if (deskFlowTimesaleFuturesSymbols.has(key)) return false;
+  deskFlowTimesaleFuturesSymbols.add(key);
+  if (connectionState === "connected") sendDeskTimesaleFuturesAdd([key]);
+  return true;
+}
+
+export function deskFlowStreamerReleaseTimesaleFutures(displaySymbol: string): void {
+  const ds = displaySymbol.startsWith("/") ? displaySymbol.toUpperCase() : `/${displaySymbol.toUpperCase()}`;
+  const key = schwabFuturesKey(ds);
+  if (!deskFlowTimesaleFuturesSymbols.has(key)) return;
+  deskFlowTimesaleFuturesSymbols.delete(key);
+  if (connectionState === "connected") sendDeskTimesaleFuturesUnsubs([key]);
+}
+
+export function subscribeSchwabTimesaleFuturesEvents(listener: TimesaleFuturesListener): () => void {
+  timesaleFuturesListeners.add(listener);
+  return () => timesaleFuturesListeners.delete(listener);
+}
+
 function sendDeskOptionAdd(symbols: string[]): void {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo || !symbols.length) return;
   const req = buildRequest("LEVELONE_OPTIONS", "ADD", {
@@ -1640,6 +1807,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
 
     quoteCache.set(symbol, quote);
     broadcast("quote", quote);
+    void import("./desk/deskLiveFlowTape.js").then((m) => m.deskLiveFlowTapeOnEquityL1(symbol, item, now));
   }
 }
 
@@ -1723,6 +1891,9 @@ function processFuturesTick(content: Record<string, unknown>[]) {
       const quote: LiveQuote = { ...baseQuote, symbol: displaySymbol };
       quoteCache.set(displaySymbol, quote);
       broadcast("quote", quote);
+      void import("./desk/deskLiveFlowTape.js").then((m) =>
+        m.deskLiveFlowTapeOnFuturesL1(displaySymbol, item, now),
+      );
     }
   }
 }
@@ -1743,6 +1914,44 @@ function emitTimesaleEquityListeners(ev: SchwabTimesaleEquityEvent): void {
       fn(ev);
     } catch (err) {
       logger.error({ err }, "Schwab streamer: TIMESALE_EQUITY listener threw");
+    }
+  }
+}
+
+function emitTimesaleFuturesListeners(ev: SchwabTimesaleEquityEvent & { displaySymbol: string }): void {
+  for (const fn of timesaleFuturesListeners) {
+    try {
+      fn(ev);
+    } catch (err) {
+      logger.error({ err }, "Schwab streamer: TIMESALE_FUTURES listener threw");
+    }
+  }
+}
+
+function processTimesaleFutures(content: Record<string, unknown>[]) {
+  if (content.length === 0) return;
+  for (const item of content) {
+    const rawKey = (item["key"] ?? item["0"]) as string | undefined;
+    if (!rawKey) continue;
+    const streamKey = rawKey.toUpperCase();
+    const mappedDisplays = getFuturesDisplaysForKey(streamKey);
+    const displayTargets = mappedDisplays.size > 0 ? [...mappedDisplays] : [streamKey];
+    for (const displaySymbol of displayTargets) {
+      const ev = {
+        symbol: displaySymbol,
+        displaySymbol,
+        tradeTimeMs: numOrNull(item["1"]),
+        lastPrice: numOrNull(item["2"]),
+        lastSize: numOrNull(item["3"]),
+        sequence: numOrNull(item["4"]),
+        raw: item,
+      };
+      emitTimesaleFuturesListeners(ev);
+      if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
+        void import("./desk/deskLiveFlowTape.js").then((m) =>
+          m.deskLiveFlowTapeOnTimesaleFutures(displaySymbol, ev.lastPrice!, ev.lastSize!, ev.tradeTimeMs),
+        );
+      }
     }
   }
 }
@@ -1774,6 +1983,9 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
     const tsMs = ev.tradeTimeMs ?? Date.now();
     if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
       appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
+      void import("./desk/deskLiveFlowTape.js").then((m) =>
+        m.deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice!, ev.lastSize!, ev.tradeTimeMs),
+      );
     }
     emitTimesaleEquityListeners(ev);
   }
@@ -1960,6 +2172,17 @@ function handleMessage(raw: string) {
       }
       if (command === "ADD" && code !== 0 && code !== 12 && msgText) {
         void import("./desk/deskStreamerBudget.js").then((m) => m.deskParseSchwabStreamerLimitMessage(msgText));
+        if (
+          (service === "LEVELONE_FUTURES" || service === "TIMESALE_FUTURES") &&
+          msgText.toLowerCase().includes("entit")
+        ) {
+          void import("./desk/deskLiveFlowSubs.js").then((subs) => {
+            const fsym = subs.deskLiveFlowSubsLastFuturesDisplay() ?? "/ES";
+            void import("./desk/deskLiveFlowTape.js").then((m) =>
+              m.deskLiveFlowTapeEmitNotice(fsym, "futures_not_entitled", "futures data not entitled"),
+            );
+          });
+        }
       }
       if (
         command === "ADD" &&
@@ -2105,6 +2328,8 @@ function handleMessage(raw: string) {
         processAcctActivity(item.content);
       } else if (item.service === "TIMESALE_EQUITY") {
         processTimesaleEquity(item.content);
+      } else if (item.service === "TIMESALE_FUTURES") {
+        processTimesaleFutures(item.content);
       } else if (item.service === "CHART_EQUITY") {
         processChartEquity(item.content);
       } else if (item.service === "NYSE_BOOK") {

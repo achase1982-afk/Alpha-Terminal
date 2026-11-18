@@ -37,7 +37,7 @@ function slowClient(): Response & { pendingBackpressure: boolean; chunks: string
 describe("deskLiveFlow backpressure", () => {
   it("buffers when write returns false and drops when high water exceeded", () => {
     const res = slowClient();
-    registerDeskLiveFlowSse(res, "SPX");
+    registerDeskLiveFlowSse(res, "SPX", "spx");
     const big = wrapDeskLiveFlowFrame(
       { type: "flow_1s", sym: "SPX", bucket_ms: 0, payload: "x".repeat(500) },
       0,
