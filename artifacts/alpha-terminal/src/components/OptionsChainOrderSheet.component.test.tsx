@@ -2,7 +2,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { OptionsChainOrderSheet, type OptionsChainOrderSheetProps } from "./OptionsChainOrderSheet";
+import {
+  OptionsChainOrderSheet,
+  legsFromChainSelection,
+  type OptionsChainOrderSheetProps,
+} from "./OptionsChainOrderSheet";
+import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import type { StrategyLeg } from "./StrategyBuilder";
 import {
   saveActiveTraderPrefs,
@@ -57,6 +62,31 @@ function renderSheet(overrides?: Partial<OptionsChainOrderSheetProps>) {
   };
   return render(<OptionsChainOrderSheet {...props} />);
 }
+
+describe("legsFromChainSelection", () => {
+  it("prefers streamKey when schwabSymbol is absent (AT ladder)", () => {
+    const legs = legsFromChainSelection(
+      [
+        {
+          key: "k1",
+          contract: {
+            strike: 7340,
+            expiration: "not-a-parseable-date",
+            streamKey: ".SPXW251118C07340000",
+          },
+          type: "CALL",
+          side: "ask",
+        },
+      ],
+      "$SPX",
+      [],
+      buildSchwabOptionKey,
+      null,
+    );
+    expect(legs).toHaveLength(1);
+    expect(legs[0]!.schwabSymbol).toBe(".SPXW251118C07340000");
+  });
+});
 
 describe("OptionsChainOrderSheet", () => {
   afterEach(() => {
