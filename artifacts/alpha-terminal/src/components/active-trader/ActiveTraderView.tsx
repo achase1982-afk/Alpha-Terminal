@@ -117,6 +117,9 @@ interface ActiveTraderViewProps {
   chainQuoteTs?: number;
   /** Shared Chain / Active Trader selector (toolbar placement). */
   subViewChrome?: React.ReactNode;
+  /** Legs built on the chain subview, applied when AT mounts or chain legs change. */
+  buildLegsFromChain?: AtLadderLegPick[];
+  buildLegQtyFromChain?: Map<string, number>;
 }
 
 export const ActiveTraderView = memo(function ActiveTraderView({
@@ -134,6 +137,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   settingsPanelInitiallyOpen,
   chainQuoteTs: chainQuoteTsProp,
   subViewChrome,
+  buildLegsFromChain,
+  buildLegQtyFromChain,
 }: ActiveTraderViewProps) {
   const primary = useMemo(() => {
     const tradable = groups.filter((g) => g.dte >= 0);
@@ -160,6 +165,37 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const [chainSheetCollapsed, setChainSheetCollapsed] = useState(true);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
+  const chainLegSyncSig = useMemo(
+    () =>
+      buildLegsFromChain?.length
+        ? buildLegsFromChain
+            .map((l) => `${l.contract.strike}|${l.type}|${l.side}`)
+            .sort()
+            .join(",")
+        : "",
+    [buildLegsFromChain],
+  );
+
+  useEffect(() => {
+    if (!buildLegsFromChain?.length) return;
+    setSelectedLegs(() => {
+      const next = new Map<string, AtLadderLegPick>();
+      for (const leg of buildLegsFromChain) {
+        next.set(atLadderLegKey(leg.contract, leg.type), {
+          contract: leg.contract,
+          type: leg.type,
+          expiration: leg.expiration,
+          side: leg.side,
+        });
+      }
+      return next;
+    });
+    if (buildLegQtyFromChain) {
+      setLegQuantities(new Map(buildLegQtyFromChain));
+    }
+    setChainSheetCollapsed(true);
+    setChainSheetPeek(false);
+  }, [chainLegSyncSig, buildLegsFromChain, buildLegQtyFromChain]);
   const legShakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [lastLegQuoteSide, setLastLegQuoteSide] = useState<"bid" | "ask">("ask");

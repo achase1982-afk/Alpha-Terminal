@@ -13,18 +13,21 @@ function record(name, pass, detail) {
 
 async function switchView(page, value) {
   const viewSel = page.getByLabel("Options view");
+  await viewSel.waitFor({ state: "visible", timeout: 90_000 }).catch(() => undefined);
   if ((await viewSel.count()) > 0) {
     await viewSel.selectOption(value);
+    await page.waitForTimeout(400);
     return;
   }
   const label = value === "at" ? "Active Trader" : "Chain";
-  await page.getByRole("button", { name: label, exact: true }).click();
+  await page.getByRole("button", { name: label, exact: true }).click({ timeout: 30_000 });
 }
 
 async function openOptionsAt(page, height) {
   await page.setViewportSize({ width: 440, height });
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await page.waitForTimeout(800);
   await switchView(page, "at");
   await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
   await page.waitForFunction(() => document.querySelectorAll("[data-at-strike]").length > 5, { timeout: 90_000 });
@@ -52,25 +55,21 @@ async function expandChainSheetIfNeeded(page) {
   await review.waitFor({ state: "visible", timeout: 12_000 }).catch(() => undefined);
 }
 
-async function clickPutAsks(page, count) {
-  return page.evaluate((n) => {
-    const panel = document.querySelector('[id^="options-exp-panel-"]');
-    if (!panel) return 0;
-    const rows = [...panel.querySelectorAll("div.flex")].filter((el) =>
-      el.querySelector('[data-ui-audit="chain-strike-cell"]'),
-    );
-    let clicked = 0;
-    for (const row of rows) {
-      const putWing = row.children[row.children.length - 1];
-      const ask = putWing?.querySelector('button[aria-label^="Ask"]');
-      if (ask instanceof HTMLButtonElement) {
-        ask.click();
-        clicked += 1;
-        if (clicked >= n) break;
-      }
-    }
-    return clicked;
-  }, count);
+async function clickPutAsks(page, count, viewportHeight) {
+  const panel = page.locator('[id^="options-exp-panel-"]');
+  if ((await panel.count()) === 0) {
+    await page.locator('[data-ui-audit="chain-exp-btn"]').first().click({ timeout: 10_000 }).catch(() => undefined);
+    await page.waitForSelector('[id^="options-exp-panel-"]', { timeout: 15_000 }).catch(() => undefined);
+  }
+  const asks = page.locator('[id^="options-exp-panel-"] button[aria-label^="Ask"]');
+  const total = await asks.count();
+  let clicked = 0;
+  for (let row = 0; row < count && row * 2 + 1 < total; row += 1) {
+    await asks.nth(row * 2 + 1).click({ timeout: 10_000, force: viewportHeight <= 700 });
+    clicked += 1;
+    await page.waitForTimeout(250);
+  }
+  return clicked;
 }
 
 await mkdir(OUT, { recursive: true });
@@ -127,6 +126,7 @@ async function runChainFlows(height) {
   await page.setViewportSize({ width: 440, height });
   await page.goto(LIVE, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByRole("button", { name: "OPTIONS", exact: true }).click({ timeout: 60_000 });
+  await page.waitForTimeout(800);
   await switchView(page, "chain");
   await page.waitForSelector("[data-options-chain-scroll]", { timeout: 90_000 });
   await page.waitForSelector('[id^="options-exp-panel-"]', { timeout: 90_000 });
@@ -142,9 +142,9 @@ async function runChainFlows(height) {
     return open?.textContent?.trim() ?? "";
   });
 
-  const putsClicked = await clickPutAsks(page, 2);
-  await page.waitForTimeout(400);
-  const pressed = await page.locator('button[aria-pressed="true"]').count();
+  const putsClicked = await clickPutAsks(page, 2, height);
+  await page.waitForTimeout(600);
+  const pressed = await page.locator('[id^="options-exp-panel-"] button[aria-pressed="true"]').count();
   record(`two put cells outlined (${height}px)`, putsClicked >= 2 && pressed >= 2, `clicked=${putsClicked} pressed=${pressed}`);
 
   const chainTray = (await page.locator("[data-at-leg-tray]").count()) > 0;
