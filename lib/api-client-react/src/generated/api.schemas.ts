@@ -82,6 +82,8 @@ export interface OptionContract {
   askSize?: number;
   last?: number;
   volume?: number;
+  volumeSampledAt?: number;
+  quoteTimeMs?: number;
   openInterest?: number;
   iv?: number;
   delta?: number;
@@ -97,6 +99,9 @@ export interface OptionChainResponse {
   calls: OptionContract[];
   puts: OptionContract[];
   error?: string;
+  fetchedAt?: number;
+  cacheTtlMs?: number;
+  chainSource?: string;
 }
 
 /**

@@ -509,7 +509,7 @@ router.get("/history", async (req, res) => {
 
 interface ParsedContract {
   strike: number; expiration: string; schwabSymbol?: string; bid?: number; ask?: number; bidSize?: number; askSize?: number; last?: number;
-  volume?: number; volumeSampledAt?: number; openInterest?: number; iv?: number; delta?: number;
+  volume?: number; volumeSampledAt?: number; quoteTimeMs?: number; openInterest?: number; iv?: number; delta?: number;
   gamma?: number; theta?: number; vega?: number; dte?: number;
 }
 
@@ -563,6 +563,10 @@ function parseContracts(map: Record<string, unknown>): ParsedContract[] {
           volumeSampledAt: (() => {
             const tt = opt["tradeTimeInLong"];
             return typeof tt === "number" && tt > 0 ? tt : undefined;
+          })(),
+          quoteTimeMs: (() => {
+            const qt = opt["quoteTimeInLong"];
+            return typeof qt === "number" && qt > 0 ? qt : undefined;
           })(),
           openInterest: opt["openInterest"] as number | undefined,
           iv: (() => { const v = opt["volatility"] as number | undefined; return (v != null && v > 0) ? v : undefined; })(),

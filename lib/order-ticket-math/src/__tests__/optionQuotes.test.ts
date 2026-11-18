@@ -6,6 +6,7 @@ import {
   midpointFromBidAsk,
   quoteSideState,
   resolvePairedBidAsk,
+  resolveChainQuotePresentation,
 } from "../optionQuotes.js";
 
 describe("optionQuotes", () => {
@@ -62,25 +63,46 @@ describe("optionQuotes", () => {
     expect(pair).toEqual({ bid: 1.1, ask: 1.2, source: "contract", crossed: false });
   });
 
-  it("prefers stream only when newer than stored contract pair", () => {
+  it("prefers REST when stream pair is crossed but contract is valid", () => {
+    const pair = resolvePairedBidAsk({
+      streamBid: 22.8,
+      streamAsk: 11.2,
+      streamTs: 9_000,
+      contractBid: 5.05,
+      contractAsk: 5.45,
+      contractQuoteTime: 8_000,
+    });
+    expect(pair).toEqual({ bid: 5.05, ask: 5.45, source: "contract", crossed: false });
+  });
+
+  it("prefers stream only when newer quote time than stored contract pair", () => {
     const fresh = resolvePairedBidAsk({
       streamBid: 1.1,
       streamAsk: 1.2,
       streamTs: 2000,
+      streamQuoteTime: 2000,
       contractBid: 1.0,
       contractAsk: 1.05,
-      contractTs: 1000,
+      contractQuoteTime: 1000,
     });
     expect(fresh?.source).toBe("stream");
     const stale = resolvePairedBidAsk({
       streamBid: 1.1,
       streamAsk: 1.2,
       streamTs: 500,
+      streamQuoteTime: 500,
       contractBid: 1.0,
       contractAsk: 1.05,
-      contractTs: 1000,
+      contractQuoteTime: 1000,
     });
     expect(stale?.source).toBe("contract");
+  });
+
+  it("suppresses crossed and missing books", () => {
+    expect(resolveChainQuotePresentation({ bid: 2, ask: 1, quoteTimeMs: Date.now() }).displayState).toBe("crossed");
+    expect(resolveChainQuotePresentation({ bid: undefined, ask: 1.2, quoteTimeMs: Date.now() }).displayState).toBe(
+      "incomplete",
+    );
   });
 
   it("debit vertical uses positive natural-direction NBBO", () => {

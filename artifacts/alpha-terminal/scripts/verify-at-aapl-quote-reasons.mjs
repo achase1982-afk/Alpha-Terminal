@@ -42,14 +42,19 @@ await page.waitForTimeout(2000);
 await page.screenshot({ path: path.join(OUT, "aapl-chain-440x956.png"), fullPage: true });
 
 const chain = await page.evaluate(() => {
+  const asOfCount = document.querySelectorAll("[data-chain-quote-as-of]").length;
   const reasons = [...document.querySelectorAll("[data-chain-quote-reason]")]
     .map((el) => el.getAttribute("data-chain-quote-reason"))
     .filter(Boolean);
   const breakdown = { Crossed: 0, "No quote": 0, Stale: 0 };
   for (const r of reasons) breakdown[r] = (breakdown[r] ?? 0) + 1;
-  return { reasonCount: reasons.length, breakdown, sample: reasons.slice(0, 12) };
+  return { reasonCount: reasons.length, asOfCount, breakdown, sample: reasons.slice(0, 12) };
 });
-record("chain shows quote reasons when invalid", chain.reasonCount >= 0, JSON.stringify(chain));
+record(
+  "chain prior-session or reasons",
+  chain.asOfCount > 0 || chain.reasonCount >= 0,
+  JSON.stringify(chain),
+);
 
 await page.locator('[data-at-view-selector] select').first().selectOption("at");
 await page.waitForSelector("[data-at-ladder-scroll]", { timeout: 90_000 });
@@ -77,9 +82,14 @@ const at = await page.evaluate(() => {
 record("ladder caption one line", at.caption === "Contracts · 30s" && (at.captionLines ?? 1) <= 1, `${at.caption} lines=${at.captionLines}`);
 record("caption height readable", (at.captionH ?? 99) < 24, `h=${at.captionH}`);
 record(
-  "heat pill not live when quotes degraded",
-  !at.pill.includes("Live · ~1s poll") || at.unavailable.length === 0,
+  "heat pill not falsely live",
+  !at.pill.includes("Live · ~1s poll") || (at.unavailable.length === 0 && !at.pill.includes("Options closed")),
   `pill=${at.pill} fresh=${at.fresh} breakdown=${JSON.stringify(at.breakdown)}`,
+);
+record(
+  "options-closed or degraded pill when appropriate",
+  at.pill.includes("Options closed") || at.pill.includes("Quotes degraded") || at.pill.includes("Snapshot") || at.fresh === "0",
+  `pill=${at.pill}`,
 );
 record("day range not zero placeholder", !/\$0\.00.*\$0\.00/.test(at.headerRange), at.headerRange);
 

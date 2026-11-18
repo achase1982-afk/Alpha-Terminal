@@ -9,6 +9,8 @@ export type AtLadderDisplayQuote = {
   displayState: ReturnType<typeof resolveChainDisplayQuote>["displayState"];
   reason: string | null;
   tapable: boolean;
+  dimmed: boolean;
+  asOfLabel: string | null;
 };
 
 export function atLadderDisplayQuote(
@@ -18,16 +20,20 @@ export function atLadderDisplayQuote(
   nowMs = Date.now(),
 ): AtLadderDisplayQuote {
   if (!contract) {
-    return { bid: null, ask: null, displayState: "incomplete", reason: "No quote", tapable: false };
+    return { bid: null, ask: null, displayState: "incomplete", reason: "No quote", tapable: false, dimmed: false, asOfLabel: null };
   }
   const view = resolveChainDisplayQuote(contract, tick, chainTs, nowMs);
-  const reason = view.displayState !== "ok" ? chainQuoteReasonLabel(view.displayState ?? "incomplete") : null;
+  const state = view.displayState ?? "incomplete";
+  const reason =
+    state !== "ok" && state !== "prior_session" ? chainQuoteReasonLabel(state) : null;
   return {
-    bid: view.tapable ? view.bid ?? null : null,
-    ask: view.tapable ? view.ask ?? null : null,
-    displayState: view.displayState,
+    bid: view.bid ?? null,
+    ask: view.ask ?? null,
+    displayState: state,
     reason,
     tapable: view.tapable,
+    dimmed: view.dimmed ?? false,
+    asOfLabel: view.asOfLabel ?? null,
   };
 }
 

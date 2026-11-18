@@ -13,4 +13,7 @@ export interface OptionChainResponse {
   calls: OptionContract[];
   puts: OptionContract[];
   error?: string;
+  fetchedAt?: number;
+  cacheTtlMs?: number;
+  chainSource?: string;
 }

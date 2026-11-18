@@ -14,6 +14,7 @@ import {
 import { useFlowByKey } from "@/lib/active-trader/useFlowByKey";
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { auditNearAtmLadderQuotes } from "@/lib/active-trader/atLadderQuoteHealth";
+import { equityOptionsClosedPill, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -355,6 +356,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [quoteAudit]);
 
   const ladderHeatSourceDisplay = useMemo(() => {
+    const now = Date.now();
+    if (!equityOptionsSessionOpen(now)) {
+      return { ...ladderHeatSource, label: equityOptionsClosedPill(now), sourceFresh: false };
+    }
     if (
       quoteAudit.nearAtmHasInvalid &&
       (ladderHeatSource.kind === "poll" || ladderHeatSource.kind === "stream") &&

@@ -1,4 +1,5 @@
 export * from "./optionQuotes.js";
+export * from "./chainQuoteSession.js";
 export * from "./optionGreeks.js";
 export * from "./optionTickRound.js";
 export * from "./atmStrike.js";

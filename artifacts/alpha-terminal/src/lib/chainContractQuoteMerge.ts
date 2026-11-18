@@ -1,15 +1,16 @@
 import {
-  chainDisplayQuoteState,
   mergeLegStreamQuotes,
+  resolveChainQuotePresentation,
   resolvePairedBidAsk,
   sanitizeOptionGreek,
-  type QuoteSideState,
+  type ChainQuoteUiState,
 } from "@workspace/order-ticket-math";
 
 type ChainStreamTick = {
   bid?: number | null;
   ask?: number | null;
   ts?: number;
+  quoteTime?: number | null;
   delta?: number | null;
   gamma?: number | null;
   theta?: number | null;
@@ -27,7 +28,10 @@ export type ChainQuoteFields = {
   iv?: number;
   contractTs?: number;
   quoteRxMs?: number;
-  displayState?: QuoteSideState | "stale";
+  quoteTimeMs?: number;
+  displayState?: ChainQuoteUiState;
+  asOfLabel?: string | null;
+  dimmed?: boolean;
 };
 
 export function mergeChainContractWithStream(
@@ -35,6 +39,7 @@ export function mergeChainContractWithStream(
     streamKey?: string;
     bid?: number;
     ask?: number;
+    quoteTimeMs?: number;
     delta?: number;
     gamma?: number;
     theta?: number;
@@ -42,7 +47,7 @@ export function mergeChainContractWithStream(
     iv?: number;
   },
   tick: ChainStreamTick | null | undefined,
-  chainTs: number,
+  chainFetchedAt: number,
 ): ChainQuoteFields {
   const key = contract.streamKey ?? "";
   const merged = mergeLegStreamQuotes(
@@ -50,13 +55,26 @@ export function mergeChainContractWithStream(
       schwabSymbol: key,
       bid: contract.bid,
       ask: contract.ask,
-      contractTs: chainTs,
+      contractTs: chainFetchedAt,
     },
     tick ?? undefined,
   );
   const greek = (kind: "delta" | "gamma" | "theta" | "vega" | "iv", tickVal?: number | null, contractVal?: number) =>
     sanitizeOptionGreek(kind, tickVal ?? contractVal ?? undefined) ?? undefined;
-  const rxMs = tick?.ts && tick.ts > 0 ? tick.ts : chainTs > 0 ? chainTs : null;
+  const paired = resolvePairedBidAsk({
+    streamBid: tick?.bid ?? undefined,
+    streamAsk: tick?.ask ?? undefined,
+    streamTs: tick?.ts,
+    streamQuoteTime: tick?.quoteTime ?? undefined,
+    contractBid: contract.bid ?? undefined,
+    contractAsk: contract.ask ?? undefined,
+    contractQuoteTime: contract.quoteTimeMs,
+    contractTs: chainFetchedAt,
+  });
+  const quoteTimeMs =
+    paired?.source === "stream"
+      ? tick?.quoteTime ?? tick?.ts ?? null
+      : contract.quoteTimeMs ?? chainFetchedAt;
   return {
     bid: merged.bid != null && merged.bid >= 0 ? merged.bid : undefined,
     ask: merged.ask != null && merged.ask > 0 ? merged.ask : undefined,
@@ -65,8 +83,9 @@ export function mergeChainContractWithStream(
     theta: greek("theta", tick?.theta, contract.theta),
     vega: greek("vega", tick?.vega, contract.vega),
     iv: greek("iv", tick?.iv, contract.iv),
-    contractTs: chainTs,
-    quoteRxMs: rxMs ?? undefined,
+    contractTs: chainFetchedAt,
+    quoteRxMs: quoteTimeMs ?? undefined,
+    quoteTimeMs: quoteTimeMs ?? undefined,
   };
 }
 
@@ -76,6 +95,7 @@ export function resolveChainDisplayQuote(
     streamKey?: string;
     bid?: number;
     ask?: number;
+    quoteTimeMs?: number;
     delta?: number;
     gamma?: number;
     theta?: number;
@@ -83,31 +103,45 @@ export function resolveChainDisplayQuote(
     iv?: number;
   } | null,
   tick: ChainStreamTick | null | undefined,
-  chainTs: number,
+  chainFetchedAt: number,
   nowMs = Date.now(),
 ): ChainQuoteFields & { tapable: boolean } {
   if (!contract) {
     return { tapable: false, displayState: "incomplete" };
   }
-  const merged = mergeChainContractWithStream(contract, tick, chainTs);
   const paired = resolvePairedBidAsk({
     streamBid: tick?.bid ?? undefined,
     streamAsk: tick?.ask ?? undefined,
     streamTs: tick?.ts,
+    streamQuoteTime: tick?.quoteTime ?? undefined,
     contractBid: contract.bid ?? undefined,
     contractAsk: contract.ask ?? undefined,
-    contractTs: chainTs,
+    contractQuoteTime: contract.quoteTimeMs,
+    contractTs: chainFetchedAt,
   });
-  const state: QuoteSideState | "stale" =
-    paired?.crossed === true
-      ? "crossed"
-      : chainDisplayQuoteState(merged.bid, merged.ask, merged.quoteRxMs ?? null, nowMs);
-  const tapable = state === "ok";
+  const bookBid = paired?.bid ?? contract.bid;
+  const bookAsk = paired?.ask ?? contract.ask;
+  const quoteTimeMs =
+    paired?.source === "stream"
+      ? tick?.quoteTime ?? tick?.ts ?? null
+      : contract.quoteTimeMs ?? chainFetchedAt;
+
+  const presentation = resolveChainQuotePresentation({
+    bid: bookBid,
+    ask: bookAsk,
+    quoteTimeMs,
+    nowMs,
+  });
+
+  const merged = mergeChainContractWithStream(contract, tick, chainFetchedAt);
   return {
     ...merged,
-    displayState: state,
-    bid: tapable ? merged.bid : undefined,
-    ask: tapable ? merged.ask : undefined,
-    tapable,
+    displayState: presentation.displayState,
+    asOfLabel: presentation.asOfLabel,
+    dimmed: presentation.dimmed,
+    tapable: presentation.tapable,
+    bid: presentation.showBid,
+    ask: presentation.showAsk,
+    quoteTimeMs: quoteTimeMs ?? undefined,
   };
 }

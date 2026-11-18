@@ -1,3 +1,5 @@
+import { formatQuoteAsOfEt, isCarryoverOptionQuote, equityOptionsSessionOpen } from "./chainQuoteSession.js";
+
 export type QuoteSideState = "ok" | "crossed" | "incomplete";
 
 export interface TwoSidedQuote {
@@ -15,8 +17,10 @@ export function quoteSideState(bid: number | null | undefined, ask: number | nul
 /** Chain / AT display: strict two-sided book with bid>0, ask>0, fresh rx timestamp. */
 export const CHAIN_QUOTE_FRESH_MS = 12_000;
 
+export type ChainQuoteUiState = QuoteSideState | "stale" | "prior_session" | "ok";
+
 /** Short UI label when a chain / AT quote is suppressed (never shown for valid books). */
-export function chainQuoteReasonLabel(state: QuoteSideState | "stale" | "ok"): string {
+export function chainQuoteReasonLabel(state: ChainQuoteUiState): string {
   switch (state) {
     case "crossed":
       return "Crossed";
@@ -44,6 +48,62 @@ export function chainDisplayQuoteState(
   return "ok";
 }
 
+/** Chain / AT cell: one rule for every strike — use Schwab quoteTime, not poll/socket time. */
+export function resolveChainQuotePresentation(input: {
+  bid: number | null | undefined;
+  ask: number | null | undefined;
+  quoteTimeMs: number | null | undefined;
+  nowMs?: number;
+  liveFreshMs?: number;
+}): {
+  displayState: ChainQuoteUiState;
+  tapable: boolean;
+  showBid: number | undefined;
+  showAsk: number | undefined;
+  asOfLabel: string | null;
+  dimmed: boolean;
+} {
+  const nowMs = input.nowMs ?? Date.now();
+  const liveFreshMs = input.liveFreshMs ?? CHAIN_QUOTE_FRESH_MS;
+  const side = quoteSideState(input.bid, input.ask);
+  if (side !== "ok") {
+    return {
+      displayState: side,
+      tapable: false,
+      showBid: undefined,
+      showAsk: undefined,
+      asOfLabel: null,
+      dimmed: false,
+    };
+  }
+  const bid = input.bid!;
+  const ask = input.ask!;
+  const qt = input.quoteTimeMs;
+  const carryover = isCarryoverOptionQuote(qt, nowMs);
+  const sessionOpen = equityOptionsSessionOpen(nowMs);
+  const staleLive =
+    sessionOpen && qt != null && Number.isFinite(qt) && qt > 0 && nowMs - qt > liveFreshMs;
+
+  if (carryover || staleLive || !sessionOpen) {
+    return {
+      displayState: "prior_session",
+      tapable: false,
+      showBid: bid,
+      showAsk: ask,
+      asOfLabel: qt != null && qt > 0 ? formatQuoteAsOfEt(qt) : null,
+      dimmed: true,
+    };
+  }
+  return {
+    displayState: "ok",
+    tapable: true,
+    showBid: bid,
+    showAsk: ask,
+    asOfLabel: null,
+    dimmed: false,
+  };
+}
+
 /** Midpoint when ask > 0, bid ≥ 0, and bid ≤ ask; never normalizes crossed books. */
 export function midpointFromBidAsk(bid: number | null | undefined, ask: number | null | undefined): number | null {
   if (quoteSideState(bid, ask) !== "ok") return null;
@@ -61,9 +121,12 @@ export interface PairedQuoteSource {
   streamBid?: number;
   streamAsk?: number;
   streamTs?: number;
+  streamQuoteTime?: number;
   contractBid?: number;
   contractAsk?: number;
-  /** When REST chain quote was fetched (ms); stream wins only if fresher. */
+  /** Schwab quoteTimeInLong for REST leg (ms). */
+  contractQuoteTime?: number;
+  /** Chain poll fetch time — fallback only when quote time missing. */
   contractTs?: number;
 }
 
@@ -130,10 +193,11 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
     crossed: bid > ask,
   });
 
+  const streamQuoteMs = source.streamQuoteTime ?? source.streamTs ?? 0;
+  const contractQuoteMs = source.contractQuoteTime ?? source.contractTs ?? 0;
+
   if (streamOk && contractOk) {
-    const streamTs = source.streamTs ?? 0;
-    const contractTs = source.contractTs ?? 0;
-    if (streamTs > 0 && (contractTs <= 0 || streamTs >= contractTs)) {
+    if (streamQuoteMs > 0 && (contractQuoteMs <= 0 || streamQuoteMs >= contractQuoteMs)) {
       return pick(source.streamBid!, source.streamAsk!, "stream");
     }
     return pick(source.contractBid!, source.contractAsk!, "contract");
@@ -146,6 +210,9 @@ export function resolvePairedBidAsk(source: PairedQuoteSource): PairedBidAsk | n
     source.streamAsk != null &&
     quoteSideState(source.streamBid, source.streamAsk) === "crossed"
   ) {
+    if (contractOk) {
+      return pick(source.contractBid!, source.contractAsk!, "contract");
+    }
     return { bid: source.streamBid, ask: source.streamAsk, source: "stream", crossed: true };
   }
   if (
