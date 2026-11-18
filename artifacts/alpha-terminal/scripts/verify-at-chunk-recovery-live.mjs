@@ -90,9 +90,7 @@ try {
   blockNews = false;
   await page.locator('[data-lazy-view-name="News"] [data-lazy-view-retry]').click({ timeout: 10_000 }).catch(() => undefined);
   await page.waitForTimeout(2500);
-  const newsOk = await page.evaluate(
-    () => !document.querySelector('[data-lazy-view-name="News"] [data-lazy-view-error]'),
-  );
+  const newsOk = await page.evaluate(() => !document.querySelector('[data-lazy-view-name="News"]'));
   record("news retry", newsOk, newsOk ? "ok" : "still error");
 } catch (err) {
   record("chunk recovery live", false, err instanceof Error ? err.message : String(err));
