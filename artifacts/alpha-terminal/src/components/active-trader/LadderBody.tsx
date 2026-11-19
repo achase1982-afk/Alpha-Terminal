@@ -134,7 +134,7 @@ function fmtPx(n: number | null | undefined): string {
   return n.toFixed(2);
 }
 
-/** Re-export wash bounds so tests can assert the mockup-tuned curve. */
+/** Re-export heat bounds so tests can assert volume-only coloring. */
 export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
 const HEAT_RGB = { call: AT_HEAT_CALL_RGB, put: AT_HEAT_PUT_RGB } as const;
@@ -148,15 +148,23 @@ const HEAT_FADE = {
   put: "linear-gradient(270deg, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.14) 55%, rgba(6, 7, 9, 0.32) 100%)",
 } as const;
 
-/** Alpha of a pair's heat colour for a 0-1 intensity. Linear: the engine's scale already carries the curve. */
+/** Alpha of a pair's heat colour for a 0-1 intensity. Zero volume stays transparent. */
 export function atHeatAlpha(intensity: number): number {
   const t = Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
   return AT_HEAT_WASH_ALPHA + (AT_HEAT_MAX_ALPHA - AT_HEAT_WASH_ALPHA) * t;
 }
 
 function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSProperties {
+  const alpha = atHeatAlpha(view.intensity);
+  if (alpha <= 0) {
+    return {
+      backgroundColor: "transparent",
+      backgroundImage: "none",
+      transition: "background-color 160ms linear",
+    };
+  }
   return {
-    backgroundColor: `rgba(${HEAT_RGB[side]}, ${atHeatAlpha(view.intensity).toFixed(3)})`,
+    backgroundColor: `rgba(${HEAT_RGB[side]}, ${alpha.toFixed(3)})`,
     backgroundImage: HEAT_FADE[side],
     transition: "background-color 160ms linear",
   };

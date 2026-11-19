@@ -61,10 +61,10 @@ export const AT_LADDER_CALLS_HDR = "#4ec685";
 export const AT_LADDER_PUTS_HDR = "#ca5c52";
 
 /**
- * Volume heat wash — forest / maroon tuned so a quiet pair matches mockup
- * OTM side tint (~#25332c / ~#422722). Intensity still scales with volume.
+ * Volume heat. A pair with no socket volume stays uncolored.
+ * Call volume paints green; put volume paints red. Alpha scales with intensity.
  */
 export const AT_HEAT_CALL_RGB = "40, 110, 70";
 export const AT_HEAT_PUT_RGB = "140, 50, 48";
-export const AT_HEAT_WASH_ALPHA = 0.32;
+export const AT_HEAT_WASH_ALPHA = 0;
 export const AT_HEAT_MAX_ALPHA = 0.78;
