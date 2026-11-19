@@ -1,6 +1,6 @@
 import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { BORDER, GAMMA_SCENARIO, WHITE } from "@/components/options/optionsTheme";
+import { BORDER, UP, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
@@ -15,8 +15,6 @@ import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
 import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
-import { isSpxSymbol } from "@workspace/order-ticket-math";
-import { useAtVixQuote } from "@/hooks/useAtVixQuote";
 import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
@@ -24,6 +22,7 @@ import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTrader
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { formatGlanceOrderSettingsLine } from "@/lib/active-trader/atSummaryFormat";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
+import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
 
 export { AT_HEADER_BG };
 
@@ -34,17 +33,18 @@ const NUM_FEAT: CSSProperties = {
 
 const SPOT_PAINT_MS = 250;
 
-const LABEL_PX = 11;
-const VALUE_PX = 13;
+const LABEL_PX = 13;
+const VALUE_PX = 14;
 
 const cellLine: CSSProperties = {
   display: "flex",
   alignItems: "baseline",
   justifyContent: "space-between",
-  gap: 6,
+  gap: 8,
   whiteSpace: "nowrap",
   overflow: "hidden",
-  lineHeight: 1.12,
+  lineHeight: 1,
+  minWidth: 0,
 };
 
 export type AtGlanceTopProps = {
@@ -85,10 +85,10 @@ function LevelsCell({
 }) {
   return (
     <div {...dataAttrs} title={title} style={cellLine}>
-      <span style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 500 }}>
+      <span className="truncate" style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 400 }}>
         {label}
       </span>
-      <span className="num shrink-0 text-right" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 700, fontSize: VALUE_PX }}>
+      <span className="num shrink-0 text-right" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 600, fontSize: VALUE_PX }}>
         {value}
       </span>
     </div>
@@ -106,9 +106,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   ladderHeatSource,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const spxHeader = isSpxSymbol(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
-  const vixLast = useAtVixQuote(spxHeader);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
@@ -129,7 +127,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
   const flipLabel = resolveGammaFlipDisplay(zones);
-
   const orderLine =
     orderSettings != null
       ? formatGlanceOrderSettingsLine(
@@ -152,33 +149,34 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       style={{
         background: AT_HEADER_BG,
         borderBottom: `1px solid ${BORDER}`,
-        padding: "3px 10px 4px 8px",
+        padding: 0,
         overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
       <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
 
-      {spxHeader && vixLast != null ? (
-        <div
-          data-at-vix-strip
-          className="flex items-baseline gap-1 num"
-          style={{ ...NUM_FEAT, fontSize: 10, fontWeight: 600, color: AT_SECONDARY, lineHeight: 1.1, marginBottom: 1 }}
-        >
-          <span style={{ color: AT_LABEL, fontWeight: 500 }}>VIX</span>
-          <span data-at-vix-last style={{ color: WHITE }}>
-            {vixLast.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-        </div>
-      ) : null}
-
-      <div className="flex items-center gap-1 min-w-0" style={{ minHeight: 20, lineHeight: 1.1 }}>
-        <div className="flex items-baseline gap-1 min-w-0 flex-1 overflow-hidden">
-          <span style={{ fontSize: 12, fontWeight: 600, color: AT_SECONDARY, letterSpacing: "0.03em" }}>{symLabel}</span>
-          <span className="num" data-ui-audit="at-glance-spot" style={{ ...NUM_FEAT, fontSize: 18, fontWeight: 700, color: WHITE }}>
+      <div
+        className="flex items-center gap-1 min-w-0"
+        style={{
+          height: 42,
+          padding: "0 13px",
+          borderBottom: `1px solid ${BORDER}`,
+          boxSizing: "border-box",
+          lineHeight: 1,
+        }}
+      >
+        <div className="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
+          <span style={{ fontSize: 13, fontWeight: 500, color: AT_SECONDARY, letterSpacing: "0.01em" }}>{symLabel}</span>
+          <span
+            className="num"
+            data-ui-audit="at-glance-spot"
+            style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 500, color: UP, letterSpacing: "-0.02em" }}
+          >
             {spotLabel}
           </span>
           {tickCue.glyph ? (
-            <span data-at-tick-cue style={{ fontSize: 8, color: tickCue.color, lineHeight: 1 }}>
+            <span data-at-tick-cue style={{ fontSize: 9, color: tickCue.color, lineHeight: 1 }}>
               {tickCue.glyph}
             </span>
           ) : null}
@@ -189,7 +187,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               fontSize: 11,
               fontWeight: 600,
               color: dayStatusColor(dayStatus),
-              marginLeft: 3,
+              marginLeft: 1,
               whiteSpace: "nowrap",
             }}
           >
@@ -207,14 +205,23 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         <div
           data-at-day-levels-grid
           style={{
-            display: "flex",
-            alignItems: "stretch",
+            display: "grid",
+            gridTemplateRows: "26px 26px",
             width: "100%",
-            marginTop: 2,
-            columnGap: 0,
+            height: 52,
+            boxSizing: "border-box",
           }}
         >
-          <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "161px 24px 1px 15px minmax(0, 1fr)",
+              alignItems: "center",
+              padding: "0 13px",
+              borderBottom: `1px solid ${BORDER}`,
+              boxSizing: "border-box",
+            }}
+          >
             <LevelsCell
               label="Day low"
               value={sessionLevels.dayLowValue}
@@ -223,16 +230,26 @@ export const AtGlanceTop = memo(function AtGlanceTop({
                 "data-at-day-low-kind": sessionLevels.dayLow.kind,
               }}
             />
-            <LevelsCell
-              label="Low zone top"
-              value={lowZoneVal}
-              dataAttrs={{ "data-at-low-zone-ref": "", "data-at-low-zone-slot": "" }}
-              title={LOW_ZONE_REF_TOOLTIP}
-              valueTone={zoneValTone}
-            />
+            <span style={{ gridColumn: 3, width: 1, height: 14, background: AT_LABEL, opacity: 0.35 }} aria-hidden data-at-day-levels-divider />
+            <div style={{ gridColumn: 5, minWidth: 0 }}>
+              <LevelsCell
+                label="Low zone top"
+                value={lowZoneVal}
+                dataAttrs={{ "data-at-low-zone-ref": "", "data-at-low-zone-slot": "" }}
+                title={LOW_ZONE_REF_TOOLTIP}
+                valueTone={zoneValTone}
+              />
+            </div>
           </div>
-          <div style={{ flex: "0 0 1px", width: 1, background: BORDER, opacity: 0.65, margin: "0 8px" }} aria-hidden data-at-day-levels-divider />
-          <div style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", gap: 1 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "161px 24px 1px 15px minmax(0, 1fr)",
+              alignItems: "center",
+              padding: "0 13px",
+              boxSizing: "border-box",
+            }}
+          >
             <LevelsCell
               label="Day high"
               value={sessionLevels.dayHighValue}
@@ -241,85 +258,82 @@ export const AtGlanceTop = memo(function AtGlanceTop({
                 "data-at-day-high-kind": sessionLevels.dayHigh.kind,
               }}
             />
-            <LevelsCell
-              label="High zone bottom"
-              value={highZoneVal}
-              dataAttrs={{ "data-at-high-zone-ref": "", "data-at-high-zone-slot": "" }}
-              title={SPX_REF_ZONE_TOOLTIP}
-            />
+            <span style={{ gridColumn: 3, width: 1, height: 14, background: AT_LABEL, opacity: 0.35 }} aria-hidden />
+            <div style={{ gridColumn: 5, minWidth: 0 }}>
+              <LevelsCell
+                label="High zone bottom"
+                value={highZoneVal}
+                dataAttrs={{ "data-at-high-zone-ref": "", "data-at-high-zone-slot": "" }}
+                title={SPX_REF_ZONE_TOOLTIP}
+              />
+            </div>
           </div>
         </div>
       ) : null}
 
-      <div data-at-glance-flow-band style={{ marginTop: 3, display: "flex", flexDirection: "column", gap: 2 }}>
-        <div className="flex items-center justify-between gap-1 min-w-0 overflow-hidden" style={{ minHeight: 13, lineHeight: 1.1 }}>
-          <span className="flex items-center gap-1.5 min-w-0 overflow-hidden" style={{ flex: "1 1 auto" }}>
+      <div
+        data-at-glance-flow-band
+        style={{
+          height: 79,
+          padding: "5px 13px 3px",
+          display: "flex",
+          flexDirection: "column",
+          boxSizing: "border-box",
+        }}
+      >
+        <div className="flex items-center justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 18, lineHeight: 1 }}>
+          <span className="flex items-center min-w-0 overflow-hidden" style={{ flex: "1 1 auto" }}>
             <span
               data-at-flow-now
-              style={{ fontWeight: 600, color: AT_LABEL, fontSize: 10, letterSpacing: "0.04em", whiteSpace: "nowrap" }}
+              style={{ fontWeight: 500, color: WHITE, fontSize: 15, letterSpacing: 0, whiteSpace: "nowrap" }}
             >
-              FLOW NOW · {flowWindowSec}s
+              Flow now · {flowWindowSec}s
             </span>
-            {ladderHeatSource?.label ? (
-              <span
-                data-at-ladder-heat-source
-                data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}
-                style={{
-                  fontSize: 8,
-                  fontWeight: 600,
-                  letterSpacing: "0.03em",
-                  color: AT_SECONDARY,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {ladderHeatSource.label}
-              </span>
-            ) : null}
+            {ladderHeatSource?.label ? <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>{ladderHeatSource.label}</span> : null}
           </span>
           <span
             data-at-gamma-flip
-            className="num shrink-0 max-w-[42%] truncate"
-            style={{ ...NUM_FEAT, fontWeight: 600, color: GAMMA_SCENARIO, fontSize: 10, whiteSpace: "nowrap" }}
+            className="num shrink-0 truncate"
+            style={{ ...NUM_FEAT, fontWeight: 500, color: AT_LADDER_GAMMA, fontSize: 14, whiteSpace: "nowrap" }}
           >
             Gamma flip {flipLabel}
           </span>
         </div>
 
-        <div data-at-glance-flow-row style={{ minHeight: 30 }}>
+        <div data-at-glance-flow-row style={{ marginTop: 2, height: 31 }}>
           <AtGlanceGrossFlow
             glance={netPremium}
             zones={zones}
             forceDashAmounts={flowDashShell}
           />
         </div>
+        {orderLine != null && orderSettings != null ? (
+          <button
+            type="button"
+            data-at-order-settings-row
+            data-at-settings-summary
+            data-at-advanced-order-trigger
+            className="flex w-full items-center justify-between gap-1 min-w-0"
+            style={{
+              height: 18,
+              marginTop: 2,
+              padding: "2px 0 0",
+              background: "transparent",
+              border: "none",
+              borderTop: `1px solid ${BORDER}`,
+              color: AT_SECONDARY,
+              fontSize: 9,
+              lineHeight: 1,
+              boxSizing: "border-box",
+            }}
+            onClick={orderSettings.onToggle}
+            aria-expanded={orderSettings.open}
+          >
+            <span className="truncate text-left">{orderLine}</span>
+            <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
+          </button>
+        ) : null}
       </div>
-
-      {orderLine != null && orderSettings != null ? (
-        <button
-          type="button"
-          data-at-order-settings-row
-          data-at-settings-summary
-          data-at-advanced-order-trigger
-          className="w-full flex items-center justify-between gap-1 min-w-0"
-          style={{
-            marginTop: 3,
-            minHeight: 18,
-            padding: 0,
-            background: "transparent",
-            border: "none",
-            borderTop: `1px solid ${BORDER}`,
-            paddingTop: 2,
-            fontSize: 8,
-            color: AT_SECONDARY,
-            lineHeight: 1.2,
-          }}
-          onClick={orderSettings.onToggle}
-          aria-expanded={orderSettings.open}
-        >
-          <span className="truncate text-left">{orderLine}</span>
-          <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
-        </button>
-      ) : null}
     </header>
   );
 });

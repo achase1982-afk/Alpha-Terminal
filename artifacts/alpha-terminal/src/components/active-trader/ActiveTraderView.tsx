@@ -1,7 +1,7 @@
 import { memo, startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
-  BG, BG_EXP_BAR, BG_HEADER, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
+  BG, BG_EXP_BAR, BORDER, BORDER_ROW, DIM, GRAY, WHITE, MONO, FW_LIGHT, UP, DOWN, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
@@ -86,12 +86,13 @@ import {
   AT_LADDER_COL_HDR_H,
   AT_LADDER_GRID,
   AT_LADDER_GROUP_HDR_H,
+  AT_LADDER_GUTTER_X,
   AT_LADDER_PANEL_BG,
   AT_LADDER_PUTS_HDR,
   AT_LADDER_ROW_H,
   AT_LADDER_THIN_SEP,
 } from "@/lib/active-trader/atLadderLayout";
-import { AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeContrast";
+import { AT_HEADER_BG, AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeContrast";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useQuote } from "@/hooks/useQuote";
@@ -367,7 +368,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!primary?.rows?.length) return [];
     return [...primary.rows]
       .map((r) => ({ strike: r.strike, call: r.call, put: r.put }))
-      .sort((a, b) => b.strike - a.strike);
+      .sort((a, b) => a.strike - b.strike);
   }, [primary]);
   const ladderStrikes = useMemo(() => ladderRows.map((r) => r.strike), [ladderRows]);
   /** Loaded strike nearest the underlying. The ladder only re-renders when this moves to another strike. */
@@ -1127,8 +1128,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
       const range = atLadderVisibleRowRange({ ...viewport, viewportPx: el.clientHeight });
       if (!range) return;
-      // Rows are descending: the first visible row is the highest strike.
-      pendingVisible = { min: strikes[range.last]!, max: strikes[range.first]! };
+      pendingVisible = { min: strikes[range.first]!, max: strikes[range.last]! };
       if (visibleTimer != null) clearTimeout(visibleTimer);
       if (fromScroll) visibleTimer = setTimeout(commitVisible, AT_VISIBLE_SETTLE_MS);
       else commitVisible();
@@ -1144,10 +1144,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (!nearBottom) downArmedRef.current = true;
       if (nearTop && direction < 0 && upArmedRef.current) {
         upArmedRef.current = false;
-        cur.onReachEdge("up");
+        // Ascending ladder: scrolling toward the top asks for lower strikes.
+        cur.onReachEdge("down");
       } else if (nearBottom && direction > 0 && downArmedRef.current) {
         downArmedRef.current = false;
-        cur.onReachEdge("down");
+        cur.onReachEdge("up");
       }
     };
 
@@ -1236,27 +1237,29 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       <div
         className="shrink-0 z-[48]"
         style={{
-          background: BG_HEADER,
+          background: AT_HEADER_BG,
           borderBottom: `1px solid ${BORDER}`,
-          boxShadow: "0 2px 6px rgba(0,0,0,0.55)",
         }}
       >
         <div
-          className="grid items-center px-0.5 at-ladder-num"
+          className="grid items-center at-ladder-num"
           style={{
             height: AT_LADDER_GROUP_HDR_H,
             gridTemplateColumns: AT_LADDER_GRID,
+            paddingLeft: AT_LADDER_GUTTER_X,
+            paddingRight: AT_LADDER_GUTTER_X,
             fontSize: 8,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.05em",
             textTransform: "uppercase",
-            background: BG_HEADER,
+            background: AT_HEADER_BG,
+            boxSizing: "border-box",
           }}
         >
           <span
             className="text-center col-span-2 font-bold"
-            style={{ color: AT_LADDER_CALLS_HDR, fontSize: 11, letterSpacing: "0.08em" }}
+            style={{ color: AT_LADDER_CALLS_HDR, fontSize: 13, letterSpacing: "0.03em" }}
           >
             CALLS
           </span>
@@ -1266,10 +1269,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             className="text-center"
             title="Premium traded in the last 30 seconds"
             style={{
-              fontSize: 9,
+              fontSize: 12,
               fontWeight: 500,
               color: AT_LABEL,
-              letterSpacing: "0.02em",
+              letterSpacing: 0,
               textTransform: "none",
               whiteSpace: "nowrap",
               lineHeight: 1.15,
@@ -1279,29 +1282,32 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           </span>
           <span
             className="text-center col-span-2 font-bold"
-            style={{ color: AT_LADDER_PUTS_HDR, fontSize: 11, letterSpacing: "0.08em" }}
+            style={{ color: AT_LADDER_PUTS_HDR, fontSize: 13, letterSpacing: "0.03em" }}
             data-ui-audit="at-puts-hdr"
           >
             PUTS
           </span>
         </div>
         <div
-          className="grid items-center px-0.5 at-ladder-num"
+          className="grid items-center at-ladder-num"
           style={{
             height: AT_LADDER_COL_HDR_H,
             gridTemplateColumns: AT_LADDER_GRID,
-            fontSize: 9,
+            paddingLeft: AT_LADDER_GUTTER_X,
+            paddingRight: AT_LADDER_GUTTER_X,
+            fontSize: 10,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
-            letterSpacing: "0.06em",
+            letterSpacing: "0.02em",
             textTransform: "uppercase",
             borderTop: `1px solid ${AT_LADDER_THIN_SEP}`,
-            background: BG_HEADER,
+            background: AT_HEADER_BG,
+            boxSizing: "border-box",
           }}
         >
           <span className="text-center">BID</span>
           <span className="text-center">ASK</span>
-          <span className="text-center" style={{ color: WHITE, fontWeight: 600, fontSize: 10 }}>
+          <span className="text-center" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 10 }}>
             STRIKE
           </span>
           <span className="text-center">BID</span>

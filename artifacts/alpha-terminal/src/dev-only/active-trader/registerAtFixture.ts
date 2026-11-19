@@ -244,17 +244,20 @@ export function registerAtFixtureFromLocation(): void {
     sma: 0,
   };
   const demoCallKey = buildSchwabOptionKey("SPX", "2026-11-17", 7545, "C");
-  const fixturePositions = [
-    {
-      symbol: demoCallKey,
-      instrument: { symbol: demoCallKey },
-      longQuantity: 2,
-      shortQuantity: 0,
-      quantity: 2,
-      averagePrice: 3.55,
-      marketValue: 710,
-    },
-  ];
+  const fixturePositions =
+    sceneParam === "position"
+      ? [
+          {
+            symbol: demoCallKey,
+            instrument: { symbol: demoCallKey },
+            longQuantity: 2,
+            shortQuantity: 0,
+            quantity: 2,
+            averagePrice: 3.55,
+            marketValue: 710,
+          },
+        ]
+      : [];
   useSchwabAccountStore.setState({
     accounts: [
       {

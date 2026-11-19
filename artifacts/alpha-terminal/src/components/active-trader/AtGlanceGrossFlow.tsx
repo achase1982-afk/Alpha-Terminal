@@ -47,6 +47,7 @@ function GrossFlowTrack({
 }) {
   const sellFill = grossBarFill(soldUsd, sharedScale);
   const buyFill = grossBarFill(boughtUsd, sharedScale);
+
   const sideTag = side === "calls" ? "CALL" : "PUT";
 
   return (
@@ -59,19 +60,19 @@ function GrossFlowTrack({
     >
       <span
         className="shrink-0 inline-block text-left"
-        style={{
-          width: SIDE_COL_W,
-          fontSize: FLOW_VALUE_PX,
-          fontWeight: 600,
-          color: AT_LABEL,
-          letterSpacing: "0.04em",
-        }}
+        style={{ width: SIDE_COL_W, fontSize: FLOW_VALUE_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em" }}
       >
         {sideTag}
       </span>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: DOWN_TEXT, minWidth: 38 }}
+        style={{
+          fontFeatureSettings: '"tnum" 1',
+          fontSize: FLOW_VALUE_PX,
+          fontWeight: 600,
+          color: DOWN_TEXT,
+          minWidth: 38,
+        }}
       >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
@@ -110,7 +111,14 @@ function GrossFlowTrack({
       </div>
       <span
         className="num shrink-0 whitespace-nowrap"
-        style={{ fontFeatureSettings: '"tnum" 1', fontSize: FLOW_VALUE_PX, fontWeight: 600, color: UP, minWidth: 44, textAlign: "right" }}
+        style={{
+          fontFeatureSettings: '"tnum" 1',
+          fontSize: FLOW_VALUE_PX,
+          fontWeight: 600,
+          color: UP,
+          minWidth: 44,
+          textAlign: "right",
+        }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>

@@ -1,4 +1,5 @@
 import { memo, useCallback, useRef } from "react";
+import { ChevronDown } from "lucide-react";
 import { GRAY, MONO, FW_NORMAL, BG_EXP_BAR, WHITE } from "@/components/options/optionsTheme";
 import {
   AT_HEADER_BG,
@@ -71,6 +72,50 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
     }
     flip();
   }, [flip]);
+
+  if (placement === "at-header") {
+    return (
+      <div
+        data-at-subview-chrome
+        data-at-view-selector
+        data-at-subview-placement={placement}
+        data-at-subview-value={view}
+        className="inline-flex h-[42px] shrink-0 items-center"
+      >
+        <button
+          type="button"
+          data-at-subview-hit
+          aria-label="Options view"
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onClick={onClick}
+          className="inline-flex min-h-11 items-center gap-1 border-0 bg-transparent p-0"
+          style={{
+            color: WHITE,
+            fontFamily: MONO,
+            fontSize: 11.5,
+            fontWeight: 600,
+            letterSpacing: 0,
+            touchAction: "pan-y",
+          }}
+        >
+          Active Trader
+          <ChevronDown aria-hidden style={{ width: 12, height: 12, color: GRAY }} />
+        </button>
+        <select
+          aria-hidden
+          tabIndex={-1}
+          value={view}
+          onChange={(e) => onChange(e.target.value as OptionsSubView)}
+          className="sr-only"
+          data-at-subview-select-fallback
+        >
+          <option value="chain">chain</option>
+          <option value="at">at</option>
+        </select>
+      </div>
+    );
+  }
 
   return (
     <div

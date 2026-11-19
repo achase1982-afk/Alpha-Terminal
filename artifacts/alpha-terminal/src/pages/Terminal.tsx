@@ -406,6 +406,7 @@ export default function TerminalPage() {
   const atSubViewActive = useAtChromeStore((s) => s.subViewIsAt);
   const atOptionsChrome = activeBottom === "markets" && contextTab === "options" && atSubViewActive;
   const atGlanceChrome = atOptionsChrome && atGlanceTopEnabled();
+  const atFixture = import.meta.env.DEV ? getAtFixtureOverride() : null;
 
   const [aiSubTab, setAiSubTab] = useState<AiSubTab>(() => {
     try {
@@ -1017,18 +1018,39 @@ export default function TerminalPage() {
   return (
     <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
-      <header id="terminal-header" className="shrink-0 bg-card z-[105] border-b border-card-border safe-top">
-        <div className="flex items-center h-12 px-4 bg-card">
+      <header
+        id="terminal-header"
+        className={`shrink-0 z-[105] safe-top ${atOptionsChrome ? "" : "border-b border-card-border bg-card"}`}
+        style={atOptionsChrome ? { background: "#151719" } : undefined}
+      >
+        <div
+          className={`relative flex items-center ${atOptionsChrome ? "px-3" : "h-12 px-4 bg-card"}`}
+          style={atOptionsChrome ? { height: 61, background: "#151719" } : undefined}
+        >
           <button
             onClick={() => setSidebarOpen(true)}
-            className="p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors mr-2"
+            className={`${atOptionsChrome ? "mr-0 flex h-9 w-9 items-center justify-center p-0" : "mr-2 p-2"} rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors`}
             aria-label="Open menu"
           >
-            <Menu className="w-5 h-5" />
+            <Menu style={atOptionsChrome ? { width: 18, height: 18 } : undefined} className={atOptionsChrome ? "" : "w-5 h-5"} />
           </button>
           <div className={`flex flex-col leading-none ${isWide ? "" : "mr-auto"}`}>
-            <span className="font-sans font-black text-base tracking-wider text-foreground">ALPHA</span>
-            <span className="font-sans font-semibold text-[10px] tracking-[0.25em] text-primary">TERMINAL</span>
+            <span
+              className="font-sans text-foreground"
+              style={{
+                fontSize: 16,
+                fontWeight: 800,
+                letterSpacing: atOptionsChrome ? "0.05em" : "0.08em",
+              }}
+            >
+              ALPHA
+            </span>
+            <span
+              className="font-sans font-semibold text-primary"
+              style={{ fontSize: atOptionsChrome ? 9 : 10, letterSpacing: "0.25em", marginTop: 3 }}
+            >
+              TERMINAL
+            </span>
           </div>
           {isWide && (
             <DesktopTopNav
@@ -1044,15 +1066,33 @@ export default function TerminalPage() {
               strategistUnviewedCount={strategistUnviewedCount}
             />
           )}
-          <MarketSessionClock />
-          <div
-            className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
-            title={streamLight === "live" ? "Live data" : streamLight === "connecting" ? "Connecting..." : "Offline"}
-            style={{
-              background: streamLight === "live" ? "#00d166" : streamLight === "connecting" ? "#FFB800" : "#f23645",
-              boxShadow: streamLight === "live" ? "0 0 6px #00d166" : undefined,
-            }}
-          />
+          {atOptionsChrome && atFixture?.enabled ? (
+            <span
+              className="ml-auto whitespace-nowrap"
+              style={{ color: "#ffcd36", fontSize: 11, fontWeight: 700, letterSpacing: "0.01em", marginRight: 4 }}
+            >
+              DEMO / SIMULATED
+            </span>
+          ) : (
+            <MarketSessionClock compact={atOptionsChrome} />
+          )}
+          {!atOptionsChrome ? (
+            <div
+              className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
+              title={streamLight === "live" ? "Live data" : streamLight === "connecting" ? "Connecting..." : "Offline"}
+              style={{
+                background: streamLight === "live" ? "#00d166" : streamLight === "connecting" ? "#FFB800" : "#f23645",
+                boxShadow: streamLight === "live" ? "0 0 6px #00d166" : undefined,
+              }}
+            />
+          ) : null}
+          {atOptionsChrome ? (
+            <span
+              aria-hidden
+              className="absolute bottom-0 h-px"
+              style={{ left: 12, right: 12, background: "#2d3236" }}
+            />
+          ) : null}
         </div>
         {showTickerTape && !isCompact && <TickerTape />}
         {showAiBiasStrip && !isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />}
@@ -1365,11 +1405,13 @@ export default function TerminalPage() {
 
       <StrategistStatusBar />
 
-      <PushNotificationBanner aboveNav={!isWide} />
+      {!atOptionsChrome ? <PushNotificationBanner aboveNav={!isWide} /> : null}
 
       {!isWide && (
         <BottomNav
           activeTab={activeBottom === "dashboard" ? "markets" : activeBottom}
+          activeTrader={atOptionsChrome}
+          onActiveTraderMarkets={() => setContextTab("news")}
           strategistRunningCount={strategistRunningCount}
           strategistUnviewedCount={strategistUnviewedCount}
           onTabChange={(tab) => {
