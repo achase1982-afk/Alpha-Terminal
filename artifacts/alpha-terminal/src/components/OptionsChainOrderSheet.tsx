@@ -636,9 +636,6 @@ export function OptionsChainOrderSheet({
       entryGrossDollars: entryGross,
       isCredit,
     });
-    if (!limitLocked && draft.prefs.takeProfit?.enabled) {
-      return { ...econ, estNetProfit: null, estNetUnavailable: true };
-    }
     return econ;
   }, [
     atBracketDraft,
@@ -646,7 +643,6 @@ export function OptionsChainOrderSheet({
     symbol,
     quantity,
     submittedLimit,
-    limitLocked,
     summary?.grossNotional,
     isCredit,
     draftDistinctLegCount,
