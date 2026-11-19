@@ -168,20 +168,25 @@ function brokerAcceptance(data: unknown): { accepted: true; orderId: string | nu
   return { accepted: true, orderId: id };
 }
 
-/** Identity of the draft that was sent. Quote ticks are not part of it. */
+/**
+ * Identity of the draft that was sent.
+ * The limit string is not included: Send formats 2.5 to 2.50, and an unlocked
+ * price follows the live mid. Neither is a trader edit. `limitEditEpoch`
+ * advances only when the trader types, nudges, or replaces the limit.
+ */
 function chainDraftRevision(input: {
   legs: StrategyLeg[];
   quantity: number;
-  limitPrice: string;
   limitLocked: boolean;
   orderType: string;
+  limitEditEpoch: number;
 }): string {
   const legs = input.legs
     .map((leg) =>
-      [leg.id, leg.direction, leg.optionType, leg.strike, leg.expiration, leg.quantity, leg.schwabSymbol].join(":"),
+      [leg.id, leg.direction, leg.optionType, leg.strike, leg.expiration, leg.quantity].join(":"),
     )
     .join("|");
-  return `${legs}#${input.quantity}#${input.limitPrice}#${input.limitLocked ? 1 : 0}#${input.orderType}`;
+  return `${legs}#${input.quantity}#${input.limitLocked ? 1 : 0}#${input.orderType}#${input.limitEditEpoch}`;
 }
 
 type PreparedAcceptSound = { play: () => void; close: () => void };
@@ -301,6 +306,10 @@ export function OptionsChainOrderSheet({
   const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
     useState<ChainSheetAtBracketConfirm | null>(null);
   const limitUserEditedRef = useRef(restoredSheetSession?.limitUserEdited === true);
+  const limitEditEpochRef = useRef(0);
+  const noteLimitReplaced = () => {
+    limitEditEpochRef.current += 1;
+  };
   const legsHydrateKeyRef = useRef("");
   const legDirectionKeyRef = useRef<string | null>(null);
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
@@ -504,6 +513,7 @@ export function OptionsChainOrderSheet({
       const raw = dir === "up" ? base + tick : Math.max(tick, base - tick);
       const rounded = roundOptionPriceToTick(raw, limitTickCtx, dir === "up" ? "up" : "down");
       limitUserEditedRef.current = true;
+      noteLimitReplaced();
       setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
       setPriceError("");
     },
@@ -619,9 +629,9 @@ export function OptionsChainOrderSheet({
   draftRevisionRef.current = chainDraftRevision({
     legs,
     quantity,
-    limitPrice,
     limitLocked,
     orderType,
+    limitEditEpoch: limitEditEpochRef.current,
   });
   const [sendLocked, setSendLocked] = useState(false);
   useEffect(() => {
@@ -943,6 +953,7 @@ export function OptionsChainOrderSheet({
         limitPrice={limitPrice}
         onLimitPriceChange={(v) => {
           limitUserEditedRef.current = true;
+          noteLimitReplaced();
           setLimitPrice(v);
           setPriceError("");
         }}
@@ -1196,6 +1207,7 @@ export function OptionsChainOrderSheet({
                     className="flex-1 text-[12px] text-right bg-transparent outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     onChange={(e) => {
                       limitUserEditedRef.current = true;
+                      noteLimitReplaced();
                       setLimitPrice(e.target.value);
                       setPriceError("");
                     }}
@@ -1217,6 +1229,7 @@ export function OptionsChainOrderSheet({
                       const px = spreadPrices?.spreadMid;
                       if (px != null) {
                         limitUserEditedRef.current = false;
+                        noteLimitReplaced();
                         setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
                       }
                     }}
@@ -1231,6 +1244,7 @@ export function OptionsChainOrderSheet({
                       const px = raw != null ? parseCanonicalLimit(raw, limitTickCtx) : null;
                       if (px != null) {
                         limitUserEditedRef.current = false;
+                        noteLimitReplaced();
                         setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
                       }
                     }}
