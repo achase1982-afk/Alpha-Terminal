@@ -785,7 +785,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
       >
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
           <span className="text-[11px] tracking-[0.2em]" style={{ color: GOLD, fontFamily: MONO, fontWeight: FW_PREMIUM }}>COLUMN CONFIG</span>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
             <X className="w-4 h-4" style={{ color: GRAY }} />
           </button>
         </div>
@@ -813,12 +813,17 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                       <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: DIM, background: "#1a1a1a" }}>{col.group}</span>
                     </div>
                     <button
+                      type="button"
+                      aria-label={`${col.label} column, on`}
+                      aria-pressed={true}
                       onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
-                      className="w-8 h-4 rounded-full flex items-center transition-colors justify-end"
-                      style={{ background: GOLD }}
+                      className="flex items-center justify-center shrink-0"
+                      style={{ minWidth: 44, minHeight: 44, background: "transparent" }}
                       disabled={activeColumnIds.length <= 1}
                     >
-                      <div className="w-3.5 h-3.5 rounded-full bg-black mx-0.5" />
+                      <span aria-hidden className="w-8 h-4 rounded-full flex items-center transition-colors justify-end" style={{ background: GOLD }}>
+                        <span className="w-3.5 h-3.5 rounded-full bg-black mx-0.5" />
+                      </span>
                     </button>
                   </div>
                 </Reorder.Item>
@@ -834,17 +839,25 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                 <span className="text-[9px] tracking-[0.15em] mb-1.5 block" style={{ color: DIM, fontWeight: FW_NORMAL }}>{group.label}</span>
                 <div className="space-y-1">
                   {offCols.map(col => (
-                    <button
+                    <div
                       key={col.id}
-                      onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-colors hover:border-white/10"
-                      style={{ background: "transparent", borderColor: "#1a1a1a" }}
+                      className="w-full flex items-center justify-between px-3 rounded-lg border"
+                      style={{ background: "transparent", borderColor: "#1a1a1a", minHeight: 44 }}
                     >
                       <span className="text-[11px]" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.label}</span>
-                      <div className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
-                        <div className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={`${col.label} column, off`}
+                        aria-pressed={false}
+                        onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
+                        className="flex items-center justify-center shrink-0"
+                        style={{ minWidth: 44, minHeight: 44, background: "transparent" }}
+                      >
+                        <span aria-hidden className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
+                          <span className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
+                        </span>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
