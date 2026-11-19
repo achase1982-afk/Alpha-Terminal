@@ -53,7 +53,7 @@ import {
 import {
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
-import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
+import { atOrderSendAllowed, atOrderSendUnavailableReason } from "@/lib/active-trader/atOrderSend";
 import {
   buildChainSheetAtBracketConfirm,
   type ChainSheetAtBracketConfirm,
@@ -692,6 +692,21 @@ export function OptionsChainOrderSheet({
           ? "uncapped"
           : "—";
     const mid = summary?.spreadMid != null ? fmt(summary.spreadMid) : null;
+    const limitInvalid = orderType !== "MARKET" && !(submittedLimit != null && submittedLimit > 0);
+    const bracketMessage =
+      bracketEconomics?.bracketConfirm.mode === "unsupported"
+        ? bracketEconomics.bracketConfirm.message
+        : null;
+    const sendUnavailableReason =
+      legs.length === 0
+        ? "Add a leg before sending."
+        : limitInvalid
+          ? "Invalid limit."
+          : quantity <= 0
+            ? "Enter a quantity."
+            : bracketMessage
+              ? bracketMessage
+              : atOrderSendUnavailableReason();
 
     if (stage === "review") {
       return (
@@ -726,7 +741,8 @@ export function OptionsChainOrderSheet({
             }}
             onSend={() => void handleSubmit()}
             sendDisabled={sendLocked || !sendAllowed}
-            sendLabel={sendAllowed ? "Send" : "Sending off"}
+            sendLabel={sendAllowed ? "Send" : "Send unavailable"}
+            sendDetail={sendAllowed ? null : sendUnavailableReason}
           />
         </div>
       );
@@ -772,16 +788,17 @@ export function OptionsChainOrderSheet({
         onOrderTypeChange={setOrderType}
         limitTickCtx={limitTickCtx}
         sendLabel={
-          atBracketDraft?.prefs.submission === "send"
-            ? sendAllowed
+          sendUnavailableReason
+            ? "Send unavailable"
+            : atBracketDraft?.prefs.submission === "send"
               ? "Send"
-              : "Sending off"
-            : atDocked
-              ? "Send"
-              : limitLocked
-                ? "Review (sending off)"
-                : "Lock limit to send"
+              : atDocked
+                ? "Send"
+                : limitLocked
+                  ? "Review (sending off)"
+                  : "Lock limit to send"
         }
+        sendDetail={atDocked ? sendUnavailableReason : null}
         sendDisabled={atDocked ? !dockedValid : !limitLocked || !isValid}
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
@@ -1122,7 +1139,8 @@ export function OptionsChainOrderSheet({
           }}
           onSend={() => void handleSubmit()}
           sendDisabled={sendLocked || !sendAllowed}
-          sendLabel={sendAllowed ? "Send" : "Sending off"}
+          sendLabel={sendAllowed ? "Send" : "Send unavailable"}
+          sendDetail={sendAllowed ? null : atOrderSendUnavailableReason()}
         />
       )}
     </div>
@@ -1174,6 +1192,7 @@ function ConfirmPanel({
   onSend,
   sendDisabled,
   sendLabel = "Send",
+  sendDetail,
   atBracketConfirm,
   atExitDurationLabel,
 }: {
@@ -1193,6 +1212,7 @@ function ConfirmPanel({
   onSend: () => void;
   sendDisabled?: boolean;
   sendLabel?: string;
+  sendDetail?: string | null;
   atBracketConfirm?: ChainSheetAtBracketConfirm | null;
   atExitDurationLabel?: string;
 }) {
@@ -1327,7 +1347,11 @@ function ConfirmPanel({
             )}
           </div>
         ) : null}
-        {!hidePlainSingleLegConfirm ? (
+        {sendDetail ? (
+          <p data-at-send-reason className="text-[13px] leading-snug font-semibold" style={{ color: DOWN }}>
+            {sendDetail}
+          </p>
+        ) : !hidePlainSingleLegConfirm ? (
           <div
             className="px-2 py-1.5 flex items-center gap-1.5"
             style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}33` }}

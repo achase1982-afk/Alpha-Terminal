@@ -16,6 +16,8 @@ const { sendAllowedMock } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/active-trader/atOrderSend", () => ({
   atOrderSendAllowed: sendAllowedMock,
+  atOrderSendUnavailableReason: () =>
+    sendAllowedMock() ? null : "Preview only. Live routing is off.",
 }));
 
 vi.mock("@/lib/store", () => ({
@@ -145,7 +147,8 @@ describe("OptionsChainOrderSheet", () => {
     expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
     const send = screen.getByTestId("chain-sheet-send");
     expect((send as HTMLButtonElement).disabled).toBe(true);
-    expect(send.textContent).toMatch(/sending off/i);
+    expect(send.textContent).toMatch(/send unavailable/i);
+    expect(screen.getByText("Preview only. Live routing is off.")).toBeTruthy();
     fireEvent.click(send);
     expect(fetchMock).not.toHaveBeenCalled();
   });

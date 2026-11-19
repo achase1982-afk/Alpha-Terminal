@@ -14,3 +14,15 @@ export function atOrderSendAllowed(): boolean {
   if (isAuthDisabled() && !ORDERS_ALLOW_WITHOUT_AUTH) return false;
   return true;
 }
+
+/**
+ * Why a live send cannot be routed. Null when `atOrderSendAllowed()` is true.
+ * Preview-only (the build flag) is a different sentence from a signed-out live route.
+ */
+export function atOrderSendUnavailableReason(): string | null {
+  if (!AT_ORDER_SEND_ENABLED) return "Preview only. Live routing is off.";
+  if (isAuthDisabled() && !ORDERS_ALLOW_WITHOUT_AUTH) {
+    return "Live routing is off until you sign in.";
+  }
+  return null;
+}
