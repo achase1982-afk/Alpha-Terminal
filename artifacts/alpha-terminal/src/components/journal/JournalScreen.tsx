@@ -49,8 +49,8 @@ export function JournalScreen(props: {
   onView: (view: JournalView) => void;
   strategy: string | null;
   onStrategy: (strategy: string | null) => void;
-  onRetry: () => void;
-  exampleBanner?: string | null;
+  onRetry?: () => void;
+  exampleBanner?: boolean;
   accountId?: string;
   onAccount?: (id: string) => void;
   syncNote?: string | null;
@@ -98,8 +98,8 @@ export function JournalScreen(props: {
   return (
     <div ref={rootRef} data-journal-root="" style={{ color: C.text, fontFamily: "inherit" }}>
       {props.exampleBanner && (
-        <div style={{ margin: "8px 12px 0", padding: "8px 10px", background: "#3f2e00", color: "#FFB800", fontSize: 12 }}>
-          {props.exampleBanner}
+        <div style={{ background: "#FFB800", color: "#1a1400", textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
+          EXAMPLE DATA — NOT ACCOUNT FIGURES
         </div>
       )}
       {props.payload?.paper && (
@@ -144,7 +144,7 @@ export function JournalScreen(props: {
       {props.error && (
         <div style={{ padding: 16 }}>
           <div style={{ color: C.muted }}>{props.error}</div>
-          <button type="button" onClick={props.onRetry} style={{ ...pill, marginTop: 8 }}>Retry</button>
+          {props.onRetry ? <button type="button" onClick={props.onRetry} style={{ ...pill, marginTop: 8 }}>Retry</button> : null}
         </div>
       )}
       {props.payload && !props.strategy && props.view === "insights" && (
