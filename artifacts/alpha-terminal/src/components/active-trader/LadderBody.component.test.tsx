@@ -168,6 +168,10 @@ describe("LadderBody", () => {
     expect(cell("call-ask-7330").dataset.atTapable).toBe("1");
     expect(view.container.querySelector('[data-at-spot-row="1"]')?.getAttribute("data-at-ladder-row")).toBe("7320");
     expect(view.container.querySelector('[data-at-gamma-flip-row="1"]')?.getAttribute("data-at-ladder-row")).toBe("7295");
+    const flipTag = view.container.querySelector<HTMLElement>("[data-at-strike-gamma-flip]")!;
+    expect(flipTag.textContent).toBe("GAMMA FLIP");
+    expect(flipTag.style.fontSize).toBe("11px");
+    expect(flipTag.classList.contains("absolute")).toBe(true);
   });
 
   it("a quote re-renders its own contract and nothing else", () => {
