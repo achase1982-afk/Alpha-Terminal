@@ -84,8 +84,10 @@ const SHEET_SWIPE_PX = 24;
 const SHEET_TAP_SLOP_PX = 8;
 
 /**
- * Grab handle for the Active Trader sheet: tap toggles, swipe down collapses
- * it to a one-line bar, swipe up brings it back.
+ * Grab handle for the Active Trader sheet. The collapsed bar expands on a tap
+ * or a swipe up. The expanded full-width overlay only collapses on a deliberate
+ * swipe down — a tap on that strip, or anywhere else inside the ticket, leaves
+ * it open. A swipe up still expands a collapsed bar.
  */
 function SheetHandle({
   collapsed,
@@ -99,6 +101,7 @@ function SheetHandle({
   overlay?: boolean;
 }) {
   const startRef = useRef<{ id: number; y: number } | null>(null);
+  const expandedOverlay = overlay && !collapsed;
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
     startRef.current = { id: e.pointerId, y: e.clientY };
     e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -110,13 +113,19 @@ function SheetHandle({
     const dy = e.clientY - start.y;
     if (dy > SHEET_SWIPE_PX) onCollapsedChange(true);
     else if (dy < -SHEET_SWIPE_PX) onCollapsedChange(false);
-    else if (Math.abs(dy) <= SHEET_TAP_SLOP_PX) onCollapsedChange(!collapsed);
+    else if (!expandedOverlay && Math.abs(dy) <= SHEET_TAP_SLOP_PX) onCollapsedChange(!collapsed);
   };
   return (
     <button
       type="button"
       data-at-order-sheet-handle
-      aria-label={collapsed ? "Expand order ticket" : "Collapse order ticket"}
+      aria-label={
+        expandedOverlay
+          ? "Swipe down to collapse the order ticket"
+          : collapsed
+            ? "Expand order ticket"
+            : "Collapse order ticket"
+      }
       aria-expanded={!collapsed}
       className={overlay ? "absolute inset-x-0 top-0 z-[3]" : "w-full flex flex-col items-stretch"}
       style={{
@@ -133,8 +142,8 @@ function SheetHandle({
         startRef.current = null;
       }}
       onClick={(e) => {
-        // Keyboard / assistive-tech activation; pointer taps are handled on lift.
-        if (e.detail === 0) onCollapsedChange(!collapsed);
+        // Keyboard / assistive-tech activation. The expanded overlay is swipe-only.
+        if (e.detail === 0 && !expandedOverlay) onCollapsedChange(!collapsed);
       }}
     >
       {!overlay ? (
