@@ -488,6 +488,7 @@ router.get("/history", async (req, res) => {
   let period = parseInt((req.query["period"] as string) ?? "3", 10);
   let frequencyType = (req.query["frequencyType"] as string) ?? "daily";
   let frequency = parseInt((req.query["frequency"] as string) ?? "1", 10);
+  const needExtendedHoursData = req.query["needExtendedHoursData"] === "true";
 
   if (!symbol || !accessToken) {
     return res.json({ symbol: "", candles: [], error: "symbol is required and no access token available" });
@@ -509,7 +510,7 @@ router.get("/history", async (req, res) => {
       period: String(period),
       frequencyType,
       frequency: String(frequency),
-      needExtendedHoursData: "false",
+      needExtendedHoursData: String(needExtendedHoursData),
     });
 
     const response = await fetch(`${SCHWAB_API_BASE}/pricehistory?${params.toString()}`, {

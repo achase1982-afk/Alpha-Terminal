@@ -20,7 +20,11 @@ import {
   streamerSubTouch,
 } from "../lib/streamerSubscriptionManager.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
-import { nyCalendarYmd, rthBoundsMs } from "../lib/usEquityMarketCalendar.js";
+import {
+  addCalendarDaysNy,
+  nyCalendarYmd,
+  nyOffsetForYmd,
+} from "../lib/usEquityMarketCalendar.js";
 
 const router: IRouter = Router();
 
@@ -92,30 +96,31 @@ router.post("/equity-tape", async (req, res) => {
   ];
   setClientEquityTape(cleaned);
 
-  // A newly opened ladder must not start today's volume profile at zero,
-  // especially after the close when no new prints will arrive. Seed it from
-  // the server's persistent TIMESALE_EQUITY session ring, then live prints
-  // continue incrementing the same price buckets over SSE.
+  // A newly opened ladder must not start today's volume profile at zero.
+  // Seed every print from the current NY calendar day—without market-hours
+  // cutoffs—then continue incrementing the same buckets over SSE.
   const sessionDate = nyCalendarYmd(new Date());
-  const { openMs, closeMs } = await rthBoundsMs(sessionDate);
-  const throughMs = Math.min(Date.now(), closeMs);
+  const nextDate = addCalendarDaysNy(sessionDate, 1);
+  const dayStartMs = new Date(`${sessionDate}T00:00:00${nyOffsetForYmd(sessionDate)}`).getTime();
+  const dayEndMs = new Date(`${nextDate}T00:00:00${nyOffsetForYmd(nextDate)}`).getTime();
+  const throughMs = Math.min(Date.now(), dayEndMs);
   const volumeByPrice: Record<string, Record<string, number>> = {};
   const profileComplete: Record<string, boolean> = {};
   for (const symbol of cleaned) {
     const profile: Record<string, number> = {};
     const sessionPoints = getStrategistTimesalePoints(symbol).filter(
-      (point) => point.ts >= openMs && point.ts <= throughMs,
+      (point) => point.ts >= dayStartMs && point.ts < throughMs,
     );
     for (const point of sessionPoints) {
       const key = point.price.toFixed(2);
       profile[key] = (profile[key] ?? 0) + point.size;
     }
     volumeByPrice[symbol] = profile;
-    // The ring is exact only when it reaches the opening minutes. A server
-    // restart or ring-cap eviction leaves a partial profile; the client then
-    // seeds from today's minute history instead of showing only the tail.
+    // The ring is exact only when it reaches the beginning of the NY calendar
+    // day. A server restart or ring-cap eviction leaves a partial profile; the
+    // client then seeds from extended-hours minute history instead.
     profileComplete[symbol] =
-      sessionPoints.length > 0 && sessionPoints[0]!.ts <= openMs + 5 * 60_000;
+      sessionPoints.length > 0 && sessionPoints[0]!.ts <= dayStartMs + 60 * 60_000;
   }
   res.json({
     ok: true,

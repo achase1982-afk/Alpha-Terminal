@@ -101,7 +101,7 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
         let profile = data.volumeByPrice?.[sym] ?? {};
         if (data.profileComplete?.[sym] !== true) {
           const historyRes = await fetchWithAuth(
-            `/api/market/history?symbol=${encodeURIComponent(sym)}&periodType=day&period=1&frequencyType=minute&frequency=1`,
+            `/api/market/history?symbol=${encodeURIComponent(sym)}&periodType=day&period=1&frequencyType=minute&frequency=1&needExtendedHoursData=true`,
           );
           if (historyRes.ok) {
             const history = (await historyRes.json()) as EquityHistoryResponse;

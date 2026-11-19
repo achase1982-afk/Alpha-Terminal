@@ -133,9 +133,9 @@ function candleSessionDate(datetime: string): string | null {
 }
 
 /**
- * Historical fallback when the server restarted after the session and has no
- * time-and-sales ring to replay. One-minute bar volume is assigned to HLC3,
- * rounded to the ladder's cent tick; live prints then continue from that seed.
+ * Historical fallback when the server has no complete time-and-sales day to
+ * replay. Extended-hours one-minute volume is assigned to HLC3, rounded to the
+ * ladder's cent tick; live prints then continue from that seed.
  */
 export function stockVolumeProfileFromCandles(
   candles: readonly StockVolumeCandle[],
