@@ -104,7 +104,7 @@ function formatRestQuote(
 }
 
 async function polygonLastTrade(sym: string): Promise<Record<string, unknown> | null> {
-  const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
+  const apiKey = "";
   if (!apiKey) return null;
   const to = new Date();
   const from = new Date(to.getTime() - 3 * 86_400_000);
@@ -177,24 +177,18 @@ export async function fetchQuoteForChat(
     if (rest?.last != null) {
       base = formatRestQuote(sym, rest, session, now);
     } else {
-      const poly = await polygonLastTrade(sym);
-      base =
-        poly ??
-        ({
+      base = {
           symbol: sym,
           source: "none",
-          error: "No live quote from Schwab stream or REST, and Polygon aggs returned no data.",
-        } as Record<string, unknown>);
+          error: "No live quote from Schwab stream or REST.",
+        };
     }
   } else {
-    const poly = await polygonLastTrade(sym);
-    base =
-      poly ??
-      ({
-        symbol: sym,
-        source: "none",
-        error: "No live quote available (Schwab not connected on server).",
-      } as Record<string, unknown>);
+    base = {
+      symbol: sym,
+      source: "none",
+      error: "No live quote available (Schwab not connected on server).",
+    };
   }
 
   const cold = await augmentPolygonColdTickerForChat({

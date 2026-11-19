@@ -8,8 +8,7 @@ import { appendPolygonApiTraceRecord } from "./polygonApiTrace.js";
 const POLYGON_BASE = "https://api.polygon.io";
 
 export function polygonKey(): string | null {
-  const k = process.env["POLYGON_API_KEY"];
-  return k && k.length > 0 ? k : null;
+  return null;
 }
 
 export type ConsensusPriceTargetFreshness = "fresh" | "stale" | "unknown";

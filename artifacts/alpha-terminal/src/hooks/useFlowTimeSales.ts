@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useMemo } from "react";
-import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 // ── Live time-and-sales hook for a single OPRA contract ──────────────
 //
@@ -77,7 +77,6 @@ export function useFlowTimeSales(contract: string | null | undefined): {
     setStatus("connecting");
     setError(null);
 
-    let es: EventSource | null = null;
 
     (async () => {
       // REST backfill always runs — it's the dev-mode source of truth and
@@ -100,33 +99,7 @@ export function useFlowTimeSales(contract: string | null | undefined): {
       } catch { /* ignore */ }
 
       if (cancelled) return;
-
-      // Probe whether the server has the Polygon options WS enabled. If
-      // it's not (dev environments by default), opening an EventSource
-      // would just churn through repeated 503 errors and reconnect storms,
-      // so we stay in stable REST-only mode and report "disabled".
-      let wsEnabled = false;
-      try {
-        const s = await fetchWithAuth(`${API_BASE}/flow/timesales/_status`);
-        if (s.ok) {
-          const j = await s.json() as { polygonWsEnabled?: boolean };
-          wsEnabled = Boolean(j.polygonWsEnabled);
-        }
-      } catch { /* ignore — treat as disabled */ }
-
-      if (cancelled) return;
-      if (!wsEnabled) {
-        setStatus("disabled");
-        return;
-      }
-
-      // SSE live stream — only opened when the server reports WS enabled.
-      const url = await buildAuthenticatedEventSourceUrl(
-        `${API_BASE}/flow/timesales/${encodeURIComponent(contract)}/stream`,
-      );
-      es = new EventSource(url);
-      esRef.current = es;
-      attachSseListeners(es);
+      setStatus("disabled");
     })();
 
     function attachSseListeners(s: EventSource) {
@@ -164,7 +137,6 @@ export function useFlowTimeSales(contract: string | null | undefined): {
 
     return () => {
       cancelled = true;
-      if (es) { try { es.close(); } catch { /* noop */ } }
       esRef.current = null;
     };
   }, [contract]);

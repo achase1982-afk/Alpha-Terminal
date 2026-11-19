@@ -497,15 +497,9 @@ router.get("/nfp-full", async (req, res) => {
     }
 
     const allSeriesIds = Object.values(NFP_SERIES).map(s => s.id);
-    const [allData, fedLaborRows] = await Promise.all([
-      fetchBlsSeriesBatch(allSeriesIds),
-      fetchFedLaborMarketRows(24),
-    ]);
+    const allData = await fetchBlsSeriesBatch(allSeriesIds);
 
-    let results: Record<string, any> = computeNfpAtOffset(allData, 0);
-    if (fedLaborRows.length) {
-      results = mergeMassiveLaborIntoNfpResults(results, buildLaborMonthsFromFed(fedLaborRows));
-    }
+    const results: Record<string, any> = computeNfpAtOffset(allData, 0);
 
     const nfpRawData = allData[NFP_SERIES.nfp.id] ?? [];
     const nfpMonthly = nfpRawData.filter(d => d.period.startsWith("M"));
@@ -786,15 +780,9 @@ router.get("/cpi-full", async (req, res) => {
     }
 
     const allIds = Object.values(CPI_FULL_SERIES).map((s) => s.id);
-    const [allData, fedInflationRows] = await Promise.all([
-      fetchBlsSeriesBatch(allIds),
-      fetchFedInflationRows(24),
-    ]);
+    const allData = await fetchBlsSeriesBatch(allIds);
     const seriesEntries = Object.entries(CPI_FULL_SERIES) as [string, { id: string; label: string }][];
-    let results: Record<string, any> = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
-    if (fedInflationRows.length) {
-      results = mergeMassiveCpiIntoResults(results, buildCpiMonthsFromFedInflation(fedInflationRows));
-    }
+    const results: Record<string, any> = buildInflationByMonth(seriesEntries, allData, CPI_FULL_SERIES.headline.id, "https://www.bls.gov/news.release/cpi.nr0.htm", "cpi");
 
     let expected: string | null = null;
     try {

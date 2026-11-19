@@ -778,7 +778,7 @@ export async function collectOptionsChainSnapshots(
   dateStr?: string,
 ): Promise<number> {
   const date = dateStr ?? todayStr();
-  const polygonKey = process.env["POLYGON_API_KEY"];
+  const polygonKey = "";
   let rowCount = 0;
 
   logger.info({ count: symbols.length, date }, "Snapshot: collecting options chain data");
@@ -1058,7 +1058,7 @@ export async function collectPolygonFlowFromAPI(
   dateStr?: string,
 ): Promise<{ strikeRows: number; tradeRows: number; sessionDatesUsed: string[] }> {
   const explicitSessionDate = dateStr?.trim() || null;
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) return { strikeRows: 0, tradeRows: 0, sessionDatesUsed: [] };
 
   const queryExpMin = polygonFlowQueryExpirationMinYmd(explicitSessionDate);
@@ -1774,7 +1774,7 @@ export async function backfillPolygonFlow(
   daysBack = 60,
   force = false,
 ): Promise<{ totalStrikeRows: number; symbolsDone: number; datesProcessed: number; skipped: number }> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     logger.warn("Backfill: no POLYGON_API_KEY, skipping flow backfill");
     return { totalStrikeRows: 0, symbolsDone: 0, datesProcessed: 0, skipped: 0 };
@@ -1964,7 +1964,7 @@ export async function backfillEquityFromPolygon(
   symbols: string[],
   daysBack = 120,
 ): Promise<{ totalRows: number; symbolsDone: number }> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) return { totalRows: 0, symbolsDone: 0 };
 
   const fromDate = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
@@ -2112,7 +2112,7 @@ export async function updateEquityDailyFromGroupedBars(
   symbols: string[],
   tradingDates: string[],
 ): Promise<{ totalRows: number; datesProcessed: number }> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) return { totalRows: 0, datesProcessed: 0 };
 
   const symbolSet = new Set(symbols.map(s => s.toUpperCase()));

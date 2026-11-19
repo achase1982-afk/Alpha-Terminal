@@ -14,14 +14,6 @@ router.get("/unusual-flow/status", (_req, res) => {
 
 // Kick off a new scan. Returns 202 + jobId.
 router.post("/unusual-flow", (req, res) => {
-  if (!polygonWsEnabled()) {
-    res.status(503).json({
-      error: "polygon_api_key_missing",
-      message: "POLYGON_API_KEY must be configured on the server.",
-    });
-    return;
-  }
-
   const body = req.body as { tickers?: unknown; durationSec?: unknown; minPremium?: unknown };
   const rawTickers = Array.isArray(body?.tickers) ? body.tickers : [];
   const tickers = rawTickers

@@ -1,6 +1,6 @@
 import { db, eq, tickerSignalSnapshotTable, schwabChartEquityBarsTable, and, gte, lte, asc } from "@workspace/db";
 import { logger } from "./logger.js";
-import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
+import { nyCalendarYmd, prevNyTradingDayYmd, rthBoundsMs } from "./usEquityMarketCalendar.js";
 import { isUsEquityRthEt } from "./ibTotalviewPersistence.js";
 import { getIbTuningL1QuoteSnapshot } from "./ibStreamer.js";
 import {

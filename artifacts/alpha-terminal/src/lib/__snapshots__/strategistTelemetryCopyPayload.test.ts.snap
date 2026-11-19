@@ -78,7 +78,7 @@ exports[`buildSectionedCopyPayload > matches snapshot when all sections selected
     ]
   },
   "flow": {
-    "polygonFlowHighlights": {
+    "flowHighlights": {
       "f": 1
     }
   },

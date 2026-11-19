@@ -12,7 +12,7 @@ export interface RateProbe {
 const POLYGON_API = "https://api.polygon.io";
 
 export async function probePolygonRate(): Promise<RateProbe> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     return {
       tier: "unknown",

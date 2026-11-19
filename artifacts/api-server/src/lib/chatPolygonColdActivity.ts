@@ -6,7 +6,6 @@
  * user asks tape-style questions or the snapshot shows concentrated volume.
  */
 import type { PolygonChainResult, PolygonParsedContract } from "./polygonChain.js";
-import { fetchPolygonChain } from "./polygonChain.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { getQuoteBySymbol } from "./schwabStreamer.js";
@@ -216,141 +215,11 @@ export interface ColdPolygonChatAugmentResult {
  * Build Tier A (+ optional Tier B) markdown for the chat terminal pack.
  * Does not fetch Schwab chain; uses Polygon snapshot only.
  */
-export async function augmentPolygonColdTickerForChat(args: {
+export async function augmentPolygonColdTickerForChat(_args: {
   symbol: string;
   lastUserMessage: string;
   highlightsBefore: PolygonFlowHighlights | null;
   packLog: ColdPackLog;
 }): Promise<ColdPolygonChatAugmentResult> {
-  const sym = args.symbol.toUpperCase().trim();
-  const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
-  if (!apiKey) {
-    return {
-      tierBCaptureAttempted: false,
-      section:
-        "### On-demand Polygon options snapshot (cold path)\n"
-        + `symbol=${sym}\n`
-        + "- **Skipped:** `POLYGON_API_KEY` is not set on this API server — no Polygon REST snapshot can run. Set the key (or use an environment where it is configured) to populate chain rankings here.",
-    };
-  }
-
-  let chain: PolygonChainResult | null;
-  try {
-    const q = getQuoteBySymbol(sym);
-    const livePx =
-      typeof q?.last === "number" && Number.isFinite(q.last)
-        ? q.last
-        : typeof q?.close === "number" && Number.isFinite(q.close)
-          ? q.close
-          : undefined;
-    const strikeOpts =
-      livePx != null && livePx > 0
-        ? { strikeMin: Math.floor(livePx * 0.65), strikeMax: Math.ceil(livePx * 1.35) }
-        : {};
-    chain = await fetchPolygonChain(sym, apiKey, {
-      maxDte: 60,
-      maxPages: 12,
-      ...strikeOpts,
-      log: args.packLog,
-    });
-    const hadStrikeBand = strikeOpts.strikeMin != null && strikeOpts.strikeMax != null;
-    if (chain == null && hadStrikeBand) {
-      args.packLog.info({ sym }, "chatPolygonColdActivity: empty chain with strike band — retrying without strike filter");
-      chain = await fetchPolygonChain(sym, apiKey, { maxDte: 60, maxPages: 12, log: args.packLog });
-    }
-  } catch (err) {
-    args.packLog.warn({ err, sym }, "chatPolygonColdActivity: chain fetch threw");
-    return {
-      tierBCaptureAttempted: false,
-      section:
-        "### On-demand Polygon options snapshot (cold path)\n"
-        + `symbol=${sym}\n`
-        + `- **Error:** Polygon chain fetch threw before any rows were read: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  if (!chain || ((chain.calls?.length ?? 0) === 0 && (chain.puts?.length ?? 0) === 0)) {
-    const raw = chain?.rawContractsFetched;
-    const detail =
-      chain == null
-        ? "(Polygon REST returned **zero** raw option rows after any strike-band retry — check `POLYGON_API_KEY`, **Options snapshot entitlements**, HTTP status in server logs, and that the symbol is a US equity option root. Snapshot expiration window uses **NYSE calendar dates**, not UTC midnight.)"
-        : typeof raw === "number" && raw > 0
-          ? `(Polygon returned **${raw}** raw contract rows but **0** contracts after parse — unexpected API shape; check server logs. After deploy, retry once.)`
-        : "(Polygon REST returned no usable option contracts for this underlying.)";
-    return {
-      tierBCaptureAttempted: false,
-      section:
-        "### On-demand Polygon options snapshot (cold path)\n"
-        + `symbol=${sym}\n`
-        + detail,
-    };
-  }
-
-  const tierAJson = rankForTierA(chain, sym);
-  const wantTape = userRequestsOptionsTapeDetail(args.lastUserMessage);
-  const hotSnap = snapshotSuggestsElevatedActivity(chain);
-  const skipCapture = liveTapeAlreadyRich(args.highlightsBefore);
-  const runTierB = (wantTape || hotSnap) && !skipCapture;
-
-  const lines: string[] = [
-    "### On-demand Polygon options snapshot (cold path)",
-    `- symbol=${sym} underlyingPrice=${chain.underlyingPrice ?? "n/a"} (Polygon REST; no prior DB backfill required for this block)`,
-    "- **Tier A** = ranked day volume / vol÷OI from snapshot fields only (not classified sweeps/blocks).",
-    "- **Tier B** = short server capture into flow tables when triggered; then prefer **Polygon / DB flow highlights** below for tape-style facts.",
-    "```json",
-    JSON.stringify(tierAJson, null, 2),
-    "```",
-  ];
-
-  if (!runTierB) {
-    if (wantTape || hotSnap) {
-      lines.push(
-        "- **Tier B skipped:** session already has live classified tape in DB for this symbol, or capture not needed.",
-      );
-    } else {
-      lines.push(
-        "- **Tier B skipped:** question does not ask for tape-style detail and snapshot heuristics did not flag concentrated volume. "
-        + "For sweep/block/time-of-sale style answers, ask explicitly about unusual flow, sweeps, tape, or activity.",
-      );
-    }
-    return { section: lines.join("\n"), tierBCaptureAttempted: false };
-  }
-
-  const occs = pickOccsForCapture(chain, 14);
-  if (occs.length === 0) {
-    lines.push("- **Tier B skipped:** could not derive OCC symbols from snapshot rows.");
-    return { section: lines.join("\n"), tierBCaptureAttempted: false };
-  }
-
-  const { rows: chainRows, summary } = polygonChainToCaptureInputs(chain);
-
-  lines.push(`- **Tier B running:** bounded capture on ${occs.length} OCCs (max ~12s).`);
-
-  try {
-    const fc = await requestFlowCapture(sym, {
-      occs,
-      timeout: 12_000,
-      minDurationMs: 1_600,
-      chain: chainRows,
-      chainSummary: summary,
-    });
-    const refreshed = await getPolygonFlowHighlights(sym, fc.tapeBackfill);
-    lines.push("#### Tier B capture result");
-    lines.push(
-      `- sessionDate=${fc.sessionDate} source=${fc.source} durationMs=${fc.durationMs} rowsInserted=${fc.rowsInserted} occsSubscribed=${fc.occsSubscribed}`,
-    );
-    lines.push(`- errors: ${fc.errors.length ? fc.errors.join("; ") : "none"}`);
-    lines.push(
-      "- If **rowsInserted** is 0, tape may still be quiet for these strikes; rely on Tier A snapshot rankings unless flow JSON below populates.",
-    );
-    return {
-      section: lines.join("\n"),
-      tierBCaptureAttempted: true,
-      highlights: refreshed ?? args.highlightsBefore,
-    };
-  } catch (err) {
-    args.packLog.warn({ err, sym }, "chatPolygonColdActivity: Tier B capture failed");
-    lines.push(`#### Tier B capture error\n- ${err instanceof Error ? err.message : String(err)}`);
-    return { section: lines.join("\n"), tierBCaptureAttempted: true };
-  }
+  return { tierBCaptureAttempted: false, section: "" };
 }

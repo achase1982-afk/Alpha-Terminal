@@ -215,11 +215,21 @@ export function buildSectionedCopyPayload(
   }
 
   if (selected.has("flow")) {
-    out.flow = dp ? pickDp(dp, DP_KEYS_FLOW as unknown as string[]) : {};
+    const flow = dp ? pickDp(dp, DP_KEYS_FLOW as unknown as string[]) : {};
+    if ("polygonFlowHighlights" in flow) {
+      flow.flowHighlights = flow.polygonFlowHighlights;
+      delete flow.polygonFlowHighlights;
+    }
+    out.flow = flow;
   }
 
   if (selected.has("catalyst")) {
-    out.catalyst = dp ? pickDp(dp, DP_KEYS_CATALYST as unknown as string[]) : {};
+    const catalyst = dp ? pickDp(dp, DP_KEYS_CATALYST as unknown as string[]) : {};
+    if ("polygonAnalyst" in catalyst) {
+      catalyst.analyst = catalyst.polygonAnalyst;
+      delete catalyst.polygonAnalyst;
+    }
+    out.catalyst = catalyst;
   }
 
   if (selected.has("dataQuality")) {

@@ -281,7 +281,7 @@ export async function backfillHvProxy(symbols: string[], daysBack: number, opts:
     symbolsProcessed: 0, rowsWritten: 0, rowsRejectedByFloor: 0,
     ivrRowsUpdated: 0, errors: [], daysBack,
   };
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     report.errors.push("POLYGON_API_KEY missing");
     return report;

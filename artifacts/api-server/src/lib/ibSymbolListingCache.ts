@@ -27,7 +27,7 @@ function schwabHintToListing(hint: string | undefined | null): LiquidCorePrimary
 }
 
 async function fetchPolygonPrimaryExchange(ticker: string): Promise<string | null> {
-  const key = process.env["POLYGON_API_KEY"];
+  const key = "";
   const sym = ticker.toUpperCase().trim().replace(/^\$/, "");
   if (!key || !sym) return null;
   try {

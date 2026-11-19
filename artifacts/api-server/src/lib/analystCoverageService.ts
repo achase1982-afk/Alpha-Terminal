@@ -15,8 +15,7 @@ export function resetPolygonBenzingaBlockCache(): void {
 }
 
 function polygonBenzingaDisabledByEnv(): boolean {
-  const v = (process.env["POLYGON_BENZINGA_RATINGS_DISABLED"] ?? "").trim().toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
+  return false;
 }
 
 function shouldSkipPolygonBenzinga(): boolean {

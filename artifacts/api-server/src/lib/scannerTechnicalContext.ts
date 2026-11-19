@@ -15,6 +15,8 @@ import { and, asc, gte, inArray } from "@workspace/db";
 import pLimit from "p-limit";
 import { logger } from "./logger.js";
 import type { SchwabScannerBatchQuote } from "./schwabBatchQuotes.js";
+import { getBestAccessToken } from "./tokenStore.js";
+import { nyCalendarYmd } from "./usEquityMarketCalendar.js";
 
 const POLYGON_API = "https://api.polygon.io";
 /** Prefer DB-only path when we have enough rows for 200-day MA + returns. */
@@ -35,6 +37,38 @@ export type ScannerTechnicalLayer6Wire = {
 };
 
 type OhlcBar = { date: string; close: number; high: number; low: number };
+
+async function fetchSchwabDailyBars(symbol: string, token: string): Promise<OhlcBar[]> {
+  const params = new URLSearchParams({
+    symbol,
+    periodType: "year",
+    period: "2",
+    frequencyType: "daily",
+    frequency: "1",
+    needExtendedHoursData: "false",
+  });
+  try {
+    const res = await fetch(`https://api.schwabapi.com/marketdata/v1/pricehistory?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      candles?: Array<{ datetime: number; high: number; low: number; close: number }>;
+    };
+    return (json.candles ?? [])
+      .filter((c) => Number.isFinite(c.close) && Number.isFinite(c.datetime))
+      .map((c) => ({
+        date: nyCalendarYmd(new Date(c.datetime)),
+        close: c.close,
+        high: c.high,
+        low: c.low,
+      }));
+  } catch (err) {
+    logger.debug({ symbol, err }, "scannerTechnicalContext: price history failed");
+    return [];
+  }
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -268,29 +302,26 @@ export async function fetchScannerTechnicalContextForSymbols(
 
   const dbBarsBySym = await fetchEquityDailyBarsFromDb(uniq, dbCutoff);
 
-  const apiKey = process.env["POLYGON_API_KEY"] ?? "";
-  const needPolygon = new Set<string>();
+  const needBars = new Set<string>();
   for (const sym of uniq) {
     const len = dbBarsBySym.get(sym)?.length ?? 0;
-    if (len < DB_ROWS_SUFFICIENT) needPolygon.add(sym);
+    if (len < DB_ROWS_SUFFICIENT) needBars.add(sym);
   }
 
   const polygonBySym = new Map<string, OhlcBar[]>();
-  if (needPolygon.size > 0 && apiKey) {
-    const limit = pLimit(TECH_POLYGON_CONCURRENCY);
-    await Promise.all(
-      [...needPolygon].map((sym) =>
-        limit(async () => {
-          const bars = await fetchPolygonDailyBars(sym, dbCutoff, toYmd, apiKey);
-          if (bars.length > 0) polygonBySym.set(sym, bars);
-        }),
-      ),
-    );
-  } else if (needPolygon.size > 0 && !apiKey) {
-    logger.warn(
-      { count: needPolygon.size },
-      "scannerTechnicalContext: POLYGON_API_KEY missing; thin equity_daily symbols skip Polygon backfill",
-    );
+  if (needBars.size > 0) {
+    const token = getBestAccessToken();
+    if (token) {
+      const limit = pLimit(TECH_POLYGON_CONCURRENCY);
+      await Promise.all(
+        [...needBars].map((sym) =>
+          limit(async () => {
+            const bars = await fetchSchwabDailyBars(sym, token);
+            if (bars.length > 0) polygonBySym.set(sym, bars);
+          }),
+        ),
+      );
+    }
   }
 
   for (const sym of uniq) {

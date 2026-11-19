@@ -79,61 +79,8 @@ router.get("/timesales/:contract/stream", async (req: Request, res: Response): P
 router.get("/timesales/:contract/recent", async (req: Request, res: Response): Promise<void> => {
   const contract = normalizeContract(String(req.params.contract));
   const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit ?? "200"), 10) || 200));
-  const apiKey = process.env["POLYGON_API_KEY"];
-  if (!apiKey) {
-    res.status(503).json({ error: "POLYGON_API_KEY not set" });
-    return;
-  }
-
-  // Polygon historical trades — today only.
-  const today = new Date().toISOString().slice(0, 10);
-  const url = `https://api.polygon.io/v3/trades/${encodeURIComponent(contract)}?timestamp.gte=${today}&order=desc&limit=${limit}&apiKey=${apiKey}`;
-  try {
-    const r = await fetch(url);
-    if (!r.ok) {
-      res.status(502).json({ error: `Polygon REST failed: ${r.status}` });
-      return;
-    }
-    const data = await r.json() as { results?: Array<Record<string, unknown>> };
-    const rows = Array.isArray(data.results) ? data.results : [];
-
-    // Best-effort classification using the current cached NBBO (we don't
-    // replay historical NBBO). Aggressor will be "neutral" when no NBBO
-    // snapshot is available yet — that's honest.
-    const { getNbbo } = await import("../lib/polygonOptionsWs.js");
-    const nbbo = getNbbo(contract) ?? null;
-    const trades: TimeSalesEvent[] = rows.map((r) => {
-      const price = Number(r["price"] ?? 0);
-      const conditions = Array.isArray(r["conditions"]) ? (r["conditions"] as number[]) : [];
-      const ts = Number(r["sip_timestamp"] ?? r["participant_timestamp"] ?? 0) / 1_000_000; // ns→ms
-      let aggressor: "buy" | "sell" | "neutral" = "neutral";
-      if (nbbo) {
-        const mid = (nbbo.bid + nbbo.ask) / 2;
-        if (price > mid + 1e-9) aggressor = "buy";
-        else if (price < mid - 1e-9) aggressor = "sell";
-      }
-      return {
-        sym: contract,
-        price,
-        size: Number(r["size"] ?? 0),
-        ts,
-        exchange: Number(r["exchange"] ?? 0),
-        conditions,
-        aggressor,
-        nbbo: nbbo ? { bid: nbbo.bid, ask: nbbo.ask, ts: nbbo.ts } : null,
-        isBlock: isBlockFromSize(Number(r["size"] ?? 0)),
-        isSweep: isSweepFromConditions(conditions),
-      };
-    });
-
-    // Polygon returned newest-first; reverse so the client gets oldest→newest
-    // (matching the live SSE order).
-    trades.reverse();
-    res.json({ contract, trades });
-  } catch (err) {
-    logger.error({ err, contract }, "flowTimeSales: REST backfill failed");
-    res.status(502).json({ error: err instanceof Error ? err.message : String(err) });
-  }
+  res.json({ trades: [] });
+  return;
 });
 
 export default router;

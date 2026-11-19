@@ -33,40 +33,14 @@ export async function resolveLiveOptionsChainVerdicts(
 }
 
 async function probeOne(symbol: string): Promise<CatalystOptionsChainVerdict> {
-  const polygon = await polygonHasContracts(symbol);
-  if (polygon === "yes" || polygon === "no") return polygon;
-
   const schwab = await schwabHasOptionsChain(symbol);
   if (schwab === "yes" || schwab === "no") return schwab;
 
   return "unknown";
 }
 
-async function polygonHasContracts(symbol: string): Promise<CatalystOptionsChainVerdict> {
-  const apiKey = (process.env["POLYGON_API_KEY"] ?? "").trim();
-  if (!apiKey) return "unknown";
-
-  const today = nyCalendarYmd(new Date());
-  const url =
-    `${POLYGON_API}/v3/reference/options/contracts` +
-    `?underlying_ticker=${encodeURIComponent(symbol.toUpperCase())}` +
-    `&expiration_date.gte=${today}` +
-    `&limit=1` +
-    `&apiKey=${apiKey}`;
-
-  try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
-    if (!res.ok) {
-      logger.debug({ symbol, status: res.status }, "Polygon options contract probe failed");
-      return "unknown";
-    }
-    const json = (await res.json()) as { results?: unknown[] };
-    const n = Array.isArray(json.results) ? json.results.length : 0;
-    return n > 0 ? "yes" : "no";
-  } catch (err) {
-    logger.debug({ symbol, err }, "Polygon options contract probe error");
-    return "unknown";
-  }
+async function polygonHasContracts(_symbol: string): Promise<CatalystOptionsChainVerdict> {
+  return "unknown";
 }
 
 async function schwabHasOptionsChain(symbol: string): Promise<CatalystOptionsChainVerdict> {
