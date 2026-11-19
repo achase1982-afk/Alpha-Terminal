@@ -1,4 +1,5 @@
 import type { Request } from "express";
+import { equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { parseDeskFlowSymbol } from "../desk/deskLiveFlowSymbol.js";
 import { deskLiveFlowCanSubscribe } from "../desk/deskLiveFlowLimits.js";
 import { registerDeskLiveFlowSse } from "../desk/deskLiveFlowHub.js";
@@ -26,20 +27,23 @@ export function atFlowStreamClientCountForTests(): number {
   return n;
 }
 
-const FLOW_SESSION_FEEDS = new Set(["live_gamma_0dte", "uw_flow", "schwab_streamer"]);
-
 export type FlowFeedRow = { feed: string; status: string };
 
 export type FlowMetaState = { sessionClosed: boolean | null };
 
-/** True when a flow feed is outside its session. Recomputed, not latched at connect. */
-export function flowSessionClosed(feeds: readonly FlowFeedRow[]): boolean {
-  return feeds.some((f) => FLOW_SESSION_FEEDS.has(f.feed) && f.status === "session_closed");
+/** Closed outside the equity-options session (7:30 AM–4:15 PM ET). Feed rows do not move this. */
+export function flowSessionClosed(_feeds: readonly FlowFeedRow[], nowMs = Date.now()): boolean {
+  return !equityOptionsSessionOpen(nowMs);
 }
 
 /** Writes a meta event only when the session flag changes, including closed → open. */
-export function takeFlowMetaUpdate(state: FlowMetaState, sym: string, feeds: readonly FlowFeedRow[]): string | null {
-  const sessionClosed = flowSessionClosed(feeds);
+export function takeFlowMetaUpdate(
+  state: FlowMetaState,
+  sym: string,
+  feeds: readonly FlowFeedRow[],
+  nowMs = Date.now(),
+): string | null {
+  const sessionClosed = flowSessionClosed(feeds, nowMs);
   if (state.sessionClosed === sessionClosed) return null;
   state.sessionClosed = sessionClosed;
   const flowFeed = feeds.find((f) => f.feed === "uw_flow" || f.feed === "schwab_streamer");

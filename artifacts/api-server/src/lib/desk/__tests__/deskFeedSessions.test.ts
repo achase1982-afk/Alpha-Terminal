@@ -29,6 +29,10 @@ describe("deskFeedSessions", () => {
     expect(isSpxDeskProductSessionActive(et("2026-11-17T08:00:00-05:00"))).toBe(true);
   });
 
+  it("SPX stays active across the 9:25-9:30 handoff", () => {
+    expect(isSpxDeskProductSessionActive(et("2026-11-17T09:27:00-05:00"))).toBe(true);
+  });
+
   it("equity pre-market active", () => {
     expect(isEquityQuoteRestSessionActive(et("2026-11-17T08:00:00-05:00"))).toBe(true);
   });
