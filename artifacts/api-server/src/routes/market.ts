@@ -32,7 +32,7 @@ import { logFailure } from "../lib/telemetry.js";
 import { fetchMergedMarketNewsArticles } from "../lib/tickerNewsAggregated.js";
 import { type OptionContract } from "../lib/optionsStrategist.js";
 import { getStoredIVR } from "../lib/ivNormalize.js";
-import { fetchPolygonChain } from "../lib/polygonChain.js";
+import { addCalendarDaysNy, nyCalendarYmd } from "../lib/usEquityMarketCalendar.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 import { setBounded } from "../lib/boundedCache.js";
 import { getSpxKeepawayStats } from "../lib/activeTrader/spxKeepawayCache.js";
@@ -717,6 +717,163 @@ async function fetchChainSide(
   };
 }
 
+const EQUITY_CHAIN_MAX_DTE = 400;
+const EQUITY_CHAIN_DATE_SPLITS = 2;
+
+function equityChainDates(fromDate?: string, toDate?: string): { fromDate: string; toDate: string } {
+  if (fromDate && toDate) return { fromDate, toDate };
+  const today = nyCalendarYmd(new Date());
+  if (fromDate) return { fromDate, toDate: addCalendarDaysNy(fromDate, EQUITY_CHAIN_MAX_DTE) };
+  if (toDate) return { fromDate: addCalendarDaysNy(toDate, -EQUITY_CHAIN_MAX_DTE), toDate };
+  return { fromDate: today, toDate: addCalendarDaysNy(today, EQUITY_CHAIN_MAX_DTE) };
+}
+
+function ymdSpanDays(fromDate: string, toDate: string): number {
+  const start = Date.parse(`${fromDate}T00:00:00Z`);
+  const end = Date.parse(`${toDate}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.round((end - start) / 86_400_000);
+}
+
+function mergeEquityParts(
+  parts: Array<{ calls: ParsedContract[]; puts: ParsedContract[]; underlyingPrice?: number } | null>,
+): { calls: ParsedContract[]; puts: ParsedContract[]; underlyingPrice?: number } | null {
+  const calls: ParsedContract[] = [];
+  const puts: ParsedContract[] = [];
+  const seenCalls = new Set<string>();
+  const seenPuts = new Set<string>();
+  let underlyingPrice: number | undefined;
+  let any = false;
+  for (const part of parts) {
+    if (!part) continue;
+    any = true;
+    if (underlyingPrice == null && part.underlyingPrice != null) underlyingPrice = part.underlyingPrice;
+    for (const call of part.calls) {
+      const key = `${call.expiration}|${call.strike}`;
+      if (seenCalls.has(key)) continue;
+      seenCalls.add(key);
+      calls.push(call);
+    }
+    for (const put of part.puts) {
+      const key = `${put.expiration}|${put.strike}`;
+      if (seenPuts.has(key)) continue;
+      seenPuts.add(key);
+      puts.push(put);
+    }
+  }
+  return any ? { calls, puts, underlyingPrice } : null;
+}
+
+function boundedChainUrl(args: {
+  symbol: string;
+  contractType: "ALL" | "CALL" | "PUT";
+  fromDate: string;
+  toDate: string;
+  range?: "NTM" | "SAK" | "SBK";
+  strikeCount?: number;
+}): string {
+  const params = new URLSearchParams({
+    symbol: args.symbol,
+    contractType: args.contractType,
+    fromDate: args.fromDate,
+    toDate: args.toDate,
+  });
+  if (args.strikeCount && args.strikeCount > 0) {
+    params.set("strikeCount", String(args.strikeCount));
+    params.set("range", args.range ?? "NTM");
+  }
+  return `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+}
+
+async function fetchBoundedEquityChain(
+  chainSymbol: string,
+  token: string,
+  log: any,
+  bounds: {
+    fromDate?: string;
+    toDate?: string;
+    strikeCount?: number;
+    range?: "NTM" | "SAK" | "SBK";
+    signal?: AbortSignal;
+    timeoutMs?: number;
+  },
+): Promise<{ calls: ParsedContract[]; puts: ParsedContract[]; underlyingPrice?: number } | null> {
+  const dates = equityChainDates(bounds.fromDate, bounds.toDate);
+  return loadEquityChainWindow(chainSymbol, token, log, {
+    fromDate: dates.fromDate,
+    toDate: dates.toDate,
+    strikeCount: bounds.strikeCount,
+    range: bounds.range,
+    signal: bounds.signal,
+    timeoutMs: bounds.timeoutMs ?? 30_000,
+    contractType: "ALL",
+    dateDepth: 0,
+  });
+}
+
+async function loadEquityChainWindow(
+  chainSymbol: string,
+  token: string,
+  log: any,
+  args: {
+    fromDate: string;
+    toDate: string;
+    strikeCount?: number;
+    range?: "NTM" | "SAK" | "SBK";
+    signal?: AbortSignal;
+    timeoutMs: number;
+    contractType: "ALL" | "CALL" | "PUT";
+    dateDepth: number;
+  },
+): Promise<{ calls: ParsedContract[]; puts: ParsedContract[]; underlyingPrice?: number } | null> {
+  if (args.signal?.aborted) return null;
+  const url = boundedChainUrl({ ...args, symbol: chainSymbol });
+  const pull = async () => {
+    if (args.signal?.aborted) return null;
+    return fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: args.signal ?? AbortSignal.timeout(args.timeoutMs),
+    });
+  };
+  let response = await pull();
+  if (!response) return null;
+  if (response.status === 503 || response.status === 429) {
+    log.warn({ status: response.status, symbol: chainSymbol, contractType: args.contractType }, "Equity chain transient error — retrying bounded request");
+    await response.text().catch(() => "");
+    await new Promise((r) => setTimeout(r, 1000));
+    response = await pull();
+    if (!response) return null;
+  }
+  if (response.ok) {
+    const json = await response.json() as Record<string, unknown>;
+    const calls = args.contractType === "PUT" ? [] : parseContracts((json["callExpDateMap"] as Record<string, unknown>) ?? {});
+    const puts = args.contractType === "CALL" ? [] : parseContracts((json["putExpDateMap"] as Record<string, unknown>) ?? {});
+    return { calls, puts, underlyingPrice: json["underlyingPrice"] as number | undefined };
+  }
+  const body = await response.text().catch(() => "");
+  if (response.status !== 502) {
+    log.error({ status: response.status, symbol: chainSymbol, contractType: args.contractType, body: body.slice(0, 500) }, "Equity chain fetch failed");
+    return null;
+  }
+  log.warn({ symbol: chainSymbol, contractType: args.contractType, fromDate: args.fromDate, toDate: args.toDate, dateDepth: args.dateDepth }, "Equity chain overflow — splitting the bounded request");
+  if (args.contractType === "ALL") {
+    const calls = await loadEquityChainWindow(chainSymbol, token, log, { ...args, contractType: "CALL" });
+    const puts = await loadEquityChainWindow(chainSymbol, token, log, { ...args, contractType: "PUT" });
+    return mergeEquityParts([calls, puts]);
+  }
+  if (args.dateDepth >= EQUITY_CHAIN_DATE_SPLITS || ymdSpanDays(args.fromDate, args.toDate) < 1) {
+    log.error({ symbol: chainSymbol, contractType: args.contractType, fromDate: args.fromDate, toDate: args.toDate }, "Equity chain overflow remains after the date split");
+    return null;
+  }
+  const span = ymdSpanDays(args.fromDate, args.toDate);
+  const mid = addCalendarDaysNy(args.fromDate, Math.max(1, Math.floor(span / 2)));
+  const leftTo = addCalendarDaysNy(mid, -1);
+  if (leftTo < args.fromDate) return null;
+  const left = await loadEquityChainWindow(chainSymbol, token, log, { ...args, toDate: leftTo, dateDepth: args.dateDepth + 1 });
+  const right = await loadEquityChainWindow(chainSymbol, token, log, { ...args, fromDate: mid, dateDepth: args.dateDepth + 1 });
+  return mergeEquityParts([left, right]);
+}
+
 async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
@@ -752,40 +909,26 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
     }
   }
 
-  const polygonKey = process.env["POLYGON_API_KEY"];
-  const polygonSymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
-  if (polygonKey && polygonSymbol) {
-    const liveQuote = getQuoteBySymbol(displaySymbol);
-    const livePrice = liveQuote?.last ?? liveQuote?.close;
-    const strikeOpts = livePrice
-      ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
-      : {};
-    const poly = await fetchPolygonChain(polygonSymbol, polygonKey, {
-      maxDte: 60,
-      ...strikeOpts,
-      maxPages: 12,
-      log,
-    });
-    if (poly && (poly.calls.length + poly.puts.length) > 0) {
-      const underlyingPrice = poly.underlyingPrice ?? livePrice ?? undefined;
-      const cached: CachedChain = {
-        symbol: displaySymbol,
-        underlyingPrice,
-        calls: poly.calls,
-        puts: poly.puts,
-        fetchedAt: Date.now(),
-        totalCalls: poly.calls.length,
-        totalPuts: poly.puts.length,
-      };
-      chainCache.set(displaySymbol, cached);
-      evictStaleChains();
-      log.info(
-        { symbol: displaySymbol, totalCalls: poly.calls.length, totalPuts: poly.puts.length, source: "polygon" },
-        "Options chain cached (Polygon)"
-      );
-      return cached;
+  if (!isIndexSymbol) {
+    const bounded = await fetchBoundedEquityChain(displaySymbol, token, log, { timeoutMs: 20_000 });
+    if (!bounded) {
+      log.error({ symbol: displaySymbol }, "Options chain fetch failed");
+      void logFailure("SCHWAB_API", "ERROR", "Schwab full options chain fetch failed", { endpoint: "/chains", symbol: displaySymbol });
+      return null;
     }
-    log.warn({ symbol: displaySymbol }, "Polygon full chain empty — falling back to Schwab");
+    const cached: CachedChain = {
+      symbol: displaySymbol,
+      underlyingPrice: bounded.underlyingPrice,
+      calls: bounded.calls,
+      puts: bounded.puts,
+      fetchedAt: Date.now(),
+      totalCalls: bounded.calls.length,
+      totalPuts: bounded.puts.length,
+    };
+    chainCache.set(displaySymbol, cached);
+    evictStaleChains();
+    log.info({ symbol: displaySymbol, totalCalls: cached.totalCalls, totalPuts: cached.totalPuts, cacheSize: chainCache.size }, "Options chain cached");
+    return cached;
   }
 
   const chainSymbol = isFuturesSymbol ? displaySymbol : isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
@@ -1141,34 +1284,6 @@ router.get("/options", async (req, res) => {
       }
     }
 
-    const polygonKey = process.env["POLYGON_API_KEY"];
-    const polySymbol = (!isIndexSymbol && !isFuturesSymbol) ? displaySymbol : null;
-
-    if (polygonKey && polySymbol) {
-      const liveQuote = getQuoteBySymbol(displaySymbol);
-      const livePrice = liveQuote?.last ?? liveQuote?.close;
-      const strikeOpts = livePrice
-        ? { strikeMin: Math.floor(livePrice * 0.70), strikeMax: Math.ceil(livePrice * 1.30) }
-        : {};
-      const poly = await fetchPolygonChain(polySymbol, polygonKey, {
-        maxDte: 60,
-        ...strikeOpts,
-        maxPages: 12,
-        log: req.log,
-      });
-      if (poly && (poly.calls.length + poly.puts.length) > 0) {
-        const underlyingPrice = poly.underlyingPrice ?? livePrice ?? undefined;
-        const entry = { calls: poly.calls, puts: poly.puts, underlyingPrice, fetchedAt: Date.now() };
-        optionsNtmCache.set(displaySymbol, entry);
-        if (optionsNtmCache.size > 100) {
-          const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
-          optionsNtmCache.delete(oldest[0]);
-        }
-        return res.json(sliceAndReturn(entry, "polygon", indexWindow?.series));
-      }
-      req.log.warn({ symbol: displaySymbol, polySymbol }, "Polygon options chain empty — falling back to Schwab");
-    }
-
     if (!accessToken) {
       return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "no_token" });
     }
@@ -1188,6 +1303,30 @@ router.get("/options", async (req, res) => {
         error: "futures_chain_unsupported",
         message: "Futures option chains are not available via Schwab REST. Streamer-based chain build is pending.",
       });
+    }
+
+    if (!isIndexSymbol) {
+      const bounded = await fetchBoundedEquityChain(displaySymbol, accessToken, req.log, {
+        fromDate: readQueryDate(req.query["fromDate"]),
+        toDate: readQueryDate(req.query["toDate"]),
+        strikeCount,
+        range: requestedRange,
+        signal: req.socket.destroyed ? AbortSignal.abort() : undefined,
+      });
+      if (!bounded) {
+        return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
+      }
+      const maxDte = EQUITY_CHAIN_MAX_DTE;
+      const filteredCalls = bounded.calls.filter((c) => (c.dte ?? Number.POSITIVE_INFINITY) <= maxDte);
+      const filteredPuts = bounded.puts.filter((c) => (c.dte ?? Number.POSITIVE_INFINITY) <= maxDte);
+      req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice: bounded.underlyingPrice }, "Options chain Schwab result");
+      const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice: bounded.underlyingPrice, fetchedAt: Date.now() };
+      optionsNtmCache.set(ntmKey, entry);
+      if (optionsNtmCache.size > 100) {
+        const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
+        optionsNtmCache.delete(oldest[0]);
+      }
+      return res.json(sliceAndReturn(entry, "schwab"));
     }
 
     const chainSymbol = isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
