@@ -1966,20 +1966,30 @@ function processEquityTick(content: Record<string, unknown>[]) {
     let ask = existing?.ask ?? null;
     let askSize = existing?.askSize ?? null;
     let askQuoteTs = existing?.askQuoteTs ?? null;
-    if (bidPxIn && bidSzIn) {
+    if (bidPxIn) {
       const px = numOrNull(item["1"]);
-      const sz = numOrNull(item["4"]);
-      if (px != null && px > 0 && sz != null && sz >= 0) {
+      if (px != null) {
         bid = px;
+        bidQuoteTs = now;
+      }
+    }
+    if (bidSzIn) {
+      const sz = numOrNull(item["4"]);
+      if (sz != null) {
         bidSize = sz;
         bidQuoteTs = now;
       }
     }
-    if (askPxIn && askSzIn) {
+    if (askPxIn) {
       const px = numOrNull(item["2"]);
-      const sz = numOrNull(item["5"]);
-      if (px != null && px > 0 && sz != null && sz >= 0) {
+      if (px != null) {
         ask = px;
+        askQuoteTs = now;
+      }
+    }
+    if (askSzIn) {
+      const sz = numOrNull(item["5"]);
+      if (sz != null) {
         askSize = sz;
         askQuoteTs = now;
       }

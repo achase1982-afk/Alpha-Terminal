@@ -109,7 +109,7 @@ const FEED_SOURCES: Record<DeskFeedId, string> = {
 type SessionWindow = { start: string; end: string };
 
 const FEED_SESSION: Partial<Record<DeskFeedId, SessionWindow>> = {
-  live_gamma_0dte: { start: "09:29:50", end: "16:00:50" },
+  live_gamma_0dte: { start: "07:30:00", end: "16:15:00" },
   live_gamma: { start: "09:31:20", end: "16:00:20" },
   live_net_prem: { start: "09:31:20", end: "15:45:20" },
 };

@@ -10,8 +10,8 @@ function hmsToSec(hms: string): number {
 }
 
 /**
- * SPX / SPXW / XSP desk products: GTH 20:15–09:25 ET (Sun–Fri evenings),
- * RTH 09:30–16:00, curb through 16:15.
+ * SPX / SPXW / XSP desk products: GTH 20:15–09:30 ET (Sun–Fri evenings),
+ * RTH 09:30–16:00, curb through 16:15. Morning GTH runs through the cash open.
  */
 export function isSpxDeskProductSessionActive(now = new Date()): boolean {
   const wd = etWeekdayShort(now);
@@ -20,7 +20,7 @@ export function isSpxDeskProductSessionActive(now = new Date()): boolean {
   const rthStart = hmsToSec("09:30:00");
   const curbEnd = hmsToSec("16:15:00");
   const gthEvenStart = hmsToSec("20:15:00");
-  const gthMornEnd = hmsToSec("09:25:00");
+  const gthMornEnd = hmsToSec("09:30:00");
 
   if (["Mon", "Tue", "Wed", "Thu", "Fri"].includes(wd) && t >= rthStart && t <= curbEnd) {
     return true;

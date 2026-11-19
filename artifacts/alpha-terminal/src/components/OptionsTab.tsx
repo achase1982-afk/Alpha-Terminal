@@ -38,7 +38,6 @@ import {
 } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
-  AT_LADDER_STRIKE_CAP,
   atChainDateWindow,
   optionsExpiryDiscoveryWindow,
 } from "@/lib/active-trader/atLadderStrikeCount";
@@ -1952,8 +1951,7 @@ export function OptionsTab({
     for (const c of calls) push(c, "C");
     for (const p of puts) push(p, "P");
     if (streamKeys.length === 0) return null;
-    const cap = expandedSpxBooks.size > 0 ? streamKeys.length : AT_LADDER_STRIKE_CAP * 2;
-    return buildChainHoldSignature(symbol, expirations.slice(0, cap), streamKeys.slice(0, cap));
+    return buildChainHoldSignature(symbol, expirations, streamKeys);
   }, [data, symbol, optionsSubView, atExpiration, expandedExps, expandedSpxBooks]);
 
   const discoveryGroups = useMemo(() => {

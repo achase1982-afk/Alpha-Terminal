@@ -14,16 +14,19 @@ const OPEN = [
 ];
 
 describe("flow session meta", () => {
-  it("sends closed at connect, then open when the session starts, without repeating", () => {
-    const state: FlowMetaState = { sessionClosed: null };
-    const first = takeFlowMetaUpdate(state, "SPX", CLOSED);
-    expect(first).toContain('"sessionClosed":true');
-    expect(flowSessionClosed(CLOSED)).toBe(true);
-    expect(takeFlowMetaUpdate(state, "SPX", CLOSED)).toBeNull();
+  const beforeOpen = Date.parse("2026-11-18T12:00:00.000Z");
+  const duringGap = Date.parse("2026-11-18T14:27:00.000Z");
 
-    const reopened = takeFlowMetaUpdate(state, "SPX", OPEN);
+  it("follows the options session and ignores a cash-window session_closed row", () => {
+    const state: FlowMetaState = { sessionClosed: null };
+    const first = takeFlowMetaUpdate(state, "SPX", OPEN, beforeOpen);
+    expect(first).toContain('"sessionClosed":true');
+    expect(flowSessionClosed(OPEN, beforeOpen)).toBe(true);
+    expect(takeFlowMetaUpdate(state, "SPX", OPEN, beforeOpen)).toBeNull();
+
+    const reopened = takeFlowMetaUpdate(state, "SPX", CLOSED, duringGap);
     expect(reopened).toContain('"sessionClosed":false');
-    expect(flowSessionClosed(OPEN)).toBe(false);
-    expect(takeFlowMetaUpdate(state, "SPX", OPEN)).toBeNull();
+    expect(flowSessionClosed(CLOSED, duringGap)).toBe(false);
+    expect(takeFlowMetaUpdate(state, "SPX", CLOSED, duringGap)).toBeNull();
   });
 });
