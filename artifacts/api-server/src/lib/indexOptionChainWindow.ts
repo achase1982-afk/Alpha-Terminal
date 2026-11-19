@@ -23,7 +23,31 @@ export type IndexChainWindow = {
   /** Passed to Schwab as `strikeCount` (total centered strikes around ATM). */
   strikeCountPerSide: number;
   range: IndexChainRange;
+  /** OCC root, when the client asked for one settlement series (SPX vs SPXW). */
+  series?: string;
 };
+
+const OCC_SUFFIX = /^\d{6}[CP]\d{8}$/;
+
+/** OCC root from a Schwab option symbol. Unknown shapes return null. */
+export function occRootFromOptionSymbol(symbol: string | null | undefined): string | null {
+  if (!symbol) return null;
+  let raw = symbol.trim();
+  if (raw.startsWith(".")) raw = raw.slice(1);
+  if (raw.length < 15) return null;
+  const suffix = raw.slice(-15);
+  if (!OCC_SUFFIX.test(suffix)) return null;
+  const root = raw.slice(0, -15).trim().toUpperCase();
+  return root || null;
+}
+
+/** Series query from the client. Letters and digits only, so it cannot change the date window. */
+export function readChainSeries(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const root = value.trim().toUpperCase();
+  if (!/^[A-Z][A-Z0-9]{0,5}$/.test(root)) return undefined;
+  return root;
+}
 
 export function readQueryDate(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -68,6 +92,7 @@ export function resolveIndexChainWindow(input: {
   toDate?: unknown;
   strikeCount?: number;
   range?: unknown;
+  series?: unknown;
   now?: Date;
   defaultSpanDays?: number;
 }): IndexChainWindow {
@@ -92,11 +117,13 @@ export function resolveIndexChainWindow(input: {
   }
   const range = readChainRange(input.range);
   const singleExpiry = from === to;
+  const series = readChainSeries(input.series);
   return {
     fromDate: from,
     toDate: to,
     range,
     strikeCountPerSide: schwabStrikeCountForRange(range, input.strikeCount, singleExpiry),
+    ...(series ? { series } : {}),
   };
 }
 
@@ -107,5 +134,6 @@ export function expirationInWindow(expiration: string, window: IndexChainWindow)
 }
 
 export function indexChainCacheKey(symbol: string, window: IndexChainWindow): string {
-  return `${symbol.toUpperCase()}|${window.fromDate}|${window.toDate}|${window.range}|${window.strikeCountPerSide}`;
+  const series = window.series ?? "";
+  return `${symbol.toUpperCase()}|${window.fromDate}|${window.toDate}|${window.range}|${window.strikeCountPerSide}|${series}`;
 }

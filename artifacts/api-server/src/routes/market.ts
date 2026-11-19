@@ -17,7 +17,9 @@ import {
 import {
   expirationInWindow,
   indexChainCacheKey,
+  occRootFromOptionSymbol,
   readChainRange,
+  readChainSeries,
   readQueryDate,
   resolveIndexChainWindow,
   type IndexChainWindow,
@@ -954,7 +956,7 @@ async function fetchIndexChainStructure(
   const schwabKeys: string[] = [];
 
   for (const c of parsedCalls) {
-    if (c.schwabSymbol && expirationInWindow(c.expiration, w)) {
+    if (c.schwabSymbol && expirationInWindow(c.expiration, w) && (!w.series || occRootFromOptionSymbol(c.schwabSymbol) === w.series)) {
       contracts.push({
         strike: c.strike, expiration: c.expiration, schwabSymbol: c.schwabSymbol,
         dte: c.dte ?? 0, type: "call",
@@ -967,7 +969,7 @@ async function fetchIndexChainStructure(
     }
   }
   for (const p of parsedPuts) {
-    if (p.schwabSymbol && expirationInWindow(p.expiration, w)) {
+    if (p.schwabSymbol && expirationInWindow(p.expiration, w) && (!w.series || occRootFromOptionSymbol(p.schwabSymbol) === w.series)) {
       contracts.push({
         strike: p.strike, expiration: p.expiration, schwabSymbol: p.schwabSymbol,
         dte: p.dte ?? 0, type: "put",
@@ -1075,9 +1077,14 @@ router.get("/options", async (req, res) => {
   function sliceAndReturn(
     entry: { calls: OptionContract[]; puts: OptionContract[]; underlyingPrice?: number; fetchedAt: number },
     source: string,
+    series?: string,
   ) {
     let calls = entry.calls;
     let puts = entry.puts;
+    if (series) {
+      calls = calls.filter((c) => occRootFromOptionSymbol(c.schwabSymbol) === series);
+      puts = puts.filter((p) => occRootFromOptionSymbol(p.schwabSymbol) === series);
+    }
     const liveQuote = getQuoteBySymbol(displaySymbol);
     const livePrice = liveQuote?.last ?? liveQuote?.close ?? entry.underlyingPrice;
     const centerPrice = livePrice ?? entry.underlyingPrice;
@@ -1109,12 +1116,13 @@ router.get("/options", async (req, res) => {
           toDate: readQueryDate(req.query["toDate"]),
           strikeCount,
           range: requestedRange,
+          series: readChainSeries(req.query["series"]),
         })
       : null;
     const ntmKey = indexWindow ? indexChainCacheKey(displaySymbol, indexWindow) : displaySymbol;
     const ntmCached = optionsNtmCache.get(ntmKey);
     if (ntmCached && (Date.now() - ntmCached.fetchedAt) < optionsTtlMs) {
-      return res.json(sliceAndReturn(ntmCached, "ntm-cache"));
+      return res.json(sliceAndReturn(ntmCached, "ntm-cache", indexWindow?.series));
     }
 
     if (isIndexSymbol) {
@@ -1128,7 +1136,7 @@ router.get("/options", async (req, res) => {
             const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
             optionsNtmCache.delete(oldest[0]);
           }
-          return res.json(sliceAndReturn(entry, "index-window"));
+          return res.json(sliceAndReturn(entry, "index-window", indexWindow?.series));
         }
       }
     }
@@ -1156,7 +1164,7 @@ router.get("/options", async (req, res) => {
           const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
           optionsNtmCache.delete(oldest[0]);
         }
-        return res.json(sliceAndReturn(entry, "polygon"));
+        return res.json(sliceAndReturn(entry, "polygon", indexWindow?.series));
       }
       req.log.warn({ symbol: displaySymbol, polySymbol }, "Polygon options chain empty — falling back to Schwab");
     }
@@ -1269,7 +1277,7 @@ router.get("/options", async (req, res) => {
       optionsNtmCache.delete(oldest[0]);
     }
 
-    return res.json(sliceAndReturn(entry, "schwab"));
+    return res.json(sliceAndReturn(entry, "schwab", indexWindow?.series));
   } catch (err) {
     req.log.error({ err }, "Options chain fetch error");
     return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "internal_error" });

@@ -62,7 +62,7 @@ import type { AtLadderLegPick } from "@/lib/active-trader/atLadderLegKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
-import { expirationSeriesKey, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
+import { expirationSeriesKey, occRoot, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
 import {
   filterAtExpiryPillGroups,
   nearestTradableExpiration,
@@ -1573,7 +1573,7 @@ export function OptionsTab({
   const customStrikeGenRef = useRef(0);
 
   const [atDepth, setAtDepth] = useState({ above: 20, below: 20 });
-  const atBookRef = useRef<{ symbol: string; ymd: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
+  const atBookRef = useRef<{ symbol: string; ymd: string | null; series: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
   useEffect(() => {
     setAtDepth({ above: 20, below: 20 });
     atBookRef.current = null;
@@ -1594,6 +1594,7 @@ export function OptionsTab({
     () => (optionsSubView === "at" ? atChainDateWindow(atExpiration) : null),
     [optionsSubView, atExpiration],
   );
+  const atSeriesRoot = optionsSubView === "at" ? seriesRootFromExpiration(atExpiration ?? "") : null;
 
   const schwabLinked =
     hasSchwabBrokerageLinked(accessToken, traderAccessToken) ||
@@ -1631,11 +1632,12 @@ export function OptionsTab({
       strikeCount: optionsSubView === "at" ? atRest.strikeCount : strikeCount,
       ...(optionsSubView === "at" ? { range: atRest.range } : {}),
       ...(atDates ?? {}),
+      ...(atSeriesRoot ? { series: atSeriesRoot } : {}),
       ...(schwabAccessTokenForRequest(accessToken)
         ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
         : {}),
     }),
-    [symbol, strikeCount, accessToken, atDates, atRest.range, atRest.strikeCount, optionsSubView],
+    [symbol, strikeCount, accessToken, atDates, atSeriesRoot, atRest.range, atRest.strikeCount, optionsSubView],
   );
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
@@ -1653,7 +1655,7 @@ export function OptionsTab({
           if (optionsSubView === "at") {
             // The ladder shows its own strike window or a loading state, never the Chain view's list.
             const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
-            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates })) return undefined;
+            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates, series: atSeriesRoot })) return undefined;
           }
           return previous;
         },
@@ -1689,22 +1691,27 @@ export function OptionsTab({
     let puts = (rawData.puts ?? []) as Contract[];
     if (optionsSubView === "at") {
       const ymd = atExpiration?.slice(0, 10) || null;
-      const pageOk =
+      const series = seriesRootFromExpiration(atExpiration ?? "");
+      const pageHasYmd =
         !ymd ||
         [...calls, ...puts].some((c) => (c.expiration ?? "").slice(0, 10) === ymd);
+      const pageHasSeries =
+        !series ||
+        [...calls, ...puts].some((c) => (occRoot(c.schwabSymbol) ?? occRoot(c.streamKey)) === series);
+      const pageOk = pageHasYmd && pageHasSeries;
       const prev = atBookRef.current;
-      const same = !!prev && prev.symbol === symbol && prev.ymd === ymd;
+      const same = !!prev && prev.symbol === symbol && prev.ymd === ymd && prev.series === series;
       const mergedCalls = pageOk
-        ? mergeAtChainLegs(same ? prev!.calls : [], calls, ymd)
+        ? mergeAtChainLegs(same ? prev!.calls : [], calls, ymd, series)
         : same
           ? prev!.calls
           : [];
       const mergedPuts = pageOk
-        ? mergeAtChainLegs(same ? prev!.puts : [], puts, ymd)
+        ? mergeAtChainLegs(same ? prev!.puts : [], puts, ymd, series)
         : same
           ? prev!.puts
           : [];
-      atBookRef.current = { symbol, ymd, calls: mergedCalls, puts: mergedPuts };
+      atBookRef.current = { symbol, ymd, series, calls: mergedCalls, puts: mergedPuts };
       const trimSpot = rawData.underlyingPrice ?? null;
       calls = trimAtChainLegsToDepth(mergedCalls, trimSpot, atDepth.above, atDepth.below);
       puts = trimAtChainLegsToDepth(mergedPuts, trimSpot, atDepth.above, atDepth.below);
@@ -1850,6 +1857,7 @@ export function OptionsTab({
     const ymd = atExpiration?.slice(0, 10) ?? "";
     return tradableAtGroups.some((g) => {
       if (!g.rows.length) return false;
+      if (atExpiration?.includes("~")) return g.expiration === atExpiration;
       if (!ymd) return true;
       return g.expiration === atExpiration || g.expiration.slice(0, 10) === ymd;
     });
