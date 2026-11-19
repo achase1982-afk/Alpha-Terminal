@@ -1945,6 +1945,8 @@ function processEquityTick(content: Record<string, unknown>[]) {
 
     const existing = quoteCache.get(displayTargets[0]!) ?? quoteCache.get(streamKey);
     const last = numOrNull(item["3"]) ?? existing?.last ?? null;
+    const lastSize = numOrNull(item["9"]);
+    const tradeTime = numOrNull(item["35"]);
     const regularLast = numOrNull(item["29"]) ?? existing?.regularLast ?? null;
     const close = numOrNull(item["12"]) ?? existing?.close ?? null;
 
@@ -2015,7 +2017,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
       low: numOrNull(item["11"]) ?? existing?.low ?? null,
       close,
       ts: now,
-      tradeTimeMs: numOrNull(item["35"]) ?? existing?.tradeTimeMs ?? null,
+      tradeTimeMs: tradeTime ?? existing?.tradeTimeMs ?? null,
       quoteSource: "SCHWAB",
     };
 
@@ -2026,6 +2028,17 @@ function processEquityTick(content: Record<string, unknown>[]) {
       const quote: LiveQuote = { ...baseQuote, symbol: displaySymbol };
       quoteCache.set(displaySymbol, quote);
       broadcast("quote", quote);
+    }
+    if (
+      last != null &&
+      last > 0 &&
+      lastSize != null &&
+      lastSize > 0 &&
+      tradeTime != null &&
+      tradeTime > 0 &&
+      tradeTime !== existing?.tradeTimeMs
+    ) {
+      broadcastClientEquityTrade(streamKey, last, lastSize, tradeTime);
     }
     deskLiveFlowTapeOnEquityL1(streamKey, item, now);
   }
@@ -2193,6 +2206,31 @@ function asEquityEpochMs(raw: number | null): number {
   return now;
 }
 
+/**
+ * Canonical live equity-volume event for Active Trader. Every value is copied
+ * directly from LEVELONE_EQUITIES: last price (3), last size in shares (9),
+ * and exchange trade time (35). No volume delta or inferred quantity.
+ */
+function broadcastClientEquityTrade(
+  streamKey: string,
+  price: number,
+  size: number,
+  tradeTime: number,
+): void {
+  const targets = tapeBroadcastSymbols(streamKey);
+  if (targets.length === 0) return;
+  const when = asEquityEpochMs(tradeTime);
+  for (const symbol of targets) {
+    broadcast("equityPrint", {
+      symbol,
+      price,
+      size,
+      ts: when,
+      source: "LEVELONE_EQUITIES",
+    });
+  }
+}
+
 function compactBookSide(side: unknown, dir: "bid" | "ask"): Array<{ price: number; size: number }> {
   const byPx = new Map<string, { price: number; size: number }>();
   for (const row of extractSchwabBookRows(side)) {
@@ -2205,15 +2243,6 @@ function compactBookSide(side: unknown, dir: "bid" | "ask"): Array<{ price: numb
   const out = [...byPx.values()];
   out.sort((a, b) => (dir === "bid" ? b.price - a.price : a.price - b.price));
   return out.slice(0, 80);
-}
-
-function broadcastClientEquityPrint(streamKey: string, price: number, size: number, ts: number): void {
-  const targets = tapeBroadcastSymbols(streamKey);
-  if (targets.length === 0) return;
-  const when = asEquityEpochMs(ts);
-  for (const symbol of targets) {
-    broadcast("equityPrint", { symbol, price, size, ts: when });
-  }
 }
 
 function broadcastClientEquityBook(
@@ -2264,7 +2293,6 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
     if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
       appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
       deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice, ev.lastSize, ev.tradeTimeMs, ev.sequence);
-      broadcastClientEquityPrint(symbol, ev.lastPrice, ev.lastSize, tsMs);
     }
     emitTimesaleEquityListeners(ev);
   }

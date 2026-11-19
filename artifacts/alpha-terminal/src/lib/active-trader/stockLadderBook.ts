@@ -107,65 +107,6 @@ export function stockVolumeHeatColor(intensity: number): string | undefined {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export type StockVolumeCandle = {
-  datetime?: string | null;
-  high?: number | null;
-  low?: number | null;
-  close?: number | null;
-  volume?: number | null;
-};
-
-function candleSessionDate(datetime: string): string | null {
-  const date = new Date(datetime);
-  if (!Number.isFinite(date.getTime())) return null;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((out, part) => {
-      if (part.type !== "literal") out[part.type] = part.value;
-      return out;
-    }, {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-/**
- * Historical fallback when the server has no complete time-and-sales day to
- * replay. Extended-hours one-minute volume is assigned to HLC3, rounded to the
- * ladder's cent tick; live prints then continue from that seed.
- */
-export function stockVolumeProfileFromCandles(
-  candles: readonly StockVolumeCandle[],
-  sessionDate: string,
-): Record<string, number> {
-  const profile: Record<string, number> = {};
-  for (const candle of candles) {
-    if (!candle.datetime || candleSessionDate(candle.datetime) !== sessionDate) continue;
-    const { high, low, close, volume } = candle;
-    if (
-      high == null ||
-      low == null ||
-      close == null ||
-      volume == null ||
-      !Number.isFinite(high) ||
-      !Number.isFinite(low) ||
-      !Number.isFinite(close) ||
-      !Number.isFinite(volume) ||
-      !(volume > 0)
-    ) {
-      continue;
-    }
-    const price = (high + low + close) / 3;
-    if (!(price > 0)) continue;
-    const key = stockPriceKey(price);
-    profile[key] = (profile[key] ?? 0) + volume;
-  }
-  return profile;
-}
-
 export function stockBestPrice(levels: readonly StockLevel[], side: "bid" | "ask"): number | null {
   let best: number | null = null;
   for (const level of levels) {

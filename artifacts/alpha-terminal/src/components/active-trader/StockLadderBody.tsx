@@ -24,9 +24,7 @@ import {
   stockPriceKey,
   stockSizeByPrice,
   stockVolumeHeatColor,
-  stockVolumeProfileFromCandles,
   EMPTY_STOCK_TOP,
-  type StockVolumeCandle,
   type StockLevel,
   type StockTopBook,
 } from "@/lib/active-trader/stockLadderBook";
@@ -59,11 +57,6 @@ const EMPTY_VOLUME: Record<string, number> = {};
 type EquityTapeSeedResponse = {
   sessionDate?: string;
   volumeByPrice?: Record<string, Record<string, number>>;
-  profileComplete?: Record<string, boolean>;
-};
-
-type EquityHistoryResponse = {
-  candles?: StockVolumeCandle[];
 };
 
 export function StockLadderBody({ symbol }: { symbol: string }) {
@@ -98,20 +91,10 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
         if (!res.ok) return;
         const data = (await res.json()) as EquityTapeSeedResponse;
         if (!data.sessionDate) return;
-        let profile = data.volumeByPrice?.[sym] ?? {};
-        if (data.profileComplete?.[sym] !== true) {
-          const historyRes = await fetchWithAuth(
-            `/api/market/history?symbol=${encodeURIComponent(sym)}&periodType=day&period=1&frequencyType=minute&frequency=1&needExtendedHoursData=true`,
-          );
-          if (historyRes.ok) {
-            const history = (await historyRes.json()) as EquityHistoryResponse;
-            profile = stockVolumeProfileFromCandles(history.candles ?? [], data.sessionDate);
-          }
-        }
         useEquityTapeStore.getState().seedVolumeProfile({
           symbol: sym,
           sessionDate: data.sessionDate,
-          volumeByPrice: profile,
+          volumeByPrice: data.volumeByPrice?.[sym] ?? {},
         });
       })
       .catch(() => {});
