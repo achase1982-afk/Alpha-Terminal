@@ -1,9 +1,5 @@
-import { describe, expect, it, beforeEach } from "vitest";
-import {
-  resetSessionRangeRollupsForTests,
-  resolveSessionLowHighFromQuote,
-  touchSessionRange,
-} from "../atSessionRangeRollup";
+import { describe, expect, it } from "vitest";
+import { resolveSessionLowHighFromQuote } from "../atSessionRangeRollup";
 import type { QuoteData } from "@/hooks/useQuote";
 
 const baseQuote = (over: Partial<QuoteData>): QuoteData => ({
@@ -29,19 +25,14 @@ const baseQuote = (over: Partial<QuoteData>): QuoteData => ({
 });
 
 describe("atSessionRangeRollup", () => {
-  beforeEach(() => {
-    resetSessionRangeRollupsForTests();
-  });
-
-  it("lowers day low when a timestamped last trades below the feed low", () => {
+  it("keeps the feed low when a local print trades below it", () => {
     const now = new Date("2026-11-18T15:00:00-05:00");
     const tradeTimeMs = now.getTime();
-    touchSessionRange("SPX", baseQuote({ last: 7290, low: 7340, tradeTimeMs }), now);
     const { dayLow } = resolveSessionLowHighFromQuote("SPX", baseQuote({ last: 7288, low: 7340, tradeTimeMs }), now);
-    expect(dayLow.value).toBeLessThanOrEqual(7288);
+    expect(dayLow).toEqual({ kind: "current", value: 7340 });
   });
 
-  it("ignores yesterday's extreme and an outlying bid, then takes a new traded print", () => {
+  it("does not label a local print as the day range", () => {
     const now = new Date("2026-11-18T15:00:00-05:00");
     const yesterday = new Date("2026-11-17T15:00:00-05:00").getTime();
     const stale = baseQuote({
@@ -59,13 +50,17 @@ describe("atSessionRangeRollup", () => {
     expect(untouched.dayHigh).toEqual({ kind: "unavailable", value: null });
 
     const traded = resolveSessionLowHighFromQuote(
-      "SPX",
-      baseQuote({ last: 7312.5, high: 8000, low: 1000, bid: 1, ask: 9000, tradeTimeMs: now.getTime() }),
+      "AAPL",
+      baseQuote({
+        symbol: "AAPL",
+        last: 349.59,
+        high: 355.28,
+        low: 347.5,
+        tradeTimeMs: now.getTime(),
+      }),
       now,
     );
-    expect(traded.dayLow).toEqual({ kind: "current", value: 7312.5 });
-    expect(traded.dayHigh).toEqual({ kind: "current", value: 7312.5 });
-    expect(traded.dayLow.value).not.toBe(0);
-    expect(traded.dayHigh.value).not.toBe(0);
+    expect(traded.dayLow).toEqual({ kind: "current", value: 347.5 });
+    expect(traded.dayHigh).toEqual({ kind: "current", value: 355.28 });
   });
 });

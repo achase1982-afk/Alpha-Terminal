@@ -44,6 +44,9 @@ export function resolveDayHighFromStreamQuote(
   const stamp = (quote as { highTimeMs?: number | null }).highTimeMs;
   const inRth = isUsEquitiesMarketHoursEt(now);
   if (inRth) {
+    // No stamp: this is the same session high Markets shows. A stamp from
+    // another session stays unavailable.
+    if (stamp == null) return { kind: "current", value: high };
     if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: high };
     return { kind: "unavailable", value: null };
   }

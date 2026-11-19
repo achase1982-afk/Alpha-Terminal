@@ -50,6 +50,9 @@ export function resolveDayLowFromStreamQuote(
   const stamp = (quote as { lowTimeMs?: number | null }).lowTimeMs;
   const inRth = isUsEquitiesMarketHoursEt(now);
   if (inRth) {
+    // No stamp: this is the same session low Markets shows. A stamp from
+    // another session stays unavailable.
+    if (stamp == null) return { kind: "current", value: low };
     if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: low };
     return { kind: "unavailable", value: null };
   }
