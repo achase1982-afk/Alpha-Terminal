@@ -303,7 +303,10 @@ export function OptionsChainOrderSheet({
   const optionTicks = useOptionTicksForKeys(legSymbols, TICKET_TICK_MS);
 
   const [limitPrice, setLimitPrice] = useState(restoredSheetSession?.limitPrice ?? "");
-  const [quantity, setQuantity] = useState(1);
+  const [quantity, setQuantity] = useState(() => {
+    const restored = restoredSheetSession?.spreadQuantity;
+    return typeof restored === "number" && Number.isInteger(restored) && restored >= 1 ? restored : 1;
+  });
   const [timeInForce, setTimeInForce] = useState<string>("DAY");
   const [stage, setStage] = useState<Stage>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -351,8 +354,9 @@ export function OptionsChainOrderSheet({
       limitPrice,
       limitLocked,
       limitUserEdited: limitUserEditedRef.current,
+      spreadQuantity: quantity,
     });
-  }, [limitPrice, limitLocked, onSheetSessionPersist]);
+  }, [limitPrice, limitLocked, quantity, onSheetSessionPersist]);
 
   const legsHydrateKey = useMemo(
     () =>
@@ -738,7 +742,7 @@ export function OptionsChainOrderSheet({
           return;
         }
         setOrderId(acceptance.orderId);
-        onSheetSessionPersist?.({ limitPrice: "", limitLocked: false, limitUserEdited: false });
+        onSheetSessionPersist?.({ limitPrice: "", limitLocked: false, limitUserEdited: false, spreadQuantity: 1 });
         setLimitPrice("");
         setLimitLocked(false);
         setQuantity(1);
