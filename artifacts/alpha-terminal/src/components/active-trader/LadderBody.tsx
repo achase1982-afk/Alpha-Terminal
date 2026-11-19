@@ -801,6 +801,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   latest.current = { cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth };
   const gestureRef = useRef<PressGesture | null>(null);
   const lastPointerHandledAtRef = useRef(-Infinity);
+  /** A rejected or canceled pointer gesture still emits a click. Swallow that click. */
+  const suppressClickRef = useRef(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastScrollAtRef = useRef(-Infinity);
 
@@ -810,7 +812,10 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
     const onScroll = () => {
       lastScrollAtRef.current = performance.now();
       // The row moved out from under the finger: this is a scroll, not a press.
-      gestureRef.current?.release();
+      if (gestureRef.current) {
+        suppressClickRef.current = true;
+        gestureRef.current.release();
+      }
     };
     scroller.addEventListener("scroll", onScroll, { passive: true });
     return () => scroller.removeEventListener("scroll", onScroll);
@@ -841,7 +846,11 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   const handlePointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.isPrimary === false || (e.pointerType === "mouse" && e.button !== 0)) return;
-      if (performance.now() - lastScrollAtRef.current < AT_TAP_AFTER_SCROLL_MS) return;
+      if (performance.now() - lastScrollAtRef.current < AT_TAP_AFTER_SCROLL_MS) {
+        suppressClickRef.current = true;
+        lastPointerHandledAtRef.current = performance.now();
+        return;
+      }
       const cellEl = (e.target as HTMLElement).closest<HTMLElement>("[data-at-cell]");
       const cellKey = cellEl?.dataset.atCell;
       if (!cellEl || !cellKey || cellEl.dataset.atTapable !== "1") return;
@@ -853,6 +862,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
         if (!g || g.pointerId !== pointerId) return;
         g.release();
         lastPointerHandledAtRef.current = performance.now();
+        if (!commit) suppressClickRef.current = true;
         if (commit) commitCell(g.cellKey);
       };
       const onMove = (ev: PointerEvent) => {
@@ -864,7 +874,9 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
         if (ev.pointerId === pointerId) end(true);
       };
       const onCancel = (ev: PointerEvent) => {
-        if (ev.pointerId === pointerId) end(false);
+        if (ev.pointerId !== pointerId) return;
+        suppressClickRef.current = true;
+        end(false);
       };
       window.addEventListener("pointermove", onMove, { passive: true });
       window.addEventListener("pointerup", onUp);
@@ -891,7 +903,16 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   /** Keyboard and assistive-tech activation arrive as a click with no pointer gesture before it. */
   const handleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      if (performance.now() - lastPointerHandledAtRef.current < CLICK_AFTER_POINTER_MS) return;
+      // detail 0 is a keyboard or assistive-tech click, not a pointer follow-up.
+      if (e.detail === 0) {
+        suppressClickRef.current = false;
+      } else if (
+        suppressClickRef.current ||
+        performance.now() - lastPointerHandledAtRef.current < CLICK_AFTER_POINTER_MS
+      ) {
+        suppressClickRef.current = false;
+        return;
+      }
       const cellEl = (e.target as HTMLElement).closest<HTMLElement>("[data-at-cell]");
       const cellKey = cellEl?.dataset.atCell;
       if (!cellEl || !cellKey || cellEl.dataset.atTapable !== "1") return;
