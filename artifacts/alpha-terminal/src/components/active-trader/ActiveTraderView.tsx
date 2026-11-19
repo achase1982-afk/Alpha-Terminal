@@ -55,6 +55,7 @@ import {
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
 import type { ChainDraftSheetSession } from "@/lib/orders/chainDraftSessionStore";
+import { CHAIN_LEG_LIMIT_MESSAGE } from "@/lib/orders/chainDraftLegLimits";
 import {
   atSelectionClear,
   atSelectionRemoveLeg,
@@ -328,6 +329,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   );
   const [chainSheetCollapsed, setChainSheetCollapsed] = useState(false);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
+  const [legLimitRejected, setLegLimitRejected] = useState(false);
+  const legLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (legLimitTimerRef.current) clearTimeout(legLimitTimerRef.current);
+  }, []);
   const chainQuoteTs = chainQuoteTsProp ?? Date.now();
   const chainLegSyncSig = useMemo(
     () =>
@@ -711,15 +717,19 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return m;
   }, [primary]);
 
-  const positions = usePortfolioStreamStore((s) => s.account?.positions);
+  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const portfolioAccounts = usePortfolioStreamStore((s) => s.accounts);
+  const positions = useMemo(() => {
+    if (!tradingHash) return [];
+    return portfolioAccounts.find((account) => account.hashValue === tradingHash)?.positions ?? [];
+  }, [portfolioAccounts, tradingHash]);
   const positionQtyByKey = useMemo(() => {
     const map = new Map<string, number>();
     const list = positions ?? [];
     for (const p of list) {
-      const sym = p.instrument?.symbol ?? p.symbol;
+      const sym = p.symbol;
       if (typeof sym !== "string") continue;
-      const qty = p.longQuantity ?? p.shortQuantity ?? p.quantity ?? 0;
-      const signed = p.shortQuantity ? -Math.abs(p.shortQuantity) : qty;
+      const signed = p.shortQuantity ? -Math.abs(p.shortQuantity) : p.longQuantity;
       map.set(sym.trim(), signed);
     }
     for (const row of primary?.rows ?? []) {
@@ -734,7 +744,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return map;
   }, [positions, primary?.rows]);
 
-  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const [reportedOrders, setReportedOrders] = useState<ReportedOrder[]>([]);
   useEffect(() => {
@@ -942,10 +951,23 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [selection, publishDraft],
   );
 
+  const rejectLegLimit = useCallback(() => {
+    setLegLimitRejected(true);
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([35, 40, 35]);
+    }
+    if (legLimitTimerRef.current) clearTimeout(legLimitTimerRef.current);
+    legLimitTimerRef.current = setTimeout(() => setLegLimitRejected(false), 800);
+  }, []);
+
   const handleQuoteTap = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "BUY" | "SELL") => {
       const legSide = quoteSideFromTap(side);
       const result = handleToggleLeg(contract, type, legSide);
+      if (result === "rejected") {
+        rejectLegLimit();
+        return;
+      }
       startTransition(() => {
         setLastLegQuoteSide(legSide);
         setSelected({ contract, type });
@@ -960,7 +982,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         nudgeRef.current = null;
       }
     },
-    [handleToggleLeg, nudgeTappedStrikeAboveSheet],
+    [handleToggleLeg, nudgeTappedStrikeAboveSheet, rejectLegLimit],
   );
 
   // A new ticket opens expanded; one the user collapsed stays collapsed while they pick more legs.
@@ -1188,10 +1210,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const atAddLegFromLadder = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side?: "bid" | "ask") => {
       const legSide = side ?? lastLegQuoteSide;
+      const result = handleToggleLeg(contract, type, legSide);
+      if (result === "rejected") {
+        rejectLegLimit();
+        return;
+      }
       setLastLegQuoteSide(legSide);
-      handleToggleLeg(contract, type, legSide);
     },
-    [handleToggleLeg, lastLegQuoteSide],
+    [handleToggleLeg, lastLegQuoteSide, rejectLegLimit],
   );
 
   const actionBarContext = useMemo((): AtTradeContext | null => {
@@ -1779,6 +1805,23 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             // full-screen review step, which is rendered inside this element.
             style={{ zIndex: AT_ORDER_SHEET_Z }}
           >
+            {legLimitRejected ? (
+              <p
+                data-chain-leg-limit-msg
+                className="px-3 text-center"
+                style={{
+                  fontSize: 18,
+                  lineHeight: 1.3,
+                  fontWeight: 800,
+                  color: "#ff2d2d",
+                  background: "#000",
+                  paddingTop: 14,
+                  paddingBottom: 14,
+                }}
+              >
+                {CHAIN_LEG_LIMIT_MESSAGE}
+              </p>
+            ) : null}
             <OptionsChainOrderSheet
               legs={ticketLegs}
               collapsed={collapsed}
