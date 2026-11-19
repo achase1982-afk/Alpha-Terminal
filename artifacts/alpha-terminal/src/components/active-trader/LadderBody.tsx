@@ -33,7 +33,6 @@ import {
   AT_LADDER_ROW_H,
   AT_LADDER_SELECT_BUY,
   AT_LADDER_SELECT_INSET,
-  AT_LADDER_SELECT_MAX_W,
   AT_LADDER_SELECT_RADIUS,
   AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
@@ -295,6 +294,7 @@ const QuoteCell = memo(function QuoteCell({
         borderBottom: "none",
         boxSizing: "border-box",
         padding: 0,
+        overflow: "hidden",
         touchAction: "manipulation",
         WebkitTapHighlightColor: "transparent",
         WebkitTouchCallout: "none",
@@ -303,20 +303,21 @@ const QuoteCell = memo(function QuoteCell({
       }}
       disabled={!tapable}
     >
-      {legSelected ? (
+      {legSelected || pressed ? (
         <span
-          data-at-selected-leg-chip={side}
-          className="inline-flex flex-col items-center justify-center"
+          data-at-selected-leg-chip={legSelected ? side : undefined}
+          className="absolute flex flex-col items-center justify-center"
           style={{
+            top: AT_LADDER_SELECT_INSET,
+            right: AT_LADDER_SELECT_INSET,
+            bottom: AT_LADDER_SELECT_INSET,
+            left: AT_LADDER_SELECT_INSET,
             boxSizing: "border-box",
-            width: `min(${AT_LADDER_SELECT_MAX_W}px, calc(100% - ${AT_LADDER_SELECT_INSET * 2}px))`,
-            height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
-            margin: AT_LADDER_SELECT_INSET,
-            padding: "0 2px",
             borderRadius: AT_LADDER_SELECT_RADIUS,
             border: `1px solid ${selectBorder}`,
             background: pressed ? pressWash : "transparent",
-            lineHeight: 1.05,
+            lineHeight: 1,
+            overflow: "hidden",
             pointerEvents: "none",
           }}
         >
@@ -329,49 +330,34 @@ const QuoteCell = memo(function QuoteCell({
           >
             {unavailableReason ?? fmtPx(price)}
           </span>
-          {statusReason ? (
-            <span style={{ fontSize: 7, color: GRAY, letterSpacing: "0.03em" }}>
-              {statusReason}
+          {legSelected ? (
+            <span
+              style={{
+                fontSize: AT_LADDER_LEG_TAG_SIZE,
+                fontWeight: 700,
+                color: selectColor,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+              }}
+            >
+              {side}
             </span>
           ) : null}
-          <span
-            style={{
-              fontSize: AT_LADDER_LEG_TAG_SIZE,
-              fontWeight: 700,
-              color: selectColor,
-              letterSpacing: "0.06em",
-              marginTop: 1,
-              textTransform: "uppercase",
-            }}
-          >
-            {side}
-          </span>
         </span>
       ) : (
         <span
           className="inline-flex flex-col items-center justify-center"
           style={
-            pressed
+            unavailableReason
               ? {
-                  boxSizing: "border-box",
-                  width: `min(${AT_LADDER_SELECT_MAX_W}px, calc(100% - ${AT_LADDER_SELECT_INSET * 2}px))`,
-                  height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
-                  margin: AT_LADDER_SELECT_INSET,
-                  borderRadius: AT_LADDER_SELECT_RADIUS,
-                  border: `1px solid ${selectBorder}`,
-                  background: pressWash,
+                  fontSize: 9,
+                  fontWeight: 500,
+                  color: GRAY,
+                  letterSpacing: "0.02em",
                   pointerEvents: "none",
+                  padding: "0 4px",
                 }
-              : unavailableReason
-                ? {
-                    fontSize: 9,
-                    fontWeight: 500,
-                    color: GRAY,
-                    letterSpacing: "0.02em",
-                    pointerEvents: "none",
-                    padding: "0 4px",
-                  }
-                : { color: AT_LADDER_PRICE_COLOR, pointerEvents: "none", padding: "0 4px" }
+              : { color: AT_LADDER_PRICE_COLOR, pointerEvents: "none", padding: "0 4px" }
           }
         >
           {unavailableReason ?? fmtPx(price)}
@@ -382,6 +368,24 @@ const QuoteCell = memo(function QuoteCell({
           ) : null}
         </span>
       )}
+      {legSelected && statusReason ? (
+        <span
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 1,
+            right: 1,
+            fontSize: 7,
+            lineHeight: "8px",
+            textAlign: "center",
+            color: GRAY,
+            letterSpacing: "0.03em",
+            pointerEvents: "none",
+          }}
+        >
+          {statusReason}
+        </span>
+      ) : null}
     </button>
   );
 });
