@@ -82,10 +82,12 @@ import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlance
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
 import {
+  AT_LADDER_CALLS_HDR,
   AT_LADDER_COL_HDR_H,
   AT_LADDER_GRID,
   AT_LADDER_GROUP_HDR_H,
   AT_LADDER_PANEL_BG,
+  AT_LADDER_PUTS_HDR,
   AT_LADDER_ROW_H,
   AT_LADDER_THIN_SEP,
 } from "@/lib/active-trader/atLadderLayout";
@@ -375,8 +377,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return idx >= 0 ? ladderStrikes[idx]! : null;
   }, [ladderStrikes, underlyingPrice]);
 
-  const fixtureTight = !!presentation?.skipNetwork;
-  const ladderRowH = fixtureTight ? 36 : AT_LADDER_ROW_H;
+  /** Always mockup row pitch — fixture used to tighten to 36 and broke 1:1 overlay. */
+  const ladderRowH = AT_LADDER_ROW_H;
 
   /**
    * The order sheet floats over the bottom of the ladder; it never takes
@@ -1240,11 +1242,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         }}
       >
         <div
-          className="grid items-center px-0.5"
+          className="grid items-center px-0.5 at-ladder-num"
           style={{
             height: AT_LADDER_GROUP_HDR_H,
             gridTemplateColumns: AT_LADDER_GRID,
-            fontFamily: MONO,
             fontSize: 8,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
@@ -1253,14 +1254,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             background: BG_HEADER,
           }}
         >
-          <span className="text-center col-span-2 font-bold" style={{ color: UP, fontSize: 10 }}>
-            Calls
+          <span
+            className="text-center col-span-2 font-bold"
+            style={{ color: AT_LADDER_CALLS_HDR, fontSize: 11, letterSpacing: "0.08em" }}
+          >
+            CALLS
           </span>
           <span
             data-at-ladder-heat-caption
             data-at-ladder-group-metric
             className="text-center"
-            title="Contracts traded in the last 30 seconds"
+            title="Premium traded in the last 30 seconds"
             style={{
               fontSize: 9,
               fontWeight: 500,
@@ -1271,18 +1275,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               lineHeight: 1.15,
             }}
           >
-            Contracts traded · last 30s
+            Premium traded · 30s
           </span>
-          <span className="text-center col-span-2 font-bold" style={{ color: DOWN, fontSize: 10 }} data-ui-audit="at-puts-hdr">
-            Puts
+          <span
+            className="text-center col-span-2 font-bold"
+            style={{ color: AT_LADDER_PUTS_HDR, fontSize: 11, letterSpacing: "0.08em" }}
+            data-ui-audit="at-puts-hdr"
+          >
+            PUTS
           </span>
         </div>
         <div
-          className="grid items-center px-0.5"
+          className="grid items-center px-0.5 at-ladder-num"
           style={{
             height: AT_LADDER_COL_HDR_H,
             gridTemplateColumns: AT_LADDER_GRID,
-            fontFamily: MONO,
             fontSize: 9,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
@@ -1292,13 +1299,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             background: BG_HEADER,
           }}
         >
-          <span className="text-center">Bid</span>
-          <span className="text-center">Ask</span>
+          <span className="text-center">BID</span>
+          <span className="text-center">ASK</span>
           <span className="text-center" style={{ color: WHITE, fontWeight: 600, fontSize: 10 }}>
-            Strike
+            STRIKE
           </span>
-          <span className="text-center">Bid</span>
-          <span className="text-center">Ask</span>
+          <span className="text-center">BID</span>
+          <span className="text-center">ASK</span>
         </div>
       </div>
 

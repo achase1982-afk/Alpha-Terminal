@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import type { OptionsContract } from "@/components/OptionsTab";
-import { GOLD } from "@/components/options/optionsTheme";
+import { GOLD, PUT_WALL } from "@/components/options/optionsTheme";
 import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { createAtLadderHeatStore, publishAtLadderHeat } from "@/lib/active-trader/atLadderHeatStore";
 import {
@@ -335,15 +335,48 @@ describe("LadderBody", () => {
     expect(onQuoteTap).not.toHaveBeenCalled();
   });
 
-  it("draws prices at regular weight and strikes at medium, with fixed-width figures", () => {
+  it("draws prices regular and strikes semibold at mockup sizes, with fixed-width figures", () => {
     const { cell, view } = setup();
     expect(view.container.querySelector("[data-at-ladder-body]")!.classList.contains("at-ladder-num")).toBe(true);
     expect(cell("call-bid-7330").style.fontWeight).toBe("400");
     expect(cell("call-bid-7330").style.fontVariantNumeric).toBe("tabular-nums");
-    const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
-    expect(strike.style.fontWeight).toBe("500");
-    expect(strike.style.fontSize).toBe("15px");
     expect(cell("call-bid-7330").style.fontSize).toBe("14px");
+    const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
+    expect(strike.style.fontWeight).toBe("600");
+    expect(strike.style.fontSize).toBe("15px");
+    const spot = view.container.querySelector<HTMLElement>('[data-at-strike="7320"] > div')!;
+    expect(spot.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
+    expect(spot.style.fontWeight).toBe("700");
+  });
+
+  it("outlines call and put walls on the strike column in production colors", () => {
+    const { view } = setup();
+    const callWall = view.container.querySelector<HTMLElement>('[data-at-strike="7350"] > div')!;
+    const putWall = view.container.querySelector<HTMLElement>('[data-at-strike="7300"] > div')!;
+    expect(view.container.querySelector('[data-at-call-wall-row="1"]')).not.toBeNull();
+    expect(view.container.querySelector('[data-at-put-wall-row="1"]')).not.toBeNull();
+    expect(callWall.style.border).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    expect(putWall.style.border).toMatch(/rgb\(20,\s*184,\s*166\)|#14b8a6/i);
+    expect(view.container.querySelector('[data-at-strike-wall="call"]')!.textContent).toBe("Call wall");
+    expect(view.container.querySelector('[data-at-strike-wall="put"]')!.textContent).toBe("Put wall");
+    expect(GOLD).toBe("#fbbf24");
+    expect(PUT_WALL).toBe("#14b8a6");
+  });
+
+  it("draws a thin outline + BUY/SELL tag on a selected cell with no fill wash", () => {
+    const { cell, selection, rows } = setup();
+    const c = rows.find((r) => r.strike === 7330)!.call!;
+    act(() => {
+      atSelectionToggleLeg(selection, c, "CALL", "ask");
+    });
+    const chip = cell("call-ask-7330").querySelector<HTMLElement>('[data-at-selected-leg-chip="BUY"]')!;
+    expect(chip).not.toBeNull();
+    expect(chip.style.border).toContain("1px solid");
+    expect(chip.style.background).toBe("transparent");
+    expect(chip.style.borderRadius).toBe("4px");
+    expect(chip.textContent).toContain("BUY");
+    const price = chip.querySelector("span")!;
+    expect(price.style.fontSize).toBe("14px");
   });
 
   it("gives every pair a side tint and scales it with heat", () => {
@@ -353,8 +386,8 @@ describe("LadderBody", () => {
     const alpha = (el: HTMLElement) => Number(/rgba\([^)]*,\s*([0-9.]+)\)/.exec(el.style.backgroundColor)![1]);
 
     expect(alpha(pair(7400, "call"))).toBeCloseTo(AT_HEAT_WASH_ALPHA, 3);
-    expect(pair(7400, "call").style.backgroundColor).toContain("16, 185, 98");
-    expect(pair(7400, "put").style.backgroundColor).toContain("228, 48, 62");
+    expect(pair(7400, "call").style.backgroundColor).toContain("40, 110, 70");
+    expect(pair(7400, "put").style.backgroundColor).toContain("140, 50, 48");
 
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     const warm = rows.find((r) => r.strike === 7335)!.put!;
