@@ -1,3 +1,5 @@
+import { isNyseEarlyClose, isNyseHoliday } from "./nyseSessionCalendar.js";
+
 /** Equity options regular-session open (ET). GTH may start earlier per underlying; pill copy uses GTH. */
 export const EQUITY_OPTIONS_GTH_OPEN_ET = { hour: 7, minute: 30 } as const;
 export const EQUITY_OPTIONS_RTH_OPEN_ET = { hour: 9, minute: 30 } as const;
@@ -6,8 +8,9 @@ const ET = "America/New_York";
 const MINUTE_MS = 60_000;
 const GTH_OPEN_MINUTES = EQUITY_OPTIONS_GTH_OPEN_ET.hour * 60 + EQUITY_OPTIONS_GTH_OPEN_ET.minute;
 const SESSION_END_MINUTES = 16 * 60 + 15;
+const EARLY_CLOSE_END_MINUTES = 13 * 60;
 
-type EtParts = { y: number; m: number; d: number; hour: number; minute: number };
+type EtParts = { y: number; m: number; d: number; hour: number; minute: number; weekday: string };
 
 /*
  * These helpers run once per quote cell on every chain and ladder render.
@@ -31,6 +34,7 @@ function etParts(ms: number): EtParts {
 
   etPartsFormatter ??= new Intl.DateTimeFormat("en-US", {
     timeZone: ET,
+    weekday: "short",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -38,13 +42,14 @@ function etParts(ms: number): EtParts {
     minute: "2-digit",
     hour12: false,
   });
-  const out: EtParts = { y: 0, m: 0, d: 0, hour: 0, minute: 0 };
+  const out: EtParts = { y: 0, m: 0, d: 0, hour: 0, minute: 0, weekday: "" };
   for (const part of etPartsFormatter.formatToParts(new Date(ms))) {
     if (part.type === "year") out.y = Number(part.value);
     else if (part.type === "month") out.m = Number(part.value);
     else if (part.type === "day") out.d = Number(part.value);
     else if (part.type === "hour") out.hour = Number(part.value) % 24;
     else if (part.type === "minute") out.minute = Number(part.value);
+    else if (part.type === "weekday") out.weekday = part.value;
   }
 
   if (etPartsByMinute.size >= ET_PARTS_CACHE_MAX) etPartsByMinute.clear();
@@ -72,23 +77,40 @@ export function equityOptionsGthOpenMs(nowMs: number): number {
   return open;
 }
 
-export function equityOptionsSessionOpen(nowMs: number): boolean {
-  const p = etParts(nowMs);
-  const mins = p.hour * 60 + p.minute;
-  return mins >= GTH_OPEN_MINUTES && mins < SESSION_END_MINUTES;
+function ymd(p: EtParts): string {
+  return `${p.y}-${String(p.m).padStart(2, "0")}-${String(p.d).padStart(2, "0")}`;
 }
 
-/** True once today's equity-options session has ended (4:15 PM ET). */
+function exchangeClosedDay(p: EtParts): boolean {
+  return p.weekday === "Sat" || p.weekday === "Sun" || isNyseHoliday(ymd(p));
+}
+
+/** 4:15 PM ET index close, or 1:00 PM ET on an NYSE early close. */
+function sessionEndMinutes(p: EtParts): number {
+  return isNyseEarlyClose(ymd(p)) ? EARLY_CLOSE_END_MINUTES : SESSION_END_MINUTES;
+}
+
+export function equityOptionsSessionOpen(nowMs: number): boolean {
+  const p = etParts(nowMs);
+  if (exchangeClosedDay(p)) return false;
+  const mins = p.hour * 60 + p.minute;
+  return mins >= GTH_OPEN_MINUTES && mins < sessionEndMinutes(p);
+}
+
+/** True once today's equity-options session has ended (4:15 PM ET, 1:00 PM on early close). */
 export function equityOptionsSessionEnded(nowMs: number): boolean {
   const p = etParts(nowMs);
-  return p.hour * 60 + p.minute >= SESSION_END_MINUTES;
+  if (exchangeClosedDay(p)) return true;
+  return p.hour * 60 + p.minute >= sessionEndMinutes(p);
 }
 
 export function equityOptionsClosedPill(nowMs: number): string {
   const p = etParts(nowMs);
   const mins = p.hour * 60 + p.minute;
-  if (mins < GTH_OPEN_MINUTES) return "Options closed · opens 7:30 AM ET";
-  if (mins >= SESSION_END_MINUTES) return "Options closed · opens 7:30 AM ET";
+  if (exchangeClosedDay(p) || mins >= sessionEndMinutes(p)) {
+    return "Options closed · next GTH 7:30 AM ET";
+  }
+  if (mins < GTH_OPEN_MINUTES) return "Options closed · GTH opens 7:30 AM ET";
   return "Options closed";
 }
 

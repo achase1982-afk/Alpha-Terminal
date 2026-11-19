@@ -54,7 +54,23 @@ describe("chainQuoteSession", () => {
     const gth = equityOptionsGthOpenMs(Date.now());
     expect(equityOptionsSessionOpen(gth - 60_000)).toBe(false);
     expect(equityOptionsSessionOpen(gth + 60_000)).toBe(true);
-    expect(equityOptionsClosedPill(gth - 60_000)).toContain("7:30 AM ET");
+    expect(equityOptionsClosedPill(gth - 60_000)).toBe("Options closed · GTH opens 7:30 AM ET");
+  });
+
+  it("keeps the options gate shut on weekends, holidays, and after an early close", () => {
+    const saturdayMorning = Date.parse("2026-11-21T15:00:00.000Z");
+    expect(equityOptionsSessionOpen(saturdayMorning)).toBe(false);
+    expect(equityOptionsClosedPill(saturdayMorning)).toBe("Options closed · next GTH 7:30 AM ET");
+
+    const thanksgiving = Date.parse("2026-11-26T15:00:00.000Z");
+    expect(equityOptionsSessionOpen(thanksgiving)).toBe(false);
+    expect(equityOptionsClosedPill(thanksgiving)).toContain("next GTH");
+
+    const earlyStillOpen = Date.parse("2026-11-27T17:30:00.000Z");
+    const earlyClosed = Date.parse("2026-11-27T18:00:00.000Z");
+    expect(equityOptionsSessionOpen(earlyStillOpen)).toBe(true);
+    expect(equityOptionsSessionOpen(earlyClosed)).toBe(false);
+    expect(equityOptionsClosedPill(earlyClosed)).toContain("next GTH");
   });
 
   it("returns 7:30:00 AM Eastern for any instant of that Eastern day", () => {
