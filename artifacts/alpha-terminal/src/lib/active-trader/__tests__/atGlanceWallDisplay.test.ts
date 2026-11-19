@@ -3,6 +3,7 @@ import {
   ladderStrikeZoneTag,
   resolveCallWallDisplay,
   resolveGammaFlipDisplay,
+  resolveGlanceWallLayout,
   resolvePutWallDisplay,
 } from "../atGlanceWallDisplay";
 import type { ZoneModel } from "../zonesModel";
@@ -42,5 +43,21 @@ describe("atGlanceWallDisplay", () => {
     expect(resolveCallWallDisplay(base).value).toBe("7,365");
     expect(resolvePutWallDisplay(base).value).toBe("7,320");
     expect(ladderStrikeZoneTag(base, 7365)).toBe("CALL WALL");
+  });
+
+  it("closed walls share one roll status and live walls stay split", () => {
+    const closed: ZoneModel = { ...base, callWall: null, putWall: null, flip: null, wallsRollLabel: "rolls at open" };
+    const shared = resolveGlanceWallLayout(closed);
+    expect(shared.mode).toBe("shared");
+    if (shared.mode !== "shared") return;
+    expect(shared.label).toBe("Call · Put wall");
+    expect(shared.value).toBe("\u2014 rolls at open");
+    expect(shared.value.match(/rolls at open/g)).toHaveLength(1);
+
+    const live = resolveGlanceWallLayout(base);
+    expect(live.mode).toBe("split");
+    if (live.mode !== "split") return;
+    expect(live.call.value).toBe("7,365");
+    expect(live.put.value).toBe("7,320");
   });
 });
