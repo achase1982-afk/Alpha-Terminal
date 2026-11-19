@@ -557,7 +557,7 @@ const LadderRowView = memo(function LadderRowView({
     zIndex: gammaFlipRow || callWallRow || putWallRow ? 2 : undefined,
   };
 
-  const strikePad = spotRow || gammaFlipRow;
+  const strikePad = spotRow;
 
   return (
     <div
@@ -626,6 +626,29 @@ const LadderRowView = memo(function LadderRowView({
             </span>
           </div>
         ) : null}
+        {gammaFlipRow ? (
+          <span
+            data-at-strike-zone-tag
+            data-at-strike-gamma-flip
+            className="pointer-events-none absolute left-1/2 -translate-x-1/2"
+            style={{
+              bottom: 1,
+              zIndex: 4,
+              fontSize: 11,
+              fontWeight: 700,
+              lineHeight: 1,
+              letterSpacing: "0.03em",
+              padding: "2px 5px",
+              borderRadius: 999,
+              whiteSpace: "nowrap",
+              color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
+              background: spotRow ? "rgba(10,10,10,0.16)" : "#140c1c",
+              border: `1px solid ${spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA}`,
+            }}
+          >
+            GAMMA FLIP
+          </span>
+        ) : null}
         <div
           className="w-full h-full flex flex-col items-center justify-center"
           style={{
@@ -658,22 +681,6 @@ const LadderRowView = memo(function LadderRowView({
               {Math.abs(positionQty)}
             </span>
           )}
-          {gammaFlipRow ? (
-            <span
-              data-at-strike-zone-tag
-              data-at-strike-gamma-flip
-              style={{
-                fontSize: AT_LADDER_LEG_TAG_SIZE,
-                fontWeight: 600,
-                lineHeight: 1.05,
-                marginTop: 1,
-                color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
-                whiteSpace: "nowrap",
-              }}
-            >
-              Gamma flip
-            </span>
-          ) : null}
         </div>
       </div>
       <ContractPair
