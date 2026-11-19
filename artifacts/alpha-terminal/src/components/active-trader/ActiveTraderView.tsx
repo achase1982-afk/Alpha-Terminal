@@ -715,15 +715,19 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return m;
   }, [primary]);
 
-  const positions = usePortfolioStreamStore((s) => s.account?.positions);
+  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
+  const portfolioAccounts = usePortfolioStreamStore((s) => s.accounts);
+  const positions = useMemo(() => {
+    if (!tradingHash) return [];
+    return portfolioAccounts.find((account) => account.hashValue === tradingHash)?.positions ?? [];
+  }, [portfolioAccounts, tradingHash]);
   const positionQtyByKey = useMemo(() => {
     const map = new Map<string, number>();
     const list = positions ?? [];
     for (const p of list) {
-      const sym = p.instrument?.symbol ?? p.symbol;
+      const sym = p.symbol;
       if (typeof sym !== "string") continue;
-      const qty = p.longQuantity ?? p.shortQuantity ?? p.quantity ?? 0;
-      const signed = p.shortQuantity ? -Math.abs(p.shortQuantity) : qty;
+      const signed = p.shortQuantity ? -Math.abs(p.shortQuantity) : p.longQuantity;
       map.set(sym.trim(), signed);
     }
     for (const row of primary?.rows ?? []) {
@@ -738,7 +742,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return map;
   }, [positions, primary?.rows]);
 
-  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const tradeEpochRef = useRef<string | null>(null);
   useEffect(() => {
