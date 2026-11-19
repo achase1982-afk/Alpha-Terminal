@@ -158,8 +158,19 @@ router.get("/orders", async (req, res) => {
         : prefs.viewSelection !== "all"
           ? prefs.viewSelection
           : prefs.defaultTradingAccountHash;
-    const hash = await resolveAccountHash(token, requested);
-    if (!hash) return res.json([]);
+    // The working-order row asks for proof of the account. A successful list is
+    // not that proof when an unknown hash would otherwise fall back to the first account.
+    const verifyIdentity = req.query.accountIdentity === "1";
+    let hash: string | null;
+    if (verifyIdentity) {
+      const trimmed = typeof requested === "string" ? requested.trim() : "";
+      const rows = trimmed ? await fetchAccountNumberRows(token) : [];
+      hash = trimmed && rows.some((row) => row.hashValue === trimmed) ? trimmed : null;
+      if (!hash) return res.json({ accountHash: null, orders: [] });
+    } else {
+      hash = await resolveAccountHash(token, requested);
+      if (!hash) return res.json([]);
+    }
 
     const days = parseInt(req.query.days as string) || 30;
     const end = new Date();
@@ -213,6 +224,7 @@ router.get("/orders", async (req, res) => {
       new Date(b.enteredTime).getTime() - new Date(a.enteredTime).getTime()
     );
 
+    if (verifyIdentity) return res.json({ accountHash: hash, orders: mapped });
     res.json(mapped);
     return;
   } catch (err) {

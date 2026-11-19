@@ -137,6 +137,12 @@ export interface OptionsChainOrderSheetProps {
   /** Restored limit lock after Options remount (chunk recovery). */
   restoredSheetSession?: ChainDraftSheetSession;
   onSheetSessionPersist?: (session: ChainDraftSheetSession) => void;
+  /** Docked send accepted. The parent keeps this after the draft closes. */
+  onWorkingOrderAccepted?: (anchor: {
+    orderId: string | null;
+    accountHash: string;
+    occSymbols: string[];
+  }) => void;
 }
 
 function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
@@ -273,6 +279,7 @@ export function OptionsChainOrderSheet({
   onAdvancedOrders,
   restoredSheetSession,
   onSheetSessionPersist,
+  onWorkingOrderAccepted,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
   const sendAllowed = atOrderSendAllowed();
@@ -670,6 +677,8 @@ export function OptionsChainOrderSheet({
     setReviewLimitSnapped(px);
     setStage("submitting");
     const submittedRevision = draftRevisionRef.current;
+    const submittedAccount = accountHash;
+    const submittedOcc = legs.map((leg) => leg.schwabSymbol).filter((symbol) => !!symbol.trim());
     const acceptSound = atDocked ? prepareOrderAcceptedSound() : SILENT_ACCEPT_SOUND;
     try {
       const order = buildSchwabOrder(px ?? 0);
@@ -719,6 +728,13 @@ export function OptionsChainOrderSheet({
           description: acceptance.orderId ? `#${acceptance.orderId}` : undefined,
           duration: 2500,
         });
+        if (submittedAccount) {
+          onWorkingOrderAccepted?.({
+            orderId: acceptance.orderId,
+            accountHash: submittedAccount,
+            occSymbols: submittedOcc,
+          });
+        }
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
         if (draftRevisionRef.current !== submittedRevision) {
@@ -747,7 +763,7 @@ export function OptionsChainOrderSheet({
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount, resolvedOrder, atDocked, onCollapsedChange, onClearAll, onSheetSessionPersist]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount, resolvedOrder, atDocked, onCollapsedChange, onClearAll, onSheetSessionPersist, onWorkingOrderAccepted, legs]);
 
   const handleClearAllClick = useCallback(() => {
     limitUserEditedRef.current = false;
