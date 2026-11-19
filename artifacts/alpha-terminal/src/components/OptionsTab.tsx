@@ -2303,6 +2303,17 @@ export function OptionsTab({
 
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
+  const handleFlipLegSides = useCallback(() => {
+    setSelectedLegs((prev) => {
+      if (prev.size === 0) return prev;
+      const next = new Map(prev);
+      for (const [key, leg] of prev) {
+        next.set(key, { ...leg, side: leg.side === "bid" ? "ask" : "bid" });
+      }
+      return next;
+    });
+  }, []);
+
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
     const key = selectionKeyFromLegId(legId);
     withPreservedChainScroll(() => {
@@ -2674,6 +2685,7 @@ export function OptionsTab({
             onClearAll={handleClearSelection}
             onLegQuantityChange={handleSheetLegQty}
             onRemoveLeg={handleSheetRemoveLeg}
+            onFlipSides={handleFlipLegSides}
             subscribeOptionSymbols={subscribeOptionSymbols}
             openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
             demoFixture={!!chainFixtureOverride}

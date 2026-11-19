@@ -1006,6 +1006,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
+  const handleFlipLegSides = useCallback(() => {
+    const current = selection.getState().legs;
+    if (current.size === 0) return;
+    const next = new Map<string, AtLadderLegPick>();
+    for (const [key, leg] of current) {
+      next.set(key, { ...leg, side: leg.side === "bid" ? "ask" : "bid" });
+    }
+    atSelectionSetLegs(selection, next);
+    publishDraft([...next.values()], legQtyRef.current);
+  }, [selection, publishDraft]);
+
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
     const key = selectionKeyFromLegId(legId);
     const next = new Map(legQtyRef.current);
@@ -1496,6 +1507,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               onClearAll={handleClearLegs}
               onLegQuantityChange={handleSheetLegQty}
               onRemoveLeg={handleSheetRemoveLeg}
+              onFlipSides={handleFlipLegSides}
               subscribeOptionSymbols={holdSubs.subscribeOptionSymbols}
               demoFixture={blockLiveSend}
               atDocked
