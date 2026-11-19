@@ -11,7 +11,7 @@ export interface ZoneModel {
   asOfLabel: string;
   /** e.g. `Closed · as of 4:15 PM` when session is closed. */
   glanceCaption?: string;
-  /** Prior 0DTE expiry: walls/flip show `— rolls at open`. */
+  /** Prior 0DTE expiry: walls and gamma flip show a dash until the session rolls. */
   wallsRollLabel?: string | null;
   /** `unusual_whales` is the gamma glance. `chain` is the local fallback. */
   levelSource?: "unusual_whales" | "chain";

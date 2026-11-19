@@ -741,7 +741,7 @@ export function OptionsChainOrderSheet({
             }}
             onSend={() => void handleSubmit()}
             sendDisabled={sendLocked || !sendAllowed}
-            sendLabel={sendAllowed ? "Send to Schwab" : "Send unavailable"}
+            sendLabel={sendAllowed ? "Send" : "Send unavailable"}
             sendDetail={sendAllowed ? null : sendUnavailableReason}
           />
         </div>
@@ -791,9 +791,9 @@ export function OptionsChainOrderSheet({
           sendUnavailableReason
             ? "Send unavailable"
             : atBracketDraft?.prefs.submission === "send"
-              ? "Send to Schwab"
+              ? "Send"
               : atDocked
-                ? "Send to Schwab"
+                ? "Send"
                 : limitLocked
                   ? "Review (sending off)"
                   : "Lock limit to send"
@@ -1139,7 +1139,7 @@ export function OptionsChainOrderSheet({
           }}
           onSend={() => void handleSubmit()}
           sendDisabled={sendLocked || !sendAllowed}
-          sendLabel={sendAllowed ? "Send to Schwab" : "Send unavailable"}
+          sendLabel={sendAllowed ? "Send" : "Send unavailable"}
           sendDetail={sendAllowed ? null : atOrderSendUnavailableReason()}
         />
       )}
@@ -1191,7 +1191,7 @@ function ConfirmPanel({
   onBack,
   onSend,
   sendDisabled,
-  sendLabel = "Send to Schwab",
+  sendLabel = "Send",
   sendDetail,
   atBracketConfirm,
   atExitDurationLabel,

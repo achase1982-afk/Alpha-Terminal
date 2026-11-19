@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   expirationInWindow,
+  indexChainCacheKey,
+  occRootFromOptionSymbol,
   readChainRange,
   resolveIndexChainWindow,
   schwabStrikeCountPerSide,
@@ -56,5 +58,29 @@ describe("resolveIndexChainWindow", () => {
     });
     expect(expirationInWindow("2026-11-20T21:00:00.000Z", w)).toBe(true);
     expect(expirationInWindow("2026-12-18T21:00:00.000Z", w)).toBe(false);
+  });
+
+  it("keeps a named series on that date without changing the date window", () => {
+    const am = resolveIndexChainWindow({
+      fromDate: "2026-11-20",
+      toDate: "2026-11-20",
+      strikeCount: 40,
+      series: "spx",
+      now,
+    });
+    const pm = resolveIndexChainWindow({
+      fromDate: "2026-11-20",
+      toDate: "2026-11-20",
+      strikeCount: 40,
+      series: "SPXW",
+      now,
+    });
+    expect(am.fromDate).toBe("2026-11-20");
+    expect(am.toDate).toBe("2026-11-20");
+    expect(am.series).toBe("SPX");
+    expect(pm.series).toBe("SPXW");
+    expect(indexChainCacheKey("$SPX", am)).not.toBe(indexChainCacheKey("$SPX", pm));
+    expect(occRootFromOptionSymbol("SPX   261120C07340000")).toBe("SPX");
+    expect(occRootFromOptionSymbol("SPXW  261120C07340000")).toBe("SPXW");
   });
 });

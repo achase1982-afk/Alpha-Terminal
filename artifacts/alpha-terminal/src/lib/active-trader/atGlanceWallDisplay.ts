@@ -9,7 +9,7 @@ export type WallColumnDisplay = {
 /** Header flow row wall column text. */
 export function resolveCallWallDisplay(zones: ZoneModel): WallColumnDisplay {
   if (zones.wallsRollLabel) {
-    return { label: "Call wall", value: `\u2014 ${zones.wallsRollLabel}` };
+    return { label: "Call wall", value: "\u2014" };
   }
   if (zones.gammaPinStrike != null) {
     return { label: "Pin", value: formatStrikeLevel(zones.gammaPinStrike) };
@@ -25,15 +25,15 @@ export type GlanceWallLayout =
   | { mode: "split"; call: WallColumnDisplay; put: WallColumnDisplay };
 
 /**
- * Closed walls share one status. Repeating "rolls at open" on both rows
- * overflows a 440px glance. Live strikes stay on their own rows.
+ * Closed walls share one row so the glance stays inside 440px.
+ * The value is a dash when the strike is unavailable. Live strikes stay split.
  */
 export function resolveGlanceWallLayout(zones: ZoneModel): GlanceWallLayout {
   if (zones.wallsRollLabel) {
     return {
       mode: "shared",
       label: "Call · Put wall",
-      value: `\u2014 ${zones.wallsRollLabel}`,
+      value: "\u2014",
     };
   }
   return {
@@ -45,7 +45,7 @@ export function resolveGlanceWallLayout(zones: ZoneModel): GlanceWallLayout {
 
 export function resolvePutWallDisplay(zones: ZoneModel): WallColumnDisplay {
   if (zones.wallsRollLabel) {
-    return { label: "Put wall", value: `\u2014 ${zones.wallsRollLabel}` };
+    return { label: "Put wall", value: "\u2014" };
   }
   if (zones.gammaPinStrike != null) {
     return { label: "Put wall", value: "\u2014" };
@@ -57,7 +57,7 @@ export function resolvePutWallDisplay(zones: ZoneModel): WallColumnDisplay {
 }
 
 export function resolveGammaFlipDisplay(zones: ZoneModel): string {
-  if (zones.wallsRollLabel) return `\u2014 ${zones.wallsRollLabel}`;
+  if (zones.wallsRollLabel) return "\u2014";
   return zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
 }
 
