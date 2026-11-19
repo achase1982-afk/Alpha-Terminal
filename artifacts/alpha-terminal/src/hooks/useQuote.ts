@@ -33,6 +33,12 @@ export interface QuoteData {
   fiftyTwoWeekHigh: number | null;
   fiftyTwoWeekLow:  number | null;
   peRatio:          number | null;
+  /** Exchange trade time of `last`, when the stream provided one. */
+  tradeTimeMs?:     number | null;
+  /** Exchange time of the session high, when the feed provides one. */
+  highTimeMs?:      number | null;
+  /** Exchange time of the session low, when the feed provides one. */
+  lowTimeMs?:       number | null;
   error?:           string;
 }
 
@@ -93,6 +99,7 @@ export function useQuote(symbol: string) {
     high:             streamQuote?.high         ?? null,
     low:              streamQuote?.low          ?? null,
     close:            streamQuote?.close        ?? null,
+    tradeTimeMs:      streamQuote?.tradeTimeMs ?? null,
     fiftyTwoWeekHigh,
     fiftyTwoWeekLow,
     peRatio,

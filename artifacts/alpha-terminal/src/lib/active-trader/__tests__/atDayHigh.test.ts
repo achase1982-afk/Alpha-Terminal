@@ -23,10 +23,15 @@ const baseQuote = {
 };
 
 describe("resolveDayHighFromStreamQuote", () => {
-  it("returns current high in RTH", () => {
+  it("returns a timestamped high in RTH", () => {
     const noonEt = new Date("2026-11-18T17:00:00.000Z");
-    const d = resolveDayHighFromStreamQuote(baseQuote, noonEt);
+    const d = resolveDayHighFromStreamQuote({ ...baseQuote, highTimeMs: noonEt.getTime() }, noonEt);
     expect(d.kind).toBe("current");
     expect(d.value).toBe(7368.44);
+  });
+
+  it("does not treat an unstamped high as today's range", () => {
+    const noonEt = new Date("2026-11-18T17:00:00.000Z");
+    expect(resolveDayHighFromStreamQuote(baseQuote, noonEt)).toEqual({ kind: "unavailable", value: null });
   });
 });

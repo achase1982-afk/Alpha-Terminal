@@ -33,10 +33,39 @@ describe("atSessionRangeRollup", () => {
     resetSessionRangeRollupsForTests();
   });
 
-  it("lowers day low when last trades below stale feed low", () => {
+  it("lowers day low when a timestamped last trades below the feed low", () => {
     const now = new Date("2026-11-18T15:00:00-05:00");
-    touchSessionRange("SPX", baseQuote({ last: 7290, low: 7340 }), now);
-    const { dayLow } = resolveSessionLowHighFromQuote("SPX", baseQuote({ last: 7288, low: 7340 }), now);
+    const tradeTimeMs = now.getTime();
+    touchSessionRange("SPX", baseQuote({ last: 7290, low: 7340, tradeTimeMs }), now);
+    const { dayLow } = resolveSessionLowHighFromQuote("SPX", baseQuote({ last: 7288, low: 7340, tradeTimeMs }), now);
     expect(dayLow.value).toBeLessThanOrEqual(7288);
+  });
+
+  it("ignores yesterday's extreme and an outlying bid, then takes a new traded print", () => {
+    const now = new Date("2026-11-18T15:00:00-05:00");
+    const yesterday = new Date("2026-11-17T15:00:00-05:00").getTime();
+    const stale = baseQuote({
+      high: 8000,
+      low: 1000,
+      bid: 1,
+      ask: 9000,
+      last: 7300,
+      tradeTimeMs: yesterday,
+      highTimeMs: yesterday,
+      lowTimeMs: yesterday,
+    });
+    const untouched = resolveSessionLowHighFromQuote("SPX", stale, now);
+    expect(untouched.dayLow).toEqual({ kind: "unavailable", value: null });
+    expect(untouched.dayHigh).toEqual({ kind: "unavailable", value: null });
+
+    const traded = resolveSessionLowHighFromQuote(
+      "SPX",
+      baseQuote({ last: 7312.5, high: 8000, low: 1000, bid: 1, ask: 9000, tradeTimeMs: now.getTime() }),
+      now,
+    );
+    expect(traded.dayLow).toEqual({ kind: "current", value: 7312.5 });
+    expect(traded.dayHigh).toEqual({ kind: "current", value: 7312.5 });
+    expect(traded.dayLow.value).not.toBe(0);
+    expect(traded.dayHigh.value).not.toBe(0);
   });
 });

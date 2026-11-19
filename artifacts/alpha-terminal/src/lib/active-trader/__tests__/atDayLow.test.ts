@@ -28,11 +28,21 @@ describe("resolveDayLowFromStreamQuote", () => {
     expect(resolveDayLowFromStreamQuote(q).kind).toBe("unavailable");
   });
 
-  it("uses stream low in RTH as current session", () => {
+  it("uses a timestamped stream low in RTH as the current session", () => {
     const noonEt = new Date("2026-11-18T17:00:00.000Z");
-    const d = resolveDayLowFromStreamQuote(baseQuote, noonEt);
+    const d = resolveDayLowFromStreamQuote({ ...baseQuote, lowTimeMs: noonEt.getTime() }, noonEt);
     expect(d.kind).toBe("current");
     expect(d.value).toBe(7488);
+  });
+
+  it("does not treat an unstamped or yesterday low as today's range", () => {
+    const noonEt = new Date("2026-11-18T17:00:00.000Z");
+    expect(resolveDayLowFromStreamQuote(baseQuote, noonEt).kind).toBe("unavailable");
+    const yesterday = new Date("2026-11-17T17:00:00.000Z").getTime();
+    expect(resolveDayLowFromStreamQuote({ ...baseQuote, lowTimeMs: yesterday }, noonEt)).toEqual({
+      kind: "unavailable",
+      value: null,
+    });
   });
 
   it("labels pre-open valid low as prior", () => {
