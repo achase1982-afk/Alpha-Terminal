@@ -92,6 +92,8 @@ export interface LiveQuote {
   low:          number | null;
   close:        number | null;   // field 12 — PREVIOUS day's close (used for change calc)
   ts:           number;
+  /** Field 35 — trade time of `last`. Absent on quote-only frames. */
+  tradeTimeMs?: number | null;
   /** Quote origin for merge policy (Cboe One vs Schwab vs IBKR PRO breadth). */
   quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
 }
@@ -1966,6 +1968,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
       low: numOrNull(item["11"]) ?? existing?.low ?? null,
       close,
       ts: now,
+      tradeTimeMs: numOrNull(item["35"]) ?? existing?.tradeTimeMs ?? null,
       quoteSource: "SCHWAB",
     };
 
