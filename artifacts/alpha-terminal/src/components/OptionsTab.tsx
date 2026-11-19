@@ -2682,7 +2682,7 @@ export function OptionsTab({
         ref={chainScrollRef}
         data-options-chain-scroll
         data-options-chain-selected-expiration={atExpiration ?? undefined}
-        className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        className="relative flex-1 min-h-0 overflow-y-auto overscroll-y-none"
         style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >
         {isLoadingEffective && !data && (
@@ -2852,7 +2852,7 @@ export function OptionsTab({
       )}
       {isFuturesSymbol && (
       <div
-        className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
+        className="relative flex-1 min-h-0 overflow-y-auto overscroll-y-none"
         style={{ background: BG, paddingBottom: selCount > 0 ? 52 : 0, WebkitOverflowScrolling: "touch" }}
         data-options-chain-scroll
       >
