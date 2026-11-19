@@ -1,16 +1,9 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { WatchlistToggle } from "@/components/MetricsBar";
 import { useQuote } from "@/hooks/useQuote";
-import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { GOLD, MONO, DIM, GRAY, WHITE } from "@/components/options/optionsTheme";
+import { AtExpirySelect } from "@/components/active-trader/AtExpirySelect";
+import { GOLD, MONO, DIM, WHITE } from "@/components/options/optionsTheme";
 import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 
 const HEADER_BG = "#0a0a0a";
@@ -36,15 +29,6 @@ function formatIndexSubtitle(symbol: string, description?: string): string {
 export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compact?: boolean }) {
   const symbol = useActiveSymbol();
   const { data: quote, sessionChange } = useQuote(symbol);
-
-  const expiryOptions = useAtChromeStore((s) => s.atExpiryOptions);
-  const selectedExpiration = useAtChromeStore((s) => s.atSelectedExpiration);
-  const pickAtExpiration = useAtChromeStore((s) => s.pickAtExpiration);
-
-  const pillLabel = useMemo(() => {
-    if (!selectedExpiration) return "\u2014";
-    return expiryOptions.find((o) => o.expiration === selectedExpiration)?.pillLabel ?? "\u2014";
-  }, [expiryOptions, selectedExpiration]);
 
   const rawChange = sessionChange.change;
   const rawPct = sessionChange.changePct;
@@ -91,30 +75,7 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
             {changeStr} {changePctStr}
           </span>
           <div className="flex-1" />
-          {expiryOptions.length > 0 && selectedExpiration ? (
-            <Select value={selectedExpiration} onValueChange={pickAtExpiration}>
-              <SelectTrigger
-                data-at-expiry-pill
-                className="h-5 max-w-[5.5rem] rounded-full px-1.5 text-[9px] font-normal shadow-none border [&>svg]:hidden"
-                style={{
-                  background: "transparent",
-                  borderColor: "#3f3f46",
-                  color: GRAY,
-                  fontFamily: MONO,
-                }}
-                aria-label="Option expiration"
-              >
-                <SelectValue>{pillLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {expiryOptions.map((o) => (
-                  <SelectItem key={o.expiration} value={o.expiration} style={{ fontSize: 12 }}>
-                    {o.pillLabel}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
+          <AtExpirySelect compact />
         </div>
       </div>
     );
@@ -151,37 +112,7 @@ export const AtSymbolHeader = memo(function AtSymbolHeader({ compact }: { compac
           </span>
         </div>
         <div className="flex justify-end min-w-0">
-          {expiryOptions.length > 0 && selectedExpiration ? (
-            <Select value={selectedExpiration} onValueChange={pickAtExpiration}>
-              <SelectTrigger
-                data-at-expiry-pill
-                className="h-6 max-w-full rounded-full px-2 text-[10px] font-normal shadow-none border [&>svg]:hidden"
-                style={{
-                  background: "transparent",
-                  borderColor: "#3f3f46",
-                  color: GRAY,
-                  fontFamily: MONO,
-                }}
-                aria-label="Option expiration"
-              >
-                <SelectValue>{pillLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {expiryOptions.map((o) => (
-                  <SelectItem key={o.expiration} value={o.expiration} style={{ fontSize: 12 }}>
-                    {o.pillLabel}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <span
-              className="text-[10px] tabular-nums px-2 py-0.5 rounded-full border"
-              style={{ color: GRAY, borderColor: "#3f3f46" }}
-            >
-              {pillLabel}
-            </span>
-          )}
+          <AtExpirySelect />
         </div>
       </div>
     </div>

@@ -225,21 +225,20 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             }}
           >
             <LevelsCell
-              label="Day low"
-              value={sessionLevels.dayLowValue}
+              label="Day high"
+              value={sessionLevels.dayHighValue}
               dataAttrs={{
-                "data-at-day-low": "",
-                "data-at-day-low-kind": sessionLevels.dayLow.kind,
+                "data-at-day-high": "",
+                "data-at-day-high-kind": sessionLevels.dayHigh.kind,
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden data-at-day-levels-divider />
             <div style={{ minWidth: 0 }}>
               <LevelsCell
-                label="Low zone top"
-                value={lowZoneVal}
-                dataAttrs={{ "data-at-low-zone-ref": "", "data-at-low-zone-slot": "" }}
-                title={LOW_ZONE_REF_TOOLTIP}
-                valueTone={zoneValTone}
+                label="High zone bottom"
+                value={highZoneVal}
+                dataAttrs={{ "data-at-high-zone-ref": "", "data-at-high-zone-slot": "" }}
+                title={SPX_REF_ZONE_TOOLTIP}
               />
             </div>
           </div>
@@ -254,20 +253,21 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             }}
           >
             <LevelsCell
-              label="Day high"
-              value={sessionLevels.dayHighValue}
+              label="Day low"
+              value={sessionLevels.dayLowValue}
               dataAttrs={{
-                "data-at-day-high": "",
-                "data-at-day-high-kind": sessionLevels.dayHigh.kind,
+                "data-at-day-low": "",
+                "data-at-day-low-kind": sessionLevels.dayLow.kind,
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden />
             <div style={{ minWidth: 0 }}>
               <LevelsCell
-                label="High zone bottom"
-                value={highZoneVal}
-                dataAttrs={{ "data-at-high-zone-ref": "", "data-at-high-zone-slot": "" }}
-                title={SPX_REF_ZONE_TOOLTIP}
+                label="Low zone top"
+                value={lowZoneVal}
+                dataAttrs={{ "data-at-low-zone-ref": "", "data-at-low-zone-slot": "" }}
+                title={LOW_ZONE_REF_TOOLTIP}
+                valueTone={zoneValTone}
               />
             </div>
           </div>
