@@ -11,6 +11,8 @@ import {
 import type { OptionsContract } from "@/components/OptionsTab";
 import {
   BORDER,
+  GOLD,
+  PUT_WALL,
   UP,
   DOWN,
   GRAY,
@@ -508,6 +510,8 @@ type LadderRowViewProps = {
   isSelected: boolean;
   spotRow: boolean;
   gammaFlipRow: boolean;
+  callWallRow: boolean;
+  putWallRow: boolean;
   zoneTag: string | null;
   keepawayForbidden: boolean;
   positionQty: number | null;
@@ -528,6 +532,8 @@ const LadderRowView = memo(function LadderRowView({
   vertical,
   spotRow,
   gammaFlipRow,
+  callWallRow,
+  putWallRow,
   keepawayForbidden,
   positionQty,
   workChip,
@@ -548,7 +554,7 @@ const LadderRowView = memo(function LadderRowView({
     boxSizing: "border-box",
     paddingLeft: AT_LADDER_GUTTER_X,
     paddingRight: AT_LADDER_GUTTER_X,
-    zIndex: gammaFlipRow ? 2 : undefined,
+    zIndex: gammaFlipRow || callWallRow || putWallRow ? 2 : undefined,
   };
 
   const strikePad = spotRow || gammaFlipRow;
@@ -560,12 +566,31 @@ const LadderRowView = memo(function LadderRowView({
       data-at-ladder-row={row.strike}
       data-at-spot-row={spotRow ? "1" : undefined}
       data-at-gamma-flip-row={gammaFlipRow ? "1" : undefined}
+      data-at-call-wall-row={callWallRow ? "1" : undefined}
+      data-at-put-wall-row={putWallRow ? "1" : undefined}
     >
       {gammaFlipRow ? (
         <span
           aria-hidden
+          data-at-gamma-flip-outline=""
           className="pointer-events-none absolute z-[3]"
           style={{ inset: 3, border: `1px solid ${AT_LADDER_GAMMA}`, borderRadius: 4 }}
+        />
+      ) : null}
+      {callWallRow ? (
+        <span
+          aria-hidden
+          data-at-call-wall-outline=""
+          className="pointer-events-none absolute z-[3]"
+          style={{ inset: 3, border: `1px solid ${GOLD}`, borderRadius: 4 }}
+        />
+      ) : null}
+      {putWallRow ? (
+        <span
+          aria-hidden
+          data-at-put-wall-outline=""
+          className="pointer-events-none absolute z-[3]"
+          style={{ inset: 3, border: `1px solid ${PUT_WALL}`, borderRadius: 4 }}
         />
       ) : null}
       <ContractPair
@@ -712,6 +737,14 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   const gammaFlipStrike = useMemo(
     () => resolveNearestStrikeInBand(strikes, props.flip),
     [strikes, props.flip],
+  );
+  const callWallStrike = useMemo(
+    () => (props.wallsRolling ? null : resolveNearestStrikeInBand(strikes, props.callWall)),
+    [strikes, props.callWall, props.wallsRolling],
+  );
+  const putWallStrike = useMemo(
+    () => (props.wallsRolling ? null : resolveNearestStrikeInBand(strikes, props.putWall)),
+    [strikes, props.putWall, props.wallsRolling],
   );
   const zoneLevels = useMemo(
     () => ({
@@ -885,6 +918,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             isSelected={props.selectedStrike === row.strike}
             spotRow={props.spotStrike === row.strike}
             gammaFlipRow={gammaFlipStrike === row.strike}
+            callWallRow={callWallStrike === row.strike}
+            putWallRow={putWallStrike === row.strike}
             zoneTag={ladderStrikeZoneTag(zoneLevels, row.strike)}
             keepawayForbidden={putKeepaway || callKeepaway}
             positionQty={positionQty}

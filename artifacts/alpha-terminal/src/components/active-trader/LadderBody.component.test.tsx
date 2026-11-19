@@ -348,14 +348,14 @@ describe("LadderBody", () => {
     expect(spot.style.fontWeight).toBe("700");
   });
 
-  it("keeps call and put wall context out of the strike column", () => {
+  it("outlines the call wall in gold and the put wall in teal", () => {
     const { view } = setup();
-    const callWall = view.container.querySelector<HTMLElement>('[data-at-strike="7350"] > div')!;
-    const putWall = view.container.querySelector<HTMLElement>('[data-at-strike="7300"] > div')!;
-    expect(view.container.querySelector('[data-at-call-wall-row="1"]')).toBeNull();
-    expect(view.container.querySelector('[data-at-put-wall-row="1"]')).toBeNull();
-    expect(callWall.style.border).toBe("");
-    expect(putWall.style.border).toBe("");
+    const callRow = view.container.querySelector<HTMLElement>('[data-at-call-wall-row="1"]')!;
+    const putRow = view.container.querySelector<HTMLElement>('[data-at-put-wall-row="1"]')!;
+    expect(callRow.getAttribute("data-at-ladder-row")).toBe("7350");
+    expect(putRow.getAttribute("data-at-ladder-row")).toBe("7300");
+    expect(callRow.querySelector("[data-at-call-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(251,\s*191,\s*36\)/);
+    expect(putRow.querySelector("[data-at-put-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(20,\s*184,\s*166\)/);
     expect(view.container.querySelector("[data-at-strike-wall]")).toBeNull();
   });
 
