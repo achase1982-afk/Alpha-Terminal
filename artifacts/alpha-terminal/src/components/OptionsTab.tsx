@@ -55,6 +55,7 @@ import type { AtLadderLegPick } from "@/lib/active-trader/atLadderLegKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
+import { expirationSeriesKey, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
 import {
   filterAtExpiryPillGroups,
   nearestTradableExpiration,
@@ -158,8 +159,9 @@ function parseExpDate(expStr: string): Date | null {
 
 function formatExpDate(expStr: string): string {
   const d = parseExpDate(expStr);
-  if (!d) return expStr || "\u2014";
-  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
+  const base = !d ? expStr || "\u2014" : `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
+  const settlement = settlementFromExpiration(expStr);
+  return settlement ? `${base} ${settlement}` : base;
 }
 
 /** Last Mon–Fri calendar day of the month. Month-end options expire that day, not the whole final week. */
@@ -207,15 +209,26 @@ function strikeKey(v: number): string {
   return normalizeStrike(v).toFixed(2);
 }
 
-function buildExpirationGroups(
+function seriesBucketKey(c: Contract): string {
+  return expirationSeriesKey(c.expiration, c.schwabSymbol || c.streamKey);
+}
+
+function placeSeriesContract(c: Contract): Contract {
+  const key = seriesBucketKey(c);
+  return key === c.expiration ? c : { ...c, expiration: key };
+}
+
+export function buildExpirationGroups(
   calls: Contract[], puts: Contract[], lastPrice: number | null
 ): ExpirationGroup[] {
   const expMap = new Map<string, { calls: Map<string, Contract>; puts: Map<string, Contract>; dte: number }>();
-  for (const c of calls) {
+  for (const raw of calls) {
+    const c = placeSeriesContract(raw);
     if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
     expMap.get(c.expiration)!.calls.set(strikeKey(c.strike), c);
   }
-  for (const p of puts) {
+  for (const raw of puts) {
+    const p = placeSeriesContract(raw);
     if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
     expMap.get(p.expiration)!.puts.set(strikeKey(p.strike), p);
   }
@@ -280,7 +293,7 @@ function buildExpirationGroups(
       maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, ivSkew,
     });
   }
-  groups.sort((a, b) => a.dte - b.dte);
+  groups.sort((a, b) => a.dte - b.dte || a.expiration.localeCompare(b.expiration));
   return groups;
 }
 
@@ -290,13 +303,15 @@ function buildExpirationGroups(
  * rows are new objects on every underlying tick; these are rebuilt only when
  * the chain itself changes, which lets the ladder skip those ticks entirely.
  */
-function buildAtLadderGroups(calls: Contract[], puts: Contract[]): AtExpirationGroup[] {
+export function buildAtLadderGroups(calls: Contract[], puts: Contract[]): AtExpirationGroup[] {
   const expMap = new Map<string, { calls: Map<string, Contract>; puts: Map<string, Contract>; dte: number }>();
-  for (const c of calls) {
+  for (const raw of calls) {
+    const c = placeSeriesContract(raw);
     if (!expMap.has(c.expiration)) expMap.set(c.expiration, { calls: new Map(), puts: new Map(), dte: c.dte ?? 0 });
     expMap.get(c.expiration)!.calls.set(strikeKey(c.strike), c);
   }
-  for (const p of puts) {
+  for (const raw of puts) {
+    const p = placeSeriesContract(raw);
     if (!expMap.has(p.expiration)) expMap.set(p.expiration, { calls: new Map(), puts: new Map(), dte: p.dte ?? 0 });
     expMap.get(p.expiration)!.puts.set(strikeKey(p.strike), p);
   }
@@ -316,7 +331,7 @@ function buildAtLadderGroups(calls: Contract[], puts: Contract[]): AtExpirationG
       })),
     });
   }
-  groups.sort((a, b) => a.dte - b.dte);
+  groups.sort((a, b) => a.dte - b.dte || a.expiration.localeCompare(b.expiration));
   return groups;
 }
 
@@ -1338,6 +1353,16 @@ function OptionsChainHeader({
   );
 }
 
+function assignStreamKey(c: Contract, right: "C" | "P", underlying: string): void {
+  const explicit = c.schwabSymbol?.trim();
+  if (explicit) {
+    c.streamKey = explicit;
+    return;
+  }
+  const root = seriesRootFromExpiration(seriesBucketKey(c)) ?? underlying.replace(/^\$/, "");
+  c.streamKey = buildSchwabOptionKey(root, c.expiration, c.strike, right);
+}
+
 function buildSchwabOptionKey(underlying: string, expiration: string, strike: number, type: "C" | "P"): string {
   const d = parseExpDate(expiration);
   if (!d) return "";
@@ -1724,15 +1749,20 @@ export function OptionsTab({
     const streamKeys: string[] = [];
     const expirations: string[] = [];
     const selectedYmd = atExpiration?.slice(0, 10) ?? "";
-    const keep = (expiration: string) => {
-      const ymd = expiration.slice(0, 10);
-      if (expandedExps.size > 0) return expandedExps.has(expiration);
-      return selectedYmd !== "" && ymd === selectedYmd;
+    const keep = (c: Contract) => {
+      const key = seriesBucketKey(c);
+      if (expandedExps.size > 0) return expandedExps.has(key);
+      if (!atExpiration) return false;
+      if (atExpiration.includes("~")) return key === atExpiration;
+      return key.slice(0, 10) === selectedYmd;
     };
     const push = (c: Contract, right: "C" | "P") => {
-      if (!keep(c.expiration)) return;
-      expirations.push(c.expiration);
-      streamKeys.push(c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, right));
+      if (!keep(c)) return;
+      const placed = placeSeriesContract(c);
+      expirations.push(placed.expiration);
+      const explicit = c.schwabSymbol?.trim() || c.streamKey?.trim();
+      const root = seriesRootFromExpiration(placed.expiration) ?? symbol.replace(/^\$/, "");
+      streamKeys.push(explicit || buildSchwabOptionKey(root, c.expiration, c.strike, right));
     };
     for (const c of calls) push(c, "C");
     for (const p of puts) push(p, "P");
@@ -1767,8 +1797,8 @@ export function OptionsTab({
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
     const puts = (data.puts ?? []) as Contract[];
-    calls.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
-    puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
+    calls.forEach(c => assignStreamKey(c, "C", symbol));
+    puts.forEach(c => assignStreamKey(c, "P", symbol));
     return buildExpirationGroups(calls, puts, underlyingPrice);
   }, [data, underlyingPrice, symbol]);
 
@@ -1776,8 +1806,8 @@ export function OptionsTab({
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
     const puts = (data.puts ?? []) as Contract[];
-    calls.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "C"); });
-    puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
+    calls.forEach(c => assignStreamKey(c, "C", symbol));
+    puts.forEach(c => assignStreamKey(c, "P", symbol));
     return buildAtLadderGroups(calls, puts);
   }, [data, symbol]);
   const tradableAtGroups = useMemo(
@@ -1874,7 +1904,7 @@ export function OptionsTab({
       options: pickerPool.map((g) => ({
         expiration: g.expiration,
         dte: g.dte,
-        pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
+        pillLabel: formatAtExpiryPill(g.expiration, g.dte),
       })),
       selectedExpiration: atExpiration ?? pickerPool[0]?.expiration ?? "",
       onSelect: trySelectExpiry,
@@ -1884,7 +1914,6 @@ export function OptionsTab({
     expiryCatalog,
     tradableAtGroups,
     atExpiration,
-    symbol,
     setAtExpiryChrome,
     clearAtExpiryChrome,
     trySelectExpiry,

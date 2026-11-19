@@ -60,6 +60,7 @@ import {
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
 import { buildChainSheetBracketEconomics } from "@/lib/active-trader/chainSheetBracketEconomics";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
+import { seriesRootFromExpiration } from "@/lib/active-trader/optionSeries";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -153,7 +154,7 @@ function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | 
   const trimmed = leg.schwabSymbol?.trim();
   if (trimmed) return trimmed;
   const built = buildSchwabOptionKey(
-    underlying,
+    seriesRootFromExpiration(leg.expiration) ?? underlying,
     leg.expiration,
     leg.strike,
     leg.optionType === "CALL" ? "C" : "P",
@@ -1441,7 +1442,12 @@ export function legsFromChainSelection(
     const schwabSymbol =
       l.contract.schwabSymbol?.trim() ||
       l.contract.streamKey?.trim() ||
-      buildSchwabOptionKey(symbol, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P");
+      buildSchwabOptionKey(
+        seriesRootFromExpiration(l.contract.expiration) ?? symbol,
+        l.contract.expiration,
+        l.contract.strike,
+        l.type === "CALL" ? "C" : "P",
+      );
     const qty = l.quantity ?? 1;
     const { slices } = resolveChainLegInstructions(
       schwabSymbol,

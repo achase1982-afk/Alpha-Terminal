@@ -48,6 +48,7 @@ import {
 } from "@/components/OptionsChainOrderSheet";
 import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
+import { seriesRootFromExpiration } from "@/lib/active-trader/optionSeries";
 import {
   atLadderLegKey,
   quoteSideFromTap,
@@ -984,7 +985,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   useEffect(() => {
     if (selectedLegs.size === 0) return;
     const syms = [...selectedLegs.values()]
-      .map((l) => l.contract.schwabSymbol ?? (l.contract.streamKey ? buildSchwabOptionKey(symbol, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P") : null))
+      .map((l) => {
+        const explicit = l.contract.schwabSymbol?.trim() || l.contract.streamKey?.trim();
+        if (explicit) return explicit;
+        const root = seriesRootFromExpiration(l.contract.expiration) ?? symbol.replace(/^\$/, "");
+        return buildSchwabOptionKey(root, l.contract.expiration, l.contract.strike, l.type === "CALL" ? "C" : "P");
+      })
       .filter((s): s is string => !!s);
     if (syms.length > 0) void holdSubs.subscribeOptionSymbols?.(syms);
   }, [selectedLegs, holdSubs, symbol]);
