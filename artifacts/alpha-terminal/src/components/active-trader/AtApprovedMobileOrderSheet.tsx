@@ -71,6 +71,9 @@ export type AtApprovedMobileOrderSheetProps = {
   onNudgeLimit: (dir: "up" | "down") => void;
   orderType: "LIMIT" | "MARKET";
   onOrderTypeChange: (t: "LIMIT" | "MARKET") => void;
+  /** Resolved type shared by the dock, Review, and the payload. */
+  orderTypeLabel?: string;
+  orderTypeBlocked?: boolean;
   limitTickCtx: LimitTickContext;
   sendLabel: string;
   sendDisabled: boolean;
@@ -169,6 +172,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   onNudgeLimit,
   orderType,
   onOrderTypeChange,
+  orderTypeLabel,
+  orderTypeBlocked,
   sendLabel,
   sendDisabled,
   onSend,
@@ -426,6 +431,20 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             {sendLabel}
           </button>
         </div>
+        {orderTypeLabel ? (
+          <p
+            data-chain-resolved-order-type
+            style={{
+              marginTop: 4,
+              fontSize: 12,
+              lineHeight: 1.35,
+              fontWeight: 650,
+              color: orderTypeBlocked ? "#ff4d4d" : GRAY,
+            }}
+          >
+            {orderTypeLabel}
+          </p>
+        ) : null}
         </div>
       </div>
     );

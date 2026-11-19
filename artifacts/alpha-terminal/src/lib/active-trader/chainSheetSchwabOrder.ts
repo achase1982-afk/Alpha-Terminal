@@ -36,8 +36,42 @@ function wantsAdvancedOrder(prefs: ActiveTraderTemplatePrefs | undefined): boole
   return false;
 }
 
-function netOrder(input: {
+export type VisibleTicketOrderType = "LIMIT" | "MARKET";
+
+export type ResolvedChainOrderType =
+  | { ok: true; orderType: "LIMIT" | "MARKET" | "NET_CREDIT" | "NET_DEBIT"; label: string }
+  | { ok: false; reason: string };
+
+/** One order type for the dock, Review, and the Schwab payload. */
+export function resolveVisibleChainOrderType(input: {
+  visible: VisibleTicketOrderType;
   isCredit: boolean;
+  legCount: number;
+  session?: string | null;
+}): ResolvedChainOrderType {
+  if (input.visible === "MARKET" && input.session === "SEAMLESS") {
+    return {
+      ok: false,
+      reason: "Market orders aren't available for a seamless session. Choose Limit.",
+    };
+  }
+  if (input.visible === "MARKET" && input.legCount > 1) {
+    return {
+      ok: false,
+      reason: "Market orders aren't available for this strategy. Choose Limit.",
+    };
+  }
+  if (input.visible === "MARKET") return { ok: true, orderType: "MARKET", label: "Market" };
+  if (input.legCount > 1) {
+    return input.isCredit
+      ? { ok: true, orderType: "NET_CREDIT", label: "Net credit" }
+      : { ok: true, orderType: "NET_DEBIT", label: "Net debit" };
+  }
+  return { ok: true, orderType: "LIMIT", label: "Limit" };
+}
+
+function netOrder(input: {
+  orderType: string;
   duration: string;
   session: string;
   complexOrderStrategyType: string;
@@ -47,7 +81,7 @@ function netOrder(input: {
   routing?: ActiveTraderTemplatePrefs["routing"];
 }): Record<string, unknown> {
   const order: Record<string, unknown> = {
-    orderType: input.isCredit ? "NET_CREDIT" : "NET_DEBIT",
+    orderType: input.orderType,
     session: input.session,
     duration: input.duration,
     complexOrderStrategyType: input.complexOrderStrategyType,
@@ -57,7 +91,7 @@ function netOrder(input: {
       quantity: leg.quantity * input.quantityMultiplier,
       instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
     })),
-    price: input.limitPrice > 0 ? input.limitPrice : undefined,
+    price: input.orderType === "MARKET" || input.limitPrice <= 0 ? undefined : input.limitPrice,
   };
   if (input.routing && input.routing !== "BEST") order.requestedDestination = input.routing;
   return order;
@@ -71,6 +105,8 @@ export function buildChainSheetSchwabOrder(input: {
   quantityMultiplier: number;
   limitPrice: number;
   isCredit: boolean;
+  /** Limit/Market selection on the ticket. Defaults to Limit. */
+  visibleOrderType?: VisibleTicketOrderType;
   complexOrderStrategyType: string;
   underlyingSymbol: string;
   underlyingPrice?: number | null;
@@ -78,6 +114,14 @@ export function buildChainSheetSchwabOrder(input: {
   now?: number;
 }): Record<string, unknown> {
   const prefs = input.prefs;
+  const visible = input.visibleOrderType ?? "LIMIT";
+  const resolved = resolveVisibleChainOrderType({
+    visible,
+    isCredit: input.isCredit,
+    legCount: input.legs.length,
+    session: prefs?.session ?? "NORMAL",
+  });
+  if (!resolved.ok) return { error: resolved.reason };
   const duration =
     prefs?.entryDuration === "GOOD_TILL_CANCEL"
       ? "GOOD_TILL_CANCEL"
@@ -89,7 +133,7 @@ export function buildChainSheetSchwabOrder(input: {
   const session = prefs?.session ?? "NORMAL";
   if (!prefs || !wantsAdvancedOrder(prefs) || input.legs.length === 0) {
     return netOrder({
-      isCredit: input.isCredit,
+      orderType: resolved.orderType,
       duration,
       session,
       complexOrderStrategyType: input.complexOrderStrategyType,
@@ -121,14 +165,14 @@ export function buildChainSheetSchwabOrder(input: {
     limitPrice: input.limitPrice,
     takeProfit: prefs.takeProfit,
     stopLoss: prefs.stopLoss,
-    entryOrderType: prefs.orderType,
+    entryOrderType: visible === "MARKET" ? "MKT" : "LIMIT",
     entryDuration: duration,
     exitDuration: prefs.exitDuration,
     stopLossOrderType: prefs.stopLossOrderType,
     stopLimitOffset: prefs.stopLimitOffset,
     session,
     advancedRoute: prefs.advancedRoute,
-    schwabEntryType: prefs.schwabEntryType,
+    schwabEntryType: visible === "MARKET" ? "MARKET" : "LIMIT",
     routing: prefs.routing,
     trailOffset: prefs.trailOffset,
     trailLinkType: prefs.trailLinkType,

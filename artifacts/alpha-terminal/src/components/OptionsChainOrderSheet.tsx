@@ -44,7 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { computeOrderEconomics } from "@workspace/order-ticket-math";
 import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
 import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { buildChainSheetSchwabOrder } from "@/lib/active-trader/chainSheetSchwabOrder";
+import { buildChainSheetSchwabOrder, resolveVisibleChainOrderType } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
 import {
   assertChainDraftLegCount,
@@ -307,6 +307,18 @@ export function OptionsChainOrderSheet({
     return false;
   }, [pricedLegs]);
 
+  const resolvedOrder = useMemo(
+    () =>
+      resolveVisibleChainOrderType({
+        visible: orderType,
+        isCredit,
+        legCount: legs.length,
+        session: atBracketDraft?.prefs.session,
+      }),
+    [orderType, isCredit, legs.length, atBracketDraft?.prefs.session],
+  );
+  const resolvedOrderLabel = resolvedOrder.ok ? resolvedOrder.label : resolvedOrder.reason;
+
   const summary = useMemo(
     () =>
       computeChainTicketSummary({
@@ -424,13 +436,14 @@ export function OptionsChainOrderSheet({
         quantityMultiplier: quantity,
         limitPrice: parsed,
         isCredit,
+        visibleOrderType: orderType,
         complexOrderStrategyType: complexType,
         underlyingSymbol: symbol,
         underlyingPrice: underlyingSpot,
         timeInForce,
       });
     },
-    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx, atBracketDraft, symbol, underlyingSpot],
+    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx, atBracketDraft, symbol, underlyingSpot, orderType],
   );
 
   const guardDraftLegCount = useCallback(() => {
@@ -446,8 +459,12 @@ export function OptionsChainOrderSheet({
 
   const validateAndReview = useCallback(() => {
     if (!guardDraftLegCount()) return;
-    const px = snapLimitForSubmit();
-    if (px == null || px <= 0) {
+    if (!resolvedOrder.ok) {
+      setPriceError(resolvedOrder.reason);
+      return;
+    }
+    const px = resolvedOrder.orderType === "MARKET" ? 0 : snapLimitForSubmit();
+    if (resolvedOrder.orderType !== "MARKET" && (px == null || px <= 0)) {
       setPriceError("Set a valid limit price (Mid / Natural or enter manually).");
       return;
     }
@@ -496,6 +513,7 @@ export function OptionsChainOrderSheet({
     summary?.grossNotional,
     quantity,
     isCredit,
+    resolvedOrder,
   ]);
 
   const openReviewRef = useRef(false);
@@ -512,6 +530,11 @@ export function OptionsChainOrderSheet({
 
   const handleSubmit = useCallback(async () => {
     if (!guardDraftLegCount()) return;
+    if (!resolvedOrder.ok) {
+      setPriceError(resolvedOrder.reason);
+      setStage("form");
+      return;
+    }
     if (!sendAllowed) return;
     if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
@@ -522,8 +545,8 @@ export function OptionsChainOrderSheet({
       setStage("success");
       return;
     }
-    const px = snapLimitForSubmit();
-    if (px == null || px <= 0) {
+    const px = resolvedOrder.orderType === "MARKET" ? 0 : snapLimitForSubmit();
+    if (resolvedOrder.orderType !== "MARKET" && (px == null || px <= 0)) {
       setPriceError("A limit price is required.");
       setStage("form");
       return;
@@ -533,7 +556,7 @@ export function OptionsChainOrderSheet({
     setReviewLimitSnapped(px);
     setStage("submitting");
     try {
-      const order = buildSchwabOrder(px);
+      const order = buildSchwabOrder(px ?? 0);
       if (typeof order.error === "string") {
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
@@ -569,7 +592,7 @@ export function OptionsChainOrderSheet({
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount, resolvedOrder]);
 
   const handleClearAllClick = useCallback(() => {
     limitUserEditedRef.current = false;
@@ -708,6 +731,7 @@ export function OptionsChainOrderSheet({
             quantity={quantity}
             timeInForce={timeInForce}
             isCredit={isCredit}
+            orderTypeLabel={resolvedOrderLabel}
             limitTickCtx={limitTickCtx}
             reviewLimitSnapped={reviewLimitSnapped}
             submittedLimit={submittedLimit}
@@ -735,7 +759,8 @@ export function OptionsChainOrderSheet({
     const bracketBlocksSend = bracketEconomics?.bracketConfirm.mode === "unsupported";
     const dockedValid =
       legs.length > 0 &&
-      (orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
+      resolvedOrder.ok &&
+      (resolvedOrder.orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
       quantity > 0 &&
       !bracketBlocksSend;
 
@@ -770,6 +795,8 @@ export function OptionsChainOrderSheet({
         onNudgeLimit={nudgePrice}
         orderType={orderType}
         onOrderTypeChange={setOrderType}
+        orderTypeLabel={resolvedOrderLabel}
+        orderTypeBlocked={!resolvedOrder.ok}
         limitTickCtx={limitTickCtx}
         sendLabel={
           atBracketDraft?.prefs.submission === "send"
@@ -964,9 +991,9 @@ export function OptionsChainOrderSheet({
                   <div
                     className="h-7 px-2 flex items-center rounded-md"
                     style={{ fontSize: 14, background: "#111", border: `1px solid ${BORDER}`, color: WHITE, fontFamily: SYS_FONT }}
-                    aria-label="Order type Limit"
+                    aria-label={`Order type ${resolvedOrderLabel}`}
                   >
-                    Limit
+                    {resolvedOrderLabel}
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1104,6 +1131,7 @@ export function OptionsChainOrderSheet({
           quantity={quantity}
           timeInForce={timeInForce}
           isCredit={isCredit}
+          orderTypeLabel={resolvedOrderLabel}
           limitTickCtx={limitTickCtx}
           reviewLimitSnapped={reviewLimitSnapped}
           submittedLimit={submittedLimit}
@@ -1174,6 +1202,7 @@ function ConfirmPanel({
   onSend,
   sendDisabled,
   sendLabel = "Send to Schwab",
+  orderTypeLabel = "Limit",
   atBracketConfirm,
   atExitDurationLabel,
 }: {
@@ -1193,6 +1222,7 @@ function ConfirmPanel({
   onSend: () => void;
   sendDisabled?: boolean;
   sendLabel?: string;
+  orderTypeLabel?: string;
   atBracketConfirm?: ChainSheetAtBracketConfirm | null;
   atExitDurationLabel?: string;
 }) {
@@ -1285,7 +1315,7 @@ function ConfirmPanel({
         {!hidePlainSingleLegConfirm ? (
           <div className="space-y-1 p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
             <ButtonRow label="Strategy" value={strategyName} valueColor={strategyColor} />
-            <ButtonRow label="Order type" value="Limit" />
+            <ButtonRow label="Order type" value={orderTypeLabel} />
             {legs.map((leg, i) => (
               <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
                 {formatLegLine(leg, symbol, quantity)}
