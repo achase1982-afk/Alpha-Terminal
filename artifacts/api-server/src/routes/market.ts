@@ -1557,6 +1557,42 @@ router.get("/pc-ratio", async (_req, res) => {
   });
 });
 
+function instrumentSymbolKey(entry: Record<string, unknown>): string {
+  const raw = entry["symbol"];
+  if (typeof raw === "string" && raw.trim()) return raw.trim().toUpperCase();
+  const fundamental = entry["fundamental"];
+  if (fundamental && typeof fundamental === "object") {
+    const nested = (fundamental as Record<string, unknown>)["symbol"];
+    if (typeof nested === "string" && nested.trim()) return nested.trim().toUpperCase();
+  }
+  return "";
+}
+
+/** Exact symbol only. A prefix hit must not supply T, AA, or AAL. */
+function exactInstrumentEntry(
+  json: Record<string, unknown>,
+  displaySymbol: string,
+  apiSymbol: string,
+): Record<string, unknown> | null {
+  const wanted = new Set([displaySymbol.toUpperCase(), apiSymbol.toUpperCase()]);
+  const rawList = json["instruments"];
+  if (Array.isArray(rawList)) {
+    const entries = rawList.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+    const exact = entries.find((entry) => wanted.has(instrumentSymbolKey(entry)));
+    if (exact) return exact;
+    if (entries.length === 1 && !instrumentSymbolKey(entries[0])) return entries[0];
+    return null;
+  }
+  for (const key of [apiSymbol, displaySymbol]) {
+    const item = json[key];
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const sym = instrumentSymbolKey(entry) || key.toUpperCase();
+    if (wanted.has(sym)) return entry;
+  }
+  return null;
+}
+
 router.get("/fundamentals", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = schwabAccessTokenFromRequest(req);
@@ -1582,8 +1618,7 @@ router.get("/fundamentals", async (req, res) => {
     }
 
     const json = await response.json() as Record<string, unknown>;
-    const instruments = (json["instruments"] ?? []) as Array<Record<string, unknown>>;
-    const entry = instruments[0] ?? {};
+    const entry = exactInstrumentEntry(json, displaySymbol, apiSymbol) ?? {};
 
     const fundamental = (entry["fundamental"] ?? {}) as Record<string, unknown>;
 
