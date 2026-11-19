@@ -84,6 +84,7 @@ import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import { AtInstrumentModePill } from "./AtInstrumentModePill";
 import { StockLadderBody } from "./StockLadderBody";
+import { STOCK_LADDER_GRID } from "@/lib/active-trader/stockLadderBook";
 import {
   instrumentClassFromAssetType,
   resolveInstrumentTemplate,
@@ -1607,20 +1608,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           <div
             className="grid items-center shrink-0"
             style={{
-              height: AT_LADDER_COL_HDR_H,
-              gridTemplateColumns: "minmax(0,1fr) 96px minmax(0,1fr)",
-              paddingLeft: AT_LADDER_GUTTER_X,
-              paddingRight: AT_LADDER_GUTTER_X,
-              fontSize: 13,
+              height: 32,
+              gridTemplateColumns: STOCK_LADDER_GRID,
+              fontSize: 10,
+              letterSpacing: "0.02em",
               color: AT_LABEL,
-              fontWeight: 600,
+              fontWeight: 700,
               background: AT_HEADER_BG,
               borderBottom: `1px solid ${BORDER}`,
             }}
           >
-            <span className="text-right" style={{ paddingRight: 8 }}>BID SIZE</span>
+            <span className="text-center">VOLUME · 30s</span>
+            <span className="text-center">BID SIZE</span>
             <span className="text-center">PRICE</span>
-            <span className="text-left" style={{ paddingLeft: 8 }}>ASK SIZE</span>
+            <span className="text-center">ASK SIZE</span>
           </div>
           <StockLadderBody symbol={symbol} />
         </div>
