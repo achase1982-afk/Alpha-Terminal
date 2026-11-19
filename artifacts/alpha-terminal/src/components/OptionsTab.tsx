@@ -30,6 +30,13 @@ import {
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView, type AtExpirationGroup } from "@/components/active-trader/ActiveTraderView";
+import { AtOrderDefaultsSheet } from "@/components/active-trader/AtOrderDefaultsSheet";
+import {
+  loadActiveTraderPrefs,
+  saveActiveTraderPrefs,
+  type ActiveTraderTemplatePrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   AT_LADDER_STRIKE_CAP,
   atChainDateWindow,
@@ -55,7 +62,7 @@ import type { AtLadderLegPick } from "@/lib/active-trader/atLadderLegKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
-import { expirationSeriesKey, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
+import { expirationSeriesKey, occRoot, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
 import {
   filterAtExpiryPillGroups,
   nearestTradableExpiration,
@@ -582,7 +589,7 @@ const DataCell = memo(function DataCell({
   const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
+    <div className="flex flex-col justify-center overflow-hidden" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
       <span
         className="leading-none"
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
@@ -603,7 +610,19 @@ const DataCell = memo(function DataCell({
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
       {asOfLabel ? (
-        <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{asOfLabel}</span>
+        <span
+          title={asOfLabel}
+          style={{
+            fontSize: 8,
+            color: MUTED,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          stale
+        </span>
       ) : null}
       {showPriceReason ? (
         <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{showPriceReason}</span>
@@ -648,7 +667,8 @@ const DataCell = memo(function DataCell({
         onPointerLeave={handlePointerLeave}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
         aria-pressed={isSelected}
-        aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
+        aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}${asOfLabel ? `, ${asOfLabel}` : ""}`}
+        title={asOfLabel ?? undefined}
         className="w-full text-left cursor-pointer select-none relative"
         style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
@@ -765,7 +785,7 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
       >
         <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#1a1a1a" }}>
           <span className="text-[11px] tracking-[0.2em]" style={{ color: GOLD, fontFamily: MONO, fontWeight: FW_PREMIUM }}>COLUMN CONFIG</span>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded-lg hover:bg-white/5 transition-colors">
             <X className="w-4 h-4" style={{ color: GRAY }} />
           </button>
         </div>
@@ -793,12 +813,17 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                       <span className="text-[9px] px-1 py-0.5 rounded" style={{ color: DIM, background: "#1a1a1a" }}>{col.group}</span>
                     </div>
                     <button
+                      type="button"
+                      aria-label={`${col.label} column, on`}
+                      aria-pressed={true}
                       onClick={(e) => { e.stopPropagation(); toggleColumn(id); setLocalOrder(prev => prev.filter(x => x !== id)); }}
-                      className="w-8 h-4 rounded-full flex items-center transition-colors justify-end"
-                      style={{ background: GOLD }}
+                      className="flex items-center justify-center shrink-0"
+                      style={{ minWidth: 44, minHeight: 44, background: "transparent" }}
                       disabled={activeColumnIds.length <= 1}
                     >
-                      <div className="w-3.5 h-3.5 rounded-full bg-black mx-0.5" />
+                      <span aria-hidden className="w-8 h-4 rounded-full flex items-center transition-colors justify-end" style={{ background: GOLD }}>
+                        <span className="w-3.5 h-3.5 rounded-full bg-black mx-0.5" />
+                      </span>
                     </button>
                   </div>
                 </Reorder.Item>
@@ -814,17 +839,25 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
                 <span className="text-[9px] tracking-[0.15em] mb-1.5 block" style={{ color: DIM, fontWeight: FW_NORMAL }}>{group.label}</span>
                 <div className="space-y-1">
                   {offCols.map(col => (
-                    <button
+                    <div
                       key={col.id}
-                      onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
-                      className="w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-colors hover:border-white/10"
-                      style={{ background: "transparent", borderColor: "#1a1a1a" }}
+                      className="w-full flex items-center justify-between px-3 rounded-lg border"
+                      style={{ background: "transparent", borderColor: "#1a1a1a", minHeight: 44 }}
                     >
                       <span className="text-[11px]" style={{ color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT }}>{col.label}</span>
-                      <div className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
-                        <div className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={`${col.label} column, off`}
+                        aria-pressed={false}
+                        onClick={() => { toggleColumn(col.id); setLocalOrder(prev => [...prev, col.id]); }}
+                        className="flex items-center justify-center shrink-0"
+                        style={{ minWidth: 44, minHeight: 44, background: "transparent" }}
+                      >
+                        <span aria-hidden className="w-8 h-4 rounded-full flex items-center transition-colors justify-start" style={{ background: "#1a1a1a" }}>
+                          <span className="w-3.5 h-3.5 rounded-full mx-0.5" style={{ background: "#333" }} />
+                        </span>
+                      </button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1495,6 +1528,15 @@ export function OptionsTab({
   const [chainTicketOpen, setChainTicketOpen] = useState(() => hydratedDraft?.chainTicketOpen ?? false);
   const [sheetCollapsed, setSheetCollapsed] = useState(() => hydratedDraft?.sheetCollapsed ?? false);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
+  const chainOrderSymbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
+  const [chainOrderPrefs, setChainOrderPrefs] = useState<ActiveTraderTemplatePrefs>(() =>
+    loadActiveTraderPrefs(symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity"),
+  );
+  const [chainDefaultsOpen, setChainDefaultsOpen] = useState(false);
+  const [chainDefaultsWindowSec, setChainDefaultsWindowSec] = useState<30 | 60 | 300>(30);
+  useEffect(() => {
+    setChainOrderPrefs(loadActiveTraderPrefs(chainOrderSymbolClass));
+  }, [chainOrderSymbolClass]);
   const [chainSheetPad, setChainSheetPad] = useState(0);
   const chainSheetObserverRef = useRef<ResizeObserver | null>(null);
   const chainSheetRef = useCallback((node: HTMLDivElement | null) => {
@@ -1541,9 +1583,10 @@ export function OptionsTab({
     return "custom";
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customStrikeGenRef = useRef(0);
 
   const [atDepth, setAtDepth] = useState({ above: 20, below: 20 });
-  const atBookRef = useRef<{ symbol: string; ymd: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
+  const atBookRef = useRef<{ symbol: string; ymd: string | null; series: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
   useEffect(() => {
     setAtDepth({ above: 20, below: 20 });
     atBookRef.current = null;
@@ -1564,6 +1607,7 @@ export function OptionsTab({
     () => (optionsSubView === "at" ? atChainDateWindow(atExpiration) : null),
     [optionsSubView, atExpiration],
   );
+  const atSeriesRoot = optionsSubView === "at" ? seriesRootFromExpiration(atExpiration ?? "") : null;
 
   const schwabLinked =
     hasSchwabBrokerageLinked(accessToken, traderAccessToken) ||
@@ -1601,11 +1645,12 @@ export function OptionsTab({
       strikeCount: optionsSubView === "at" ? atRest.strikeCount : strikeCount,
       ...(optionsSubView === "at" ? { range: atRest.range } : {}),
       ...(atDates ?? {}),
+      ...(atSeriesRoot ? { series: atSeriesRoot } : {}),
       ...(schwabAccessTokenForRequest(accessToken)
         ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
         : {}),
     }),
-    [symbol, strikeCount, accessToken, atDates, atRest.range, atRest.strikeCount, optionsSubView],
+    [symbol, strikeCount, accessToken, atDates, atSeriesRoot, atRest.range, atRest.strikeCount, optionsSubView],
   );
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
@@ -1623,7 +1668,7 @@ export function OptionsTab({
           if (optionsSubView === "at") {
             // The ladder shows its own strike window or a loading state, never the Chain view's list.
             const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
-            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates })) return undefined;
+            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates, series: atSeriesRoot })) return undefined;
           }
           return previous;
         },
@@ -1659,22 +1704,27 @@ export function OptionsTab({
     let puts = (rawData.puts ?? []) as Contract[];
     if (optionsSubView === "at") {
       const ymd = atExpiration?.slice(0, 10) || null;
-      const pageOk =
+      const series = seriesRootFromExpiration(atExpiration ?? "");
+      const pageHasYmd =
         !ymd ||
         [...calls, ...puts].some((c) => (c.expiration ?? "").slice(0, 10) === ymd);
+      const pageHasSeries =
+        !series ||
+        [...calls, ...puts].some((c) => (occRoot(c.schwabSymbol) ?? occRoot(c.streamKey)) === series);
+      const pageOk = pageHasYmd && pageHasSeries;
       const prev = atBookRef.current;
-      const same = !!prev && prev.symbol === symbol && prev.ymd === ymd;
+      const same = !!prev && prev.symbol === symbol && prev.ymd === ymd && prev.series === series;
       const mergedCalls = pageOk
-        ? mergeAtChainLegs(same ? prev!.calls : [], calls, ymd)
+        ? mergeAtChainLegs(same ? prev!.calls : [], calls, ymd, series)
         : same
           ? prev!.calls
           : [];
       const mergedPuts = pageOk
-        ? mergeAtChainLegs(same ? prev!.puts : [], puts, ymd)
+        ? mergeAtChainLegs(same ? prev!.puts : [], puts, ymd, series)
         : same
           ? prev!.puts
           : [];
-      atBookRef.current = { symbol, ymd, calls: mergedCalls, puts: mergedPuts };
+      atBookRef.current = { symbol, ymd, series, calls: mergedCalls, puts: mergedPuts };
       const trimSpot = rawData.underlyingPrice ?? null;
       calls = trimAtChainLegsToDepth(mergedCalls, trimSpot, atDepth.above, atDepth.below);
       puts = trimAtChainLegsToDepth(mergedPuts, trimSpot, atDepth.above, atDepth.below);
@@ -1820,6 +1870,7 @@ export function OptionsTab({
     const ymd = atExpiration?.slice(0, 10) ?? "";
     return tradableAtGroups.some((g) => {
       if (!g.rows.length) return false;
+      if (atExpiration?.includes("~")) return g.expiration === atExpiration;
       if (!ymd) return true;
       return g.expiration === atExpiration || g.expiration.slice(0, 10) === ymd;
     });
@@ -2197,6 +2248,12 @@ export function OptionsTab({
   );
   const streamTicksForLegs = useOptionTicksForKeys(selectedLegStreamKeys, CHAIN_TICKET_TICK_MS);
 
+  const chainDefaultsInstruction = useMemo((): SchwabInstruction => {
+    const first = selectedLegs.size > 0 ? [...selectedLegs.values()][0] : null;
+    if (first) return first.side === "bid" ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
+    return "BUY_TO_OPEN";
+  }, [selectedLegs]);
+
   const ticketLegs = useMemo(() => {
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
@@ -2274,29 +2331,41 @@ export function OptionsTab({
     if (selectedLegs.size <= 1) setChainTicketOpen(false);
   }, [withPreservedChainScroll, selectedLegs.size]);
 
+  const clearPendingCustomStrike = useCallback(() => {
+    customStrikeGenRef.current += 1;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
   const handleStrikeModeChange = useCallback((val: string) => {
+    clearPendingCustomStrike();
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
     setIsCustomMode(false);
     const n = parseInt(val);
     if (!isNaN(n) && n > 0) setStrikeCount(n);
-  }, [setStrikeCount, strikeCount]);
+  }, [clearPendingCustomStrike, setStrikeCount, strikeCount]);
 
   const handleCustomStrikeChange = useCallback((raw: string) => {
     setLocalCustomValue(raw);
     setCustomStrikeInput(raw);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    clearPendingCustomStrike();
     if (raw === "") return;
+    const gen = customStrikeGenRef.current;
     debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      if (gen !== customStrikeGenRef.current) return;
       const n = parseInt(raw);
       if (!isNaN(n) && n >= 2 && n <= 100) setStrikeCount(n);
     }, 400);
-  }, [setCustomStrikeInput, setStrikeCount]);
+  }, [clearPendingCustomStrike, setCustomStrikeInput, setStrikeCount]);
 
   const handleExitCustomMode = useCallback(() => {
-    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    clearPendingCustomStrike();
     setIsCustomMode(false);
     if (![6, 10, 20].includes(strikeCount)) setStrikeCount(10);
-  }, [strikeCount, setStrikeCount]);
+  }, [clearPendingCustomStrike, strikeCount, setStrikeCount]);
 
   useEffect(() => {
     return () => {
@@ -2580,7 +2649,19 @@ export function OptionsTab({
           style={{ zIndex: 80 }}
         >
           {legLimitRejected ? (
-            <p data-chain-leg-limit-msg className="px-3 py-1 text-center" style={{ fontSize: 11, color: DOWN, fontWeight: 600, background: "#000" }}>
+            <p
+              data-chain-leg-limit-msg
+              className="px-3 text-center"
+              style={{
+                fontSize: 18,
+                lineHeight: 1.3,
+                fontWeight: 800,
+                color: "#ff2d2d",
+                background: "#000",
+                paddingTop: 14,
+                paddingBottom: 14,
+              }}
+            >
               {CHAIN_LEG_LIMIT_MESSAGE}
             </p>
           ) : null}
@@ -2600,9 +2681,24 @@ export function OptionsTab({
             atDocked
             restoredSheetSession={restoredSheetSession}
             onSheetSessionPersist={persistSheetSession}
+            onAdvancedOrders={() => setChainDefaultsOpen(true)}
+            atBracketDraft={{ prefs: chainOrderPrefs, primaryInstruction: chainDefaultsInstruction }}
           />
         </div>
       )}
+      <AtOrderDefaultsSheet
+        open={chainDefaultsOpen}
+        prefs={chainOrderPrefs}
+        primaryInstruction={chainDefaultsInstruction}
+        windowSec={chainDefaultsWindowSec}
+        onWindowSecChange={setChainDefaultsWindowSec}
+        onClose={() => setChainDefaultsOpen(false)}
+        onSave={(next) => {
+          setChainOrderPrefs(next);
+          saveActiveTraderPrefs(chainOrderSymbolClass, next);
+          setChainDefaultsOpen(false);
+        }}
+      />
       </div>
       )}
       {isFuturesSymbol && (

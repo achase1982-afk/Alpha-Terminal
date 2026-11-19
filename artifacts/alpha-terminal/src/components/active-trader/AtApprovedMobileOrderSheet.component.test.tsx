@@ -82,13 +82,12 @@ describe("Active Trader order sheet handle", () => {
     expect(view.container.querySelectorAll("[data-at-ticket-legs] > div")).toHaveLength(4);
   });
 
-  it("collapses on a tap of the handle and on a swipe down", () => {
+  it("keeps the expanded ticket open on a handle tap and collapses on a swipe down", () => {
     const { handle, onCollapsedChange } = renderSheet();
     fireEvent.pointerDown(handle, at(700));
     fireEvent.pointerUp(handle, at(702));
-    expect(onCollapsedChange).toHaveBeenLastCalledWith(true);
+    expect(onCollapsedChange).not.toHaveBeenCalled();
 
-    onCollapsedChange.mockClear();
     fireEvent.pointerDown(handle, at(700));
     fireEvent.pointerUp(handle, at(760));
     expect(onCollapsedChange).toHaveBeenLastCalledWith(true);
@@ -118,9 +117,9 @@ describe("Active Trader order sheet handle", () => {
     expect(onCollapsedChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("toggles from the keyboard", () => {
+  it("does not collapse the expanded ticket from the keyboard", () => {
     const { handle, onCollapsedChange } = renderSheet();
     fireEvent.click(handle, { detail: 0 });
-    expect(onCollapsedChange).toHaveBeenLastCalledWith(true);
+    expect(onCollapsedChange).not.toHaveBeenCalled();
   });
 });

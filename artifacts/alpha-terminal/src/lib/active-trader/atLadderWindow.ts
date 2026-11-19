@@ -1,3 +1,5 @@
+import { occRoot } from "./optionSeries";
+
 /**
  * Active Trader loads one expiry, 20 strikes above spot and 20 below.
  * Scrolling asks for the next 20 in that direction and drops the other
@@ -45,16 +47,24 @@ export type AtChainLeg = {
   streamKey?: string;
 };
 
+function legSeriesRoot(leg: AtChainLeg): string | null {
+  return occRoot(leg.schwabSymbol) ?? occRoot(leg.streamKey);
+}
+
 export function mergeAtChainLegs<T extends AtChainLeg>(
   prev: readonly T[],
   page: readonly T[],
   expirationYmd: string | null,
+  seriesRoot?: string | null,
 ): T[] {
+  const want = seriesRoot?.trim().toUpperCase() || null;
   const map = new Map<string, T>();
   const put = (leg: T) => {
     const ymd = (leg.expiration ?? "").slice(0, 10);
     if (expirationYmd && ymd !== expirationYmd) return;
-    const id = `${ymd}|${leg.strike}`;
+    const root = legSeriesRoot(leg);
+    if (want && root !== want) return;
+    const id = root ? `${ymd}|${root}|${leg.strike}` : `${ymd}|${leg.strike}`;
     const existing = map.get(id);
     map.set(id, existing ? { ...existing, ...leg } : leg);
   };
@@ -156,6 +166,7 @@ export type AtChainQueryParams = {
   fromDate?: string;
   toDate?: string;
   range?: string;
+  series?: string;
 };
 
 /**
@@ -170,9 +181,12 @@ export type AtChainQueryParams = {
  */
 export function atLadderPlaceholderOk(
   previous: AtChainQueryParams | undefined,
-  next: { symbol: string; fromDate: string; toDate: string },
+  next: { symbol: string; fromDate: string; toDate: string; series?: string | null },
 ): boolean {
   if (!previous?.fromDate || !previous.toDate || !previous.range) return false;
   if ((previous.symbol ?? "") !== next.symbol) return false;
+  const prevSeries = (previous.series ?? "").trim().toUpperCase();
+  const nextSeries = (next.series ?? "").trim().toUpperCase();
+  if (prevSeries !== nextSeries) return false;
   return previous.fromDate <= next.fromDate && previous.toDate >= next.toDate;
 }

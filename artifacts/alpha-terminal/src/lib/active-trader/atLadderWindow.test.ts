@@ -63,6 +63,28 @@ describe("mergeAtChainLegs", () => {
     const page = [{ strike: 5000, expiration: "2026-11-21", schwabSymbol: "NEW" }];
     expect(mergeAtChainLegs(old, page, "2026-11-21").map((c) => c.schwabSymbol)).toEqual(["NEW"]);
   });
+
+  it("keeps AM and PM contracts that share a strike", () => {
+    const page = [
+      { strike: 7340, expiration: "2026-11-20", schwabSymbol: "SPX   261120C07340000" },
+      { strike: 7340, expiration: "2026-11-20", schwabSymbol: "SPXW  261120C07340000" },
+    ];
+    const merged = mergeAtChainLegs([], page, "2026-11-20");
+    expect(merged.map((c) => c.schwabSymbol).sort()).toEqual([
+      "SPX   261120C07340000",
+      "SPXW  261120C07340000",
+    ]);
+  });
+
+  it("fills the selected series from its own contracts", () => {
+    const prev = [{ strike: 7340, expiration: "2026-11-20", schwabSymbol: "SPXW  261120C07340000" }];
+    const page = [
+      { strike: 7340, expiration: "2026-11-20", schwabSymbol: "SPX   261120C07340000" },
+      { strike: 7345, expiration: "2026-11-20", schwabSymbol: "SPXW  261120C07345000" },
+    ];
+    const merged = mergeAtChainLegs(prev, page, "2026-11-20", "SPX");
+    expect(merged.map((c) => c.schwabSymbol)).toEqual(["SPX   261120C07340000"]);
+  });
 });
 
 describe("selectAtStreamKeys", () => {
@@ -123,6 +145,15 @@ describe("atLadderPlaceholderOk", () => {
     ).toBe(false);
     expect(
       atLadderPlaceholderOk({ symbol: "$SPX", fromDate: "2026-11-19", toDate: "2026-11-19", range: "NTM" }, next),
+    ).toBe(false);
+  });
+
+  it("rejects the other series on the same day", () => {
+    expect(
+      atLadderPlaceholderOk(
+        { symbol: "$SPX", fromDate: "2026-11-18", toDate: "2026-11-18", range: "NTM", series: "SPXW" },
+        { ...next, series: "SPX" },
+      ),
     ).toBe(false);
   });
 });
