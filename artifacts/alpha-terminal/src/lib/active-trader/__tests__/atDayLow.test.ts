@@ -35,9 +35,9 @@ describe("resolveDayLowFromStreamQuote", () => {
     expect(d.value).toBe(7488);
   });
 
-  it("does not treat an unstamped or yesterday low as today's range", () => {
+  it("uses an unstamped feed low during RTH and rejects yesterday's low", () => {
     const noonEt = new Date("2026-11-18T17:00:00.000Z");
-    expect(resolveDayLowFromStreamQuote(baseQuote, noonEt).kind).toBe("unavailable");
+    expect(resolveDayLowFromStreamQuote(baseQuote, noonEt)).toEqual({ kind: "current", value: 7488 });
     const yesterday = new Date("2026-11-17T17:00:00.000Z").getTime();
     expect(resolveDayLowFromStreamQuote({ ...baseQuote, lowTimeMs: yesterday }, noonEt)).toEqual({
       kind: "unavailable",

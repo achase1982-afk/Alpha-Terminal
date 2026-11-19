@@ -30,8 +30,17 @@ describe("resolveDayHighFromStreamQuote", () => {
     expect(d.value).toBe(7368.44);
   });
 
-  it("does not treat an unstamped high as today's range", () => {
+  it("uses an unstamped feed high during RTH", () => {
     const noonEt = new Date("2026-11-18T17:00:00.000Z");
-    expect(resolveDayHighFromStreamQuote(baseQuote, noonEt)).toEqual({ kind: "unavailable", value: null });
+    expect(resolveDayHighFromStreamQuote(baseQuote, noonEt)).toEqual({ kind: "current", value: 7368.44 });
+  });
+
+  it("does not treat yesterday's high as today's range", () => {
+    const noonEt = new Date("2026-11-18T17:00:00.000Z");
+    const yesterday = new Date("2026-11-17T17:00:00.000Z").getTime();
+    expect(resolveDayHighFromStreamQuote({ ...baseQuote, highTimeMs: yesterday }, noonEt)).toEqual({
+      kind: "unavailable",
+      value: null,
+    });
   });
 });
