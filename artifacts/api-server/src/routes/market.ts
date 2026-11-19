@@ -35,6 +35,7 @@ import { getStoredIVR } from "../lib/ivNormalize.js";
 import { fetchPolygonChain } from "../lib/polygonChain.js";
 import type { Readability as ReadabilityCtor } from "@mozilla/readability";
 import { setBounded } from "../lib/boundedCache.js";
+import { addCalendarDaysNy, nyCalendarYmd } from "../lib/usEquityMarketCalendar.js";
 import { getSpxKeepawayStats } from "../lib/activeTrader/spxKeepawayCache.js";
 import { classShareSchwabStreamKey, isClassShareSymbol } from "../lib/classShareSymbology.js";
 import { AT_GAMMA_GLANCE_TICKERS, buildAtGammaGlancePayload } from "../lib/activeTrader/atGammaGlance.js";
@@ -717,6 +718,196 @@ async function fetchChainSide(
   };
 }
 
+/** Same horizon the chain response already keeps. Not a range=ALL download. */
+const CHAIN_FALLBACK_MAX_DTE = 400;
+const CHAIN_SPLIT_DEPTH = 16;
+
+type ChainFallbackRange = "NTM" | "SAK" | "SBK";
+type ChainFallbackSide = "ALL" | "CALL" | "PUT";
+
+type BoundedChainPart = {
+  callMap: Record<string, unknown>;
+  putMap: Record<string, unknown>;
+  underlyingPrice?: number;
+};
+
+function chainFallbackWindow(fromDate?: string, toDate?: string, now = new Date()): { fromDate: string; toDate: string } {
+  if (fromDate || toDate) {
+    let from = fromDate ?? toDate!;
+    let to = toDate ?? fromDate!;
+    if (from > to) {
+      const swap = from;
+      from = to;
+      to = swap;
+    }
+    return { fromDate: from, toDate: to };
+  }
+  const from = nyCalendarYmd(now);
+  return { fromDate: from, toDate: addCalendarDaysNy(from, CHAIN_FALLBACK_MAX_DTE) };
+}
+
+function ymdSpanDays(from: string, to: string): number {
+  const start = Date.parse(`${from}T00:00:00Z`);
+  const end = Date.parse(`${to}T00:00:00Z`);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 0;
+  return Math.round((end - start) / 86_400_000);
+}
+
+function mergeStrikeMaps(base: Record<string, unknown>, extra: Record<string, unknown>): void {
+  for (const [exp, strikes] of Object.entries(extra)) {
+    const prev = base[exp];
+    if (!prev || typeof prev !== "object") {
+      base[exp] = strikes;
+      continue;
+    }
+    if (!strikes || typeof strikes !== "object") continue;
+    const dst = prev as Record<string, unknown>;
+    for (const [strike, rows] of Object.entries(strikes as Record<string, unknown>)) {
+      if (dst[strike] == null) dst[strike] = rows;
+    }
+  }
+}
+
+function absorbChainPart(into: BoundedChainPart, part: BoundedChainPart | null): void {
+  if (!part) return;
+  mergeStrikeMaps(into.callMap, part.callMap);
+  mergeStrikeMaps(into.putMap, part.putMap);
+  if (into.underlyingPrice == null && part.underlyingPrice != null) into.underlyingPrice = part.underlyingPrice;
+}
+
+/**
+ * Schwab fallback after Polygon misses. Strike count and expiry dates stay
+ * bounded. A 502 body overflow is split by side, then by date, instead of
+ * repeating the same full-chain request.
+ */
+async function fetchBoundedSchwabWindow(input: {
+  chainSymbol: string;
+  token: string;
+  log: { warn: (...args: any[]) => void; error: (...args: any[]) => void };
+  contractType: ChainFallbackSide;
+  fromDate: string;
+  toDate: string;
+  strikeCount: number;
+  range: ChainFallbackRange;
+  depth: number;
+}): Promise<BoundedChainPart | null> {
+  if (input.depth > CHAIN_SPLIT_DEPTH) return null;
+  const params = new URLSearchParams({
+    symbol: input.chainSymbol,
+    contractType: input.contractType,
+    fromDate: input.fromDate,
+    toDate: input.toDate,
+    range: input.range,
+  });
+  if (input.strikeCount > 0) params.set("strikeCount", String(input.strikeCount));
+  const url = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
+  let response = await fetch(url, {
+    headers: { Authorization: `Bearer ${input.token}` },
+    signal: AbortSignal.timeout(25_000),
+  });
+  if ((response.status === 503 || response.status === 429) && input.depth === 0) {
+    input.log.warn(
+      { status: response.status, symbol: input.chainSymbol, contractType: input.contractType },
+      "Chain window transient error — retrying bounded request",
+    );
+    await new Promise((r) => setTimeout(r, 1000));
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${input.token}` },
+      signal: AbortSignal.timeout(25_000),
+    });
+  }
+  if (response.ok) {
+    const json = await response.json() as Record<string, unknown>;
+    return {
+      callMap: input.contractType === "PUT" ? {} : (json["callExpDateMap"] as Record<string, unknown> | undefined) ?? {},
+      putMap: input.contractType === "CALL" ? {} : (json["putExpDateMap"] as Record<string, unknown> | undefined) ?? {},
+      underlyingPrice: json["underlyingPrice"] as number | undefined,
+    };
+  }
+  const body = await response.text().catch(() => "");
+  if (response.status !== 502) {
+    input.log.error(
+      { status: response.status, symbol: input.chainSymbol, contractType: input.contractType, body: body.slice(0, 500) },
+      "Bounded options chain fetch failed",
+    );
+    return null;
+  }
+  input.log.warn(
+    {
+      symbol: input.chainSymbol,
+      contractType: input.contractType,
+      fromDate: input.fromDate,
+      toDate: input.toDate,
+      strikeCount: input.strikeCount,
+    },
+    "Chain window overflow — splitting",
+  );
+  if (input.contractType === "ALL") {
+    const [calls, puts] = await Promise.all([
+      fetchBoundedSchwabWindow({ ...input, contractType: "CALL", depth: input.depth + 1 }),
+      fetchBoundedSchwabWindow({ ...input, contractType: "PUT", depth: input.depth + 1 }),
+    ]);
+    if (!calls && !puts) return null;
+    const merged: BoundedChainPart = { callMap: {}, putMap: {} };
+    absorbChainPart(merged, calls);
+    absorbChainPart(merged, puts);
+    return merged;
+  }
+  const span = ymdSpanDays(input.fromDate, input.toDate);
+  if (span >= 1) {
+    const midOffset = Math.floor(span / 2);
+    const mid = addCalendarDaysNy(input.fromDate, midOffset);
+    const midNext = addCalendarDaysNy(input.fromDate, midOffset + 1);
+    const [left, right] = await Promise.all([
+      fetchBoundedSchwabWindow({ ...input, toDate: mid, depth: input.depth + 1 }),
+      fetchBoundedSchwabWindow({ ...input, fromDate: midNext, depth: input.depth + 1 }),
+    ]);
+    if (!left && !right) return null;
+    const merged: BoundedChainPart = { callMap: {}, putMap: {} };
+    absorbChainPart(merged, left);
+    absorbChainPart(merged, right);
+    return merged;
+  }
+  if (input.strikeCount > 2) {
+    return fetchBoundedSchwabWindow({
+      ...input,
+      strikeCount: Math.max(2, Math.floor(input.strikeCount / 2)),
+      depth: input.depth + 1,
+    });
+  }
+  return null;
+}
+
+async function fetchBoundedSchwabChain(input: {
+  chainSymbol: string;
+  token: string;
+  log: { warn: (...args: any[]) => void; error: (...args: any[]) => void };
+  strikeCount?: number;
+  fromDate?: string;
+  toDate?: string;
+  range?: ChainFallbackRange;
+}): Promise<{ calls: ReturnType<typeof parseContracts>; puts: ReturnType<typeof parseContracts>; underlyingPrice?: number } | null> {
+  const window = chainFallbackWindow(input.fromDate, input.toDate);
+  const strikeCount = input.strikeCount != null && input.strikeCount > 0 ? Math.round(input.strikeCount) : 10;
+  const part = await fetchBoundedSchwabWindow({
+    chainSymbol: input.chainSymbol,
+    token: input.token,
+    log: input.log,
+    contractType: "ALL",
+    fromDate: window.fromDate,
+    toDate: window.toDate,
+    strikeCount,
+    range: input.range ?? "NTM",
+    depth: 0,
+  });
+  if (!part) return null;
+  return {
+    calls: parseContracts(part.callMap),
+    puts: parseContracts(part.putMap),
+    underlyingPrice: part.underlyingPrice,
+  };
+}
+
 async function fetchFullChain(displaySymbol: string, token: string, log: any): Promise<CachedChain | null> {
   const isFuturesSymbol = isFutures(displaySymbol);
   const isIndexSymbol = isIndex(displaySymbol);
@@ -808,41 +999,21 @@ async function fetchFullChain(displaySymbol: string, token: string, log: any): P
     puts = parseContracts(putResult?.map ?? {});
     underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
   } else {
-    const params = new URLSearchParams({
-      symbol: chainSymbol,
-      contractType: "ALL",
-      range: "ALL",
+    const bounded = await fetchBoundedSchwabChain({
+      chainSymbol,
+      token,
+      log,
+      strikeCount: 40,
+      range: "NTM",
     });
-    if (isFuturesSymbol) params.set("assetClass", "FUTURES");
-
-    const fullChainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
-    let response = await fetch(fullChainUrl, {
-      headers: { "Authorization": `Bearer ${token}` },
-      signal: AbortSignal.timeout(20_000),
-    });
-
-    if (response.status === 503 || response.status === 502 || response.status === 429) {
-      log.warn({ status: response.status, symbol: chainSymbol }, "Full chain transient error — retrying in 1s");
-      await new Promise(r => setTimeout(r, 1000));
-      response = await fetch(fullChainUrl, {
-        headers: { "Authorization": `Bearer ${token}` },
-        signal: AbortSignal.timeout(20_000),
-      });
-    }
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
-      void logFailure("SCHWAB_API", "ERROR", `Schwab full options chain fetch failed: HTTP ${response.status}`, { endpoint: "/chains", symbol: chainSymbol, status: response.status });
+    if (!bounded) {
+      log.error({ symbol: chainSymbol }, "Options chain fetch failed");
+      void logFailure("SCHWAB_API", "ERROR", "Schwab full options chain fetch failed", { endpoint: "/chains", symbol: chainSymbol });
       return null;
     }
-
-    const json = await response.json() as Record<string, unknown>;
-    underlyingPrice = json["underlyingPrice"] as number | undefined;
-    const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-    const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-    calls = parseContracts(callMap);
-    puts = parseContracts(putMap);
+    calls = bounded.calls;
+    puts = bounded.puts;
+    underlyingPrice = bounded.underlyingPrice;
   }
 
   const cached: CachedChain = {
@@ -1218,45 +1389,22 @@ router.get("/options", async (req, res) => {
       allPuts = parseContracts(putResult?.map ?? {});
       underlyingPrice = callResult?.underlyingPrice ?? putResult?.underlyingPrice;
     } else {
-      const params = new URLSearchParams({
-        symbol: chainSymbol,
-        contractType: "ALL",
+      const bounded = await fetchBoundedSchwabChain({
+        chainSymbol,
+        token: accessToken,
+        log: req.log,
+        strikeCount,
+        fromDate: readQueryDate(req.query["fromDate"]),
+        toDate: readQueryDate(req.query["toDate"]),
+        range: requestedRange,
       });
-      if (isFuturesSymbol) {
-        // Schwab's /chains endpoint behavior for futures is poorly documented.
-        // Try a minimal payload (just symbol+contractType) — no strikeCount,
-        // no range, no assetClass — and see what Schwab returns.
-      } else {
-        params.set("range", "ALL");
-      }
-
-      const chainUrl = `${SCHWAB_API_BASE}/chains?${params.toString()}`;
-      let response = await fetch(chainUrl, {
-        headers: { "Authorization": `Bearer ${accessToken}` },
-        signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(30_000),
-      });
-
-      if (response.status === 503 || response.status === 502 || response.status === 429) {
-        req.log.warn({ status: response.status, symbol: chainSymbol }, "Options chain transient error — retrying in 1s");
-        await new Promise(r => setTimeout(r, 1000));
-        response = await fetch(chainUrl, {
-          headers: { "Authorization": `Bearer ${accessToken}` },
-          signal: AbortSignal.timeout(30_000),
-        });
-      }
-
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        req.log.error({ status: response.status, symbol: chainSymbol, body: body.slice(0, 500) }, "Options chain fetch failed");
+      if (!bounded) {
+        req.log.error({ symbol: chainSymbol }, "Options chain fetch failed");
         return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
       }
-
-      const json = await response.json() as Record<string, unknown>;
-      underlyingPrice = json["underlyingPrice"] as number | undefined;
-      const callMap = json["callExpDateMap"] as Record<string, unknown> ?? {};
-      const putMap = json["putExpDateMap"] as Record<string, unknown> ?? {};
-      allCalls = parseContracts(callMap);
-      allPuts = parseContracts(putMap);
+      allCalls = bounded.calls;
+      allPuts = bounded.puts;
+      underlyingPrice = bounded.underlyingPrice;
     }
 
     const MAX_DTE = 400;
