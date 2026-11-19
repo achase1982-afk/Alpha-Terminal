@@ -119,6 +119,8 @@ export class AtLadderVolumeHeatEngine {
   private sourceLastRxMs: number | null = null;
   private pollChainFetchedAtMs: number | null = null;
   private pollChainTtlMs: number | null = null;
+  /** Exchange quote time for the last REST sample. Independent of HTTP receipt. */
+  private pollQuoteTimeMs: number | null = null;
   private nowMs: number;
   private volumeMode: "rolling" | "session" = "rolling";
 
@@ -148,14 +150,27 @@ export class AtLadderVolumeHeatEngine {
     this.sourceLastRxMs = Math.max(this.sourceLastRxMs ?? 0, rxMs);
   }
 
-  setPollChainMeta(meta: { fetchedAt: number; ttlMs: number }): void {
+  setPollChainMeta(
+    meta: { fetchedAt: number; ttlMs: number; quoteTimeMs?: number | null } | null,
+  ): void {
+    if (meta == null) {
+      this.pollChainFetchedAtMs = null;
+      this.pollChainTtlMs = null;
+      this.pollQuoteTimeMs = null;
+      return;
+    }
     this.pollChainFetchedAtMs = meta.fetchedAt;
     this.pollChainTtlMs = meta.ttlMs;
+    this.pollQuoteTimeMs = meta.quoteTimeMs ?? null;
   }
 
-  getPollChainMeta(): { fetchedAt: number; ttlMs: number } | null {
+  getPollChainMeta(): { fetchedAt: number; ttlMs: number; quoteTimeMs: number | null } | null {
     if (this.pollChainFetchedAtMs == null || this.pollChainTtlMs == null) return null;
-    return { fetchedAt: this.pollChainFetchedAtMs, ttlMs: this.pollChainTtlMs };
+    return {
+      fetchedAt: this.pollChainFetchedAtMs,
+      ttlMs: this.pollChainTtlMs,
+      quoteTimeMs: this.pollQuoteTimeMs,
+    };
   }
 
   setNowMs(nowMs: number): void {
