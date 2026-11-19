@@ -33,7 +33,9 @@ import { ActiveTraderView, type AtExpirationGroup } from "@/components/active-tr
 import {
   AT_LADDER_STRIKE_CAP,
   atChainDateWindow,
+  optionsExpiryDiscoveryWindow,
 } from "@/lib/active-trader/atLadderStrikeCount";
+import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
   atLadderRestQuery,
   growAtLadderSide,
@@ -55,10 +57,7 @@ import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
 import {
   filterAtExpiryPillGroups,
-  mergeExpiryCatalog,
   nearestTradableExpiration,
-  resolveSelectedExpiration,
-  type ExpiryCatalogRow,
 } from "@/lib/optionsExpirationPick";
 import { chainQuoteReasonLabel, resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -1410,8 +1409,6 @@ export function OptionsTab({
   const clearAtExpiryChrome = useAtChromeStore((s) => s.clearAtExpiryChrome);
   const requestedSubView = useAtChromeStore((s) => s.requestedSubView);
   const consumeRequestedSubView = useAtChromeStore((s) => s.consumeRequestedSubView);
-  const [atExpiration, setAtExpiration] = useState<string | null>(null);
-  const [expiryCatalog, setExpiryCatalog] = useState<ExpiryCatalogRow[]>([]);
   const expiryClockMinute = useMinuteClock();
   const expiryNowMs = expiryClockMinute * 60_000;
   useEffect(() => {
@@ -1432,6 +1429,16 @@ export function OptionsTab({
   );
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
+  const [atExpiration, setAtExpirationState] = useState<string | null>(() =>
+    useOptionsExpiryStore.getState().getSelected(symbol),
+  );
+  const setAtExpiration = useCallback(
+    (exp: string | null) => {
+      setAtExpirationState(exp);
+      if (exp) useOptionsExpiryStore.getState().setSelected(symbol, exp);
+    },
+    [symbol],
+  );
   const isFuturesSymbol = isFuturesDisplaySymbol(symbol);
   const { contractType, strikeCount, setCustomStrikeInput } = useOptionsSettingsStore();
   const setStrikeCount = useOptionsSettingsStore(s => s.setStrikeCount);
@@ -1538,6 +1545,29 @@ export function OptionsTab({
     isServerHeldBrokerageSession(accessToken, traderAccessToken);
   /** Fetch whenever a symbol is set — API uses query token or server-stored Schwab session. */
   const chainApiEnabled = !!symbol && !fixtureChain;
+
+  const discoveryWindow = useMemo(() => optionsExpiryDiscoveryWindow(), [expiryClockMinute]);
+
+  const discoveryChainParams = useMemo(
+    () => ({
+      symbol,
+      contractType: "ALL" as const,
+      strikeCount: 1,
+      ...discoveryWindow,
+      ...(schwabAccessTokenForRequest(accessToken)
+        ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
+        : {}),
+    }),
+    [symbol, accessToken, discoveryWindow],
+  );
+
+  const { data: discoveryRaw } = useGetOptionChain<OptionChainResponse>(discoveryChainParams, {
+    query: {
+      enabled: chainApiEnabled,
+      staleTime: 120_000,
+      gcTime: 10 * 60_000,
+    },
+  });
 
   const optionChainParams = useMemo(
     () => ({
@@ -1711,6 +1741,28 @@ export function OptionsTab({
     return buildChainHoldSignature(symbol, expirations.slice(0, cap), streamKeys.slice(0, cap));
   }, [data, symbol, optionsSubView, atExpiration, expandedExps]);
 
+  const discoveryGroups = useMemo(() => {
+    if (!discoveryRaw || !optionChainMatchesActiveSymbol(discoveryRaw.symbol, symbol)) return [];
+    const calls = (discoveryRaw.calls ?? []) as Contract[];
+    const puts = (discoveryRaw.puts ?? []) as Contract[];
+    return buildExpirationGroups(calls, puts, underlyingPrice).map((g) => ({
+      expiration: g.expiration,
+      dte: g.dte,
+      dateLabel: g.dateLabel,
+    }));
+  }, [discoveryRaw, symbol, underlyingPrice]);
+
+  const fixtureExpiryCatalog = useMemo(() => {
+    if (!fixtureChain) return [];
+    const calls = (fixtureChain.chain.calls ?? []) as Contract[];
+    const puts = (fixtureChain.chain.puts ?? []) as Contract[];
+    return buildExpirationGroups(calls, puts, underlyingPrice).map((g) => ({
+      expiration: g.expiration,
+      dte: g.dte,
+      dateLabel: g.dateLabel,
+    }));
+  }, [fixtureChain, underlyingPrice]);
+
   const groups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
@@ -1743,27 +1795,31 @@ export function OptionsTab({
     });
   }, [optionsSubView, tradableAtGroups, atExpiration]);
 
-  useEffect(() => {
-    const source = optionsSubView === "chain" ? groups : atGroups;
-    setExpiryCatalog((prev) =>
-      mergeExpiryCatalog(
-        prev,
-        source.map((group) => ({ expiration: group.expiration, dte: group.dte })),
-        optionsSubView,
-      ),
-    );
-  }, [optionsSubView, groups, atGroups]);
+  const expiryCatalog = useMemo(() => {
+    const catalog = discoveryGroups.length
+      ? discoveryGroups
+      : fixtureExpiryCatalog.length
+        ? fixtureExpiryCatalog
+        : groups;
+    return filterAtExpiryPillGroups(catalog, expiryNowMs);
+  }, [discoveryGroups, fixtureExpiryCatalog, groups, expiryNowMs]);
 
   useEffect(() => {
-    setAtExpiration((prev) =>
-      resolveSelectedExpiration({
-        previous: prev,
-        catalog: expiryCatalog,
-        expanded: expandedExps,
-        nowMs: expiryNowMs,
-      }),
-    );
-  }, [expiryCatalog, expandedExps, expiryNowMs]);
+    const stored = useOptionsExpiryStore.getState().getSelected(symbol);
+    if (stored) setAtExpirationState(stored);
+  }, [symbol]);
+
+  useEffect(() => {
+    const pool = expiryCatalog.length ? expiryCatalog : tradableAtGroups;
+    if (!pool.length) return;
+    if (atExpiration && pool.some((g) => g.expiration === atExpiration)) return;
+    const explicit = useOptionsExpiryStore.getState().getExplicit(symbol);
+    const resolved =
+      (explicit && pool.some((g) => g.expiration === explicit) ? explicit : null) ??
+      nearestTradableExpiration(pool, expiryNowMs)?.expiration ??
+      null;
+    if (resolved && resolved !== atExpiration) setAtExpiration(resolved);
+  }, [expiryCatalog, tradableAtGroups, atExpiration, symbol, expiryNowMs, setAtExpiration]);
 
   useEffect(() => {
     if (optionsSubView === "chain" && atExpiration) {
@@ -1775,24 +1831,64 @@ export function OptionsTab({
     }
   }, [optionsSubView, atExpiration]);
 
+  const trySelectExpiry = useCallback(
+    (exp: string) => {
+      if (exp === atExpiration) return;
+      const hasDraftLegs = selectedLegs.size > 0;
+      const draftMismatch =
+        hasDraftLegs && [...selectedLegs.values()].some((leg) => leg.expiration !== exp);
+      if (draftMismatch) {
+        const ok = window.confirm(
+          "Changing expiration will clear your current option draft. Continue?",
+        );
+        if (!ok) return;
+        setSelectedLegs(new Map());
+        setLegQuantities(new Map());
+        setSheetCollapsed(true);
+        setChainTicketOpen(false);
+        setLegLimitRejected(false);
+        useChainDraftSessionStore.getState().clear();
+      }
+      setAtExpiration(exp);
+      useOptionsExpiryStore.getState().setExplicit(symbol, exp);
+      setExpandedExps((prev) => {
+        const next = new Set(prev);
+        next.add(exp);
+        return next;
+      });
+    },
+    [atExpiration, selectedLegs, setAtExpiration, symbol],
+  );
+
   useEffect(() => {
-    if (optionsSubView !== "at" || !atExpiration) {
+    if (optionsSubView !== "at") {
       clearAtExpiryChrome();
       return;
     }
-    const tradable = filterAtExpiryPillGroups(expiryCatalog, expiryNowMs);
-    const rows = tradable.some((row) => row.expiration === atExpiration)
-      ? tradable
-      : [...tradable, { expiration: atExpiration, dte: 0 }];
+    const pickerPool = expiryCatalog.length ? expiryCatalog : tradableAtGroups;
+    if (!pickerPool.length && !atExpiration) {
+      clearAtExpiryChrome();
+      return;
+    }
     setAtExpiryChrome({
-      options: rows.map((group) => ({
-        expiration: group.expiration,
-        pillLabel: formatAtExpiryPill(group.expiration, group.dte, symbol),
+      options: pickerPool.map((g) => ({
+        expiration: g.expiration,
+        dte: g.dte,
+        pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
       })),
-      selectedExpiration: atExpiration,
-      onSelect: setAtExpiration,
+      selectedExpiration: atExpiration ?? pickerPool[0]?.expiration ?? "",
+      onSelect: trySelectExpiry,
     });
-  }, [optionsSubView, expiryCatalog, atExpiration, symbol, expiryNowMs, setAtExpiryChrome, clearAtExpiryChrome]);
+  }, [
+    optionsSubView,
+    expiryCatalog,
+    tradableAtGroups,
+    atExpiration,
+    symbol,
+    setAtExpiryChrome,
+    clearAtExpiryChrome,
+    trySelectExpiry,
+  ]);
 
   useChainOptionHold(
     chainHoldSig?.holdSig,
@@ -1810,9 +1906,9 @@ export function OptionsTab({
       symbolResetRef.current = symbol;
       return;
     }
+    const prev = symbolResetRef.current;
     symbolResetRef.current = symbol;
     setExpandedExps(new Set());
-    setExpiryCatalog([]);
     setAtExpiration(null);
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
@@ -1820,6 +1916,7 @@ export function OptionsTab({
     setChainTicketOpen(false);
     setLegLimitRejected(false);
     useChainDraftSessionStore.getState().clear();
+    useOptionsExpiryStore.getState().clearSymbol(prev);
   }, [symbol]);
 
   useEffect(() => {
@@ -1879,8 +1976,18 @@ export function OptionsTab({
 
   useEffect(() => {
     if (!fixtureChain || groups.length === 0) return;
-    setExpandedExps(new Set([groups[0].expiration]));
-  }, [fixtureChain, groups]);
+    const explicit = useOptionsExpiryStore.getState().getExplicit(symbol);
+    const target =
+      (explicit && groups.some((g) => g.expiration === explicit) ? explicit : null) ??
+      atExpiration ??
+      groups[0]?.expiration;
+    if (!target) return;
+    setExpandedExps((prev) => {
+      if (prev.has(target)) return prev;
+      return new Set([target]);
+    });
+    if (!atExpiration || atExpiration !== target) setAtExpiration(target);
+  }, [fixtureChain, groups, symbol, atExpiration, setAtExpiration]);
 
   const fixtureReviewRef = useRef(false);
   useEffect(() => {
@@ -1904,7 +2011,10 @@ export function OptionsTab({
       else next.add(exp);
       return next;
     });
-    if (opening) setAtExpiration(exp);
+    if (opening) {
+      setAtExpiration(exp);
+      useOptionsExpiryStore.getState().setExplicit(symbol, exp);
+    }
   };
 
   const rejectLegLimit = useCallback(() => {
@@ -2325,6 +2435,7 @@ export function OptionsTab({
       <div
         ref={chainScrollRef}
         data-options-chain-scroll
+        data-options-chain-selected-expiration={atExpiration ?? undefined}
         className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
         style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >

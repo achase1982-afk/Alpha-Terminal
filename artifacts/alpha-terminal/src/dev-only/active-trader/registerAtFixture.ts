@@ -35,6 +35,13 @@ import {
   buildNvdaFixtureTicks,
 } from "./nvdaFixture";
 import { FIXTURE_ES_SPOT, FIXTURE_ES_ZONES, buildEsFixtureChain } from "./esFixture";
+import {
+  FIXTURE_EXPIRY_B,
+  FIXTURE_NVDA_EXPIRY_B,
+  buildDualExpiryNvdaFixtureChain,
+  buildDualExpirySpxFixtureChain,
+} from "./dualExpirySpxFixture";
+import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -68,6 +75,7 @@ export function registerAtFixtureFromLocation(): void {
     /* ignore */
   }
   const sceneParam = params.get("scene") ?? "default";
+  const expiryPickerScene = sceneParam === "expiry-picker";
   const headerDownScene = sceneParam === "header-down";
   const scene = (
     sceneParam === "settings-expanded" ||
@@ -106,11 +114,17 @@ export function registerAtFixtureFromLocation(): void {
     initialSubView,
     chain: isEs
       ? buildEsFixtureChain()
-      : isNvda
-        ? buildNvdaFixtureChain()
-        : isAapl
-          ? buildAaplFixtureChain()
-          : buildFixtureChainResponse(),
+      : expiryPickerScene
+        ? isNvda
+          ? buildDualExpiryNvdaFixtureChain()
+          : isAapl
+            ? buildAaplFixtureChain()
+            : buildDualExpirySpxFixtureChain()
+        : isNvda
+          ? buildNvdaFixtureChain()
+          : isAapl
+            ? buildAaplFixtureChain()
+            : buildFixtureChainResponse(),
     underlyingPrice: isEs ? FIXTURE_ES_SPOT : isNvda ? FIXTURE_NVDA_SPOT : isAapl ? FIXTURE_AAPL_SPOT : FIXTURE_SPX_SPOT,
     tapStrike:
       sceneParam === "strip" || sceneParam === "strip-vertical" || scene === "confirm"
@@ -308,6 +322,13 @@ export function registerAtFixtureFromLocation(): void {
     verticalWidth: 5 as const,
   };
   saveActiveTraderPrefs(isAapl ? "equity" : "index", atPrefs);
+
+  if (expiryPickerScene && !isAapl && !isEs) {
+    const sym = isNvda ? "NVDA" : "SPX";
+    const initial =
+      params.get("exp") ?? (isNvda ? FIXTURE_NVDA_EXPIRY_B : FIXTURE_EXPIRY_B);
+    useOptionsExpiryStore.getState().setExplicit(sym, initial);
+  }
 
   resetFlowAndTicks(fixtureKind);
 }

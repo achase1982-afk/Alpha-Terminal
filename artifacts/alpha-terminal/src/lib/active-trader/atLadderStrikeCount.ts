@@ -36,3 +36,9 @@ export function atChainDateWindow(
   const fromDate = etTodayYmd(now);
   return { fromDate, toDate: addIsoDays(fromDate, 3) };
 }
+
+/** Wide window for expiry discovery only — not used for ladder strike fetch. */
+export function optionsExpiryDiscoveryWindow(now = new Date()): { fromDate: string; toDate: string } {
+  const fromDate = etTodayYmd(now);
+  return { fromDate, toDate: addIsoDays(fromDate, 45) };
+}
