@@ -31,6 +31,21 @@ describe("AtLadderVolumeHeatEngine", () => {
     expect(eng.snapshot([C])[C]!.contracts30s).toBe(300);
   });
 
+  it("uses cumulative session volume after switching to the closed-session mode", () => {
+    const eng = new AtLadderVolumeHeatEngine({ smoothingMs: 0 });
+    eng.setSourceLive(true);
+    const t0 = 1_000_000;
+    eng.ingestCumulative(C, 1_000, t0);
+    eng.ingestCumulative(C, 1_050, t0 + 1_000);
+    eng.setNowMs(t0 + 60_000);
+    expect(eng.snapshot([C])[C]!.contracts30s).toBe(0);
+    eng.setVolumeMode("session");
+    const session = eng.snapshot([C])[C]!;
+    expect(session.contracts30s).toBe(1_050);
+    expect(session.availability).toBe("live");
+    expect(session.intensity).toBeGreaterThan(0);
+  });
+
   it("rebaselines on backwards cumulative", () => {
     const eng = new AtLadderVolumeHeatEngine();
     eng.setSourceLive(true);

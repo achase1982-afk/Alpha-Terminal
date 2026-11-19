@@ -30,6 +30,7 @@ interface AtBracketControlsProps {
   primaryInstruction: SchwabInstruction;
   entryPrice: number | null;
   underlyingSymbol: string;
+  assetType?: "OPTION" | "EQUITY";
 }
 
 function LegEditor({
@@ -42,6 +43,7 @@ function LegEditor({
   quantity,
   primaryInstruction,
   underlyingSymbol,
+  assetType,
   template,
 }: {
   title: string;
@@ -53,6 +55,7 @@ function LegEditor({
   quantity: number;
   primaryInstruction: SchwabInstruction;
   underlyingSymbol: string;
+  assetType: "OPTION" | "EQUITY";
   template: ActiveTraderTemplatePrefs["template"];
 }) {
   const legOff: BracketLegPrefs = { enabled: false, mode: "percent", offset: legKey === "takeProfit" ? 10 : -10 };
@@ -61,7 +64,7 @@ function LegEditor({
       ? atBracketLegPreviewPrice(
           {
             template,
-            assetType: "OPTION",
+            assetType,
             symbol: "",
             underlyingSymbol,
             primaryInstruction,
@@ -148,6 +151,7 @@ export const AtBracketControls = memo(function AtBracketControls({
   primaryInstruction,
   entryPrice,
   underlyingSymbol,
+  assetType = "OPTION",
 }: AtBracketControlsProps) {
   const patch = (partial: Partial<ActiveTraderTemplatePrefs>) =>
     onPrefsChange({ ...prefs, ...partial });
@@ -166,6 +170,7 @@ export const AtBracketControls = memo(function AtBracketControls({
         quantity={prefs.qty}
         primaryInstruction={primaryInstruction}
         underlyingSymbol={underlyingSymbol}
+        assetType={assetType}
         template={prefs.template}
         onChange={(takeProfit) => patch({ takeProfit })}
       />
@@ -178,6 +183,7 @@ export const AtBracketControls = memo(function AtBracketControls({
         quantity={prefs.qty}
         primaryInstruction={primaryInstruction}
         underlyingSymbol={underlyingSymbol}
+        assetType={assetType}
         template={prefs.template}
         onChange={(stopLoss) => patch({ stopLoss })}
       />

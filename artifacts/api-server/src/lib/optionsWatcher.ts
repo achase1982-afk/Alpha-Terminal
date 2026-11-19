@@ -161,7 +161,7 @@ export function isWatcherRunning(): boolean {
 export async function startOptionsWatcher(): Promise<void> {
   if (!isWatcherEnabled()) {
     logger.info({ op: "watcher.start.skipped" },
-      "Options watcher: POLYGON_OPTIONS_WS_ENABLED not set — skipping startup");
+      "Options watcher: POLYGON_API_KEY not set — skipping startup");
     return;
   }
   if (running) return;

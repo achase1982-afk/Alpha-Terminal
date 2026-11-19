@@ -78,11 +78,17 @@ export function equityOptionsSessionOpen(nowMs: number): boolean {
   return mins >= GTH_OPEN_MINUTES && mins < SESSION_END_MINUTES;
 }
 
+/** True once today's equity-options session has ended (4:15 PM ET). */
+export function equityOptionsSessionEnded(nowMs: number): boolean {
+  const p = etParts(nowMs);
+  return p.hour * 60 + p.minute >= SESSION_END_MINUTES;
+}
+
 export function equityOptionsClosedPill(nowMs: number): string {
   const p = etParts(nowMs);
   const mins = p.hour * 60 + p.minute;
-  if (mins < GTH_OPEN_MINUTES) return "Options closed · opens 7:30 AM";
-  if (mins >= SESSION_END_MINUTES) return "Options closed · opens 7:30 AM";
+  if (mins < GTH_OPEN_MINUTES) return "Options closed · opens 7:30 AM ET";
+  if (mins >= SESSION_END_MINUTES) return "Options closed · opens 7:30 AM ET";
   return "Options closed";
 }
 

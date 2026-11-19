@@ -8,8 +8,17 @@ describe("optionsExpirationPick", () => {
     { expiration: "2026-11-25", dte: 7 },
   ];
 
-  it("picks nearest dte >= 0 after session roll", () => {
-    expect(nearestTradableExpiration(groups)?.expiration).toBe("2026-11-18");
+  it("keeps today's 0DTE before the session closes", () => {
+    const beforeClose = Date.parse("2026-11-18T21:14:00.000Z");
+    expect(nearestTradableExpiration(groups, beforeClose)?.expiration).toBe("2026-11-18");
+  });
+
+  it("rolls 0DTE to the next expiry at 4:15 PM ET", () => {
+    const afterClose = Date.parse("2026-11-18T21:15:00.000Z");
+    expect(nearestTradableExpiration(groups, afterClose)?.expiration).toBe("2026-11-25");
+    expect(filterAtExpiryPillGroups(groups, afterClose).map((g) => g.expiration)).toEqual([
+      "2026-11-25",
+    ]);
   });
 
   it("returns null when only expired expiries remain", () => {
@@ -17,7 +26,8 @@ describe("optionsExpirationPick", () => {
   });
 
   it("filters expired expiries from AT pill list", () => {
-    expect(filterAtExpiryPillGroups(groups).map((g) => g.expiration)).toEqual([
+    const beforeClose = Date.parse("2026-11-18T21:14:00.000Z");
+    expect(filterAtExpiryPillGroups(groups, beforeClose).map((g) => g.expiration)).toEqual([
       "2026-11-18",
       "2026-11-25",
     ]);

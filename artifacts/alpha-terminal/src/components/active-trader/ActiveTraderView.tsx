@@ -14,7 +14,11 @@ import {
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
 import { auditNearAtmLadderQuotes, type LadderQuoteHealthAudit } from "@/lib/active-trader/atLadderQuoteHealth";
-import { equityOptionsClosedPill, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
+import {
+  equityOptionsClosedPill,
+  equityOptionsSessionEnded,
+  equityOptionsSessionOpen,
+} from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -39,7 +43,6 @@ import {
 import { planAtOrderLegs } from "@/lib/active-trader/atSchwabOrderBuilder";
 import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
 import { AtFuturesLiveQuote } from "@/components/active-trader/AtFuturesLiveQuote";
-import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
@@ -69,6 +72,9 @@ import {
   saveAtSettingsPanelOpen,
 } from "@/lib/active-trader/atSettingsPanelState";
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
+import { filterAtExpiryPillGroups } from "@/lib/optionsExpirationPick";
+import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
+import { formatSchwabAccountType, isPaperSchwabAccount } from "@/lib/schwabAccountAggregate";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import {
   atLadderNudgeToClearSheet,
@@ -222,13 +228,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   buildLegsFromChain,
   buildLegQtyFromChain,
 }: ActiveTraderViewProps) {
+  const expiryClockMinute = useMinuteClock();
+  const tradableGroups = useMemo(
+    () => filterAtExpiryPillGroups(groups, expiryClockMinute * 60_000),
+    [groups, expiryClockMinute],
+  );
   const primary = useMemo(() => {
-    const tradable = groups.filter((g) => g.dte >= 0);
-    if (activeExpiration && tradable.some((g) => g.expiration === activeExpiration)) {
-      return groups.find((g) => g.expiration === activeExpiration) ?? null;
+    if (activeExpiration && tradableGroups.some((g) => g.expiration === activeExpiration)) {
+      return tradableGroups.find((g) => g.expiration === activeExpiration) ?? null;
     }
-    return tradable[0] ?? null;
-  }, [groups, activeExpiration]);
+    return tradableGroups[0] ?? null;
+  }, [tradableGroups, activeExpiration]);
   const ladderDataReady = !!(primary && primary.rows.length > 0);
   const ladderWaitMessage = useMemo(() => {
     if (ladderDataReady || presentation?.skipNetwork) return null;
@@ -237,7 +247,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (ladderPlug?.brokerLinked === false) return "Connect Schwab to load the ladder.";
     return "Waiting for live chain and stream quotes…";
   }, [ladderDataReady, presentation?.skipNetwork, ladderPlug]);
-  const noTradableExpirations = groups.length > 0 && !groups.some((g) => g.dte >= 0);
+  const noTradableExpirations = groups.length > 0 && tradableGroups.length === 0;
   /** Futures root without an options ladder (live); fixture/dev chains keep the AT ladder. */
   const futuresOnlyMode = isFuturesDisplaySymbol(symbol) && !ladderDataReady;
   const [windowSec, setWindowSec] = useState<30 | 60 | 300>(30);
@@ -320,7 +330,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return spxKeepawayBoundary(keepawayStats, "call", sessionLow, sessionHigh, keepawayUseMean);
   }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
-  const ladderMode = AT_VERTICAL_LADDER_ENABLED ? prefs.ladderMode : "single";
+  const ladderMode = prefs.ladderMode;
   const [settingsOpen, setSettingsOpen] = useState(
     () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
   );
@@ -620,14 +630,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
   const autoSendBusyRef = useRef(false);
 
+  const activeTradingAccount = useMemo(
+    () => (tradingHash ? accounts.find((a) => a.hashValue === tradingHash) : undefined) ?? accounts[0],
+    [accounts, tradingHash],
+  );
+  const isPaper = presentation?.skipNetwork || isPaperSchwabAccount(activeTradingAccount);
   const accountLabel = useMemo(() => {
     if (presentation?.skipNetwork) return "Demo acct";
-    const acct =
-      (tradingHash ? accounts.find((a) => a.hashValue === tradingHash) : undefined) ?? accounts[0];
+    const acct = activeTradingAccount;
     if (!acct?.accountNumber) return "Account";
-    return `Schwab ···${String(acct.accountNumber).slice(-3)}`;
-  }, [accounts, tradingHash, presentation?.skipNetwork]);
-  const isPaper = false;
+    const type = formatSchwabAccountType(acct.type);
+    return `${isPaper ? "Paper" : type} ···${String(acct.accountNumber).slice(-3)}`;
+  }, [activeTradingAccount, isPaper, presentation?.skipNetwork]);
 
   const onPrefsChange = useCallback(
     (p: ActiveTraderTemplatePrefs) => {
@@ -1267,7 +1281,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             data-at-ladder-heat-caption
             data-at-ladder-group-metric
             className="text-center"
-            title="Premium traded in the last 30 seconds"
+            title={
+              equityOptionsSessionEnded(Date.now())
+                ? "Contracts traded in the completed session"
+                : "Contracts traded in the last 30 seconds"
+            }
             style={{
               fontSize: 12,
               fontWeight: 500,
@@ -1278,7 +1296,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               lineHeight: 1.15,
             }}
           >
-            Premium traded · 30s
+            {equityOptionsSessionEnded(Date.now()) ? "Contracts · day" : "Contracts · 30s"}
           </span>
           <span
             className="text-center col-span-2 font-bold"

@@ -33,6 +33,8 @@ export type ChainQuoteFields = {
   asOfLabel?: string | null;
   dimmed?: boolean;
   locked?: boolean;
+  bidTapable?: boolean;
+  askTapable?: boolean;
 };
 
 export function mergeChainContractWithStream(
@@ -106,9 +108,9 @@ export function resolveChainDisplayQuote(
   tick: ChainStreamTick | null | undefined,
   chainFetchedAt: number,
   nowMs = Date.now(),
-): ChainQuoteFields & { tapable: boolean } {
+): ChainQuoteFields & { tapable: boolean; bidTapable: boolean; askTapable: boolean } {
   if (!contract) {
-    return { tapable: false, displayState: "incomplete" };
+    return { tapable: false, bidTapable: false, askTapable: false, displayState: "incomplete" };
   }
   const paired = resolvePairedBidAsk({
     streamBid: tick?.bid ?? undefined,
@@ -120,10 +122,13 @@ export function resolveChainDisplayQuote(
     contractQuoteTime: contract.quoteTimeMs,
     contractTs: chainFetchedAt,
   });
-  const bookBid = paired?.bid ?? contract.bid;
-  const bookAsk = paired?.ask ?? contract.ask;
+  const streamHasSide =
+    (tick?.bid != null && Number.isFinite(tick.bid) && tick.bid >= 0) ||
+    (tick?.ask != null && Number.isFinite(tick.ask) && tick.ask > 0);
+  const bookBid = paired?.bid ?? (streamHasSide ? tick?.bid : contract.bid);
+  const bookAsk = paired?.ask ?? (streamHasSide ? tick?.ask : contract.ask);
   const quoteTimeMs =
-    paired?.source === "stream"
+    paired?.source === "stream" || (!paired && streamHasSide)
       ? tick?.quoteTime ?? tick?.ts ?? null
       : contract.quoteTimeMs ?? chainFetchedAt;
 
@@ -132,7 +137,6 @@ export function resolveChainDisplayQuote(
     ask: bookAsk,
     quoteTimeMs,
     nowMs,
-    liveFreshMs: 30 * 60_000,
   });
 
   const merged = mergeChainContractWithStream(contract, tick, chainFetchedAt);
@@ -143,6 +147,8 @@ export function resolveChainDisplayQuote(
     dimmed: presentation.dimmed,
     locked: presentation.locked,
     tapable: presentation.tapable,
+    bidTapable: presentation.bidTapable,
+    askTapable: presentation.askTapable,
     bid: presentation.showBid,
     ask: presentation.showAsk,
     quoteTimeMs: quoteTimeMs ?? undefined,

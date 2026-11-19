@@ -99,15 +99,16 @@ describe("deskLiveFlow review round 2", () => {
     expect(tape?.sell_vol ?? 0).toBe(0);
   });
 
-  it("symbol cap blocks new symbols but allows held", () => {
+  it("does not impose an eight-symbol product cap", () => {
     for (let i = 0; i < 8; i++) deskLiveFlowSubsAcquire(`SYM${i}`, "equity");
     expect(deskLiveFlowCanSubscribe("SYM0", "equity").ok).toBe(true);
-    expect(deskLiveFlowCanSubscribe("SYM9", "equity").ok).toBe(false);
+    expect(deskLiveFlowCanSubscribe("SYM9", "equity").ok).toBe(true);
     expect(deskLiveFlowSubsWouldBeNewSymbol("SYM0", "equity")).toBe(false);
   });
 
-  it("rejects junk tickers and unsupported futures roots with supported list", () => {
-    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")?.error).toBe("invalid_symbol");
+  it("accepts long equity symbols and rejects malformed or unsupported futures symbols", () => {
+    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")).toBeNull();
+    expect(deskLiveFlowRejectSymbol("BRK B", "equity")?.error).toBe("invalid_symbol");
     const cl = deskLiveFlowRejectSymbol("/CL", "futures");
     expect(cl?.error).toBe("futures_flow_unsupported");
     expect(cl?.supported).toContain("/ES");

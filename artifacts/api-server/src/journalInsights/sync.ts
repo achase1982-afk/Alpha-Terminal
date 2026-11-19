@@ -1,7 +1,6 @@
 import { fetchHistory, listLiveBooks } from "../lib/journalHistory.js";
 import { logger } from "../lib/logger.js";
 import { getValidAccessToken } from "../lib/tokenStore.js";
-import { brokerEnvironment, isExcludedBook } from "./accounts.js";
 import { normalizeActivity, normalizeOrder, parseOptionSymbol, type RawHistoryActivity, type RawHistoryOrder } from "./normalize.js";
 import {
   readSyncState,
@@ -153,17 +152,9 @@ export async function startJournalSync(): Promise<SyncResult> {
   running = true;
   try {
     const accounts = await listLiveBooks(token);
-    const environment = brokerEnvironment();
     let synced = 0;
     let failed = false;
     for (const account of accounts) {
-      if (isExcludedBook({
-        type: account.type,
-        accountNumber: account.accountNumber,
-        environment,
-      })) {
-        continue;
-      }
       const ok = await syncAccount({
         hash: account.accountRef,
         accountRef: account.accountRef,

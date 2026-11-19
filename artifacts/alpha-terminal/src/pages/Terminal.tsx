@@ -53,7 +53,6 @@ import {
 import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
 import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
-import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
 import { FuturesTradeBlockedNotice } from "@/components/FuturesTradeBlockedNotice";
@@ -152,6 +151,17 @@ function CompanySectionTabBar(props: ComponentProps<typeof import("@/components/
       viewName="Company tabs"
       fallback={<LazyStripFallback />}
       loader={() => import("@/components/CompanyResearchHub").then((m) => ({ default: m.CompanySectionTabBar }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
+  );
+}
+function CompanyTearSheet(props: ComponentProps<typeof import("@/components/CompanyTearSheet").CompanyTearSheet>) {
+  if (!props.isOpen) return null;
+  return (
+    <LazyRouteView
+      viewName="Company profile"
+      fallback={null}
+      loader={() => import("@/components/CompanyTearSheet").then((m) => ({ default: m.CompanyTearSheet }))}
       render={(C, key) => <C key={key} {...props} />}
     />
   );
@@ -428,7 +438,6 @@ export default function TerminalPage() {
   const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
   const [orderIsClose, setOrderIsClose] = useState(false);
   const [orderInitialStage, setOrderInitialStage] = useState<"form" | "review">("form");
-  const [orderConfirmDisabled, setOrderConfirmDisabled] = useState(false);
   const [orderAtPrefs, setOrderAtPrefs] = useState<ActiveTraderTemplatePrefs | null>(null);
   const savedOptionsCtxRef = useRef<{
     legs?: OrderLeg[];
@@ -548,7 +557,6 @@ export default function TerminalPage() {
     setOrderOptionInstruction(undefined);
     setOrderIsClose(false);
     setOrderInitialStage("form");
-    setOrderConfirmDisabled(false);
   }, []);
 
   const handleSwitchToStock = useCallback(() => {
@@ -596,7 +604,6 @@ export default function TerminalPage() {
     setOrderStrategyLegs(undefined);
     setOrderStrategyNetPrice(undefined);
     setOrderInitialStage("form");
-    setOrderConfirmDisabled(false);
     setOrderOpen(true);
   }, []);
 
@@ -628,7 +635,6 @@ export default function TerminalPage() {
     setOrderStrategyNetPrice(undefined);
     setOrderIsClose(false);
     setOrderInitialStage("form");
-    setOrderConfirmDisabled(!atOrderSendAllowed());
     setOrderOpen(true);
   }, []);
 
@@ -747,6 +753,7 @@ export default function TerminalPage() {
   const [stickyH, setStickyH] = useState(0);
   const companyTabsId = useId();
   const [companyPage, setCompanyPage] = useState(0);
+  const [companyTearSheetOpen, setCompanyTearSheetOpen] = useState(false);
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
   const sidebarRef = useRef<SidebarHandle>(null);
   useSchwabSessionReconciliation(sidebarRef);
@@ -1194,7 +1201,7 @@ export default function TerminalPage() {
                     <AtSymbolHeader compact={false} />
                   ) : atOptionsChrome ? null : (
                     <>
-                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
                       <VolumeBar />
                     </>
                   )}
@@ -1264,7 +1271,7 @@ export default function TerminalPage() {
               <>
                 <div className="flex flex-col flex-1 min-w-0">
                   <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
-                    <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                    <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
                   </div>
                   <div className="shrink-0 border-b border-zinc-800/40" style={{ background: "#111" }}>
                     <ChartControls />
@@ -1340,7 +1347,7 @@ export default function TerminalPage() {
                     <AtSymbolHeader compact={false} />
                   ) : atOptionsChrome ? null : (
                     <>
-                      <MetricsBar compact={isScrolled} onTrade={openOrder} />
+                      <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
                       <VolumeBar />
                     </>
                   )}
@@ -1463,7 +1470,6 @@ export default function TerminalPage() {
         subscribeOptionSymbols={subscribeOptionSymbols}
         releaseOptionHold={releaseOptionHold}
         initialStage={orderInitialStage}
-        confirmDisabled={orderConfirmDisabled}
         atTemplatePrefs={orderAtPrefs ?? undefined}
         onSendToStrategist={(ticker) => {
           // Strategist tab pulls results for the active symbol — switch to
@@ -1476,6 +1482,10 @@ export default function TerminalPage() {
         }}
       />
       {schwabLinked && <SchwabAccountPickerSheet />}
+      <CompanyTearSheet
+        isOpen={companyTearSheetOpen}
+        onClose={() => setCompanyTearSheetOpen(false)}
+      />
       <FuturesTradeBlockedNotice
         isOpen={futuresTradeNoticeOpen}
         onClose={() => setFuturesTradeNoticeOpen(false)}

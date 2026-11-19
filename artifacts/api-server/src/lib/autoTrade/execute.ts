@@ -5,7 +5,6 @@ import { logger } from "../logger.js";
 import { broadcastToClients } from "../wsServer.js";
 import { sendPushToAll } from "../pushService.js";
 import { markAlertSeen } from "../schwabStreamer.js";
-import { ORDERS_DISABLED_ERROR, schwabTradingBlocked } from "../schwabTradingGate.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
@@ -59,9 +58,6 @@ export async function placeAutoEquityOrder(
   quantity: number,
   lastPrice?: number,
 ): Promise<PlaceEquityResult> {
-  if (schwabTradingBlocked()) {
-    return { ok: false, orderId: null, error: ORDERS_DISABLED_ERROR };
-  }
   const token = getTokens("trader")?.accessToken;
   if (!token) return { ok: false, orderId: null, error: "no_trader_token" };
   if (!accountHash) return { ok: false, orderId: null, error: "no_account" };
@@ -164,9 +160,6 @@ export async function placeAutoEquityOrderWithTrailingStop(
   quantity: number,
   trailPercent: number,
 ): Promise<PlaceEquityResult> {
-  if (schwabTradingBlocked()) {
-    return { ok: false, orderId: null, error: ORDERS_DISABLED_ERROR };
-  }
   const token = getTokens("trader")?.accessToken;
   if (!token) return { ok: false, orderId: null, error: "no_trader_token" };
   if (!accountHash) return { ok: false, orderId: null, error: "no_account" };

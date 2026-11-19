@@ -98,11 +98,41 @@ describe("optionQuotes", () => {
     expect(stale?.source).toBe("contract");
   });
 
-  it("suppresses crossed and missing books", () => {
-    expect(resolveChainQuotePresentation({ bid: 2, ask: 1, quoteTimeMs: Date.now() }).displayState).toBe("crossed");
-    expect(resolveChainQuotePresentation({ bid: undefined, ask: 1.2, quoteTimeMs: Date.now() }).displayState).toBe(
-      "incomplete",
-    );
+  it("keeps available sides tappable for crossed and one-sided books", () => {
+    const nowMs = Date.parse("2026-11-18T15:00:00.000Z");
+    const crossed = resolveChainQuotePresentation({ bid: 2, ask: 1, quoteTimeMs: nowMs, nowMs });
+    expect(crossed.displayState).toBe("crossed");
+    expect(crossed.bidTapable).toBe(true);
+    expect(crossed.askTapable).toBe(true);
+    const oneSided = resolveChainQuotePresentation({ bid: undefined, ask: 1.2, quoteTimeMs: nowMs, nowMs });
+    expect(oneSided.displayState).toBe("incomplete");
+    expect(oneSided.bidTapable).toBe(false);
+    expect(oneSided.askTapable).toBe(true);
+    expect(oneSided.showAsk).toBe(1.2);
+  });
+
+  it("dims but does not lock stale live-session or closed-session prices", () => {
+    const liveNow = Date.parse("2026-11-18T15:00:00.000Z");
+    const stale = resolveChainQuotePresentation({
+      bid: 1,
+      ask: 1.1,
+      quoteTimeMs: liveNow - 20_000,
+      nowMs: liveNow,
+    });
+    expect(stale.displayState).toBe("stale");
+    expect(stale.tapable).toBe(true);
+    expect(stale.dimmed).toBe(true);
+
+    const closedNow = Date.parse("2026-11-18T22:00:00.000Z");
+    const closed = resolveChainQuotePresentation({
+      bid: 1,
+      ask: 1.1,
+      quoteTimeMs: Date.parse("2026-11-18T21:14:00.000Z"),
+      nowMs: closedNow,
+    });
+    expect(closed.displayState).toBe("prior_session");
+    expect(closed.tapable).toBe(true);
+    expect(closed.dimmed).toBe(true);
   });
 
   it("debit vertical uses positive natural-direction NBBO", () => {

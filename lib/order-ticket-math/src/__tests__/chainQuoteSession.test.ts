@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   equityOptionsGthOpenMs,
+  equityOptionsClosedPill,
   equityOptionsSessionOpen,
   formatQuoteAsOfEt,
   isCarryoverOptionQuote,
@@ -25,6 +26,7 @@ describe("chainQuoteSession", () => {
     expect(view.displayState).toBe("prior_session");
     expect(view.showBid).toBe(5.05);
     expect(view.dimmed).toBe(true);
+    expect(view.tapable).toBe(true);
     expect(view.asOfLabel).toContain("as of");
   });
 
@@ -52,6 +54,7 @@ describe("chainQuoteSession", () => {
     const gth = equityOptionsGthOpenMs(Date.now());
     expect(equityOptionsSessionOpen(gth - 60_000)).toBe(false);
     expect(equityOptionsSessionOpen(gth + 60_000)).toBe(true);
+    expect(equityOptionsClosedPill(gth - 60_000)).toContain("7:30 AM ET");
   });
 
   it("returns 7:30:00 AM Eastern for any instant of that Eastern day", () => {

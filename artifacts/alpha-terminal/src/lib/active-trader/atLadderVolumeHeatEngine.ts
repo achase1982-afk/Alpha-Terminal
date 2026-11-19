@@ -66,7 +66,7 @@ export type LadderHeatAvailability = "unavailable" | "quiet" | "stale" | "live";
 
 export type LadderHeatCellView = {
   availability: LadderHeatAvailability;
-  /** Gross contracts traded in the rolling window (not premium $). */
+  /** Gross contracts in the active heat window (30 seconds live; session volume after close). */
   contracts30s: number;
   /** 0–1 display intensity, relative to the busiest contract and smoothed over time (not across strikes). */
   intensity: number;
@@ -120,6 +120,7 @@ export class AtLadderVolumeHeatEngine {
   private pollChainFetchedAtMs: number | null = null;
   private pollChainTtlMs: number | null = null;
   private nowMs: number;
+  private volumeMode: "rolling" | "session" = "rolling";
 
   constructor(opts?: AtLadderVolumeHeatEngineOptions) {
     this.windowMs = opts?.windowMs ?? AT_LADDER_HEAT_WINDOW_MS;
@@ -136,6 +137,11 @@ export class AtLadderVolumeHeatEngine {
 
   setSourceLive(live: boolean): void {
     this.sourceLive = live;
+  }
+
+  /** Use cumulative session volume after the options close instead of a decaying live window. */
+  setVolumeMode(mode: "rolling" | "session"): void {
+    this.volumeMode = mode;
   }
 
   noteSourceRx(rxMs: number): void {
@@ -226,6 +232,7 @@ export class AtLadderVolumeHeatEngine {
   contractsFor(contract: string): number {
     const st = this.byContract.get(contract);
     if (!st) return 0;
+    if (this.volumeMode === "session") return st.lastCumulative;
     this.pruneContract(st);
     let sum = 0;
     for (const e of st.incidents) sum += e.qty;
@@ -249,7 +256,7 @@ export class AtLadderVolumeHeatEngine {
   }
 
   snapshot(contracts: string[]): Record<string, LadderHeatCellView> {
-    const globalStale = this.resolveGlobalStale();
+    const globalStale = this.volumeMode === "session" ? false : this.resolveGlobalStale();
     const reference = this.reference.update(this.busiestContracts(globalStale), this.nowMs);
     const instant = this.smoothingMs <= 0 || prefersReducedMotion();
     const out: Record<string, LadderHeatCellView> = {};
@@ -294,6 +301,7 @@ export class AtLadderVolumeHeatEngine {
   ): LadderHeatAvailability {
     if (!this.sourceLive) return "unavailable";
     if (!st || !st.baselineSet) return "quiet";
+    if (this.volumeMode === "session") return contracts30s > 0 ? "live" : "quiet";
     if (globalStale || (st.lastRxMs != null && this.nowMs - st.lastRxMs > this.staleAfterMs)) {
       return "stale";
     }

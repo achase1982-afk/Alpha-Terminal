@@ -10,6 +10,8 @@ function sameQuoteView(a: AtLadderDisplayQuote, b: AtLadderDisplayQuote): boolea
     a.displayState === b.displayState &&
     a.reason === b.reason &&
     a.tapable === b.tapable &&
+    a.bidTapable === b.bidTapable &&
+    a.askTapable === b.askTapable &&
     a.dimmed === b.dimmed &&
     a.locked === b.locked &&
     a.asOfLabel === b.asOfLabel

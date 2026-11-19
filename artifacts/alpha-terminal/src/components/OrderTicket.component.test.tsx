@@ -6,6 +6,11 @@ import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTrader
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { OrderTicket } from "./OrderTicket";
 
+const { orderSendGate } = vi.hoisted(() => ({ orderSendGate: { allowed: true } }));
+vi.mock("@/lib/active-trader/atOrderSend", () => ({
+  atOrderSendAllowed: () => orderSendGate.allowed,
+}));
+
 const terminalState = {
   symbol: "AAPL",
   accessToken: "tok",
@@ -111,6 +116,7 @@ describe("OrderTicket component", () => {
       [OPT_PUT]: { bid: 2.5, ask: 2.7, last: 2.6, ts: 1, delta: -0.4 },
     };
     schwabStoreState.orderTicketAccountHash = "hash-1";
+    orderSendGate.allowed = true;
   });
 
   it("formats stock limit to cents on blur", async () => {
@@ -121,6 +127,34 @@ describe("OrderTicket component", () => {
     await waitFor(() => {
       expect((limitInput as HTMLInputElement).value).toBe("100.12");
     });
+  });
+
+  it("offers bracket exits on a regular stock ticket and previews them on review", async () => {
+    render(<OrderTicket isOpen onClose={() => {}} subscribeOptionSymbols={vi.fn()} />);
+    const bracket = await screen.findByTestId("regular-ticket-bracket-controls");
+    const exits = within(bracket).getAllByRole("checkbox");
+    expect(exits).toHaveLength(2);
+    expect(exits.every((checkbox) => checkbox.getAttribute("data-state") === "unchecked")).toBe(true);
+    fireEvent.click(exits[0]!);
+    fireEvent.click(exits[1]!);
+    const limitInput = await screen.findByPlaceholderText("0.00");
+    fireEvent.change(limitInput, { target: { value: "100.00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review" }));
+    await screen.findByText("Order Confirmation");
+    expect(screen.getByText("Take profit")).toBeTruthy();
+    expect(screen.getByText("Stop loss")).toBeTruthy();
+  });
+
+  it("offers bracket exits for an opening stock short", async () => {
+    render(
+      <OrderTicket
+        isOpen
+        initialSide="SELL"
+        onClose={() => {}}
+        subscribeOptionSymbols={vi.fn()}
+      />,
+    );
+    expect(await screen.findByTestId("regular-ticket-bracket-controls")).toBeTruthy();
   });
 
   it("keeps Review disabled with empty limit when bid/ask are missing (no last fallback)", async () => {
@@ -527,14 +561,12 @@ describe("OrderTicket component", () => {
     expect(order.childOrderStrategies).toBeUndefined();
   });
 
-  it("default off: preview send label and no place-order POST", async () => {
-    vi.stubEnv("VITE_AT_ORDER_SEND", "");
-    vi.resetModules();
+  it("disabled send gate shows a non-live label and skips place-order", async () => {
+    orderSendGate.allowed = false;
     const fetchMock = vi.mocked(fetchWithAuth);
     fetchMock.mockClear();
-    const { OrderTicket: Ticket } = await import("./OrderTicket");
     render(
-      <Ticket
+      <OrderTicket
         isOpen
         onClose={() => {}}
         initialStage="review"
@@ -548,8 +580,6 @@ describe("OrderTicket component", () => {
     expect((send as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(send);
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllEnvs();
-    vi.resetModules();
   });
 
   it("mobile AT draft: side, qty, and TP stay consistent through Review", async () => {

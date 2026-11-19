@@ -118,7 +118,7 @@ function classifyAggressor(
  */
 export async function subscribeSseClient(contract: string, res: Response): Promise<() => void> {
   if (!polygonWsEnabled()) {
-    throw new Error("Polygon options WS is disabled (POLYGON_OPTIONS_WS_ENABLED!=1)");
+    throw new Error("Polygon options WS is unavailable because POLYGON_API_KEY is not configured");
   }
   ensureGlobalTradeListener();
 

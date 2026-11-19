@@ -2,7 +2,6 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { brokerEnvironment, isExcludedBook } from "./accounts.js";
 import { buildJournalFixtures } from "./fixtureBook.js";
 import { calendarDays, formatWindow, startOfYearEt } from "./clock.js";
 import { isFlat, rebuildBook } from "./ledger.js";
@@ -789,20 +788,6 @@ describe("journal metrics", () => {
 });
 
 describe("journal ingestion boundaries", () => {
-  it("drops paper and sandbox books", () => {
-    expect(isExcludedBook({ type: "PAPER" })).toBe(true);
-    expect(isExcludedBook({ accountNumber: "paper-88" })).toBe(true);
-    expect(isExcludedBook({ baseUrl: "https://example.test/sandbox" })).toBe(true);
-    expect(isExcludedBook({ environment: "sandbox" })).toBe(true);
-    expect(isExcludedBook({ type: "MARGIN", accountNumber: "12345678", baseUrl: "https://api.example.test" })).toBe(false);
-    const prior = process.env.BROKER_ENVIRONMENT;
-    process.env.BROKER_ENVIRONMENT = "sandbox";
-    expect(brokerEnvironment()).toBe("sandbox");
-    expect(isExcludedBook({ environment: brokerEnvironment() })).toBe(true);
-    if (prior == null) delete process.env.BROKER_ENVIRONMENT;
-    else process.env.BROKER_ENVIRONMENT = prior;
-  });
-
   it("backfills from the beginning and overlaps two days once that backfill is done", () => {
     const now = new Date("2026-11-18T21:00:00.000Z");
     const fresh = syncRange({ syncedThrough: null, backfillComplete: false, now });

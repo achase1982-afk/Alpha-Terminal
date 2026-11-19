@@ -16,13 +16,9 @@ router.get("/unusual-flow/status", (_req, res) => {
 router.post("/unusual-flow", (req, res) => {
   if (!polygonWsEnabled()) {
     res.status(503).json({
-      error: "polygon_options_ws_disabled",
-      message: "POLYGON_OPTIONS_WS_ENABLED must be set on the server (requires Reserved VM).",
+      error: "polygon_api_key_missing",
+      message: "POLYGON_API_KEY must be configured on the server.",
     });
-    return;
-  }
-  if (!process.env["POLYGON_API_KEY"]) {
-    res.status(503).json({ error: "polygon_api_key_missing" });
     return;
   }
 

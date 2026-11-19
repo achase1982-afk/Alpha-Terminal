@@ -50,9 +50,9 @@ import {
   CHAIN_LEG_LIMIT_MESSAGE,
 } from "@/lib/orders/chainDraftLegLimits";
 import {
-  loadActiveTraderPrefs,
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
+import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
 import {
   buildChainSheetAtBracketConfirm,
   type ChainSheetAtBracketConfirm,
@@ -114,8 +114,6 @@ export interface OptionsChainOrderSheetProps {
   extrasAfterLimit?:
     | React.ReactNode
     | ((ctx: { limitPerShare: number | null; isCredit: boolean; legCount: number }) => React.ReactNode);
-  /** Show preview send label instead of live Schwab send. */
-  sendPreviewOnly?: boolean;
   /** Render docked inline at bottom of Active Trader instead of a fixed overlay covering ladder rows. */
   atDocked?: boolean;
   /** Compact peek height (~38vh) vs full sheet (~58vh). */
@@ -143,11 +141,6 @@ function distinctChainLegsFromStrategy(legs: StrategyLeg[]): number {
   return keys.size;
 }
 
-function atSymbolClass(symbol: string): "index" | "equity" {
-  const u = symbol.toUpperCase();
-  return u.includes("SPX") || u.startsWith("$") ? "index" : "equity";
-}
-
 function bracketPrefsActive(prefs: ActiveTraderTemplatePrefs): boolean {
   return (
     prefs.template !== "Single" || !!(prefs.takeProfit?.enabled || prefs.stopLoss?.enabled)
@@ -167,32 +160,6 @@ function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | 
   return key || undefined;
 }
 
-/** Same draft as AT settings bar / ticket — preview uses localStorage when bracket active. */
-function resolveAtBracketDraft(
-  explicit: OptionsChainOrderSheetProps["atBracketDraft"],
-  legs: StrategyLeg[],
-  symbol: string,
-  sendPreviewOnly?: boolean,
-): OptionsChainOrderSheetProps["atBracketDraft"] {
-  if (sendPreviewOnly && legs.length === 1) {
-    const stored = loadActiveTraderPrefs(atSymbolClass(symbol));
-    if (bracketPrefsActive(stored)) {
-      return {
-        prefs: stored,
-        primaryInstruction: legs[0]!.direction as SchwabInstruction,
-      };
-    }
-  }
-  if (explicit) return explicit;
-  if (!sendPreviewOnly || legs.length !== 1) return undefined;
-  const prefs = loadActiveTraderPrefs(atSymbolClass(symbol));
-  if (!bracketPrefsActive(prefs)) return undefined;
-  return {
-    prefs,
-    primaryInstruction: legs[0]!.direction as SchwabInstruction,
-  };
-}
-
 export function OptionsChainOrderSheet({
   legs,
   collapsed,
@@ -204,7 +171,6 @@ export function OptionsChainOrderSheet({
   demoFixture,
   openReviewOnMount,
   extrasAfterLimit,
-  sendPreviewOnly,
   atDocked,
   sheetPeek = true,
   onSheetPeekChange,
@@ -215,6 +181,7 @@ export function OptionsChainOrderSheet({
   onSheetSessionPersist,
 }: OptionsChainOrderSheetProps) {
   const symbol = useTerminalStore((s) => s.symbol);
+  const sendAllowed = atOrderSendAllowed();
   const underlyingSpot = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
     const alt = u.startsWith("$") ? u.slice(1) : `$${u}`;
@@ -384,7 +351,7 @@ export function OptionsChainOrderSheet({
 
   useEffect(() => {
     if (legs.length === 0 || stage !== "form") return;
-    if (sendPreviewOnly && limitLocked) return;
+    if (limitLocked) return;
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
@@ -402,7 +369,7 @@ export function OptionsChainOrderSheet({
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, sendPreviewOnly, limitLocked]);
+  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -475,7 +442,7 @@ export function OptionsChainOrderSheet({
     }
     setReviewLimitSnapped(px);
     setPriceError("");
-    const draft = resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly);
+    const draft = atBracketDraft;
     if (draft) {
       const leg = legs[0];
       const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
@@ -500,7 +467,7 @@ export function OptionsChainOrderSheet({
       setAtBracketConfirmSnapshot(null);
     }
     setStage("review");
-  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol, sendPreviewOnly]);
+  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -516,7 +483,7 @@ export function OptionsChainOrderSheet({
 
   const handleSubmit = useCallback(async () => {
     if (!guardDraftLegCount()) return;
-    if (sendPreviewOnly) return;
+    if (!sendAllowed) return;
     if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
     if (demoFixture) {
@@ -566,7 +533,7 @@ export function OptionsChainOrderSheet({
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendPreviewOnly]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount]);
 
   const handleClearAllClick = useCallback(() => {
     limitUserEditedRef.current = false;
@@ -579,12 +546,9 @@ export function OptionsChainOrderSheet({
     submittedLimit != null &&
     submittedLimit > 0 &&
     quantity > 0 &&
-    (demoFixture || !!accountHash || !!sendPreviewOnly);
+    (demoFixture || !!accountHash);
 
-  const effectiveAtBracketDraft = useMemo(
-    () => resolveAtBracketDraft(atBracketDraft, legs, symbol, sendPreviewOnly),
-    [atBracketDraft, legs, symbol, sendPreviewOnly],
-  );
+  const effectiveAtBracketDraft = atBracketDraft;
 
   const atBracketConfirm = useMemo((): ChainSheetAtBracketConfirm | null => {
     if (stage !== "review") return null;
@@ -637,7 +601,7 @@ export function OptionsChainOrderSheet({
 
   if (legs.length === 0) return null;
 
-  if (sendPreviewOnly || atDocked) {
+  if (atDocked) {
     const entryMultiplier = quantity * 100;
     const entryDollars =
       summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
@@ -693,8 +657,8 @@ export function OptionsChainOrderSheet({
               setStage("form");
             }}
             onSend={() => void handleSubmit()}
-            sendDisabled={sendLocked || !!sendPreviewOnly}
-            sendLabel={sendPreviewOnly ? "Sending off (preview)" : "Send to Schwab"}
+            sendDisabled={sendLocked || !sendAllowed}
+            sendLabel={sendAllowed ? "Send to Schwab" : "Sending off"}
           />
         </div>
       );
@@ -1045,7 +1009,7 @@ export function OptionsChainOrderSheet({
               style={{ background: GOLD, color: "#000", borderRadius: 8 }}
               data-testid="chain-sheet-review"
             >
-              {sendPreviewOnly ? "Review (sending off)" : "Review"}
+              Review
             </button>
           </div>
         )}
@@ -1078,8 +1042,8 @@ export function OptionsChainOrderSheet({
             setStage("form");
           }}
           onSend={() => void handleSubmit()}
-          sendDisabled={sendLocked || !!sendPreviewOnly}
-          sendLabel={sendPreviewOnly ? "Sending off (preview)" : "Send to Schwab"}
+          sendDisabled={sendLocked || !sendAllowed}
+          sendLabel={sendAllowed ? "Send to Schwab" : "Sending off"}
         />
       )}
     </div>

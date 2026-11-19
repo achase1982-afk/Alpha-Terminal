@@ -93,7 +93,7 @@ router.get("/deep/:ticker", (req, res) => {
   if (!isWatcherEnabled()) {
     return res.status(503).json({
       error: "watcher_disabled",
-      message: "POLYGON_OPTIONS_WS_ENABLED is not set; deep scan unavailable.",
+      message: "POLYGON_API_KEY is not configured; deep scan unavailable.",
       coverage: getCoverageInfo(),
     });
   }

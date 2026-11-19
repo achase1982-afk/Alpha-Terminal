@@ -14,6 +14,7 @@ import {
   ladderVolumeHeatFixtureSamples,
   type AtLadderVolumeHeatFixtureScene,
 } from "./atLadderVolumeHeatFixture";
+import { equityOptionsSessionEnded } from "@workspace/order-ticket-math";
 
 /** Single-name chain poll — ~1 Hz (Schwab-safe while AT ladder is open). */
 export const AT_LADDER_HEAT_POLL_MS = 1_000;
@@ -265,8 +266,11 @@ export function useAtLadderVolumeHeat(input: {
       paintPending = false;
       lastPaintMs = rafNow;
       const keys = streamKeysRef.current;
-      engineRef.current!.setNowMs(Date.now());
-      publishAtLadderHeat(heatStore, engineRef.current!.snapshot(keys));
+      const engine = engineRef.current!;
+      const now = Date.now();
+      engine.setNowMs(now);
+      engine.setVolumeMode(equityOptionsSessionEnded(now) ? "session" : "rolling");
+      publishAtLadderHeat(heatStore, engine.snapshot(keys));
       syncSource();
     };
 

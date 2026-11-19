@@ -182,6 +182,8 @@ type QuoteCellProps = {
   side: "BUY" | "SELL";
   price: number | null;
   unavailableReason: string | null;
+  statusReason: string | null;
+  dimmed: boolean;
   locked: boolean;
   tapable: boolean;
   strike: number;
@@ -204,6 +206,8 @@ const QuoteCell = memo(function QuoteCell({
   side,
   price,
   unavailableReason,
+  statusReason,
+  dimmed,
   locked,
   tapable,
   strike,
@@ -231,7 +235,7 @@ const QuoteCell = memo(function QuoteCell({
       data-at-tapable={tapable && cellKey ? "1" : undefined}
       data-at-quote={dataAttr}
       data-at-quote-side={side}
-      data-at-quote-unavailable={unavailableReason ?? undefined}
+      data-at-quote-unavailable={unavailableReason ?? statusReason ?? undefined}
       data-at-quote-locked={locked ? "1" : undefined}
       data-at-pressed={pressed ? "1" : undefined}
       data-at-leg-selected={legSelected ? side : undefined}
@@ -252,6 +256,7 @@ const QuoteCell = memo(function QuoteCell({
         WebkitTapHighlightColor: "transparent",
         WebkitTouchCallout: "none",
         userSelect: "none",
+        opacity: dimmed ? 0.72 : 1,
       }}
       disabled={!tapable}
     >
@@ -281,6 +286,11 @@ const QuoteCell = memo(function QuoteCell({
           >
             {unavailableReason ?? fmtPx(price)}
           </span>
+          {statusReason ? (
+            <span style={{ fontSize: 7, color: GRAY, letterSpacing: "0.03em" }}>
+              {statusReason}
+            </span>
+          ) : null}
           <span
             style={{
               fontSize: AT_LADDER_LEG_TAG_SIZE,
@@ -296,7 +306,7 @@ const QuoteCell = memo(function QuoteCell({
         </span>
       ) : (
         <span
-          className="inline-flex items-center justify-center"
+          className="inline-flex flex-col items-center justify-center"
           style={
             pressed
               ? {
@@ -322,6 +332,11 @@ const QuoteCell = memo(function QuoteCell({
           }
         >
           {unavailableReason ?? fmtPx(price)}
+          {statusReason ? (
+            <span style={{ fontSize: 7, color: GRAY, letterSpacing: "0.03em", lineHeight: 1 }}>
+              {statusReason}
+            </span>
+          ) : null}
         </span>
       )}
     </button>
@@ -387,7 +402,8 @@ const ContractPair = memo(function ContractPair({
   }
 
   const legKey = contract ? atLadderLegKey(contract, type) : null;
-  const tapable = vertical ? contract != null : near.tapable;
+  const bidTapable = vertical ? bidPx != null : near.bidTapable;
+  const askTapable = vertical ? askPx != null : near.askTapable;
 
   return (
     <div
@@ -409,8 +425,10 @@ const ContractPair = memo(function ContractPair({
         side="SELL"
         price={bidPx}
         unavailableReason={bidPx == null ? near.reason : null}
+        statusReason={bidPx != null ? near.reason : null}
+        dimmed={near.dimmed}
         locked={near.locked && bidPx != null}
-        tapable={tapable}
+        tapable={bidTapable}
         strike={strike}
         type={type}
         expiryLabel={expiryLabel}
@@ -424,8 +442,10 @@ const ContractPair = memo(function ContractPair({
         side="BUY"
         price={askPx}
         unavailableReason={askPx == null ? near.reason : null}
+        statusReason={askPx != null ? near.reason : null}
+        dimmed={near.dimmed}
         locked={false}
-        tapable={tapable}
+        tapable={askTapable}
         strike={strike}
         type={type}
         expiryLabel={expiryLabel}

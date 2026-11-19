@@ -109,8 +109,9 @@ describe("desk live flow phase 2 hardening", () => {
     expect(true).toBe(true);
   });
 
-  it("rejects garbage symbols", () => {
-    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")?.error).toBe("invalid_symbol");
+  it("accepts long equity symbols and rejects unsupported futures", () => {
+    expect(deskLiveFlowRejectSymbol("QWERTY", "equity")).toBeNull();
+    expect(deskLiveFlowRejectSymbol("BAD SYMBOL", "equity")?.error).toBe("invalid_symbol");
     expect(deskLiveFlowRejectSymbol("/CL", "futures")?.error).toBe("futures_flow_unsupported");
   });
 

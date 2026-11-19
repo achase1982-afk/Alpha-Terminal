@@ -23,6 +23,7 @@ import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { atBracketPreviewPrices } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   buildAtSchwabOrderJson,
+  isOpeningInstruction,
   planAtOrderLegs,
   usesBracketExit,
   type SchwabInstruction,
@@ -35,12 +36,12 @@ import {
 } from "@/lib/active-trader/atSummaryFormat";
 import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
 import { deriveTicketOptionInstruction } from "@/lib/orders/deriveTicketOptionInstruction";
-import { isAuthDisabled } from "@/lib/authMode";
 import {
   AtMobileGlanceOrderSheet,
   AT_MOBILE_PEEK_MAX_PX,
 } from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
+import { AtBracketControls } from "@/components/active-trader/AtBracketControls";
 import {
   aggregateSpreadNBBO,
   computeOrderEconomics,
@@ -385,8 +386,6 @@ interface OrderTicketProps {
   releaseOptionHold?: (holderId: string) => Promise<void>;
   /** Open directly on review (Active Trader confirmation sheet). */
   initialStage?: ConfirmStage;
-  /** When true, hides Schwab submit (legacy kill-switch; normally false). */
-  confirmDisabled?: boolean;
   /** Active Trader template prefs for confirmation leg plan / bracket prices. */
   atTemplatePrefs?: ActiveTraderTemplatePrefs;
 }
@@ -469,10 +468,10 @@ export function OrderTicket({
   subscribeOptionSymbols,
   releaseOptionHold,
   initialStage,
-  confirmDisabled,
   atTemplatePrefs,
 }: OrderTicketProps) {
   const symbol = useTerminalStore((s) => s.symbol);
+  const atSendLive = atOrderSendAllowed();
   const { data: quote } = useQuote(symbol);
   const atFixtureDev = import.meta.env.DEV && getAtFixtureOverride()?.enabled && !!atTemplatePrefs;
   const futuresOrderBlocked = isFuturesDisplaySymbol(symbol) && !atFixtureDev;
@@ -553,21 +552,69 @@ export function OrderTicket({
   const [mobileTpEnabled, setMobileTpEnabled] = useState(
     () => atTemplatePrefs?.takeProfit.enabled ?? true,
   );
-
-  const atDraftPrefs = useMemo((): ActiveTraderTemplatePrefs | undefined => {
-    if (!atTemplatePrefs) return undefined;
-    return {
-      ...atTemplatePrefs,
-      qty: quantity,
-      takeProfit: { ...atTemplatePrefs.takeProfit, enabled: mobileTpEnabled },
-    };
-  }, [atTemplatePrefs, quantity, mobileTpEnabled]);
+  const [regularBracketPrefs, setRegularBracketPrefs] = useState<ActiveTraderTemplatePrefs>(() => ({
+    template: "TRG w/ bracket",
+    qty: 1,
+    orderType: "LIMIT",
+    limitAnchor: "Mid",
+    takeProfit: { enabled: false, mode: "percent", offset: 10 },
+    stopLoss: { enabled: false, mode: "percent", offset: -10 },
+    autoSend: { enabled: false, armed: false },
+    ladderMode: "single",
+    verticalWidth: 5,
+    exitDuration: "GOOD_TILL_CANCEL",
+    stopLossOrderType: "STOP",
+    stopLimitOffset: 0.05,
+  }));
 
   const isOption = !!optionSymbol || isMultiLeg;
   const effectiveOptionInstruction = useMemo((): SchwabInstruction | null => {
     if (!isSingleOption) return null;
     return deriveTicketOptionInstruction({ side, isCloseOrder, posEffect });
   }, [isSingleOption, side, isCloseOrder, posEffect]);
+  const regularPrimaryInstruction = useMemo((): SchwabInstruction | null => {
+    if (isSingleOption) return effectiveOptionInstruction;
+    if (!isStockTicket) return null;
+    return side === "BUY"
+      ? "BUY"
+      : !isCloseOrder && posEffect !== "CLOSING"
+        ? "SELL_SHORT"
+        : "SELL";
+  }, [isSingleOption, effectiveOptionInstruction, isStockTicket, side, isCloseOrder, posEffect]);
+  const regularBracketEligible =
+    !atTemplatePrefs &&
+    !isCloseOrder &&
+    !isMultiLeg &&
+    extraOptionLegs.length === 0 &&
+    (orderType === "LIMIT" || orderType === "MARKET") &&
+    !extendedHours &&
+    !!regularPrimaryInstruction &&
+    isOpeningInstruction(regularPrimaryInstruction);
+  const regularBracketActive =
+    regularBracketEligible &&
+    (regularBracketPrefs.takeProfit.enabled || regularBracketPrefs.stopLoss.enabled);
+  const atDraftPrefs = useMemo((): ActiveTraderTemplatePrefs | undefined => {
+    if (atTemplatePrefs) {
+      return {
+        ...atTemplatePrefs,
+        qty: quantity,
+        takeProfit: { ...atTemplatePrefs.takeProfit, enabled: mobileTpEnabled },
+      };
+    }
+    if (!regularBracketActive) return undefined;
+    return {
+      ...regularBracketPrefs,
+      qty: quantity,
+      orderType: orderType === "MARKET" ? "MKT" : "LIMIT",
+    };
+  }, [
+    atTemplatePrefs,
+    quantity,
+    mobileTpEnabled,
+    regularBracketActive,
+    regularBracketPrefs,
+    orderType,
+  ]);
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
   const ticketHeaderSymbol = isOption && optionSymbol ? optionRootFromOcc(optionSymbol) : symbol;
 
@@ -681,6 +728,12 @@ export function OrderTicket({
     setExtraOptionLegs([]);
     setChainFetchEnabled(false);
     setQtyDisplay("1");
+    setRegularBracketPrefs((prefs) => ({
+      ...prefs,
+      qty: 1,
+      takeProfit: { ...prefs.takeProfit, enabled: false },
+      stopLoss: { ...prefs.stopLoss, enabled: false },
+    }));
   }, [isOpen, initialSide, initialStage, isMultiLeg, strategyNetPrice]);
 
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
@@ -794,37 +847,69 @@ export function OrderTicket({
   const needsLimit = orderType === "LIMIT" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT" || orderType === "LIMIT_ON_CLOSE" || orderType === "WALK_LIMIT";
   const needsStop = orderType === "STOP" || orderType === "STOP_LIMIT" || orderType === "TRAILING_STOP_LIMIT";
   const needsTrail = orderType === "TRAILING_STOP" || orderType === "TRAILING_STOP_LIMIT";
+  const ticketPxBid = !isMultiLeg ? execPriceQuote?.bid ?? null : null;
+  const ticketPxAsk = !isMultiLeg ? execPriceQuote?.ask ?? null : null;
+  const ticketPxLast = !isMultiLeg
+    ? (isSingleOption ? execPriceQuote?.last ?? null : quote?.last ?? null)
+    : null;
+
+  const bracketAssetType = isSingleOption ? "OPTION" as const : "EQUITY" as const;
+  const bracketOrderSymbol = isSingleOption ? optionSymbol : symbol;
+  const bracketPrimaryInstruction =
+    atTemplatePrefs && isSingleOption ? effectiveOptionInstruction : regularPrimaryInstruction;
+  const bracketEntryPrice = useMemo(() => {
+    const typed = parseFloat(limitPrice);
+    if (typed > 0) return typed;
+    if (isSingleOption) {
+      if (optionTick?.bid != null && optionTick?.ask != null) {
+        return (optionTick.bid + optionTick.ask) / 2;
+      }
+      return optionTick?.mark ?? optionTick?.last ?? null;
+    }
+    return side === "BUY"
+      ? ticketPxAsk ?? ticketPxLast
+      : ticketPxBid ?? ticketPxLast;
+  }, [
+    limitPrice,
+    isSingleOption,
+    optionTick?.bid,
+    optionTick?.ask,
+    optionTick?.mark,
+    optionTick?.last,
+    side,
+    ticketPxAsk,
+    ticketPxBid,
+    ticketPxLast,
+  ]);
 
   const atTemplatePlan = useMemo(() => {
-    if (!atDraftPrefs || !isOption || isMultiLeg || !optionSymbol) {
-      return null;
-    }
-    const primary = effectiveOptionInstruction!;
-    const mid =
-      optionTick?.bid != null && optionTick?.ask != null
-        ? (optionTick.bid + optionTick.ask) / 2
-        : optionTick?.mark ?? optionTick?.last ?? null;
-    const px = parseFloat(limitPrice) || mid || 0;
-    if (px <= 0) return null;
+    if (
+      !atDraftPrefs ||
+      isMultiLeg ||
+      !bracketOrderSymbol ||
+      !bracketPrimaryInstruction ||
+      bracketEntryPrice == null ||
+      bracketEntryPrice <= 0
+    ) return null;
     const bracket = usesBracketExit({
       template: atDraftPrefs.template,
-      assetType: "OPTION",
-      symbol: optionSymbol,
-      primaryInstruction: primary,
+      assetType: bracketAssetType,
+      symbol: bracketOrderSymbol,
+      primaryInstruction: bracketPrimaryInstruction,
       quantity: atDraftPrefs.qty,
-      limitPrice: px,
+      limitPrice: bracketEntryPrice,
       takeProfit: atDraftPrefs.takeProfit,
       stopLoss: atDraftPrefs.stopLoss,
     });
     if (!bracket && atDraftPrefs.template === "Single") return null;
     return planAtOrderLegs({
       template: atDraftPrefs.template,
-      assetType: "OPTION",
-      symbol: optionSymbol,
+      assetType: bracketAssetType,
+      symbol: bracketOrderSymbol,
       underlyingSymbol: symbol.replace(/^\$/, ""),
-      primaryInstruction: primary,
+      primaryInstruction: bracketPrimaryInstruction,
       quantity: atDraftPrefs.qty,
-      limitPrice: px,
+      limitPrice: bracketEntryPrice,
       takeProfit: atDraftPrefs.takeProfit,
       stopLoss: atDraftPrefs.stopLoss,
       entryOrderType: atDraftPrefs.orderType,
@@ -834,33 +919,35 @@ export function OrderTicket({
     });
   }, [
     atDraftPrefs,
-    isOption,
     isMultiLeg,
-    optionSymbol,
-    effectiveOptionInstruction,
-    side,
-    limitPrice,
-    optionTick,
+    bracketOrderSymbol,
+    bracketPrimaryInstruction,
+    bracketEntryPrice,
+    bracketAssetType,
+    symbol,
   ]);
 
   const atBracketSummary = useMemo(() => {
-    if (!atDraftPrefs || !isOption || isMultiLeg || !optionSymbol) return null;
-    const primary = effectiveOptionInstruction!;
-    const mid =
-      optionTick?.bid != null && optionTick?.ask != null
-        ? (optionTick.bid + optionTick.ask) / 2
-        : optionTick?.mark ?? optionTick?.last ?? null;
-    const px = parseFloat(limitPrice) || mid || 0;
-    if (px <= 0) return null;
-    const underlyingSymbol = optionRootFromOcc(optionSymbol);
+    if (
+      !atDraftPrefs ||
+      isMultiLeg ||
+      !bracketOrderSymbol ||
+      !bracketPrimaryInstruction ||
+      bracketEntryPrice == null ||
+      bracketEntryPrice <= 0
+    ) return null;
+    const underlyingSymbol =
+      isSingleOption && optionSymbol
+        ? optionRootFromOcc(optionSymbol)
+        : symbol.replace(/^\$/, "");
     const { takeProfit, stopLoss } = atBracketPreviewPrices({
       template: atDraftPrefs.template,
-      assetType: "OPTION",
-      symbol: optionSymbol,
+      assetType: bracketAssetType,
+      symbol: bracketOrderSymbol,
       underlyingSymbol,
-      primaryInstruction: primary,
+      primaryInstruction: bracketPrimaryInstruction,
       quantity: atDraftPrefs.qty,
-      limitPrice: px,
+      limitPrice: bracketEntryPrice,
       takeProfit: atDraftPrefs.takeProfit,
       stopLoss: atDraftPrefs.stopLoss,
       entryOrderType: atDraftPrefs.orderType,
@@ -869,7 +956,17 @@ export function OrderTicket({
       stopLimitOffset: atDraftPrefs.stopLimitOffset,
     });
     return { takeProfit, stopLoss };
-  }, [atDraftPrefs, isOption, isMultiLeg, effectiveOptionInstruction, side, limitPrice, optionTick, optionSymbol]);
+  }, [
+    atDraftPrefs,
+    isMultiLeg,
+    bracketOrderSymbol,
+    bracketPrimaryInstruction,
+    bracketEntryPrice,
+    isSingleOption,
+    optionSymbol,
+    symbol,
+    bracketAssetType,
+  ]);
 
   const atTriggerConfirm = useMemo(() => {
     if (!atTemplatePlan || atTemplatePlan.legs.length < 2 || !optionSymbol) return null;
@@ -881,12 +978,6 @@ export function OrderTicket({
       underlyingSymbol: optionRootFromOcc(optionSymbol),
     });
   }, [atTemplatePlan, optionSymbol, atDraftPrefs?.qty, quantity]);
-
-  const ticketPxBid = !isMultiLeg ? execPriceQuote?.bid ?? null : null;
-  const ticketPxAsk = !isMultiLeg ? execPriceQuote?.ask ?? null : null;
-  const ticketPxLast = !isMultiLeg
-    ? (isSingleOption ? execPriceQuote?.last ?? null : quote?.last ?? null)
-    : null;
 
   const submittedLimit = useMemo(
     () =>
@@ -1074,47 +1165,35 @@ export function OrderTicket({
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return false;
     if (quantity <= 0) return false;
     if (!accountHash) return false;
+    if (atDraftPrefs && (bracketEntryPrice == null || bracketEntryPrice <= 0)) return false;
     if (isMultiLeg && orderType !== "MARKET") return submittedLimit != null && submittedLimit > 0;
     if (isMultiLeg && orderType === "MARKET") return true;
     if (needsLimit && (submittedLimit == null || submittedLimit <= 0)) return false;
     if (needsStop && (!stopPrice || parseFloat(stopPrice) <= 0)) return false;
     if (needsTrail && (!trailOffset || parseFloat(trailOffset) <= 0)) return false;
     return true;
-  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit, isCloseOrder, futuresOrderBlocked]);
+  }, [quantity, needsLimit, submittedLimit, needsStop, stopPrice, needsTrail, trailOffset, accountHash, isMultiLeg, preTradeGate.shouldBlockSubmit, isCloseOrder, futuresOrderBlocked, atDraftPrefs, bracketEntryPrice]);
 
   const buildSchwabOrder = useCallback(() => {
     const isSeamless = extendedHours || duration === "SEAMLESS" || duration === "GOOD_TILL_CANCEL_EXT";
     const session = isSeamless ? "SEAMLESS" : "NORMAL";
 
-    if (atDraftPrefs && isOption && !isMultiLeg && optionSymbol) {
-      const primary = effectiveOptionInstruction!;
-      const px = submittedLimit ?? (parseFloat(limitPrice) || 0);
-      if (px <= 0) {
-        return buildAtSchwabOrderJson({
-          template: atDraftPrefs.template,
-          assetType: "OPTION",
-          symbol: optionSymbol,
-          underlyingSymbol: symbol.replace(/^\$/, ""),
-          primaryInstruction: primary,
-          quantity: atDraftPrefs.qty,
-          limitPrice: 0.01,
-          takeProfit: atDraftPrefs.takeProfit,
-          stopLoss: atDraftPrefs.stopLoss,
-          entryOrderType: atDraftPrefs.orderType,
-          entryDuration: duration,
-          exitDuration: atDraftPrefs.exitDuration,
-          stopLossOrderType: atDraftPrefs.stopLossOrderType,
-          stopLimitOffset: atDraftPrefs.stopLimitOffset,
-        });
-      }
+    if (
+      atDraftPrefs &&
+      !isMultiLeg &&
+      bracketOrderSymbol &&
+      bracketPrimaryInstruction &&
+      bracketEntryPrice != null &&
+      bracketEntryPrice > 0
+    ) {
       return buildAtSchwabOrderJson({
         template: atDraftPrefs.template,
-        assetType: "OPTION",
-        symbol: optionSymbol,
+        assetType: bracketAssetType,
+        symbol: bracketOrderSymbol,
         underlyingSymbol: symbol.replace(/^\$/, ""),
-        primaryInstruction: primary,
+        primaryInstruction: bracketPrimaryInstruction,
         quantity: atDraftPrefs.qty,
-        limitPrice: px,
+        limitPrice: bracketEntryPrice,
         takeProfit: atDraftPrefs.takeProfit,
         stopLoss: atDraftPrefs.stopLoss,
         entryOrderType: atDraftPrefs.orderType,
@@ -1226,11 +1305,11 @@ export function OrderTicket({
     if (exchange !== "BEST") order.requestedDestination = exchange;
     if (taxLotMethod !== "DEFAULT") order.taxLotMethod = taxLotMethod;
     return order;
-  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, effectiveOptionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atDraftPrefs]);
+  }, [orderType, extendedHours, duration, side, quantity, symbol, optionSymbol, isOption, isMultiLeg, liveStrategyLegs, strategyLegs, strategyIsCredit, isCloseOrder, effectiveOptionInstruction, needsLimit, limitPrice, needsStop, stopPrice, needsTrail, trailOffset, instruction, exchange, taxLotMethod, spreadPrices, ticketPxBid, ticketPxAsk, ticketPxLast, limitTickCtx, submittedLimit, submittedLimitDisplay, strategyNetPrice, atDraftPrefs, bracketOrderSymbol, bracketPrimaryInstruction, bracketEntryPrice, bracketAssetType]);
 
   const handleSubmit = useCallback(async () => {
     if (submitInFlightRef.current || stage === "submitting") return;
-    if (isAuthDisabled() || (atTemplatePrefs && !atSendLive)) return;
+    if (!atSendLive) return;
     if (futuresOrderBlocked) return;
     if (!accountHash || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
@@ -1324,7 +1403,7 @@ export function OrderTicket({
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
     overallRisk, riskChecks, ticketEconomics, stage, atTemplatePlan?.validationError, atTemplatePrefs, isValid,
-    futuresOrderBlocked,
+    futuresOrderBlocked, atSendLive,
   ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
@@ -1599,13 +1678,11 @@ export function OrderTicket({
   const [atMobileDetent, setAtMobileDetent] = useState<"peek" | "confirm">("peek");
   const atMobileSheetRef = useRef<HTMLDivElement>(null);
   const [mobileDimBottomPx, setMobileDimBottomPx] = useState(AT_MOBILE_PEEK_MAX_PX);
-  const atSendLive = atOrderSendAllowed();
-  const orderLiveBlocked = isAuthDisabled() || (atTemplatePrefs && !atSendLive);
-  const sendToSchwabLabel =
-    orderLiveBlocked
-      ? isAuthDisabled()
-        ? "Sending off"
-        : "Sending off (preview)"
+  const orderLiveBlocked = !atSendLive;
+  const sendToSchwabLabel = orderLiveBlocked
+    ? "Sending off"
+    : submitInFlight
+      ? "Sending…"
       : "Send to Schwab";
   const atMobileGlance = atMobileSheet && !!atTemplatePrefs;
 
@@ -2596,6 +2673,27 @@ export function OrderTicket({
               </div>
             )}
 
+            {regularBracketEligible && regularPrimaryInstruction && (
+              <div
+                data-testid="regular-ticket-bracket-controls"
+                style={{
+                  background: CARD_GRAD,
+                  borderRadius: R_CARD,
+                  border: `1px solid ${BORDER}`,
+                  paddingTop: 8,
+                }}
+              >
+                <AtBracketControls
+                  prefs={{ ...regularBracketPrefs, qty: quantity }}
+                  onPrefsChange={setRegularBracketPrefs}
+                  primaryInstruction={regularPrimaryInstruction}
+                  entryPrice={bracketEntryPrice}
+                  underlyingSymbol={symbol.replace(/^\$/, "")}
+                  assetType={bracketAssetType}
+                />
+              </div>
+            )}
+
             {/* ADVANCED SETTINGS — matching StrategyBuilder */}
             {isMultiLeg ? (
               <>
@@ -3332,10 +3430,9 @@ export function OrderTicket({
                   {atMobileSheet ? "Dismiss" : "Back"}
                 </button>
                 <button
-                  onClick={confirmDisabled || orderLiveBlocked ? undefined : handleSubmit}
+                  onClick={orderLiveBlocked ? undefined : handleSubmit}
                   disabled={
-                    !!confirmDisabled
-                    || orderLiveBlocked
+                    orderLiveBlocked
                     || submitInFlight
                     || !isValid
                     || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
@@ -3371,20 +3468,27 @@ export function OrderTicket({
         >
           <button
             type="button"
-            disabled
-            data-testid="at-mobile-send-preview"
+            onClick={orderLiveBlocked ? undefined : handleSubmit}
+            disabled={
+              orderLiveBlocked
+              || submitInFlight
+              || !isValid
+              || (!isCloseOrder && preTradeGate.shouldBlockSubmit)
+              || !!atTemplatePlan?.validationError
+            }
+            data-testid="at-mobile-send"
             className="w-full tracking-wide disabled:opacity-60"
             style={{
               height: 44,
               borderRadius: 999,
-              border: `1px solid ${BORDER}`,
-              background: "transparent",
-              color: MUTED,
+              border: "none",
+              background: CTA_GRAD,
+              color: BG,
               fontSize: 16,
               fontWeight: 500,
             }}
           >
-            Sending off (preview)
+            {sendToSchwabLabel}
           </button>
         </div>
       )}
