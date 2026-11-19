@@ -547,14 +547,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const programmaticRef = useRef(false);
   const progTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userScrollUntilRef = useRef(0);
+  const setProgrammaticScroll = useCallback((on: boolean) => {
+    programmaticRef.current = on;
+    const node = ladderScrollRef.current;
+    if (!node) return;
+    if (on) node.dataset.atProgrammaticScroll = "1";
+    else delete node.dataset.atProgrammaticScroll;
+  }, []);
   const armProgrammaticScroll = useCallback(() => {
-    programmaticRef.current = true;
+    setProgrammaticScroll(true);
     if (progTimerRef.current) clearTimeout(progTimerRef.current);
     progTimerRef.current = setTimeout(() => {
-      programmaticRef.current = false;
+      setProgrammaticScroll(false);
       progTimerRef.current = null;
     }, AT_PROGRAMMATIC_SCROLL_ARM_MS);
-  }, []);
+  }, [setProgrammaticScroll]);
   useEffect(() => () => {
     if (progTimerRef.current) clearTimeout(progTimerRef.current);
   }, []);
@@ -1477,7 +1484,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         if (programmaticRef.current) {
           if (progTimerRef.current) clearTimeout(progTimerRef.current);
           progTimerRef.current = setTimeout(() => {
-            programmaticRef.current = false;
+            setProgrammaticScroll(false);
             progTimerRef.current = null;
           }, AT_PROGRAMMATIC_SCROLL_HOLD_MS);
           measure(false);
@@ -1514,7 +1521,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (frame) cancelAnimationFrame(frame);
       if (visibleTimer != null) clearTimeout(visibleTimer);
     };
-  }, [ladderDataReady, readViewport]);
+  }, [ladderDataReady, readViewport, setProgrammaticScroll]);
 
   // The strike list, the spot strike or the sheet changed without a scroll event.
   useEffect(() => {

@@ -114,8 +114,9 @@ export const AT_TAP_SLOP_PX = 8;
 /** A click that follows a handled pointer gesture within this window is the same tap. */
 const CLICK_AFTER_POINTER_MS = 700;
 /**
- * A touch while the ladder is still moving (momentum, Recenter, a nudge) stops
- * the scroll; it does not pick whatever cell happens to be passing under the finger.
+ * A touch while the user's scroll is still moving (a swipe or momentum) stops
+ * the scroll; it does not pick the cell passing under the finger. Recenter and
+ * nudges are not this kind of scroll.
  */
 export const AT_TAP_AFTER_SCROLL_MS = 120;
 
@@ -842,6 +843,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
     const scroller = bodyRef.current?.closest<HTMLElement>("[data-at-ladder-scroll]");
     if (!scroller) return;
     const onScroll = () => {
+      // Recenter and nudges mark the scroller. They must not eat the next tap.
+      if (scroller.dataset.atProgrammaticScroll === "1") return;
       lastScrollAtRef.current = performance.now();
       // The row moved out from under the finger: this is a scroll, not a press.
       if (gestureRef.current) {
