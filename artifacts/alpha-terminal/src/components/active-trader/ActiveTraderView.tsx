@@ -375,7 +375,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!primary?.rows?.length) return [];
     return [...primary.rows]
       .map((r) => ({ strike: r.strike, call: r.call, put: r.put }))
-      .sort((a, b) => a.strike - b.strike);
+      .sort((a, b) => b.strike - a.strike);
   }, [primary]);
   const ladderStrikes = useMemo(() => ladderRows.map((r) => r.strike), [ladderRows]);
   /** Loaded strike nearest the underlying. The ladder only re-renders when this moves to another strike. */
@@ -1156,7 +1156,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
       const range = atLadderVisibleRowRange({ ...viewport, viewportPx: el.clientHeight });
       if (!range) return;
-      pendingVisible = { min: strikes[range.first]!, max: strikes[range.last]! };
+      const topStrike = strikes[range.first]!;
+      const bottomStrike = strikes[range.last]!;
+      pendingVisible = {
+        min: Math.min(topStrike, bottomStrike),
+        max: Math.max(topStrike, bottomStrike),
+      };
       if (visibleTimer != null) clearTimeout(visibleTimer);
       if (fromScroll) visibleTimer = setTimeout(commitVisible, AT_VISIBLE_SETTLE_MS);
       else commitVisible();
@@ -1172,11 +1177,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (!nearBottom) downArmedRef.current = true;
       if (nearTop && direction < 0 && upArmedRef.current) {
         upArmedRef.current = false;
-        // Ascending ladder: scrolling toward the top asks for lower strikes.
-        cur.onReachEdge("down");
+        // Highest strike is at the top, so scrolling up asks for higher strikes.
+        cur.onReachEdge("up");
       } else if (nearBottom && direction > 0 && downArmedRef.current) {
         downArmedRef.current = false;
-        cur.onReachEdge("up");
+        cur.onReachEdge("down");
       }
     };
 
