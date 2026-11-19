@@ -260,7 +260,7 @@ export function BottomNav({
     <nav
       ref={containerRef}
       data-bottom-nav
-      className="shrink-0 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-center justify-around px-2 z-50"
+      className="shrink-0 bg-[#0c0c0c] border-t border-zinc-800/60 flex items-start px-1 z-50"
       style={{ paddingTop: 6, paddingBottom: 18 }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -305,39 +305,11 @@ export function BottomNav({
           style.animationDelay = `${i * 70}ms`;
         }
 
-        if (tabId === "activeTrader") {
-          return (
-            <button
-              key={tabId}
-              ref={(el) => { tabRefs.current[i] = el; }}
-              onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
-              onTouchStart={(e) => handleTouchStart(i, e)}
-              className={[
-                "flex shrink-0 flex-col items-center justify-center select-none",
-                jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
-                isBeingDragged ? "bnav-dragging" : "",
-              ].join(" ")}
-              style={{
-                ...style,
-                height: 44,
-                minWidth: 72,
-                padding: "4px 8px",
-                borderRadius: 12,
-                background: isActive ? "#FFB800" : "rgba(255,184,0,0.14)",
-                color: isActive ? "#0c0c0c" : "#FFB800",
-                border: "1px solid #FFB800",
-                boxShadow: isActive ? "0 0 12px rgba(255,184,0,0.35)" : "none",
-              }}
-              aria-label="Active Trader tab"
-              aria-current={isActive ? "page" : undefined}
-            >
-              <span className="text-center font-mono font-bold tracking-tight" style={{ fontSize: 9, lineHeight: 1.15 }}>
-                ACTIVE
-                <br />
-                TRADER
-              </span>
-            </button>
-          );
+        const isCenter = i === Math.floor(displayOrder.length / 2);
+        if (isCenter) {
+          style.borderRadius = 12;
+          style.background = "#0c0c0c";
+          style.boxShadow = "0 1px 0 rgba(255,255,255,0.18), 0 5px 8px rgba(0,0,0,0.72)";
         }
 
         const showStrategistBadge =
@@ -349,13 +321,13 @@ export function BottomNav({
         const showBadgeNumber = badgeNumber > 1;
 
         return (
+          <div key={tabId} className="flex min-w-0 flex-1 justify-center">
           <button
-            key={tabId}
             ref={(el) => { tabRefs.current[i] = el; }}
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
-              "relative flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",
+              "relative flex flex-col items-center gap-1 min-w-0 px-1 py-1.5 select-none transition-colors",
               isActive ? "text-white" : "text-muted-foreground",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
@@ -397,8 +369,19 @@ export function BottomNav({
                 {showBadgeNumber ? badgeNumber : ""}
               </span>
             )}
-            <span className="text-[9px] font-mono font-bold tracking-tight">{def.label}</span>
+            <span className="text-center text-[9px] font-mono font-bold tracking-tight leading-none">
+              {tabId === "activeTrader" ? (
+                <>
+                  ACTIVE
+                  <br />
+                  TRADER
+                </>
+              ) : (
+                def.label
+              )}
+            </span>
           </button>
+          </div>
         );
       })}
     </nav>
