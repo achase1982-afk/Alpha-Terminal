@@ -627,27 +627,24 @@ const LadderRowView = memo(function LadderRowView({
           </div>
         ) : null}
         {gammaFlipRow ? (
-          <span
-            data-at-strike-zone-tag
-            data-at-strike-gamma-flip
-            className="pointer-events-none absolute left-1/2 -translate-x-1/2"
-            style={{
-              bottom: 1,
-              zIndex: 4,
-              fontSize: 11,
-              fontWeight: 700,
-              lineHeight: 1,
-              letterSpacing: "0.03em",
-              padding: "2px 5px",
-              borderRadius: 999,
-              whiteSpace: "nowrap",
-              color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
-              background: spotRow ? "rgba(10,10,10,0.16)" : "#140c1c",
-              border: `1px solid ${spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA}`,
-            }}
-          >
-            GAMMA FLIP
-          </span>
+          <div className="pointer-events-none absolute top-0.5 left-0.5 z-[4]">
+            <span
+              data-at-strike-zone-tag
+              data-at-strike-gamma-flip
+              className="px-0.5 rounded border"
+              style={{
+                fontSize: 7,
+                fontWeight: 600,
+                lineHeight: 1.05,
+                color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
+                borderColor: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
+                display: "block",
+                whiteSpace: "nowrap",
+              }}
+            >
+              FLIP
+            </span>
+          </div>
         ) : null}
         <div
           className="w-full h-full flex flex-col items-center justify-center"
