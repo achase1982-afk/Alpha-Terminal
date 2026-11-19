@@ -256,9 +256,7 @@ export function OptionsChainOrderSheet({
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
   const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
     useState<ChainSheetAtBracketConfirm | null>(null);
-  const limitUserEditedRef = useRef(
-    !!restoredSheetSession?.limitLocked || !!restoredSheetSession?.limitPrice?.trim(),
-  );
+  const limitUserEditedRef = useRef(restoredSheetSession?.limitUserEdited === true);
   const legsHydrateKeyRef = useRef("");
   const legDirectionKeyRef = useRef<string | null>(null);
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
@@ -289,7 +287,11 @@ export function OptionsChainOrderSheet({
   }, [legs.length]);
 
   useEffect(() => {
-    onSheetSessionPersist?.({ limitPrice, limitLocked });
+    onSheetSessionPersist?.({
+      limitPrice,
+      limitLocked,
+      limitUserEdited: limitUserEditedRef.current,
+    });
   }, [limitPrice, limitLocked, onSheetSessionPersist]);
 
   const legsHydrateKey = useMemo(
@@ -436,8 +438,10 @@ export function OptionsChainOrderSheet({
       if (directionsChanged && limitLocked) setLimitLocked(false);
       return;
     }
-    if (!limitUserEditedRef.current && !limitPrice.trim()) {
-      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+    // An unlocked working price follows the live spread mid. A typed, nudged, or locked price stays put.
+    if (!limitUserEditedRef.current) {
+      const next = displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid);
+      if (next !== limitPrice) setLimitPrice(next);
     }
   }, [legDirectionKey, legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
@@ -648,7 +652,7 @@ export function OptionsChainOrderSheet({
           duration: 2500,
         });
         playOrderAcceptedSound();
-        onSheetSessionPersist?.({ limitPrice: "", limitLocked: false });
+        onSheetSessionPersist?.({ limitPrice: "", limitLocked: false, limitUserEdited: false });
         setLimitPrice("");
         setLimitLocked(false);
         setQuantity(1);
@@ -883,7 +887,10 @@ export function OptionsChainOrderSheet({
           setPriceError("");
         }}
         limitLocked={limitLocked}
-        onLimitLockedChange={setLimitLocked}
+        onLimitLockedChange={(locked) => {
+          if (locked) limitUserEditedRef.current = true;
+          setLimitLocked(locked);
+        }}
         onNudgeLimit={nudgePrice}
         orderType={orderType}
         onOrderTypeChange={setOrderType}
