@@ -12,26 +12,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GRAY, MONO } from "@/components/options/optionsTheme";
-import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 
 export const AtExpiryPicker = memo(function AtExpiryPicker({ loading }: { loading?: boolean }) {
-  const symbol = useActiveSymbol();
   const expiryOptions = useAtChromeStore((s) => s.atExpiryOptions);
   const selectedExpiration = useAtChromeStore((s) => s.atSelectedExpiration);
   const pickAtExpiration = useAtChromeStore((s) => s.pickAtExpiration);
 
   const buttonLabel = useMemo(() => {
     if (!selectedExpiration) return loading ? "Expiry …" : "Expiry —";
-    return formatAtExpiryPickerButton(selectedExpiration, symbol);
-  }, [loading, selectedExpiration, symbol]);
+    return formatAtExpiryPickerButton(selectedExpiration);
+  }, [loading, selectedExpiration]);
 
   const listRows = useMemo(
     () =>
       expiryOptions.map((o) => ({
         ...o,
-        listLabel: formatAtExpiryPickerListRow(o.expiration, o.dte, symbol),
+        listLabel: formatAtExpiryPickerListRow(o.expiration, o.dte),
       })),
-    [expiryOptions, symbol],
+    [expiryOptions],
   );
 
   return (

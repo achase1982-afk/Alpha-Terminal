@@ -11,6 +11,7 @@
 
 import type { QuoteData } from "@/hooks/useQuote";
 import { isOvernightQuotePlaceholder } from "@/lib/atQuoteSessionChange";
+import { isRthTradeOnSameEtDay } from "@/lib/active-trader/atSessionTradeTime";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 
 export type DayLowKind = "unavailable" | "current" | "prior";
@@ -46,10 +47,15 @@ export function resolveDayLowFromStreamQuote(
   const low = quote.low;
   if (!validSessionLow(low)) return { kind: "unavailable", value: null };
 
+  const stamp = (quote as { lowTimeMs?: number | null }).lowTimeMs;
   const inRth = isUsEquitiesMarketHoursEt(now);
-  if (inRth) return { kind: "current", value: low };
+  if (inRth) {
+    if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: low };
+    return { kind: "unavailable", value: null };
+  }
   if (isBeforeRegularSessionOpenEt(now)) return { kind: "prior", value: low };
-  return { kind: "current", value: low };
+  if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: low };
+  return { kind: "unavailable", value: null };
 }
 
 /** Feed precision for session low (no half-point snap). */

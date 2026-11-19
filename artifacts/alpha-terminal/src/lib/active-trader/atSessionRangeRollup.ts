@@ -1,5 +1,6 @@
 import type { QuoteData } from "@/hooks/useQuote";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
+import { isRthTradeOnSameEtDay } from "./atSessionTradeTime";
 import type { DayHighDisplay } from "./atDayHigh";
 import { resolveDayHighFromStreamQuote } from "./atDayHigh";
 import type { DayLowDisplay } from "./atDayLow";
@@ -22,12 +23,13 @@ function etSessionKey(now: Date): string {
   }).format(now);
 }
 
-function pxCandidates(quote: QuoteData): number[] {
-  const out: number[] = [];
-  for (const v of [quote.last, quote.regularLast, quote.bid, quote.ask, quote.low, quote.high]) {
-    if (v != null && Number.isFinite(v) && v > 0) out.push(v);
-  }
-  return out;
+type TimedQuote = QuoteData & { tradeTimeMs?: number | null };
+
+function tradedPrint(quote: TimedQuote, now: Date): number | null {
+  if (!isRthTradeOnSameEtDay(quote.tradeTimeMs, now)) return null;
+  const px = quote.last ?? quote.regularLast;
+  if (px == null || !Number.isFinite(px) || px <= 0) return null;
+  return px;
 }
 
 export function touchSessionRange(symbol: string, quote: QuoteData | null, now = new Date()): void {
@@ -40,10 +42,10 @@ export function touchSessionRange(symbol: string, quote: QuoteData | null, now =
     rollups.set(sym, row);
   }
   if (!isUsEquitiesMarketHoursEt(now)) return;
-  for (const px of pxCandidates(quote)) {
-    row.minPx = row.minPx == null ? px : Math.min(row.minPx, px);
-    row.maxPx = row.maxPx == null ? px : Math.max(row.maxPx, px);
-  }
+  const px = tradedPrint(quote, now);
+  if (px == null) return;
+  row.minPx = row.minPx == null ? px : Math.min(row.minPx, px);
+  row.maxPx = row.maxPx == null ? px : Math.max(row.maxPx, px);
 }
 
 function combineLow(feed: DayLowDisplay, rollupMin: number | null): DayLowDisplay {

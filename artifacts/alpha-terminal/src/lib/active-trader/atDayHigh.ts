@@ -4,6 +4,7 @@
 
 import type { QuoteData } from "@/hooks/useQuote";
 import { isOvernightQuotePlaceholder } from "@/lib/atQuoteSessionChange";
+import { isRthTradeOnSameEtDay } from "@/lib/active-trader/atSessionTradeTime";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { formatSessionFeedLevel } from "@/lib/active-trader/spxRefZone";
 
@@ -40,10 +41,15 @@ export function resolveDayHighFromStreamQuote(
   const high = quote.high;
   if (!validSessionHigh(high)) return { kind: "unavailable", value: null };
 
+  const stamp = (quote as { highTimeMs?: number | null }).highTimeMs;
   const inRth = isUsEquitiesMarketHoursEt(now);
-  if (inRth) return { kind: "current", value: high };
+  if (inRth) {
+    if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: high };
+    return { kind: "unavailable", value: null };
+  }
   if (isBeforeRegularSessionOpenEt(now)) return { kind: "prior", value: high };
-  return { kind: "current", value: high };
+  if (isRthTradeOnSameEtDay(stamp, now)) return { kind: "current", value: high };
+  return { kind: "unavailable", value: null };
 }
 
 export function dayHighLabelText(display: DayHighDisplay): string {

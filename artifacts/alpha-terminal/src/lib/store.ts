@@ -175,6 +175,8 @@ export interface LiveQuote {
   low:          number | null;
   close:        number | null;
   ts:           number;
+  /** Exchange trade time of `last` (Schwab LEVELONE_EQUITIES field 35), when present. */
+  tradeTimeMs?: number | null;
 }
 
 interface ChatMessage {
