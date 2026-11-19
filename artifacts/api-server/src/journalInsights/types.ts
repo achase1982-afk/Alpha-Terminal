@@ -50,6 +50,8 @@ export interface NormalizedActivity {
   orderRef: string | null;
   description: string;
   legs: NormalizedLeg[];
+  /** Shared structure id. Wings with the same id were opened as one strategy. */
+  strategyRef?: string | null;
 }
 
 export interface NormalizedOrder {

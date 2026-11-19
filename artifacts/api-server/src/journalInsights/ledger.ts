@@ -48,6 +48,7 @@ interface WorkingPosition {
   closeEvents: CloseEvent[];
   rolledFromId: string | null;
   absorbed: boolean;
+  strategyRef: string | null;
 }
 
 interface Fill {
@@ -68,6 +69,7 @@ interface Fill {
   fees: number;
   effect: "open" | "close" | null;
   opensEquitySibling: boolean;
+  strategyRef: string | null;
 }
 
 const EPS = 1e-8;
@@ -156,6 +158,7 @@ function expandFills(activities: NormalizedActivity[]): Fill[] {
         fees: leg.fees,
         effect: leg.effect,
         opensEquitySibling: opensEquity && leg.assetClass === "option",
+        strategyRef: activity.strategyRef ?? null,
       });
     }
   }
@@ -192,6 +195,7 @@ function ensurePosition(
     closeEvents: [],
     rolledFromId: null,
     absorbed: false,
+    strategyRef: fill.strategyRef,
   };
   positions.set(id, position);
   ticketPosition.set(key, id);
@@ -375,6 +379,23 @@ interface VerticalShape {
   expiration: string;
   qty: number;
   ticketAt: number;
+  strategyRef: string | null;
+  openStart: number;
+  openEnd: number | null;
+}
+
+function openInterval(position: WorkingPosition): { start: number; end: number | null } {
+  const start = Date.parse(position.openedAt);
+  const stillOpen = [...position.legs.values()].some((leg) => leg.remainingQty > EPS);
+  if (stillOpen || !Number.isFinite(start)) return { start, end: null };
+  const ends = position.closeEvents.map((event) => Date.parse(event.at)).filter((at) => Number.isFinite(at));
+  return { start, end: ends.length > 0 ? Math.max(...ends) : start };
+}
+
+function intervalsOverlap(startA: number, endA: number | null, startB: number, endB: number | null): boolean {
+  const stopA = endA ?? Number.POSITIVE_INFINITY;
+  const stopB = endB ?? Number.POSITIVE_INFINITY;
+  return startA < stopB && startB < stopA;
 }
 
 function asVertical(position: WorkingPosition): VerticalShape | null {
@@ -389,6 +410,7 @@ function asVertical(position: WorkingPosition): VerticalShape | null {
   const long = a.side === "long" ? a : b;
   if (short.strike == null || long.strike == null || short.strike === long.strike) return null;
   const credit = short.putCall === "put" ? short.strike > long.strike : short.strike < long.strike;
+  const interval = openInterval(position);
   return {
     id: position.id,
     accountRef: position.accountRef,
@@ -398,6 +420,9 @@ function asVertical(position: WorkingPosition): VerticalShape | null {
     expiration: short.expiration!,
     qty: short.openedQty,
     ticketAt: Date.parse(position.ticketAt),
+    strategyRef: position.strategyRef,
+    openStart: interval.start,
+    openEnd: interval.end,
   };
 }
 
@@ -410,15 +435,28 @@ function pairIronCondors(positions: Map<string, WorkingPosition>, lots: BuiltLot
     if (used.has(put.id)) continue;
     let best: VerticalShape | null = null;
     let bestGap = Infinity;
+    let bestLinked = false;
     for (const call of calls) {
       if (used.has(call.id) || call.credit !== put.credit) continue;
       if (call.accountRef !== put.accountRef) continue;
       if (call.underlying !== put.underlying || call.expiration !== put.expiration) continue;
       if (Math.abs(call.qty - put.qty) > EPS) continue;
+      const linked = put.strategyRef != null && put.strategyRef === call.strategyRef;
+      if ((put.strategyRef != null || call.strategyRef != null) && !linked) continue;
+      if (!intervalsOverlap(put.openStart, put.openEnd, call.openStart, call.openEnd)) continue;
       const gap = Math.abs(call.ticketAt - put.ticketAt);
-      if (gap <= PAIR_WINDOW_MS && gap < bestGap) {
+      if (!linked && gap > PAIR_WINDOW_MS) continue;
+      if (bestLinked && !linked) continue;
+      if (!bestLinked && linked) {
         best = call;
         bestGap = gap;
+        bestLinked = true;
+        continue;
+      }
+      if (gap < bestGap) {
+        best = call;
+        bestGap = gap;
+        bestLinked = linked;
       }
     }
     if (!best) continue;
