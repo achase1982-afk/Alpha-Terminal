@@ -2580,7 +2580,19 @@ export function OptionsTab({
           style={{ zIndex: 80 }}
         >
           {legLimitRejected ? (
-            <p data-chain-leg-limit-msg className="px-3 py-1 text-center" style={{ fontSize: 11, color: DOWN, fontWeight: 600, background: "#000" }}>
+            <p
+              data-chain-leg-limit-msg
+              className="px-3 text-center"
+              style={{
+                fontSize: 18,
+                lineHeight: 1.3,
+                fontWeight: 800,
+                color: "#ff2d2d",
+                background: "#000",
+                paddingTop: 14,
+                paddingBottom: 14,
+              }}
+            >
               {CHAIN_LEG_LIMIT_MESSAGE}
             </p>
           ) : null}
