@@ -76,9 +76,26 @@ export type AtApprovedMobileOrderSheetProps = {
   sendDisabled: boolean;
   /** Why Send cannot be used. Shown on the ticket; it does not enable a live route. */
   sendDetail?: string | null;
+  /** Net credit when true. Debit is a green Buy; credit is a red Sell. */
+  isCredit?: boolean;
+  /** Reverse every draft leg. The parent keeps strikes, expirations, and quantities. */
+  onFlipSides?: () => void;
   onSend: () => void;
   onAdvancedOrders?: () => void;
   primaryActionTestId?: string;
+};
+
+/** Cancel and Send share one box so the outlined control matches the filled one. */
+const DOCK_ACTION_W = 72;
+const DOCK_ACTION_H = 44;
+const DOCK_ACTION_BOX: CSSProperties = {
+  height: DOCK_ACTION_H,
+  width: DOCK_ACTION_W,
+  minWidth: DOCK_ACTION_W,
+  maxWidth: DOCK_ACTION_W,
+  padding: 0,
+  boxSizing: "border-box",
+  flex: `0 0 ${DOCK_ACTION_W}px`,
 };
 
 /** Vertical travel that counts as a swipe on the sheet handle; less than the tap slop is a tap. */
@@ -183,13 +200,18 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   sendLabel,
   sendDisabled,
   sendDetail,
+  isCredit,
+  onFlipSides,
   onSend,
   onAdvancedOrders,
   primaryActionTestId,
 }: AtApprovedMobileOrderSheetProps) {
   if (legs.length === 0) return null;
 
+  const creditOrder = isCredit ?? entryLabel.toLowerCase().includes("credit");
   const entryColor = entryLabel.toLowerCase().includes("credit") ? UP : DOWN_TEXT;
+  const sideTone = creditOrder ? DOWN : UP;
+  const sideLabel = creditOrder ? "Sell" : "Buy";
   const netColor =
     estNetUnavailable || estNetAmount == null ? MUTED : estNetAmount >= 0 ? UP : DOWN_TEXT;
   const gridCols = legs.length >= 2 ? 2 : 1;
@@ -275,15 +297,37 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           ) : null}
         </div>
 
-        <div
-          className="gap-1"
-          style={{
-            display: "grid",
-            gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-            marginTop: 4,
-          }}
-          data-at-ticket-legs
-        >
+        <div className="flex items-start" style={{ marginTop: 4, gap: 4 }}>
+          {onFlipSides ? (
+            <button
+              type="button"
+              data-at-side-flip
+              aria-label={sideLabel}
+              onClick={onFlipSides}
+              className="shrink-0 rounded-md font-semibold"
+              style={{
+                height: 30,
+                minWidth: 46,
+                padding: "0 8px",
+                fontSize: 12,
+                lineHeight: 1,
+                background: sideTone,
+                color: creditOrder ? WHITE : AT_ORDER_BTN_TEXT_DARK,
+                border: "none",
+              }}
+            >
+              {sideLabel}
+            </button>
+          ) : null}
+          <div
+            className="gap-1 min-w-0 flex-1"
+            style={{
+              display: "grid",
+              gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+              justifyItems: "start",
+            }}
+            data-at-ticket-legs
+          >
           {legs.map((leg) => {
             const isBuy = leg.direction.startsWith("BUY");
             const tone = isBuy ? UP : DOWN_TEXT;
@@ -291,7 +335,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             return (
               <div
                 key={leg.id}
-                className="flex h-[30px] items-center gap-2.5 rounded-md px-2.5 py-0 min-w-0"
+                className="flex h-[30px] w-fit max-w-full items-center gap-1.5 rounded-md py-0 pl-2 pr-0.5 min-w-0"
                 style={{
                   border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
                   background: "rgba(255,255,255,0.025)",
@@ -317,6 +361,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
               </div>
             );
           })}
+          </div>
         </div>
 
         <div className="flex items-center justify-between gap-2" style={{ marginTop: 4, height: 17, lineHeight: 1 }}>
@@ -349,15 +394,13 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             data-at-ticket-cancel
             aria-label="Cancel draft"
             onClick={onClearAll}
-            className="shrink-0 rounded-md font-medium"
+            className="shrink-0 rounded-md font-medium inline-flex items-center justify-center"
             style={{
-              height: 44,
-              minWidth: 72,
-              padding: "0 10px",
+              ...DOCK_ACTION_BOX,
               fontSize: 14,
               color: WHITE,
               background: "transparent",
-              border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
+              border: "1px solid #5c6368",
             }}
           >
             Cancel
@@ -469,14 +512,14 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             title={sendDetail || undefined}
             onClick={onSend}
             data-testid={primaryActionTestId}
-            className="shrink-0 rounded-md font-medium disabled:opacity-45 whitespace-nowrap"
+            className="shrink-0 rounded-md font-medium disabled:opacity-45 inline-flex items-center justify-center text-center"
             style={{
-              height: 44,
-              minWidth: 72,
-              padding: "0 12px",
-              fontSize: 14,
-              background: sendDisabled ? AT_ORDER_BTN_DISABLED : GOLD,
-              color: sendDisabled ? GRAY : AT_ORDER_BTN_TEXT_DARK,
+              ...DOCK_ACTION_BOX,
+              fontSize: sendLabel.length > 6 ? 11 : 14,
+              lineHeight: 1.1,
+              whiteSpace: "normal",
+              background: sendDisabled ? AT_ORDER_BTN_DISABLED : sideTone,
+              color: sendDisabled ? GRAY : creditOrder ? WHITE : AT_ORDER_BTN_TEXT_DARK,
             }}
           >
             {sendLabel}

@@ -105,6 +105,8 @@ export interface OptionsChainOrderSheetProps {
   onClearAll: () => void;
   onLegQuantityChange: (legId: string, quantity: number) => void;
   onRemoveLeg: (legId: string) => void;
+  /** Reverse every draft leg in place. Strikes, expirations, and quantities stay. */
+  onFlipSides?: () => void;
   subscribeOptionSymbols?: (
     symbols: string[],
     opts?: import("@/lib/optionHoldClient").OptionHoldPostOpts,
@@ -170,6 +172,7 @@ export function OptionsChainOrderSheet({
   onClearAll,
   onLegQuantityChange,
   onRemoveLeg,
+  onFlipSides,
   subscribeOptionSymbols,
   demoFixture,
   openReviewOnMount,
@@ -218,6 +221,7 @@ export function OptionsChainOrderSheet({
     !!restoredSheetSession?.limitLocked || !!restoredSheetSession?.limitPrice?.trim(),
   );
   const legsHydrateKeyRef = useRef("");
+  const legDirectionKeyRef = useRef<string | null>(null);
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
 
@@ -240,6 +244,7 @@ export function OptionsChainOrderSheet({
       setQuantity(1);
       limitUserEditedRef.current = false;
       legsHydrateKeyRef.current = "";
+      legDirectionKeyRef.current = null;
       setAtBracketConfirmSnapshot(null);
     }
   }, [legs.length]);
@@ -364,10 +369,18 @@ export function OptionsChainOrderSheet({
     () => pricedLegs.length > 0 && pricedLegs.every((l) => quoteSideState(l.bid, l.ask) === "ok"),
     [pricedLegs],
   );
+  const legDirectionKey = useMemo(
+    () => legs.map((leg) => `${leg.id.split("#")[0]}:${leg.direction}`).join("|"),
+    [legs],
+  );
 
   useEffect(() => {
     if (legs.length === 0 || stage !== "form") return;
-    if (limitLocked) return;
+    const prevDirections = legDirectionKeyRef.current;
+    const directionsChanged = prevDirections != null && prevDirections !== legDirectionKey;
+    legDirectionKeyRef.current = legDirectionKey;
+    if (directionsChanged) limitUserEditedRef.current = false;
+    if (limitLocked && !directionsChanged) return;
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
@@ -375,17 +388,19 @@ export function OptionsChainOrderSheet({
         setLimitPrice("");
       }
     }
-    if (!allLegsQuoted || spreadPrices?.spreadMid == null) return;
-    if (keyChanged) {
-      if (!limitUserEditedRef.current) {
-        setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
-      }
+    if (!allLegsQuoted || spreadPrices?.spreadMid == null) {
+      if (directionsChanged && limitLocked) setLimitLocked(false);
+      return;
+    }
+    if (directionsChanged || (keyChanged && !limitUserEditedRef.current)) {
+      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+      if (directionsChanged && limitLocked) setLimitLocked(false);
       return;
     }
     if (!limitUserEditedRef.current && !limitPrice.trim()) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
     }
-  }, [legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
+  }, [legDirectionKey, legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -778,6 +793,8 @@ export function OptionsChainOrderSheet({
         onCollapsedChange={onCollapsedChange}
         onClearAll={handleClearAllClick}
         onRemoveLeg={onRemoveLeg}
+        onFlipSides={onFlipSides}
+        isCredit={isCredit}
         entryLabel={isCredit ? "Entry credit" : "Entry debit"}
         entryAmount={atDocked ? entryDollars : legacyEntryAbs}
         targetExitAmount={exitAbs}
