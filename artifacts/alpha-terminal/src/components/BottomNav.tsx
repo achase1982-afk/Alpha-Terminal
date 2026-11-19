@@ -324,6 +324,7 @@ export function BottomNav({
           <div key={tabId} className="flex min-w-0 flex-1 justify-center">
           <button
             ref={(el) => { tabRefs.current[i] = el; }}
+            data-bottom-tab={tabId}
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[

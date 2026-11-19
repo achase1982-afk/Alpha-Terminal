@@ -20,6 +20,7 @@ import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTrader
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
+import { AtExpiryPicker } from "./AtExpiryPicker";
 
 export { AT_HEADER_BG };
 
@@ -66,6 +67,7 @@ export type AtGlanceTopProps = {
     onToggle: () => void;
   };
   ladderHeatSource?: AtLadderHeatSourceMeta;
+  expiryPickerLoading?: boolean;
 };
 
 function LevelsCell({
@@ -100,6 +102,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   sessionClosed,
   skipNetwork,
   ladderHeatSource,
+  expiryPickerLoading,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
@@ -144,16 +147,16 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
 
       <div
-        className="flex items-center min-w-0"
+        className="flex items-center min-w-0 gap-2"
         style={{
           height: 40,
-          padding: "0 16px",
+          padding: "0 12px 0 16px",
           borderBottom: `1px solid ${SECTION_RULE}`,
           boxSizing: "border-box",
           lineHeight: 1,
         }}
       >
-        <div className="flex items-baseline min-w-0 flex-1 overflow-hidden" style={{ gap: 8 }}>
+        <div className="flex items-baseline min-w-0 flex-1 overflow-hidden" style={{ gap: 6 }}>
           <span
             data-at-glance-symbol
             className="shrink-0 font-semibold text-white tracking-tight whitespace-nowrap"
@@ -192,6 +195,11 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {dayLabel}
           </span>
         </div>
+        {mode !== "futures" ? (
+          <div className="shrink-0 ml-2 flex items-center justify-end" style={{ maxWidth: "42%" }}>
+            <AtExpiryPicker loading={expiryPickerLoading} />
+          </div>
+        ) : null}
       </div>
 
       {sessionLevels.showRow && mode !== "futures" ? (

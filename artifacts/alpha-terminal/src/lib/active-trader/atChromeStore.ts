@@ -8,6 +8,7 @@ import { useUICustomizationStore, type HeaderMode } from "@/lib/ui-customization
 export interface AtExpiryOption {
   expiration: string;
   pillLabel: string;
+  dte: number;
 }
 
 interface AtChromeState {
@@ -72,12 +73,9 @@ export const useAtChromeStore = create<AtChromeState>()((set, get) => ({
     if (savedHeaderMode != null) {
       useUICustomizationStore.getState().setHeaderMode(savedHeaderMode);
     }
-    atExpirySelectHandler = null;
     set({
       subViewIsAt: false,
       savedHeaderMode: null,
-      atExpiryOptions: [],
-      atSelectedExpiration: null,
     });
   },
   restoreSavedHeaderMode: () => {

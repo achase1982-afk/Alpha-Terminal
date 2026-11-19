@@ -1191,6 +1191,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           sessionOpen={underlyingQuote?.close ?? null}
           skipNetwork={!!presentation?.skipNetwork}
           embedded
+          expiryPickerLoading={!ladderDataReady && !!activeExpiration}
           orderSettings={{
             prefs,
             primaryInstruction: settingsSummaryInstruction,
@@ -1332,6 +1333,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         <div
           ref={ladderScrollRef}
           data-at-ladder-scroll
+          data-at-ladder-expiration={activeExpiration ?? undefined}
           data-selected-strike={tradeStripStrike ?? undefined}
           className="at-ladder-scroll h-full min-h-0"
           style={{
@@ -1347,6 +1349,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           {noTradableExpirations ? (
             <p className="px-3 py-4 text-center" style={{ fontSize: 11, color: DIM, fontFamily: MONO }}>
               No current expirations
+            </p>
+          ) : activeExpiration && !ladderDataReady && !ladderPlug?.chainLoading ? (
+            <p
+              data-testid="at-expiry-empty"
+              className="px-3 py-4 text-center"
+              style={{ fontSize: 11, color: DIM, fontFamily: MONO }}
+            >
+              No contracts for the selected expiration.
             </p>
           ) : ladderDataReady ? (
             <>
