@@ -345,7 +345,7 @@ describe("LadderBody", () => {
     expect(strike.style.fontWeight).toBe("600");
     expect(strike.style.fontSize).toBe("15px");
     const spot = view.container.querySelector<HTMLElement>('[data-at-strike="7320"] > div')!;
-    expect(spot.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    expect(spot.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
     expect(spot.style.fontWeight).toBe("700");
   });
 
@@ -386,8 +386,8 @@ describe("LadderBody", () => {
     const alpha = (el: HTMLElement) => Number(/rgba\([^)]*,\s*([0-9.]+)\)/.exec(el.style.backgroundColor)![1]);
 
     expect(alpha(pair(7400, "call"))).toBeCloseTo(AT_HEAT_WASH_ALPHA, 3);
-    expect(pair(7400, "call").style.backgroundColor).toContain("16, 185, 98");
-    expect(pair(7400, "put").style.backgroundColor).toContain("228, 48, 62");
+    expect(pair(7400, "call").style.backgroundColor).toContain("40, 110, 70");
+    expect(pair(7400, "put").style.backgroundColor).toContain("140, 50, 48");
 
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     const warm = rows.find((r) => r.strike === 7335)!.put!;

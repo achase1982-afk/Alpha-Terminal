@@ -13,7 +13,6 @@ import {
   BORDER,
   UP,
   DOWN,
-  DOWN_TEXT,
   GRAY,
   WHITE,
   GAMMA_SCENARIO,
@@ -22,19 +21,27 @@ import {
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
+  AT_HEAT_CALL_RGB,
+  AT_HEAT_MAX_ALPHA,
+  AT_HEAT_PUT_RGB,
+  AT_HEAT_WASH_ALPHA,
   AT_LADDER_GRID,
   AT_LADDER_LEG_TAG_SIZE,
   AT_LADDER_PANEL_BG,
+  AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_ROW_H,
+  AT_LADDER_SELECT_BUY,
   AT_LADDER_SELECT_INSET,
   AT_LADDER_SELECT_RADIUS,
+  AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_COL_W,
   AT_LADDER_STRIKE_SIZE,
   AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
+  AT_SPOT_PILL,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
@@ -127,12 +134,10 @@ function fmtPx(n: number | null | undefined): string {
   return n.toFixed(2);
 }
 
-/** Faint side tint every pair carries, so a quiet ladder is never flat black. */
-export const AT_HEAT_WASH_ALPHA = 0.1;
-/** Shade of the busiest contract on the ladder. */
-export const AT_HEAT_MAX_ALPHA = 0.66;
+/** Re-export wash bounds so tests can assert the mockup-tuned curve. */
+export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
-const HEAT_RGB = { call: "16, 185, 98", put: "228, 48, 62" } as const;
+const HEAT_RGB = { call: AT_HEAT_CALL_RGB, put: AT_HEAT_PUT_RGB } as const;
 /**
  * Fixed overlay that eases each pair's colour off toward the strike column.
  * The heat itself is the background colour underneath, which the browser can
@@ -213,9 +218,9 @@ const QuoteCell = memo(function QuoteCell({
   const legSelected = (flags & AT_CELL_SELECTED) !== 0;
   const pressed = (flags & AT_CELL_PRESSED) !== 0;
 
-  const selectColor = side === "BUY" ? UP : DOWN_TEXT;
-  const selectBorder = side === "BUY" ? UP : DOWN;
-  const pressWash = side === "BUY" ? "rgba(0, 209, 102, 0.12)" : "rgba(242, 54, 69, 0.14)";
+  const selectColor = side === "BUY" ? AT_LADDER_SELECT_BUY : AT_LADDER_SELECT_SELL;
+  const selectBorder = selectColor;
+  const pressWash = side === "BUY" ? "rgba(78, 198, 133, 0.12)" : "rgba(227, 103, 90, 0.14)";
 
   return (
     <button
@@ -235,7 +240,7 @@ const QuoteCell = memo(function QuoteCell({
         fontSize: AT_LADDER_PRICE_SIZE,
         fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
-        color: WHITE,
+        color: AT_LADDER_PRICE_COLOR,
         background: "transparent",
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
@@ -267,7 +272,13 @@ const QuoteCell = memo(function QuoteCell({
             pointerEvents: "none",
           }}
         >
-          <span style={{ fontSize: AT_LADDER_PRICE_SIZE, fontWeight: AT_LADDER_PRICE_WEIGHT, color: WHITE }}>
+          <span
+            style={{
+              fontSize: AT_LADDER_PRICE_SIZE,
+              fontWeight: AT_LADDER_PRICE_WEIGHT,
+              color: AT_LADDER_PRICE_COLOR,
+            }}
+          >
             {unavailableReason ?? fmtPx(price)}
           </span>
           <span
@@ -307,7 +318,7 @@ const QuoteCell = memo(function QuoteCell({
                     pointerEvents: "none",
                     padding: "0 4px",
                   }
-                : { color: WHITE, pointerEvents: "none", padding: "0 4px" }
+                : { color: AT_LADDER_PRICE_COLOR, pointerEvents: "none", padding: "0 4px" }
           }
         >
           {unavailableReason ?? fmtPx(price)}
@@ -541,7 +552,7 @@ const LadderRowView = memo(function LadderRowView({
         <div
           className="w-full h-full flex flex-col items-center justify-center"
           style={{
-            background: spotRow ? GOLD : "transparent",
+            background: spotRow ? AT_SPOT_PILL : "transparent",
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
             borderRadius: spotRow || isWall ? AT_LADDER_SELECT_RADIUS : 0,
             border: strikeBorder,
