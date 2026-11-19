@@ -12,8 +12,8 @@ export const AT_LADDER_GRID =
 /** Center strike column in the 440px-wide approved reference. */
 export const AT_LADDER_STRIKE_COL_W = 96;
 
-/** Row pitch — mockup 114px @3x. */
-export const AT_LADDER_ROW_H = 38;
+/** Row pitch. 34px keeps the 16px prices and 18px strikes, with less air above and below. */
+export const AT_LADDER_ROW_H = 34;
 
 export const AT_LADDER_GROUP_HDR_H = 28;
 export const AT_LADDER_COL_HDR_H = 25;
