@@ -16,7 +16,8 @@ export const AT_LADDER_ROW_H = 38;
 export const AT_LADDER_GROUP_HDR_H = 20;
 export const AT_LADDER_COL_HDR_H = 20;
 export const AT_LADDER_PANEL_BG = "#060709";
-export const AT_LADDER_STRIKE_BG = "#0c0d10";
+/** Center strike column — mockup off-gray (not flat black). Sampled ~#242628. */
+export const AT_LADDER_STRIKE_BG = "#242628";
 export const AT_LADDER_THIN_SEP = "#171a20";
 export const AT_SPOT_PILL_TEXT = "#0a0a0a";
 
