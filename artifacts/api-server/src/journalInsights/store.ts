@@ -232,6 +232,7 @@ export async function loadSnapshots(): Promise<EquityPoint[]> {
   return rows.map((row) => ({
     at: `${row.capturedOn}T21:00:00.000Z`,
     value: row.liquidationValue,
+    accountRef: row.accountRef,
   }));
 }
 

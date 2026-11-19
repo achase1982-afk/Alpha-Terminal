@@ -20,6 +20,8 @@ import {
 export interface EquityPoint {
   at: string;
   value: number;
+  /** Owning account. Absent only for a book that was already one combined balance. */
+  accountRef?: string;
 }
 
 export interface BenchmarkPoint {
@@ -336,6 +338,7 @@ function footnote(input: {
   openPositions: number;
   unrealized: number | null;
   benchmarkStatus: "ok" | "unavailable";
+  accountReturn: number | null;
 }): string {
   const window = input.windowStart && input.windowEnd ? formatWindow(day(input.windowStart), day(input.windowEnd)) : "the same dates";
   const mark = input.unrealized == null
@@ -343,7 +346,8 @@ function footnote(input: {
     : `unrealized ${money(input.unrealized)} at mid, not included above`;
   const bench = input.benchmarkStatus === "ok" ? "S&P 500 total return" : BENCHMARK_UNAVAILABLE.replace(/\.$/, "").toLowerCase();
   const openLabel = input.openPositions === 1 ? "1 open position" : `${input.openPositions} open positions`;
-  return `Modified Dietz vs ${bench}, same dates ${window}. Deposits and withdrawals excluded. ${openLabel}, ${mark}.`;
+  const withheld = input.accountReturn == null ? "Account return unavailable. " : "";
+  return `${withheld}Modified Dietz vs ${bench}, same dates ${window}. Deposits and withdrawals excluded. ${openLabel}, ${mark}.`;
 }
 
 const STRATEGY_ORDER = [
@@ -408,20 +412,18 @@ export function buildInsights(input: {
     : null;
 
   const firstClose = closed.map((position) => position.closedAt!).sort()[0] ?? null;
-  const windowStart = startIso ?? firstClose;
-  const windowEnd = input.asOf;
-  const beginning = nearestSnapshot(input.snapshots, windowStart);
-  const ending = nearestSnapshot(input.snapshots, windowEnd);
-  const accountReturn = beginning && ending && windowStart
-    ? modifiedDietz({
-      beginning: beginning.value,
-      ending: ending.value,
-      start: windowStart,
-      end: windowEnd,
-      flows: externalFlows(input.activities),
-    })
-    : null;
-  const benchmarkReturnValue = windowStart ? benchmarkReturn(input.benchmark, windowStart, windowEnd) : null;
+  const requestedStart = startIso ?? firstClose;
+  const requestedEnd = input.asOf;
+  const compared = accountComparison({
+    snapshots: input.snapshots,
+    activities: input.activities,
+    windowStart: requestedStart,
+    windowEnd: requestedEnd,
+  });
+  const windowStart = compared.windowStart;
+  const windowEnd = compared.windowEnd;
+  const accountReturn = compared.accountReturn;
+  const benchmarkReturnValue = windowStart && windowEnd ? benchmarkReturn(input.benchmark, windowStart, windowEnd) : null;
   const benchmarkStatus = benchmarkReturnValue == null ? "unavailable" as const : "ok" as const;
   const names = STRATEGY_ORDER.filter((name) => closed.some((position) => position.strategy === name));
   const strategyRows = names.map((name) => categoryRow(name, name, closed.filter((position) => position.strategy === name)));
@@ -476,6 +478,7 @@ export function buildInsights(input: {
         openPositions: openPositions.length,
         unrealized,
         benchmarkStatus,
+        accountReturn,
       }),
     },
     account: empty ? null : sliceFor(closed, accountPerspective),
@@ -488,28 +491,107 @@ export function buildInsights(input: {
   };
 }
 
-function externalFlows(activities: NormalizedActivity[]): { at: string; amount: number }[] {
-  return activities
-    .filter((activity) => activity.kind === "deposit" || activity.kind === "withdrawal")
-    .map((activity) => ({
-      at: activity.occurredAt,
-      amount: activity.kind === "withdrawal" ? -Math.abs(activity.netAmount) : Math.abs(activity.netAmount),
-    }));
+const SNAPSHOT_MATCH_MS = 7 * 24 * 60 * 60 * 1000;
+const TRANSFER_MATCH_MS = 24 * 60 * 60 * 1000;
+
+interface TaggedSnapshot extends EquityPoint {
+  accountRef: string;
+  id: number;
 }
 
-function nearestSnapshot(points: EquityPoint[], at: string | null): EquityPoint | null {
-  if (!at || points.length === 0) return null;
-  const target = Date.parse(at);
-  let best: EquityPoint | null = null;
+function tagSnapshots(points: EquityPoint[]): TaggedSnapshot[] {
+  return points.map((point, id) => ({ ...point, accountRef: point.accountRef ?? "", id }));
+}
+
+function nearestTagged(points: TaggedSnapshot[], targetMs: number): TaggedSnapshot | null {
+  let best: TaggedSnapshot | null = null;
   let bestGap = Infinity;
   for (const point of points) {
-    const gap = Math.abs(Date.parse(point.at) - target);
-    if (gap < bestGap && gap <= 7 * 24 * 60 * 60 * 1000) {
+    const gap = Math.abs(Date.parse(point.at) - targetMs);
+    if (gap < bestGap && gap <= SNAPSHOT_MATCH_MS) {
       best = point;
       bestGap = gap;
     }
   }
   return best;
+}
+
+/**
+ * Both ends must be the same account, or every account present at the window
+ * must be present at both ends. One snapshot is never both ends. The Dietz
+ * window is the actual valuation timestamps.
+ */
+export function accountComparison(input: {
+  snapshots: EquityPoint[];
+  activities: NormalizedActivity[];
+  windowStart: string | null;
+  windowEnd: string;
+}): { accountReturn: number | null; windowStart: string | null; windowEnd: string | null } {
+  if (!input.windowStart) return { accountReturn: null, windowStart: null, windowEnd: input.windowEnd };
+  const tagged = tagSnapshots(input.snapshots);
+  const startMs = Date.parse(input.windowStart);
+  const endMs = Date.parse(input.windowEnd);
+  const inWindow = new Set<string>();
+  for (const point of tagged) {
+    const at = Date.parse(point.at);
+    if (Math.abs(at - startMs) <= SNAPSHOT_MATCH_MS || Math.abs(at - endMs) <= SNAPSHOT_MATCH_MS) inWindow.add(point.accountRef);
+  }
+  if (inWindow.size === 0) {
+    return { accountReturn: null, windowStart: input.windowStart, windowEnd: input.windowEnd };
+  }
+  const starts: TaggedSnapshot[] = [];
+  const ends: TaggedSnapshot[] = [];
+  for (const accountRef of inWindow) {
+    const mine = tagged.filter((point) => point.accountRef === accountRef);
+    const opening = nearestTagged(mine, startMs);
+    const closing = nearestTagged(mine, endMs);
+    if (!opening || !closing || opening.id === closing.id) {
+      return { accountReturn: null, windowStart: input.windowStart, windowEnd: input.windowEnd };
+    }
+    starts.push(opening);
+    ends.push(closing);
+  }
+  const startAt = starts[0]?.at;
+  const endAt = ends[0]?.at;
+  if (!startAt || !endAt || starts.some((point) => point.at !== startAt) || ends.some((point) => point.at !== endAt)) {
+    return { accountReturn: null, windowStart: input.windowStart, windowEnd: input.windowEnd };
+  }
+  if (Date.parse(endAt) <= Date.parse(startAt)) {
+    return { accountReturn: null, windowStart: input.windowStart, windowEnd: input.windowEnd };
+  }
+  const accountReturn = modifiedDietz({
+    beginning: starts.reduce((sum, point) => sum + point.value, 0),
+    ending: ends.reduce((sum, point) => sum + point.value, 0),
+    start: startAt,
+    end: endAt,
+    flows: externalFlows(input.activities, inWindow),
+  });
+  return { accountReturn, windowStart: startAt, windowEnd: endAt };
+}
+
+function externalFlows(activities: NormalizedActivity[], accounts: Set<string>): { at: string; amount: number }[] {
+  const cash = activities.filter((activity) => activity.kind === "deposit" || activity.kind === "withdrawal");
+  const scoped = accounts.has("") ? cash : cash.filter((activity) => accounts.has(activity.accountRef));
+  const internal = new Set<string>();
+  for (const out of scoped) {
+    if (out.kind !== "withdrawal" || internal.has(out.id)) continue;
+    const match = scoped.find((inn) =>
+      inn.kind === "deposit" &&
+      !internal.has(inn.id) &&
+      inn.accountRef !== out.accountRef &&
+      Math.abs(Math.abs(inn.netAmount) - Math.abs(out.netAmount)) < 0.005 &&
+      Math.abs(Date.parse(inn.occurredAt) - Date.parse(out.occurredAt)) <= TRANSFER_MATCH_MS,
+    );
+    if (!match) continue;
+    internal.add(out.id);
+    internal.add(match.id);
+  }
+  return scoped
+    .filter((activity) => !internal.has(activity.id))
+    .map((activity) => ({
+      at: activity.occurredAt,
+      amount: activity.kind === "withdrawal" ? -Math.abs(activity.netAmount) : Math.abs(activity.netAmount),
+    }));
 }
 
 export function benchmarkReturn(points: BenchmarkPoint[], start: string, end: string): number | null {
