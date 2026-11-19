@@ -51,7 +51,8 @@ function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTic
     if (v == null || Number.isNaN(v)) continue;
     switch (f) {
       case "bid":
-        if (v > 0) next.bid = v;
+        // 0 is a real bid. Null and NaN already skipped above are not an update.
+        if (v >= 0) next.bid = v;
         break;
       case "ask":
         if (v > 0) next.ask = v;
