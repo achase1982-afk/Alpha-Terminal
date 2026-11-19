@@ -1845,6 +1845,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       )}
 
       <div
+        data-pf-sticky-head=""
         style={{
           position: "sticky",
           top: 0,
