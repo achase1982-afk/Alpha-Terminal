@@ -1,4 +1,4 @@
-import { calendarDays, formatWindow, startOfYearEt } from "./clock.js";
+import { calendarDays, formatWindow, nextSessionDate, startOfYearEt, trailingStartEt } from "./clock.js";
 import { isFlat } from "./ledger.js";
 import {
   BENCHMARK_UNAVAILABLE,
@@ -8,10 +8,14 @@ import {
   type BuiltPosition,
   type CategoryStat,
   type ClosedTradeView,
+  type CurvePoint,
   type CutStat,
+  type HoldSummary,
+  type InsightPeriod,
   type InsightSlice,
   type InsightsPayload,
   type MetricBlock,
+  type UnderlyingStat,
   type NormalizedActivity,
   type PositionStatus,
   type PositionView,
@@ -121,11 +125,35 @@ function etMinutes(iso: string): number {
   return (hour === 24 ? 0 : hour) * 60 + minute;
 }
 
-function holdingKey(position: BuiltPosition): "under30" | "session" | "overnight" {
+function holdingKey(position: BuiltPosition): "under30" | "session" | "overnight" | "multi" {
   if (!position.closedAt) return "session";
-  if (etDate(position.openedAt) !== etDate(position.closedAt)) return "overnight";
+  const opened = etDate(position.openedAt);
+  const closed = etDate(position.closedAt);
+  if (opened !== closed) return closed === nextSessionDate(opened) ? "overnight" : "multi";
   const minutes = (Date.parse(position.closedAt) - Date.parse(position.openedAt)) / 60_000;
   return minutes < 30 ? "under30" : "session";
+}
+
+function hourKey(position: BuiltPosition): string {
+  const minutes = etMinutes(position.ticketAt || position.openedAt);
+  if (minutes < 9 * 60 + 30) return "pre";
+  if (minutes < 10 * 60 + 30) return "0930";
+  if (minutes < 11 * 60 + 30) return "1030";
+  if (minutes < 12 * 60 + 30) return "1130";
+  if (minutes < 13 * 60 + 30) return "1230";
+  if (minutes < 14 * 60 + 30) return "1330";
+  if (minutes < 16 * 60) return "1430";
+  return "after";
+}
+
+function dteKey(position: BuiltPosition): string | null {
+  const expiration = position.legs.find((leg) => leg.expiration)?.expiration;
+  if (!expiration) return null;
+  const dte = calendarDays(etDate(position.ticketAt || position.openedAt), expiration);
+  if (dte <= 0) return "0";
+  if (dte <= 7) return "1_7";
+  if (dte <= 30) return "8_30";
+  return "30_plus";
 }
 
 function timeKey(position: BuiltPosition): "before" | "after" {
@@ -141,8 +169,30 @@ function cut(key: string, label: string, positions: BuiltPosition[]): CutStat {
   return { key, label, netPnl: metrics.netPnl, trades: metrics.closedTrades, expectancy: metrics.expectancy };
 }
 
-function cutsFor(positions: BuiltPosition[]): Pick<InsightSlice, "timeCuts" | "holdingCuts" | "dayCuts"> {
+const HOUR_BUCKETS: [string, string][] = [
+  ["pre", "Pre-Mkt"],
+  ["0930", "9:30–10:30"],
+  ["1030", "10:30–11:30"],
+  ["1130", "11:30–12:30"],
+  ["1230", "12:30–1:30"],
+  ["1330", "1:30–2:30"],
+  ["1430", "2:30–4:00"],
+  ["after", "After-Hrs"],
+];
+
+const DTE_BUCKETS: [string, string][] = [
+  ["0", "0DTE"],
+  ["1_7", "1–7 DTE"],
+  ["8_30", "8–30 DTE"],
+  ["30_plus", "30+ DTE"],
+];
+
+function cutsFor(positions: BuiltPosition[]): Pick<InsightSlice, "timeCuts" | "holdingCuts" | "dayCuts" | "hourCuts" | "dteCuts" | "holdSummary" | "curve"> {
   const closed = positions.filter((position) => isFlat(position.status));
+  const weekend = [
+    ["sat", "Saturday"],
+    ["sun", "Sunday"],
+  ].filter(([, label]) => closed.some((position) => weekday(position) === label));
   return {
     timeCuts: [
       cut("before_2pm", "BEFORE 2:00 PM ET", closed.filter((position) => timeKey(position) === "before")),
@@ -152,6 +202,7 @@ function cutsFor(positions: BuiltPosition[]): Pick<InsightSlice, "timeCuts" | "h
       cut("under_30", "UNDER 30 MIN", closed.filter((position) => holdingKey(position) === "under30")),
       cut("to_close", "30 MIN TO CLOSE", closed.filter((position) => holdingKey(position) === "session")),
       cut("overnight", "HELD OVERNIGHT", closed.filter((position) => holdingKey(position) === "overnight")),
+      cut("multi", "MULTI-SESSION", closed.filter((position) => holdingKey(position) === "multi")),
     ],
     dayCuts: [
       ["mon", "Monday"],
@@ -159,8 +210,80 @@ function cutsFor(positions: BuiltPosition[]): Pick<InsightSlice, "timeCuts" | "h
       ["wed", "Wednesday"],
       ["thu", "Thursday"],
       ["fri", "Friday"],
+      ...weekend,
     ].map(([key, label]) => cut(key!, label!, closed.filter((position) => weekday(position) === label))),
+    hourCuts: HOUR_BUCKETS.map(([key, label]) => cut(key, label, closed.filter((position) => hourKey(position) === key))),
+    dteCuts: DTE_BUCKETS.map(([key, label]) => cut(key, label, closed.filter((position) => dteKey(position) === key))),
+    holdSummary: holdSummary(closed),
+    curve: curveFor(closed),
   };
+}
+
+function holdSummary(positions: BuiltPosition[]): HoldSummary {
+  const minutes = (position: BuiltPosition) => {
+    if (!position.closedAt) return null;
+    return (Date.parse(position.closedAt) - Date.parse(position.openedAt)) / 60_000;
+  };
+  const average = (rows: BuiltPosition[]): number | null => {
+    const values = rows.map(minutes).filter((value): value is number => value != null && Number.isFinite(value));
+    if (values.length === 0) return null;
+    return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
+  };
+  return {
+    avgPositiveMin: average(positions.filter((position) => position.netPnl > 0)),
+    avgNegativeMin: average(positions.filter((position) => position.netPnl < 0)),
+  };
+}
+
+function curveFor(positions: BuiltPosition[]): CurvePoint[] {
+  const ordered = positions.filter((position) => position.closedAt).sort((a, b) => (a.closedAt ?? "").localeCompare(b.closedAt ?? ""));
+  let cum = 0;
+  return ordered.map((position) => {
+    cum = roundMoney(cum + position.netPnl);
+    return { at: position.closedAt!, cum };
+  });
+}
+
+function underlyingRows(positions: BuiltPosition[]): UnderlyingStat[] {
+  const rows = new Map<string, { netPnl: number; trades: number }>();
+  for (const position of positions) {
+    if (!isFlat(position.status)) continue;
+    const symbol = position.underlying || position.label.split(" ")[0] || "";
+    if (!symbol) continue;
+    const row = rows.get(symbol) ?? { netPnl: 0, trades: 0 };
+    row.netPnl += position.netPnl;
+    row.trades += 1;
+    rows.set(symbol, row);
+  }
+  return [...rows.entries()]
+    .map(([symbol, row]) => ({ symbol, netPnl: roundMoney(row.netPnl), trades: row.trades }))
+    .sort((a, b) => Math.abs(b.netPnl) - Math.abs(a.netPnl))
+    .slice(0, 8);
+}
+
+function periodStartIso(period: InsightPeriod, asOf: string): string | null {
+  if (period === "lifetime") return null;
+  if (period === "ytd") return startOfYearEt(asOf);
+  return trailingStartEt(asOf, period === "30d" ? 30 : 90);
+}
+
+function takeawayFor(strategies: CategoryStat[]): string | null {
+  const gains = strategies.filter((row) => row.netPnl > 0).sort((a, b) => b.netPnl - a.netPnl);
+  const losses = strategies.filter((row) => row.netPnl < 0).sort((a, b) => a.netPnl - b.netPnl);
+  const named = (row: CategoryStat) => `${row.label} netted ${money(row.netPnl)} across ${row.trades} ${plural(row.trades)}`;
+  if (gains[0] && losses.length > 0) {
+    const lossText = losses.slice(0, 2).map((row) => `${row.label} (${money(row.netPnl)})`).join(" and ");
+    return `${named(gains[0])}; ${lossText} accounted for net losses.`;
+  }
+  if (gains[0]) return `${named(gains[0])}.`;
+  if (losses[0]) return `${named(losses[0])}.`;
+  return null;
+}
+
+export function unsignedMoney(value: number | null, digits = 2): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `$${abs}`;
 }
 
 export function money(value: number | null, digits = 2): string {
@@ -223,6 +346,9 @@ export function tradeDetail(position: BuiltPosition): string {
   }
   if (position.status === "closed") {
     const close = clockParts(position.closedAt);
+    if (etDate(position.openedAt) !== etDate(position.closedAt)) {
+      return `${open.date} ${open.time} → ${close.date} ${close.time} · ${qty}`;
+    }
     return `${open.date} · ${open.time} ET · closed ${close.time} · ${qty}`;
   }
   return `${open.date} · ${open.time} ET · ${position.status} · ${qty}`;
@@ -241,6 +367,8 @@ function tradeView(position: BuiltPosition): ClosedTradeView {
     openedAt: position.openedAt,
     closedAt: position.closedAt ?? position.openedAt,
     quantity: position.quantity,
+    underlying: position.underlying,
+    fees: position.fees,
   };
 }
 
@@ -258,6 +386,9 @@ function positionView(position: BuiltPosition): PositionView {
     openedAt: position.openedAt,
     closedAt: position.closedAt,
     quantity: position.quantity,
+    underlying: position.underlying,
+    fees: position.fees,
+    accountRef: position.accountRef,
   };
 }
 
@@ -265,9 +396,9 @@ function feeSentence(fees: number, grossGains: number, scope: "account" | "categ
   if (grossGains > 0) {
     const pct = ((fees / grossGains) * 100).toFixed(1);
     const tail = scope === "category" ? " in this category" : "";
-    return `Fees totaled ${money(fees)}, equal to ${pct}% of gross gains${tail}.`;
+    return `Fees totaled ${unsignedMoney(fees)}, equal to ${pct}% of gross gains${tail}.`;
   }
-  return `Fees totaled ${money(fees)}.`;
+  return `Fees totaled ${unsignedMoney(fees)}.`;
 }
 
 function plural(count: number): string {
@@ -277,7 +408,7 @@ function plural(count: number): string {
 export function perspectiveFor(input: {
   scope: "account" | "category";
   name: string;
-  period: "ytd" | "lifetime";
+  period: InsightPeriod;
   positions: BuiltPosition[];
   strategies: CategoryStat[];
   assets: CategoryStat[];
@@ -393,12 +524,12 @@ function sliceFor(positions: BuiltPosition[], perspective: string): InsightSlice
 export function buildInsights(input: {
   positions: BuiltPosition[];
   activities: NormalizedActivity[];
-  period: "ytd" | "lifetime";
+  period: InsightPeriod;
   asOf: string;
   snapshots: EquityPoint[];
   benchmark: BenchmarkPoint[];
 }): InsightsPayload {
-  const startIso = input.period === "ytd" ? startOfYearEt(input.asOf) : null;
+  const startIso = periodStartIso(input.period, input.asOf);
   const inPeriod = (position: BuiltPosition) => {
     if (!isFlat(position.status) || !position.closedAt) return false;
     if (!startIso) return true;
@@ -485,6 +616,8 @@ export function buildInsights(input: {
     assetClasses: assetRows,
     strategies: strategyRows,
     byStrategy,
+    takeaway: empty ? null : takeawayFor(strategyRows),
+    underlyings: underlyingRows(closed),
     positions: [...input.positions]
       .sort((a, b) => (b.closedAt ?? b.openedAt).localeCompare(a.closedAt ?? a.openedAt))
       .map(positionView),

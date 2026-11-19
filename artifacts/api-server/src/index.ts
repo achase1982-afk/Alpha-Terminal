@@ -495,6 +495,11 @@ async function boot() {
         .catch((err) => {
           logger.warn({ err }, "Journal sync did not start");
         });
+      void import("./journalInsights/quoteRecorder.js")
+        .then((mod) => mod.startQuoteRecorder())
+        .catch((err) => {
+          logger.warn({ err }, "Position quote recorder did not start");
+        });
       startTelemetryCleanup();
       startTelemetryRetentionJob();
       initDeltaEngine();

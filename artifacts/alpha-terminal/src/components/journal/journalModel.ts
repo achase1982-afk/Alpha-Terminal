@@ -1,4 +1,4 @@
-export type JournalPeriod = "ytd" | "lifetime";
+export type JournalPeriod = "30d" | "90d" | "ytd" | "lifetime";
 export type JournalView = "insights" | "trades";
 
 export interface CutStat {
@@ -7,6 +7,38 @@ export interface CutStat {
   netPnl: number;
   trades: number;
   expectancy: number | null;
+}
+
+export interface CurvePoint {
+  at: string;
+  cum: number;
+}
+
+export interface UnderlyingStat {
+  symbol: string;
+  netPnl: number;
+  trades: number;
+}
+
+export interface HoldSummary {
+  avgPositiveMin: number | null;
+  avgNegativeMin: number | null;
+}
+
+export interface ExcursionView {
+  record: "full" | "partial" | "none";
+  mfe: number | null;
+  mae: number | null;
+  timeToMfeMin: number | null;
+  peakCapturePct: number | null;
+  bestAt: string | null;
+  label: string;
+}
+
+export interface JournalBook {
+  id: string;
+  label: string;
+  paper: boolean;
 }
 
 export interface CategoryStat {
@@ -45,6 +77,9 @@ export interface ClosedTradeView {
   openedAt: string;
   closedAt: string;
   quantity: number;
+  underlying?: string;
+  fees?: number;
+  excursion?: ExcursionView | null;
 }
 
 export interface PositionView {
@@ -60,6 +95,10 @@ export interface PositionView {
   openedAt: string;
   closedAt: string | null;
   quantity: number;
+  underlying?: string;
+  fees?: number;
+  accountRef?: string;
+  excursion?: ExcursionView | null;
 }
 
 export interface InsightSlice {
@@ -67,12 +106,22 @@ export interface InsightSlice {
   timeCuts: CutStat[];
   holdingCuts: CutStat[];
   dayCuts: CutStat[];
+  hourCuts?: CutStat[];
+  dteCuts?: CutStat[];
+  holdSummary?: HoldSummary;
+  curve?: CurvePoint[];
   perspective: string;
   closedTrades: ClosedTradeView[];
+  recordedLine?: string | null;
 }
 
 export interface InsightsPayload {
   period: JournalPeriod;
+  accountId?: string;
+  paper?: boolean;
+  books?: JournalBook[];
+  takeaway?: string | null;
+  underlyings?: UnderlyingStat[];
   asOf: string;
   empty: boolean;
   emptyMessage: string | null;
@@ -117,4 +166,19 @@ export function signedPct(value: number | null): string {
 export function signColor(value: number | null): string {
   if (value == null || value === 0) return "#e4e4e7";
   return value > 0 ? "#00d166" : "#dc2626";
+}
+
+export function unsignedMoney(value: number | null, digits = 2): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `$${abs}`;
+}
+
+export function holdPhrase(minutes: number | null): string {
+  if (minutes == null || !Number.isFinite(minutes)) return "—";
+  const total = Math.max(0, Math.round(minutes));
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  if (hours === 0) return `${mins}m`;
+  return `${hours}h ${mins}m`;
 }

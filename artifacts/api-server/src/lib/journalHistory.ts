@@ -4,6 +4,8 @@ export interface LiveBook {
   accountRef: string;
   type: string | null;
   accountNumber: string | null;
+  label: string;
+  paper: boolean;
   liquidation: number | null;
   positions: {
     symbol?: string | null;
@@ -14,14 +16,24 @@ export interface LiveBook {
   }[];
 }
 
+function paperBook(type: string | null, accountNumber: string | null): boolean {
+  const blob = `${type ?? ""} ${accountNumber ?? ""}`.toLowerCase();
+  return blob.includes("paper") || blob.includes("sandbox");
+}
+
 export async function listLiveBooks(token: string): Promise<LiveBook[]> {
   const accounts = await fetchMappedSchwabAccounts(token);
   return accounts.flatMap((account) => {
     if (!account.hashValue) return [];
+    const type = account.type ?? null;
+    const accountNumber = account.accountNumberRaw ?? null;
+    const paper = paperBook(type, accountNumber);
     return [{
       accountRef: account.hashValue,
-      type: account.type ?? null,
-      accountNumber: account.accountNumberRaw ?? null,
+      type,
+      accountNumber,
+      label: paper ? "Paper Sandbox" : (type?.trim() || "Live account"),
+      paper,
       liquidation: typeof account.balances?.liquidationValue === "number" ? account.balances.liquidationValue : null,
       positions: account.positions ?? [],
     }];

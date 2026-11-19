@@ -104,3 +104,20 @@ export function calendarDays(startDate: string, endDate: string): number {
   const b = Date.parse(`${endDate.slice(0, 10)}T00:00:00.000Z`);
   return Math.round((b - a) / 86_400_000);
 }
+
+/** UTC instant of midnight America/New_York, `days` calendar days before `iso`. */
+export function trailingStartEt(iso: string, days: number): string {
+  const start = zonedParts(iso);
+  const anchor = new Date(`${start.date}T12:00:00.000Z`);
+  anchor.setUTCDate(anchor.getUTCDate() - days);
+  return atEtHour(anchor.toISOString().slice(0, 10), 0, 0);
+}
+
+/** Next weekday session after an America/New_York calendar date. */
+export function nextSessionDate(date: string): string {
+  const cursor = new Date(`${date.slice(0, 10)}T12:00:00.000Z`);
+  do {
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  } while (cursor.getUTCDay() === 0 || cursor.getUTCDay() === 6);
+  return cursor.toISOString().slice(0, 10);
+}

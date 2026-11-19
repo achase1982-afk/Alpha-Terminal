@@ -2,6 +2,7 @@ import { fetchHistory, listLiveBooks } from "../lib/journalHistory.js";
 import { logger } from "../lib/logger.js";
 import { getValidAccessToken } from "../lib/tokenStore.js";
 import { normalizeActivity, normalizeOrder, parseOptionSymbol, type RawHistoryActivity, type RawHistoryOrder } from "./normalize.js";
+import { upsertBook } from "./quotes.js";
 import {
   readSyncState,
   rebuildAccount,
@@ -155,6 +156,7 @@ export async function startJournalSync(): Promise<SyncResult> {
     let synced = 0;
     let failed = false;
     for (const account of accounts) {
+      await upsertBook({ accountRef: account.accountRef, label: account.label, paper: account.paper });
       const ok = await syncAccount({
         hash: account.accountRef,
         accountRef: account.accountRef,

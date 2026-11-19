@@ -1754,3 +1754,40 @@ export const journalMarksTable = pgTable(
 );
 
 export type JournalMarkRow = typeof journalMarksTable.$inferSelect;
+
+export const journalBooksTable = pgTable("journal_books", {
+  accountRef: text("account_ref").primaryKey(),
+  label: text("label").notNull(),
+  paper: boolean("paper").notNull().default(false),
+});
+
+export type JournalBookRow = typeof journalBooksTable.$inferSelect;
+
+export const journalPositionWatchTable = pgTable("journal_position_watch", {
+  positionId: text("position_id").primaryKey(),
+  accountRef: text("account_ref").notNull(),
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  status: text("status").notNull(),
+  startedLate: boolean("started_late").notNull().default(false),
+  legs: jsonb("legs").notNull(),
+  metrics: jsonb("metrics"),
+});
+
+export type JournalPositionWatchRow = typeof journalPositionWatchTable.$inferSelect;
+
+export const journalPositionQuoteTable = pgTable(
+  "journal_position_quote",
+  {
+    id: text("id").primaryKey(),
+    positionId: text("position_id").notNull(),
+    ts: timestamp("ts", { withTimezone: true }).notNull(),
+    valid: boolean("valid").notNull().default(false),
+    unrealized: doublePrecision("unrealized"),
+    legs: jsonb("legs").notNull(),
+    source: text("source").notNull().default(""),
+  },
+  (t) => [index("journal_position_quote_position_idx").on(t.positionId, t.ts)],
+);
+
+export type JournalPositionQuoteRow = typeof journalPositionQuoteTable.$inferSelect;
