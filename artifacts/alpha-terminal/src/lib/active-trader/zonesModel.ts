@@ -13,6 +13,10 @@ export interface ZoneModel {
   glanceCaption?: string;
   /** Prior 0DTE expiry: walls/flip show `— rolls at open`. */
   wallsRollLabel?: string | null;
+  /** `unusual_whales` is the gamma glance. `chain` is the local fallback. */
+  levelSource?: "unusual_whales" | "chain";
+  /** True only for a glance sample whose own timestamp is still inside the fresh window. */
+  levelFresh?: boolean;
   /** Coincident UW walls at ATM. */
   gammaPinStrike?: number | null;
   staleExpiry?: boolean;

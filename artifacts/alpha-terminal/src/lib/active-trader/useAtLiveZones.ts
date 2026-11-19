@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { sanitizeOptionGreek } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
@@ -10,6 +10,7 @@ import {
   type ZoneModel,
 } from "./zonesModel";
 import { sanitizeGlanceWallStrike, type AtWallProvenance } from "./atGlanceWallStrike";
+import { chainFallbackZones, reduceGammaGlance, type GammaGlanceBody } from "./atGammaGlanceBind";
 
 export interface AtChainRowForZones {
   strike: number;
@@ -27,12 +28,7 @@ export interface AtChainRowForZones {
 
 const GAMMA_GLANCE_TICKERS = new Set(["SPX", "SPY", "QQQ", "NVDA"]);
 
-type GammaGlanceResponse = {
-  zones?: ZoneModel;
-  unavailable?: boolean;
-  sessionClosed?: boolean;
-  glanceCaption?: string;
-};
+type GammaGlanceResponse = GammaGlanceBody;
 
 export type AtLiveZonesState = {
   zones: ZoneModel;
@@ -60,6 +56,7 @@ export function useAtLiveZones(
   const mode = resolveAtGlanceMode(symbol);
   const ticker = symbol.replace(/^\$/, "").toUpperCase();
   const [uwGlance, setUwGlance] = useState<GammaGlanceResponse | null>(null);
+  const glanceRequestId = useRef(0);
   const [liveClock, setLiveClock] = useState(0);
   /** Whole-point spot: walls and net gamma do not move on sub-point ticks. */
   const spotStep =
@@ -73,22 +70,40 @@ export function useAtLiveZones(
 
   useEffect(() => {
     if (fixtureZones || skipNetwork || mode === "futures" || !GAMMA_GLANCE_TICKERS.has(ticker)) {
+      glanceRequestId.current += 1;
       setUwGlance(null);
       return;
     }
+    setUwGlance(null);
     let cancelled = false;
     const q = encodeURIComponent(symbol);
     const load = async () => {
+      const requestId = ++glanceRequestId.current;
+      const nowMs = Date.now();
       try {
         const url = `/api/market/at-gamma-glance?symbol=${q}`;
         let res = await fetchWithAuth(url, { clerkTokenTimeoutMs: 1_500 });
         if (!res.ok) res = await fetch(url);
-        if (!res.ok || cancelled) return;
+        if (cancelled || requestId !== glanceRequestId.current) return;
+        if (!res.ok) {
+          setUwGlance(null);
+          return;
+        }
         const j = (await res.json()) as GammaGlanceResponse;
-        if (cancelled || !j || j.unavailable) return;
-        setUwGlance(j);
+        if (cancelled || requestId !== glanceRequestId.current) return;
+        setUwGlance(
+          reduceGammaGlance(null, {
+            activeTicker: ticker,
+            requestTicker: ticker,
+            requestId,
+            currentId: glanceRequestId.current,
+            body: j,
+            error: false,
+            nowMs,
+          }),
+        );
       } catch {
-        /* retry on poll */
+        if (!cancelled && requestId === glanceRequestId.current) setUwGlance(null);
       }
     };
     void load();
@@ -172,15 +187,7 @@ export function useAtLiveZones(
       callWall: chainCallWall,
       putWall: chainPutWall,
     };
-    const caption = uwGlance?.glanceCaption ?? uwZones?.glanceCaption;
-    if (caption || uwZones?.asOfLabel) {
-      return {
-        ...sanitized,
-        glanceCaption: caption ?? sanitized.glanceCaption,
-        asOfLabel: uwZones?.asOfLabel ?? sanitized.asOfLabel,
-      };
-    }
-    return sanitized;
+    return chainFallbackZones(sanitized);
   }, [chainLevels, spotStep, fixtureZones, uwGlance]);
 
   return {
