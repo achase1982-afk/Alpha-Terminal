@@ -4,11 +4,30 @@ export type { AtAutoSendPrefs };
 export type AtTemplateKind = "Single" | "OCO" | "TRG w/ bracket";
 export type AtOrderType = "LIMIT" | "MKT";
 export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
-export type BracketOffsetMode = "percent" | "points" | "dollars";
+export type BracketOffsetMode = "percent" | "points" | "dollars" | "stdev";
 export type AtLadderMode = "single" | "vertical";
 export type AtVerticalWidth = 5 | 10 | 25;
 export type AtExitDuration = "DAY" | "GOOD_TILL_CANCEL";
+export type AtEntryDuration = "DAY" | "GOOD_TILL_CANCEL" | "FILL_OR_KILL";
 export type AtStopLossOrderType = "STOP" | "STOP_LIMIT";
+/** Schwab orderType for the entry (parent) order. */
+export type AtSchwabEntryType =
+  | "LIMIT"
+  | "MARKET"
+  | "STOP"
+  | "STOP_LIMIT"
+  | "TRAILING_STOP"
+  | "TRAILING_STOP_LIMIT";
+/**
+ * How the entry and exits are nested on Schwab.
+ * AUTO follows the take-profit and stop-loss toggles.
+ */
+export type AtAdvancedRoute = "AUTO" | "SINGLE" | "TRIGGER" | "TRIGGER_OCO" | "OCO";
+export type AtOrderSession = "NORMAL" | "AM" | "PM" | "SEAMLESS";
+export type AtRouting = "BEST" | "NYSE" | "NASDAQ" | "ARCA" | "BATS";
+export type AtAccountKind = "MARGIN" | "CASH";
+export type AtSubmissionMode = "review" | "send";
+export type AtTrailLinkType = "VALUE" | "PERCENT";
 
 export interface BracketLegPrefs {
   enabled: boolean;
@@ -31,6 +50,18 @@ export interface ActiveTraderTemplatePrefs {
   stopLossOrderType: AtStopLossOrderType;
   /** Limit offset from stop trigger (STOP_LIMIT only), in premium dollars. */
   stopLimitOffset: number;
+  /** Entry time in force. Defaults to Day. */
+  entryDuration?: AtEntryDuration;
+  /** Schwab entry orderType. When omitted, `orderType` (LIMIT / MKT) is used. */
+  schwabEntryType?: AtSchwabEntryType;
+  advancedRoute?: AtAdvancedRoute;
+  session?: AtOrderSession;
+  routing?: AtRouting;
+  accountKind?: AtAccountKind;
+  /** Review before sending, or post the order from the ticket with no confirm step. */
+  submission?: AtSubmissionMode;
+  trailOffset?: number;
+  trailLinkType?: AtTrailLinkType;
 }
 
 const STORAGE_KEY = "activeTraderPrefs:v6";
@@ -40,7 +71,7 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   qty: 1,
   orderType: "LIMIT",
   limitAnchor: "Mid",
-  takeProfit: { enabled: true, mode: "percent", offset: 10 },
+  takeProfit: { enabled: true, mode: "percent", offset: 25 },
   stopLoss: { enabled: false, mode: "percent", offset: -10 },
   autoSend: { enabled: false, armed: false },
   ladderMode: "single",
@@ -48,6 +79,15 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   exitDuration: "GOOD_TILL_CANCEL",
   stopLossOrderType: "STOP",
   stopLimitOffset: 0.05,
+  entryDuration: "DAY",
+  schwabEntryType: "LIMIT",
+  advancedRoute: "AUTO",
+  session: "NORMAL",
+  routing: "BEST",
+  accountKind: "MARGIN",
+  submission: "review",
+  trailOffset: 0.1,
+  trailLinkType: "VALUE",
 };
 
 function sanitizeAutoSend(prefs: ActiveTraderTemplatePrefs): ActiveTraderTemplatePrefs {
@@ -66,6 +106,34 @@ export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTr
   } catch {
     return { ...DEFAULTS };
   }
+}
+
+/** Keep template and the LIMIT/MKT flag aligned with the defaults sheet. */
+export function applyOrderDefaults(prefs: ActiveTraderTemplatePrefs): ActiveTraderTemplatePrefs {
+  const route = prefs.advancedRoute ?? "AUTO";
+  const tp = prefs.takeProfit.enabled;
+  const sl = prefs.stopLoss.enabled;
+  let template: AtTemplateKind = prefs.template;
+  if (route === "OCO") template = "OCO";
+  else if (route === "SINGLE" || (route === "AUTO" && !tp && !sl)) template = "Single";
+  else template = "TRG w/ bracket";
+
+  const entry = prefs.schwabEntryType ?? (prefs.orderType === "MKT" ? "MARKET" : "LIMIT");
+  return {
+    ...DEFAULTS,
+    ...prefs,
+    template,
+    orderType: entry === "MARKET" ? "MKT" : "LIMIT",
+    schwabEntryType: entry,
+    entryDuration: prefs.entryDuration ?? "DAY",
+    advancedRoute: route,
+    session: prefs.session ?? "NORMAL",
+    routing: prefs.routing ?? "BEST",
+    accountKind: prefs.accountKind ?? "MARGIN",
+    submission: prefs.submission ?? "review",
+    trailOffset: prefs.trailOffset ?? 0.1,
+    trailLinkType: prefs.trailLinkType ?? "VALUE",
+  };
 }
 
 export function saveActiveTraderPrefs(symbolClass: "index" | "equity", prefs: ActiveTraderTemplatePrefs): void {

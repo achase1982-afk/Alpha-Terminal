@@ -19,6 +19,7 @@ import { db } from "@workspace/db";
 import { tradeJournalTable } from "@workspace/db/schema";
 import {
   orderReferencesBlockedFutures,
+  prepareSchwabOrderForSend,
 } from "@workspace/order-ticket-math";
 
 const router: IRouter = Router();
@@ -306,14 +307,8 @@ router.post("/place-order", async (req, res) => {
   }
 
   try {
-    const NO_PRICE_TYPES = new Set(["MARKET", "STOP", "TRAILING_STOP", "MARKET_ON_CLOSE"]);
-    if (typeof order.orderType === "string" && NO_PRICE_TYPES.has(order.orderType)) {
-      delete order.price;
-    }
-    if (order.price != null && (typeof order.price !== "number" || order.price <= 0 || !isFinite(order.price))) {
-      delete order.price;
-    }
-    logger.info({ order }, "Placing Schwab order");
+    const prepared = prepareSchwabOrderForSend(order);
+    logger.info({ order: prepared }, "Placing Schwab order");
     const schwabRes = await fetch(
       `${SCHWAB_TRADER_BASE}/accounts/${accountHash}/orders`,
       {
@@ -322,7 +317,7 @@ router.post("/place-order", async (req, res) => {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(order),
+        body: JSON.stringify(prepared),
       }
     );
 

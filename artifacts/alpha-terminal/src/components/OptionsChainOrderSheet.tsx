@@ -44,6 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { computeOrderEconomics } from "@workspace/order-ticket-math";
 import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
 import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { buildChainSheetSchwabOrder } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
 import {
   assertChainDraftLegCount,
@@ -203,7 +204,7 @@ export function OptionsChainOrderSheet({
 
   const [limitPrice, setLimitPrice] = useState(restoredSheetSession?.limitPrice ?? "");
   const [quantity, setQuantity] = useState(1);
-  const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
+  const [timeInForce, setTimeInForce] = useState<string>("DAY");
   const [stage, setStage] = useState<Stage>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -405,21 +406,27 @@ export function OptionsChainOrderSheet({
           schwabSymbol: leg.schwabSymbol,
         })),
       );
-      return {
-        orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
-        session: "NORMAL",
-        duration: timeInForce,
-        complexOrderStrategyType: complexType,
-        orderStrategyType: "SINGLE",
-        orderLegCollection: legs.map((leg) => ({
-          instruction: leg.direction,
-          quantity: leg.quantity * quantity,
-          instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
+      return buildChainSheetSchwabOrder({
+        prefs: atBracketDraft?.prefs,
+        primaryInstruction: atBracketDraft?.primaryInstruction,
+        legs: legs.map((leg) => ({
+          direction: leg.direction,
+          quantity: leg.quantity,
+          schwabSymbol: leg.schwabSymbol,
+          expiration: leg.expiration,
+          delta: leg.delta,
+          iv: leg.iv,
         })),
-        price: parsed > 0 ? parsed : undefined,
-      };
+        quantityMultiplier: quantity,
+        limitPrice: parsed,
+        isCredit,
+        complexOrderStrategyType: complexType,
+        underlyingSymbol: symbol,
+        underlyingPrice: underlyingSpot,
+        timeInForce,
+      });
     },
-    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx],
+    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx, atBracketDraft, symbol, underlyingSpot],
   );
 
   const guardDraftLegCount = useCallback(() => {
@@ -505,6 +512,13 @@ export function OptionsChainOrderSheet({
     setStage("submitting");
     try {
       const order = buildSchwabOrder(px);
+      if (typeof order.error === "string") {
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
+        setPriceError(order.error);
+        setStage("form");
+        return;
+      }
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -698,17 +712,22 @@ export function OptionsChainOrderSheet({
         onOrderTypeChange={setOrderType}
         limitTickCtx={limitTickCtx}
         sendLabel={
-          atDocked
-            ? "Send to Schwab"
-            : limitLocked
-              ? "Review (sending off)"
-              : "Lock limit to send"
+          atBracketDraft?.prefs.submission === "send"
+            ? sendAllowed
+              ? "Send to Schwab"
+              : "Sending off"
+            : atDocked
+              ? "Send to Schwab"
+              : limitLocked
+                ? "Review (sending off)"
+                : "Lock limit to send"
         }
         sendDisabled={atDocked ? !dockedValid : !limitLocked || !isValid}
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
           if (!atDocked && !limitLocked) return;
-          validateAndReview();
+          if (atBracketDraft?.prefs.submission === "send") void handleSubmit();
+          else validateAndReview();
         }}
         onAdvancedOrders={onAdvancedOrders}
       />

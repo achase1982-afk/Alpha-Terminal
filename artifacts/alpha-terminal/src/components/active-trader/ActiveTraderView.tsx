@@ -30,7 +30,6 @@ import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import {
-  canArmAutoSend,
   isAutoSendLiveReady,
   patchAutoSendArmed,
 } from "@/lib/active-trader/atAutoSend";
@@ -64,7 +63,7 @@ import {
 } from "@/lib/active-trader/atLadderSelection";
 import { aggregateSpreadNBBO, inferNetCreditFromLegStructure } from "@workspace/order-ticket-math";
 import { toast } from "@/hooks/use-toast";
-import { AtSettingsExpanded } from "./AtSettingsPanel";
+import { AtOrderDefaultsSheet } from "./AtOrderDefaultsSheet";
 import { AtGlanceTop } from "./AtGlanceTop";
 import { mergeChainContractWithStream } from "@/lib/chainContractQuoteMerge";
 import {
@@ -74,7 +73,6 @@ import {
 import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBody";
 import { filterAtExpiryPillGroups } from "@/lib/optionsExpirationPick";
 import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
-import { formatSchwabAccountType, isPaperSchwabAccount } from "@/lib/schwabAccountAggregate";
 import { AtTradeActionBar } from "./AtTradeActionBar";
 import {
   atLadderNudgeToClearSheet,
@@ -627,19 +625,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const blockLiveSend = !!(presentation?.skipNetwork || getAtFixtureOverride());
   const autoSendBusyRef = useRef(false);
 
-  const activeTradingAccount = useMemo(
-    () => (tradingHash ? accounts.find((a) => a.hashValue === tradingHash) : undefined) ?? accounts[0],
-    [accounts, tradingHash],
-  );
-  const isPaper = presentation?.skipNetwork || isPaperSchwabAccount(activeTradingAccount);
-  const accountLabel = useMemo(() => {
-    if (presentation?.skipNetwork) return "Demo acct";
-    const acct = activeTradingAccount;
-    if (!acct?.accountNumber) return "Account";
-    const type = formatSchwabAccountType(acct.type);
-    return `${isPaper ? "Paper" : type} ···${String(acct.accountNumber).slice(-3)}`;
-  }, [activeTradingAccount, isPaper, presentation?.skipNetwork]);
-
   const onPrefsChange = useCallback(
     (p: ActiveTraderTemplatePrefs) => {
       setPrefs(p);
@@ -684,36 +669,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return tick.mark ?? tick.last ?? null;
   }, [selectedTick, atmTick]);
 
-  const autoSendLegValidation = useMemo(() => {
-    if (templateLimitMid == null || templateLimitMid <= 0 || !selected) return null;
-    return planAtOrderLegs({
-      template: prefs.template,
-      assetType: "OPTION",
-      symbol: "",
-      underlyingSymbol: symbol.replace(/^\$/, ""),
-      primaryInstruction: templatePrimaryInstruction,
-      quantity: prefs.qty,
-      limitPrice: templateLimitMid,
-      takeProfit: prefs.takeProfit,
-      stopLoss: prefs.stopLoss,
-      entryOrderType: prefs.orderType,
-      exitDuration: prefs.exitDuration,
-      stopLossOrderType: prefs.stopLossOrderType,
-      stopLimitOffset: prefs.stopLimitOffset,
-    }).validationError;
-  }, [prefs, selected, templateLimitMid, templatePrimaryInstruction]);
-
-  const autoSendArmBlock = useMemo(
-    () =>
-      canArmAutoSend({
-        accountHash: tradingHash,
-        blockLiveSend,
-        orderValidationError: autoSendLegValidation,
-        entryPrice: templateLimitMid,
-      }),
-    [tradingHash, blockLiveSend, autoSendLegValidation, templateLimitMid],
-  );
-
   useEffect(() => {
     if (!blockLiveSend && tradingHash) return;
     setPrefs((p) => {
@@ -742,9 +697,16 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             takeProfit: prefs.takeProfit,
             stopLoss: prefs.stopLoss,
             entryOrderType: prefs.orderType,
+            entryDuration: prefs.entryDuration,
             exitDuration: prefs.exitDuration,
             stopLossOrderType: prefs.stopLossOrderType,
             stopLimitOffset: prefs.stopLimitOffset,
+            session: prefs.session,
+            advancedRoute: prefs.advancedRoute,
+            schwabEntryType: prefs.schwabEntryType,
+            routing: prefs.routing,
+            trailOffset: prefs.trailOffset,
+            trailLinkType: prefs.trailLinkType,
           }).validationError
         : "Missing quote";
 
@@ -1021,15 +983,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const showFloatingActionBar = false;
   const showDockedActionBar = ticketLegs.length === 0 && actionBarContext != null;
 
-  const instrumentLabel = useMemo(() => {
-    if (selected) {
-      const root = symbol.replace(/^\$/, "").slice(0, 4);
-      return `${root} ${selected.contract.strike}${selected.type === "CALL" ? "C" : "P"}`;
-    }
-    const und = symbol.replace(/^\$/, "").toUpperCase();
-    return `${und} · pick strike`;
-  }, [selected, symbol]);
-
   const atBracketDraft = useMemo(
     () => ({ prefs, primaryInstruction: settingsSummaryInstruction }),
     [prefs, settingsSummaryInstruction],
@@ -1049,7 +1002,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (!(node instanceof Element)) return;
       if (
         node.closest(
-          "[data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox']",
+          "[data-at-order-defaults], [data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox']",
         )
       ) {
         return;
@@ -1247,22 +1200,21 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           }}
           ladderHeatSource={ladderHeatSourceDisplay}
         />
-        <AtSettingsExpanded
+        <AtOrderDefaultsSheet
           open={settingsOpen}
-          accentHex={accentHex}
           prefs={prefs}
-          onPrefsChange={onPrefsChange}
-          instrumentLabel={instrumentLabel}
-          onSell={() => selected && handleTradeIntent(selected.contract, "SELL", selected.type)}
-          onBuy={() => selected && handleTradeIntent(selected.contract, "BUY", selected.type)}
-          accountLabel={accountLabel}
-          isPaper={isPaper}
           primaryInstruction={templatePrimaryInstruction}
-          limitMid={templateLimitMid}
-          autoSendArmBlock={autoSendArmBlock}
-          underlyingSymbol={underlyingSymbol}
           windowSec={windowSec}
           onWindowSecChange={setWindowSec}
+          onClose={() => {
+            setSettingsOpen(false);
+            saveAtSettingsPanelOpen(false);
+          }}
+          onSave={(next) => {
+            onPrefsChange(next);
+            setSettingsOpen(false);
+            saveAtSettingsPanelOpen(false);
+          }}
         />
       </div>
 
