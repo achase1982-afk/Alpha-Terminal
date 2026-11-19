@@ -126,6 +126,9 @@ vi.mock("@workspace/api-client-react", () => ({
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: null }),
+  useQueries: ({ queries }: { queries: unknown[] }) =>
+    queries.map(() => ({ data: undefined, dataUpdatedAt: 0, refetch: vi.fn() })),
+  useQueryClient: () => ({ refetchQueries: vi.fn() }),
 }));
 
 vi.mock("@/lib/options-stream-store", () => {
