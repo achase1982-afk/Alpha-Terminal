@@ -150,8 +150,6 @@ interface ActiveTraderViewProps {
     strikeCount: number;
     range: string;
   };
-  /** Shared Chain / Active Trader selector (toolbar placement). */
-  subViewChrome?: React.ReactNode;
   /** Chain fetch / brokerage state for skeleton messaging. */
   ladderPlug?: {
     chainLoading?: boolean;
@@ -221,7 +219,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   initialTradeSelection,
   settingsPanelInitiallyOpen,
   chainQuoteTs: chainQuoteTsProp,
-  subViewChrome,
   ladderPlug,
   onReachEdge,
   ladderRestWindow,
@@ -1219,7 +1216,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           sessionOpen={underlyingQuote?.close ?? null}
           skipNetwork={!!presentation?.skipNetwork}
           embedded
-          viewSelector={subViewChrome}
           orderSettings={{
             prefs,
             primaryInstruction: settingsSummaryInstruction,

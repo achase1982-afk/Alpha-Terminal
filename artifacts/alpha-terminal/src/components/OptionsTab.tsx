@@ -2124,14 +2124,6 @@ export function OptionsTab({
   const chainViewChrome = (
     <OptionsSubViewToggle placement="chain-toolbar" view={optionsSubView} onChange={setOptionsSubView} />
   );
-  /*
-   * Active Trader is memoized. These keep their identity between renders so an
-   * underlying tick here does not re-render it through a fresh object or closure.
-   */
-  const atViewChrome = useMemo(
-    () => <OptionsSubViewToggle placement="at-header" view={optionsSubView} onChange={setOptionsSubView} />,
-    [optionsSubView],
-  );
   const atChainLoading = !atLadderHasRows && (isLoadingEffective || isFetching);
   const atChainError = error ? "Option chain request failed" : rawData?.error ?? null;
   const atBrokerLinked = schwabLinked || isAuthDisabled();
@@ -2182,7 +2174,6 @@ export function OptionsTab({
     >
       {optionsSubView === "at" && (
         <ActiveTraderView
-          subViewChrome={atViewChrome}
           symbol={symbol}
           groups={tradableAtGroups}
           activeExpiration={atExpiration ?? undefined}

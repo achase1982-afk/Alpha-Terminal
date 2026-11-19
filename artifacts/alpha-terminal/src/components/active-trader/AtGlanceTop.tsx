@@ -1,4 +1,4 @@
-import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
+import { memo, useMemo, type CSSProperties } from "react";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
@@ -58,7 +58,6 @@ export type AtGlanceTopProps = {
   glanceCaption?: string | null;
   sessionClosed?: boolean;
   skipNetwork?: boolean;
-  viewSelector?: ReactNode;
   orderSettings?: {
     prefs: ActiveTraderTemplatePrefs;
     primaryInstruction: SchwabInstruction;
@@ -100,7 +99,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   zones,
   sessionClosed,
   skipNetwork,
-  viewSelector,
   ladderHeatSource,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
@@ -188,11 +186,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {dayLabel}
           </span>
         </div>
-        {viewSelector ? (
-          <div data-at-header-view-selector className="shrink-0">
-            {viewSelector}
-          </div>
-        ) : null}
       </div>
 
       {sessionLevels.showRow && mode !== "futures" ? (
