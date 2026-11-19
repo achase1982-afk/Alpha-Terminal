@@ -20,6 +20,29 @@ export function resolveCallWallDisplay(zones: ZoneModel): WallColumnDisplay {
   };
 }
 
+export type GlanceWallLayout =
+  | { mode: "shared"; label: string; value: string }
+  | { mode: "split"; call: WallColumnDisplay; put: WallColumnDisplay };
+
+/**
+ * Closed walls share one status. Repeating "rolls at open" on both rows
+ * overflows a 440px glance. Live strikes stay on their own rows.
+ */
+export function resolveGlanceWallLayout(zones: ZoneModel): GlanceWallLayout {
+  if (zones.wallsRollLabel) {
+    return {
+      mode: "shared",
+      label: "Call · Put wall",
+      value: `\u2014 ${zones.wallsRollLabel}`,
+    };
+  }
+  return {
+    mode: "split",
+    call: resolveCallWallDisplay(zones),
+    put: resolvePutWallDisplay(zones),
+  };
+}
+
 export function resolvePutWallDisplay(zones: ZoneModel): WallColumnDisplay {
   if (zones.wallsRollLabel) {
     return { label: "Put wall", value: `\u2014 ${zones.wallsRollLabel}` };

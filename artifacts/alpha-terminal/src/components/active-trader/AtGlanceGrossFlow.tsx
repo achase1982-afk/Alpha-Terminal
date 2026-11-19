@@ -4,11 +4,11 @@ import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import type { DeskNetPremiumGlance } from "@/lib/active-trader/deskFlowNetPremium";
 import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
-import { resolveCallWallDisplay, resolvePutWallDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
+import { resolveGlanceWallLayout, type WallColumnDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 
 const TRACK_H = 18;
 const TEXT_PX = 13;
-const FLOW_GRID = "36px minmax(0, max-content) minmax(8px, 1fr) minmax(0, max-content) 6px 104px";
+const FLOW_GRID = "36px minmax(0, max-content) minmax(8px, 1fr) minmax(0, max-content) 6px minmax(0, max-content)";
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
 
@@ -24,21 +24,21 @@ function grossBarFill(amount: number, scale: number): number {
 }
 
 function GrossFlowTrack({
+  row,
   side,
   soldUsd,
   boughtUsd,
   sharedScale,
-  wallLabel,
-  wallText,
+  wall,
   wallColor,
   dashAmounts,
 }: {
+  row: 1 | 2;
   side: "calls" | "puts";
   soldUsd: number;
   boughtUsd: number;
   sharedScale: number;
-  wallLabel: string;
-  wallText: string;
+  wall: WallColumnDisplay | null;
   wallColor: string;
   dashAmounts: boolean;
 }) {
@@ -47,28 +47,28 @@ function GrossFlowTrack({
 
   const sideTag = side === "calls" ? "CALL" : "PUT";
 
+  const cell = { gridRow: row, height: TRACK_H, minWidth: 0, alignSelf: "center" as const };
+
   return (
-    <div
-      data-at-gross-flow-row={side}
-      data-at-flow-gross-sold-usd={dashAmounts ? "" : String(soldUsd)}
-      data-at-flow-gross-bought-usd={dashAmounts ? "" : String(boughtUsd)}
-      className="grid items-center min-w-0 w-full"
-      style={{ height: TRACK_H, gridTemplateColumns: FLOW_GRID }}
-    >
+    <>
       <span
+        data-at-gross-flow-row={side}
+        data-at-flow-gross-sold-usd={dashAmounts ? "" : String(soldUsd)}
+        data-at-flow-gross-bought-usd={dashAmounts ? "" : String(boughtUsd)}
         className="shrink-0 inline-block text-left"
-        style={{ fontSize: TEXT_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: 0 }}
+        style={{ ...cell, gridColumn: 1, fontSize: TEXT_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: 0 }}
       >
         {sideTag}
       </span>
       <span
         className="num whitespace-nowrap"
         style={{
+          ...cell,
+          gridColumn: 2,
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
           color: DOWN_TEXT,
-          minWidth: 0,
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
@@ -76,8 +76,8 @@ function GrossFlowTrack({
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
       <div
-        className="relative flex-1 min-w-0 rounded-sm overflow-hidden"
-        style={{ height: 8, background: "rgba(255,255,255,0.06)" }}
+        className="relative min-w-0 rounded-sm overflow-hidden"
+        style={{ ...cell, gridColumn: 3, height: 8, background: "rgba(255,255,255,0.06)" }}
         aria-hidden
       >
         {!dashAmounts ? (
@@ -111,34 +111,42 @@ function GrossFlowTrack({
       <span
         className="num whitespace-nowrap"
         style={{
+          ...cell,
+          gridColumn: 4,
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
           color: UP,
           textAlign: "left",
-          minWidth: 0,
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
-      <div aria-hidden style={{ width: 1, height: 14, justifySelf: "center", background: `${GOLD}88` }} />
-      <div
-        data-at-flow-wall={side}
-        className="num whitespace-nowrap"
-        style={{
-          lineHeight: 1,
-          fontSize: TEXT_PX,
-          textAlign: "left",
-          justifySelf: "start",
-        }}
-        title={`${wallLabel} ${wallText}`}
-      >
-        <span style={{ fontWeight: 600, color: AT_LABEL }}>{wallLabel} </span>
-        <span style={{ fontWeight: 600, color: wallColor }}>{wallText}</span>
-      </div>
-    </div>
+      <div aria-hidden style={{ ...cell, gridColumn: 5, width: 1, height: 14, justifySelf: "center", background: `${GOLD}88` }} />
+      {wall ? (
+        <div
+          data-at-flow-wall={side}
+          className="num whitespace-nowrap"
+          style={{
+            ...cell,
+            gridColumn: 6,
+            lineHeight: 1,
+            fontSize: TEXT_PX,
+            textAlign: "left",
+            justifySelf: "start",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            maxWidth: "100%",
+          }}
+          title={`${wall.label} ${wall.value}`}
+        >
+          <span style={{ fontWeight: 600, color: AT_LABEL }}>{wall.label} </span>
+          <span style={{ fontWeight: 600, color: wallColor }}>{wall.value}</span>
+        </div>
+      ) : null}
+    </>
   );
 }
 
@@ -156,8 +164,7 @@ export const AtGlanceGrossFlow = memo(function AtGlanceGrossFlow({
   forceDashAmounts,
   onOpenDetail,
 }: AtGlanceGrossFlowProps) {
-  const callWallCol = resolveCallWallDisplay(zones);
-  const putWallCol = resolvePutWallDisplay(zones);
+  const wallLayout = resolveGlanceWallLayout(zones);
   const scaleRef = useRef(SCALE_FLOOR);
 
   const shell =
@@ -201,27 +208,70 @@ export const AtGlanceGrossFlow = memo(function AtGlanceGrossFlow({
       style={{ padding: 0, background: "transparent", border: "none", cursor: onOpenDetail ? "pointer" : "default" }}
       aria-label="Option flow details"
     >
-      <div className="flex flex-col gap-0.5" style={{ lineHeight: 1 }}>
+      <div
+        className="grid w-full min-w-0 overflow-hidden"
+        style={{ lineHeight: 1, gridTemplateColumns: FLOW_GRID, rowGap: 2 }}
+      >
         <GrossFlowTrack
+          row={1}
           side="calls"
           soldUsd={soldC}
           boughtUsd={buyC}
           sharedScale={sharedScale}
-          wallLabel={callWallCol.label}
-          wallText={callWallCol.value}
+          wall={wallLayout.mode === "split" ? wallLayout.call : null}
           wallColor={GOLD}
           dashAmounts={shell}
         />
         <GrossFlowTrack
+          row={2}
           side="puts"
           soldUsd={soldP}
           boughtUsd={buyP}
           sharedScale={sharedScale}
-          wallLabel={putWallCol.label}
-          wallText={putWallCol.value}
+          wall={wallLayout.mode === "split" ? wallLayout.put : null}
           wallColor={PUT_WALL}
           dashAmounts={shell}
         />
+        {wallLayout.mode === "shared" ? (
+          <div
+            data-at-flow-wall="shared"
+            className="min-w-0 overflow-hidden"
+            style={{
+              gridColumn: 6,
+              gridRow: "1 / span 2",
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              lineHeight: 1.05,
+              fontSize: 12,
+              maxWidth: "100%",
+            }}
+            title={`${wallLayout.label} ${wallLayout.value}`}
+          >
+            <span
+              style={{
+                fontWeight: 600,
+                color: AT_LABEL,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {wallLayout.label}
+            </span>
+            <span
+              style={{
+                fontWeight: 600,
+                color: GOLD,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {wallLayout.value}
+            </span>
+          </div>
+        ) : null}
       </div>
     </button>
   );
