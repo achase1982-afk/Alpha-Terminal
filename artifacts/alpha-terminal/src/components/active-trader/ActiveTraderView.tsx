@@ -1262,7 +1262,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             gridTemplateColumns: AT_LADDER_GRID,
             paddingLeft: AT_LADDER_GUTTER_X,
             paddingRight: AT_LADDER_GUTTER_X,
-            fontSize: 8,
+            fontSize: 13,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.05em",
@@ -1287,7 +1287,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
                 : "Contracts traded in the last 30 seconds"
             }
             style={{
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: 500,
               color: AT_LABEL,
               letterSpacing: 0,
@@ -1313,7 +1313,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             gridTemplateColumns: AT_LADDER_GRID,
             paddingLeft: AT_LADDER_GUTTER_X,
             paddingRight: AT_LADDER_GUTTER_X,
-            fontSize: 10,
+            fontSize: 13,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.02em",
@@ -1325,7 +1325,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         >
           <span className="text-center">BID</span>
           <span className="text-center">ASK</span>
-          <span className="text-center" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 10 }}>
+          <span className="text-center" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 13 }}>
             STRIKE
           </span>
           <span className="text-center">BID</span>

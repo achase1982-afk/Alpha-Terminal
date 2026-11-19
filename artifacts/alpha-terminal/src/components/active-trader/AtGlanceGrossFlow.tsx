@@ -6,12 +6,9 @@ import { fmtGlanceFlowAmount } from "@/lib/active-trader/deskFlowMoneyFormat";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { resolveCallWallDisplay, resolvePutWallDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 
-const TRACK_H = 15;
-const SIDE_COL_W = 30;
-const FLOW_VALUE_PX = 12;
-const WALL_LABEL_PX = 10;
-const WALL_VALUE_PX = 13;
-const WALL_COL_MAX = 86;
+const TRACK_H = 18;
+const TEXT_PX = 13;
+const FLOW_GRID = "46px 112px minmax(28px, 1fr) 118px 8px 108px";
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
 
@@ -55,12 +52,12 @@ function GrossFlowTrack({
       data-at-gross-flow-row={side}
       data-at-flow-gross-sold-usd={dashAmounts ? "" : String(soldUsd)}
       data-at-flow-gross-bought-usd={dashAmounts ? "" : String(boughtUsd)}
-      className="flex items-center min-w-0"
-      style={{ height: TRACK_H, gap: 4 }}
+      className="grid items-center min-w-0"
+      style={{ height: TRACK_H, gridTemplateColumns: FLOW_GRID }}
     >
       <span
         className="shrink-0 inline-block text-left"
-        style={{ width: SIDE_COL_W, fontSize: FLOW_VALUE_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: "0.04em" }}
+        style={{ fontSize: TEXT_PX, fontWeight: 600, color: AT_LABEL, letterSpacing: 0 }}
       >
         {sideTag}
       </span>
@@ -68,10 +65,9 @@ function GrossFlowTrack({
         className="num shrink-0 whitespace-nowrap"
         style={{
           fontFeatureSettings: '"tnum" 1',
-          fontSize: FLOW_VALUE_PX,
+          fontSize: TEXT_PX,
           fontWeight: 600,
           color: DOWN_TEXT,
-          minWidth: 38,
         }}
       >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
@@ -113,31 +109,28 @@ function GrossFlowTrack({
         className="num shrink-0 whitespace-nowrap"
         style={{
           fontFeatureSettings: '"tnum" 1',
-          fontSize: FLOW_VALUE_PX,
+          fontSize: TEXT_PX,
           fontWeight: 600,
           color: UP,
-          minWidth: 44,
-          textAlign: "right",
+          textAlign: "left",
         }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
-      <div aria-hidden style={{ width: 1, alignSelf: "stretch", background: `${GOLD}88`, marginLeft: 1, marginRight: 1 }} />
+      <div aria-hidden style={{ width: 1, height: 14, justifySelf: "center", background: `${GOLD}88` }} />
       <div
         data-at-flow-wall={side}
-        className="num shrink text-right whitespace-nowrap"
+        className="num text-right whitespace-nowrap"
         style={{
-          flex: "0 1 auto",
-          maxWidth: WALL_COL_MAX,
-          lineHeight: 1.1,
-          fontSize: WALL_LABEL_PX,
+          lineHeight: 1,
+          fontSize: TEXT_PX,
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
         title={`${wallLabel} ${wallText}`}
       >
         <span style={{ fontWeight: 600, color: AT_LABEL }}>{wallLabel} </span>
-        <span style={{ fontSize: WALL_VALUE_PX, fontWeight: 700, color: wallColor }}>{wallText}</span>
+        <span style={{ fontWeight: 600, color: wallColor }}>{wallText}</span>
       </div>
     </div>
   );

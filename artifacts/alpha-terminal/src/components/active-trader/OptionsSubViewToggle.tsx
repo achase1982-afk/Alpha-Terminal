@@ -93,7 +93,7 @@ export const OptionsSubViewToggle = memo(function OptionsSubViewToggle({
           style={{
             color: WHITE,
             fontFamily: MONO,
-            fontSize: 11.5,
+            fontSize: 13,
             fontWeight: 600,
             letterSpacing: 0,
             touchAction: "pan-y",
