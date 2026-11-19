@@ -135,6 +135,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   return (
     <header
       data-at-glance-top
+      data-at-zone-source={zones.levelSource ?? ""}
+      data-at-zone-label={zones.glanceCaption ?? ""}
       className="at-glance shrink-0 w-full"
       style={{
         background: AT_HEADER_BG,
