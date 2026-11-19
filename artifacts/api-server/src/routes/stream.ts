@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import {
   addSseClient,
   getSnapshot,
+  getStrategistTimesalePoints,
   getStreamerStatus,
   isConnected,
   addSymbols as addSchwabSymbols,
@@ -19,6 +20,7 @@ import {
   streamerSubTouch,
 } from "../lib/streamerSubscriptionManager.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
+import { nyCalendarYmd, rthBoundsMs } from "../lib/usEquityMarketCalendar.js";
 
 const router: IRouter = Router();
 
@@ -75,15 +77,53 @@ router.post("/symbols", (req, res) => {
   res.json({ ok: true });
 });
 
-router.post("/equity-tape", (req, res) => {
+router.post("/equity-tape", async (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   if (!Array.isArray(symbols)) {
     res.status(400).json({ ok: false, error: "symbols required" });
     return;
   }
-  const cleaned = symbols.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+  const cleaned = [
+    ...new Set(
+      symbols
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .map((s) => s.trim().toUpperCase()),
+    ),
+  ];
   setClientEquityTape(cleaned);
-  res.json({ ok: true, count: cleaned.length });
+
+  // A newly opened ladder must not start today's volume profile at zero,
+  // especially after the close when no new prints will arrive. Seed it from
+  // the server's persistent TIMESALE_EQUITY session ring, then live prints
+  // continue incrementing the same price buckets over SSE.
+  const sessionDate = nyCalendarYmd(new Date());
+  const { openMs, closeMs } = await rthBoundsMs(sessionDate);
+  const throughMs = Math.min(Date.now(), closeMs);
+  const volumeByPrice: Record<string, Record<string, number>> = {};
+  const profileComplete: Record<string, boolean> = {};
+  for (const symbol of cleaned) {
+    const profile: Record<string, number> = {};
+    const sessionPoints = getStrategistTimesalePoints(symbol).filter(
+      (point) => point.ts >= openMs && point.ts <= throughMs,
+    );
+    for (const point of sessionPoints) {
+      const key = point.price.toFixed(2);
+      profile[key] = (profile[key] ?? 0) + point.size;
+    }
+    volumeByPrice[symbol] = profile;
+    // The ring is exact only when it reaches the opening minutes. A server
+    // restart or ring-cap eviction leaves a partial profile; the client then
+    // seeds from today's minute history instead of showing only the tail.
+    profileComplete[symbol] =
+      sessionPoints.length > 0 && sessionPoints[0]!.ts <= openMs + 5 * 60_000;
+  }
+  res.json({
+    ok: true,
+    count: cleaned.length,
+    sessionDate,
+    volumeByPrice,
+    profileComplete,
+  });
 });
 
 router.post("/option-symbols", (req, res) => {

@@ -17,12 +17,30 @@ type VenueBooks = Partial<Record<EquityTapeVenue, EquityTapeBook>>;
 const PRINT_WINDOW_MS = 30_000;
 const FLUSH_MS = 100;
 const MAX_PRINTS = 800;
+const EQUITY_TIME_ZONE = "America/New_York";
+
+function equitySessionDate(ts: number): string {
+  const date = new Date(Number.isFinite(ts) && ts > 0 ? ts : Date.now());
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EQUITY_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+    .formatToParts(date)
+    .reduce<Record<string, string>>((out, part) => {
+      if (part.type !== "literal") out[part.type] = part.value;
+      return out;
+    }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 
 interface EquityTapeState {
   books: Record<string, VenueBooks>;
   prints: Record<string, EquityTapePrint[]>;
-  /** Accumulated traded shares per price (price key -> shares) since this session started, per symbol. Never trimmed by the 30s print window. */
+  /** Accumulated traded shares per price (price key -> shares) for today's session, per symbol. */
   volumeByPrice: Record<string, Record<string, number>>;
+  volumeSessionBySymbol: Record<string, string>;
   pushBook: (msg: {
     symbol: string;
     venue: EquityTapeVenue;
@@ -31,6 +49,11 @@ interface EquityTapeState {
     ts: number;
   }) => void;
   pushPrint: (msg: { symbol: string; price: number; size: number; ts: number }) => void;
+  seedVolumeProfile: (msg: {
+    symbol: string;
+    sessionDate: string;
+    volumeByPrice: Record<string, number>;
+  }) => void;
 }
 
 let pendingBooks = new Map<string, VenueBooks>();
@@ -67,22 +90,30 @@ export const useEquityTapeStore = create<EquityTapeState>((set) => {
           }
         }
         let volumeByPrice = state.volumeByPrice;
+        let volumeSessionBySymbol = state.volumeSessionBySymbol;
         if (printBatch.size > 0) {
           prints = { ...state.prints };
           volumeByPrice = { ...state.volumeByPrice };
+          volumeSessionBySymbol = { ...state.volumeSessionBySymbol };
           const now = Date.now();
           for (const [sym, incoming] of printBatch) {
             const kept = (prints[sym] ?? []).concat(incoming).filter((p) => now - p.ts <= PRINT_WINDOW_MS);
             prints[sym] = kept.length > MAX_PRINTS ? kept.slice(-MAX_PRINTS) : kept;
-            const accum = { ...(volumeByPrice[sym] ?? {}) };
+            const latestSession = equitySessionDate(incoming[incoming.length - 1]?.ts ?? now);
+            const accum =
+              volumeSessionBySymbol[sym] === latestSession
+                ? { ...(volumeByPrice[sym] ?? {}) }
+                : {};
             for (const p of incoming) {
+              if (equitySessionDate(p.ts) !== latestSession) continue;
               const key = p.price.toFixed(2);
               accum[key] = (accum[key] ?? 0) + p.size;
             }
             volumeByPrice[sym] = accum;
+            volumeSessionBySymbol[sym] = latestSession;
           }
         }
-        return { books, prints, volumeByPrice };
+        return { books, prints, volumeByPrice, volumeSessionBySymbol };
       });
     }, FLUSH_MS);
   };
@@ -91,6 +122,7 @@ export const useEquityTapeStore = create<EquityTapeState>((set) => {
     books: {},
     prints: {},
     volumeByPrice: {},
+    volumeSessionBySymbol: {},
     pushBook: (msg) => {
       const sym = msg.symbol.toUpperCase();
       const prev = pendingBooks.get(sym) ?? {};
@@ -112,6 +144,28 @@ export const useEquityTapeStore = create<EquityTapeState>((set) => {
       prev.push({ price: msg.price, size: msg.size, ts: msg.ts });
       pendingPrints.set(sym, prev);
       arm();
+    },
+    seedVolumeProfile: (msg) => {
+      const sym = msg.symbol.trim().toUpperCase();
+      if (!sym || !/^\d{4}-\d{2}-\d{2}$/.test(msg.sessionDate)) return;
+      set((state) => {
+        const next =
+          state.volumeSessionBySymbol[sym] === msg.sessionDate
+            ? { ...(state.volumeByPrice[sym] ?? {}) }
+            : {};
+        for (const [price, size] of Object.entries(msg.volumeByPrice)) {
+          if (!(Number(price) > 0) || !(size > 0) || !Number.isFinite(size)) continue;
+          const key = Number(price).toFixed(2);
+          next[key] = Math.max(next[key] ?? 0, size);
+        }
+        return {
+          volumeByPrice: { ...state.volumeByPrice, [sym]: next },
+          volumeSessionBySymbol: {
+            ...state.volumeSessionBySymbol,
+            [sym]: msg.sessionDate,
+          },
+        };
+      });
     },
   };
 });
