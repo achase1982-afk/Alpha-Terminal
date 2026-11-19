@@ -18,9 +18,7 @@ import {
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
-  AT_HEAT_CALL_RGB,
   AT_HEAT_MAX_ALPHA,
-  AT_HEAT_PUT_RGB,
   AT_HEAT_WASH_ALPHA,
   AT_LADDER_GRID,
   AT_LADDER_GAMMA,
@@ -137,36 +135,72 @@ function fmtPx(n: number | null | undefined): string {
 /** Re-export heat bounds so tests can assert volume-only coloring. */
 export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
-const HEAT_RGB = { call: AT_HEAT_CALL_RGB, put: AT_HEAT_PUT_RGB } as const;
-/**
- * Fixed overlay that eases each pair's colour off toward the strike column.
- * The heat itself is the background colour underneath, which the browser can
- * interpolate between repaints; a gradient that changes cannot be.
- */
-const HEAT_FADE = {
-  call: "linear-gradient(90deg, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.14) 55%, rgba(6, 7, 9, 0.32) 100%)",
-  put: "linear-gradient(270deg, rgba(6, 7, 9, 0) 0%, rgba(6, 7, 9, 0.14) 55%, rgba(6, 7, 9, 0.32) 100%)",
+/** Near-black rest tone. Volume walks this toward HEAT_BRIGHT. */
+const HEAT_DEEP = {
+  call: [4, 8, 6],
+  put: [12, 5, 5],
 } as const;
+const HEAT_BRIGHT = {
+  call: [126, 255, 186],
+  put: [255, 88, 78],
+} as const;
+
+function heatTone(intensity: number): number {
+  return Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
+}
+
+/** Keeps a light print close to black and saves the bright end for heavy volume. */
+function heatLift(intensity: number): number {
+  return Math.pow(heatTone(intensity), 1.2);
+}
+
+function mixHeatRgb(side: "call" | "put", lift: number): string {
+  const deep = HEAT_DEEP[side];
+  const bright = HEAT_BRIGHT[side];
+  const t = Math.min(1, Math.max(0, lift));
+  const r = Math.round(deep[0] + (bright[0] - deep[0]) * t);
+  const g = Math.round(deep[1] + (bright[1] - deep[1]) * t);
+  const b = Math.round(deep[2] + (bright[2] - deep[2]) * t);
+  return `${r}, ${g}, ${b}`;
+}
 
 /** Alpha of a pair's heat colour for a 0-1 intensity. Zero volume stays transparent. */
 export function atHeatAlpha(intensity: number): number {
-  const t = Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
-  return AT_HEAT_WASH_ALPHA + (AT_HEAT_MAX_ALPHA - AT_HEAT_WASH_ALPHA) * t;
+  const t = heatTone(intensity);
+  if (t <= 0) return 0;
+  const presence = 0.7 + 0.3 * t;
+  return AT_HEAT_WASH_ALPHA + (AT_HEAT_MAX_ALPHA - AT_HEAT_WASH_ALPHA) * presence;
 }
 
 function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSProperties {
-  const alpha = atHeatAlpha(view.intensity);
+  const t = heatTone(view.intensity);
+  const alpha = atHeatAlpha(t);
   if (alpha <= 0) {
     return {
       backgroundColor: "transparent",
       backgroundImage: "none",
-      transition: "background-color 160ms linear",
+      boxShadow: "none",
+      animation: "none",
     };
   }
+  const lift = heatLift(t);
+  const rest = mixHeatRgb(side, lift);
+  const peak = mixHeatRgb(side, Math.min(1, lift + 0.16 + 0.12 * t));
+  const restAlpha = alpha.toFixed(3);
+  const peakAlpha = Math.min(1, alpha + 0.06).toFixed(3);
+  const restGlow = (0.04 + 0.22 * t).toFixed(3);
+  const peakGlow = (0.2 + 0.55 * t).toFixed(3);
+  const bright = HEAT_BRIGHT[side].join(", ");
+  const seconds = (2.6 - t * 0.9).toFixed(2);
   return {
-    backgroundColor: `rgba(${HEAT_RGB[side]}, ${alpha.toFixed(3)})`,
-    backgroundImage: HEAT_FADE[side],
-    transition: "background-color 160ms linear",
+    backgroundColor: `rgba(${rest}, ${restAlpha})`,
+    backgroundImage: "none",
+    boxShadow: `inset 0 0 ${Math.round(6 + 10 * t)}px rgba(${bright}, ${restGlow})`,
+    ["--at-heat-rest" as string]: `rgba(${rest}, ${restAlpha})`,
+    ["--at-heat-peak" as string]: `rgba(${peak}, ${peakAlpha})`,
+    ["--at-heat-glow-rest" as string]: `inset 0 0 ${Math.round(6 + 10 * t)}px rgba(${bright}, ${restGlow})`,
+    ["--at-heat-glow-peak" as string]: `inset 0 0 ${Math.round(16 + 22 * t)}px rgba(${bright}, ${peakGlow})`,
+    animation: `at-heat-breathe ${seconds}s ease-in-out infinite`,
   };
 }
 
