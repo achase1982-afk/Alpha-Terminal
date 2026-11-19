@@ -119,11 +119,7 @@ export function buildChainSheetSchwabOrder(
   if (econ.bracketConfirm.mode === "unsupported") {
     return { error: econ.bracketConfirm.message };
   }
-  if (!draft.prefs.takeProfit?.enabled || econ.takeProfitLimit == null) {
-    return buildSpreadNetEntry(input, parsed);
-  }
 
-  const exitPrice = econ.takeProfitLimit;
   const exitDuration = draft.prefs.exitDuration ?? "GOOD_TILL_CANCEL";
 
   if (input.distinctLegCount === 1) {
@@ -144,6 +140,12 @@ export function buildChainSheetSchwabOrder(
       stopLimitOffset: draft.prefs.stopLimitOffset,
     });
   }
+
+  if (!draft.prefs.takeProfit?.enabled || econ.takeProfitLimit == null) {
+    return buildSpreadNetEntry(input, parsed);
+  }
+
+  const exitPrice = econ.takeProfitLimit;
 
   const entry = buildSpreadNetEntry(input, parsed);
   const closeIsDebit = input.isCredit;

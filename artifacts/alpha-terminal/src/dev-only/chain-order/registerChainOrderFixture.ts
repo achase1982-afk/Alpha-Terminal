@@ -56,9 +56,12 @@ export function registerChainOrderFixtureFromLocation(): void {
   if (!import.meta.env.DEV) return;
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const bracketHarness = params.get("bracket") === "1";
+  const bracketParam = params.get("bracket");
+  const bracketSpreadTpHarness = bracketParam === "1";
+  const bracketSingleSlHarness = bracketParam === "sl";
+  const bracketHarness = bracketSpreadTpHarness || bracketSingleSlHarness;
   const scene = (
-    bracketHarness ? "vertical" : (params.get("scene") ?? "1-leg")
+    bracketSingleSlHarness ? "1-leg" : bracketSpreadTpHarness ? "vertical" : (params.get("scene") ?? "1-leg")
   ) as ChainOrderFixtureScene;
   const openReviewOnMount =
     scene === "confirm" || params.get("confirm") === "1" || bracketHarness;
@@ -70,11 +73,11 @@ export function registerChainOrderFixtureFromLocation(): void {
     symbol: "SPX",
     chain: buildFixtureChain(),
     underlyingPrice: FIXTURE_SPX_SPOT,
-    selectedLegs: scenePicks(scene, bracketHarness),
+    selectedLegs: scenePicks(scene, bracketSpreadTpHarness),
     openReviewOnMount,
     sheetCollapsed: false,
     mockPlaceOrder: bracketHarness && params.get("mockPlaceOrder") !== "0",
-    atBracketDraft: bracketHarness
+    atBracketDraft: bracketSpreadTpHarness
       ? {
           prefs: {
             template: "TRG w/ bracket",
@@ -92,7 +95,25 @@ export function registerChainOrderFixtureFromLocation(): void {
           },
           primaryInstruction: "SELL_TO_OPEN",
         }
-      : undefined,
+      : bracketSingleSlHarness
+        ? {
+            prefs: {
+              template: "TRG w/ bracket",
+              qty: 1,
+              orderType: "LIMIT",
+              limitAnchor: "Mid",
+              takeProfit: { enabled: false, mode: "percent", offset: 25 },
+              stopLoss: { enabled: true, mode: "percent", offset: -10 },
+              autoSend: { enabled: false, armed: false },
+              ladderMode: "single",
+              verticalWidth: 5,
+              exitDuration: "GOOD_TILL_CANCEL",
+              stopLossOrderType: "STOP",
+              stopLimitOffset: 0.05,
+            },
+            primaryInstruction: "BUY_TO_OPEN",
+          }
+        : undefined,
   };
 
   setChainOrderFixtureOverride(override);

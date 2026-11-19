@@ -214,6 +214,44 @@ describe("OptionsChainOrderSheet", () => {
     ]);
   });
 
+  it("single-leg SL Send posts TRIGGER with STOP child at $1.80", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "TRG w/ bracket",
+      qty: 1,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: { enabled: false, mode: "percent", offset: 25 },
+      stopLoss: { enabled: true, mode: "percent", offset: -10 },
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+    };
+    renderSheet({
+      atBracketDraft: { prefs, primaryInstruction: "BUY_TO_OPEN" },
+    });
+    const limit = screen.getByTestId("chain-sheet-limit") as HTMLInputElement;
+    fireEvent.change(limit, { target: { value: "2.00" } });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    const send = screen.getByTestId("chain-sheet-send");
+    fireEvent.click(send);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const order = body.order;
+    expect(order.orderStrategyType).toBe("TRIGGER");
+    expect(order.price).toBe(2);
+    const child = order.childOrderStrategies[0];
+    expect(child.orderType).toBe("STOP");
+    expect(child.stopPrice).toBe(1.8);
+    expect(child.orderLegCollection[0].instruction).toBe("SELL_TO_CLOSE");
+  });
+
   it("AT bracket draft: chain confirm shows trigger rows (Sequence)", async () => {
     const prefs: ActiveTraderTemplatePrefs = {
       template: "TRG w/ bracket",

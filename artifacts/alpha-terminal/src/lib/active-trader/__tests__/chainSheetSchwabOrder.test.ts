@@ -79,6 +79,51 @@ describe("buildChainSheetSchwabOrder", () => {
     expect(closeLegs.map((l) => l.instruction)).toEqual(["BUY_TO_CLOSE", "SELL_TO_CLOSE"]);
   });
 
+  it("single-leg SL only: TRIGGER + STOP child at $1.80 (BTO @ $2, 10% SL)", () => {
+    const slPrefs: ActiveTraderTemplatePrefs = {
+      ...prefs(),
+      takeProfit: { enabled: false, mode: "percent", offset: 25 },
+      stopLoss: { enabled: true, mode: "percent", offset: -10 },
+    };
+    const longLeg: StrategyLeg = {
+      id: "a",
+      optionType: "CALL",
+      direction: "BUY_TO_OPEN",
+      strike: 600,
+      expiration: "2026-12-19",
+      quantity: 1,
+      bid: 1.95,
+      ask: 2.05,
+      schwabSymbol: "SPY   261219C00600000",
+    };
+    const order = buildChainSheetSchwabOrder(
+      {
+        symbol: "SPY",
+        legs: [longLeg],
+        spreadQuantity: 1,
+        limitPrice: "2.00",
+        limitTickCtx: { underlyingSymbol: "SPY", isOption: true },
+        timeInForce: "DAY",
+        isCredit: false,
+        entryGrossDollars: -200,
+        distinctLegCount: 1,
+        atBracketDraft: {
+          prefs: slPrefs,
+          primaryInstruction: "BUY_TO_OPEN",
+        },
+      },
+      2,
+    );
+    expect(order.error).toBeUndefined();
+    expect(order.orderStrategyType).toBe("TRIGGER");
+    expect(order.price).toBe(2);
+    const child = (order.childOrderStrategies as Record<string, unknown>[])[0]!;
+    expect(child.orderType).toBe("STOP");
+    expect(child.stopPrice).toBe(1.8);
+    const closeLegs = child.orderLegCollection as { instruction: string }[];
+    expect(closeLegs.map((l) => l.instruction)).toEqual(["SELL_TO_CLOSE"]);
+  });
+
   it("returns SINGLE when bracket inactive", () => {
     const order = buildChainSheetSchwabOrder(
       {
