@@ -5,6 +5,7 @@ import { queryClient } from "@/App";
 import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useBrokerConnect } from "@/hooks/useBrokerConnect";
+import { useWebullConnect } from "@/hooks/useWebullConnect";
 import { useShallow } from "zustand/react/shallow";
 
 export function AuthPanel() {
@@ -12,6 +13,7 @@ export function AuthPanel() {
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const { oauthUrl, isNavigating, onClick } = useBrokerConnect();
+  const { connect: connectWebull, isConnecting: webullConnecting } = useWebullConnect();
 
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
@@ -63,30 +65,62 @@ export function AuthPanel() {
             <>RECONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
           )}
         </a>
+        <button
+          type="button"
+          onClick={() => void connectWebull()}
+          disabled={webullConnecting}
+          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+        >
+          {webullConnecting ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              CONNECTING WEBULL…
+            </>
+          ) : (
+            "CONNECT WEBULL"
+          )}
+        </button>
       </div>
     );
   }
 
   if (isConnected) {
     return (
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d166] opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00d166]" />
-          </span>
-          <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">SCHWAB</span>
-          <span className="font-mono text-[10px] text-[#00d166] tracking-wider">CONNECTED</span>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d166] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00d166]" />
+            </span>
+            <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">SCHWAB</span>
+            <span className="font-mono text-[10px] text-[#00d166] tracking-wider">CONNECTED</span>
+          </div>
+          <button
+            onClick={handleDisconnect}
+            disabled={isDisconnecting}
+            className="font-mono text-[10px] text-zinc-500 hover:text-red-400 transition-colors tracking-wider"
+          >
+            {isDisconnecting ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              "DISCONNECT"
+            )}
+          </button>
         </div>
         <button
-          onClick={handleDisconnect}
-          disabled={isDisconnecting}
-          className="font-mono text-[10px] text-zinc-500 hover:text-red-400 transition-colors tracking-wider"
+          type="button"
+          onClick={() => void connectWebull()}
+          disabled={webullConnecting}
+          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
         >
-          {isDisconnecting ? (
-            <Loader2 className="w-3 h-3 animate-spin" />
+          {webullConnecting ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              CONNECTING WEBULL…
+            </>
           ) : (
-            "DISCONNECT"
+            "CONNECT WEBULL"
           )}
         </button>
       </div>
@@ -120,6 +154,21 @@ export function AuthPanel() {
           <>CONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
         )}
       </a>
+      <button
+        type="button"
+        onClick={() => void connectWebull()}
+        disabled={webullConnecting}
+        className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+      >
+        {webullConnecting ? (
+          <>
+            <Loader2 className="w-3 h-3 animate-spin" />
+            CONNECTING WEBULL…
+          </>
+        ) : (
+          "CONNECT WEBULL"
+        )}
+      </button>
     </div>
   );
 }

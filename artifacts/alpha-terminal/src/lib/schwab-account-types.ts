@@ -40,10 +40,14 @@ export interface SchwabPosition {
   currentDayCost: number | null;
 }
 
+export type TradingBroker = "schwab" | "webull";
+
 export interface SchwabAccountSummary {
   accountNumber: string;
   accountNumberRaw?: string;
   hashValue: string | null;
+  /** Present for merged broker lists; Schwab rows omit this field. */
+  broker?: TradingBroker;
   type: string;
   isDayTrader: boolean;
   roundTrips: number;

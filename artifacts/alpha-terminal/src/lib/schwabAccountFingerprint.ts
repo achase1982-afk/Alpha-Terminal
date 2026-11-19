@@ -12,6 +12,7 @@ export function schwabAccountsFingerprint(accounts: SchwabAccountSummary[]): str
         .join(";");
       return [
         a.hashValue ?? "",
+        a.broker ?? "schwab",
         a.balances.liquidationValue,
         a.balances.availableFunds,
         a.balances.buyingPower,

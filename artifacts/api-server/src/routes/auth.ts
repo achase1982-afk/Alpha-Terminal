@@ -18,6 +18,7 @@ import {
 } from "../lib/tokenStore.js";
 import { stopStreamer } from "../lib/schwabStreamer.js";
 import schwab2AuthRouter from "./schwab2Auth.js";
+import webullAuthRouter from "./webullAuth.js";
 import { buildSchwab2AuthorizeUrl, deskSchwab2Configured } from "../lib/desk/deskSchwab2OAuth.js";
 import { getSchwab2TokenMeta } from "../lib/desk/deskSchwab2TokenStore.js";
 import { getSchwabBrokerageRedirectUri } from "../lib/desk/schwabOAuthRedirect.js";
@@ -29,6 +30,7 @@ export { errorPage, traderSuccessPage };
 
 const router: IRouter = Router();
 router.use(schwab2AuthRouter);
+router.use("/webull", webullAuthRouter);
 
 const SCHWAB_AUTH_BASE = "https://api.schwabapi.com/v1/oauth/authorize";
 const SCHWAB_TOKEN_URL = "https://api.schwabapi.com/v1/oauth/token";

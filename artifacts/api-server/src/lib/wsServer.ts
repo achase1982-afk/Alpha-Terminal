@@ -16,6 +16,7 @@ import {
 import { getTokens } from "./tokenStore.js";
 import { registerPortfolioErrorBroadcast } from "./portfolioWsErrorHub.js";
 import { fetchMappedSchwabAccounts } from "./schwabPortfolioAccounts.js";
+import { fetchMappedWebullAccounts } from "./webull/webullPortfolioAccounts.js";
 import {
   collectPortfolioStreamSymbols,
   overlayPortfolioMarksFromStream,
@@ -80,7 +81,14 @@ async function loadSharedPortfolioSnapshot(token: string, force = false): Promis
 
   portfolioLoadPromise = (async () => {
     try {
-      const mapped = await fetchMappedSchwabAccounts(token);
+      const schwabMapped = await fetchMappedSchwabAccounts(token);
+      const mapped = [...schwabMapped];
+      try {
+        const webullMapped = await fetchMappedWebullAccounts();
+        if (webullMapped.length) mapped.push(...webullMapped);
+      } catch (webullErr) {
+        logger.debug({ webullErr }, "Webull portfolio slice skipped");
+      }
       overlayPortfolioMarksFromStream(mapped);
       portfolioStreamSymbols = collectPortfolioStreamSymbols(mapped);
       let orders: unknown[] = [];

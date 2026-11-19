@@ -31,6 +31,7 @@ import moversRouter from "./movers";
 import catalystsRouter from "./catalysts";
 import autoTradeRouter from "./autoTrade";
 import engineRouter from "./engine";
+import webullRouter from "./webull";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -65,5 +66,6 @@ router.use("/movers", moversRouter);
 router.use("/catalysts", catalystsRouter);
 router.use("/auto-trade", autoTradeRouter);
 router.use("/engine", engineRouter);
+router.use("/webull", webullRouter);
 
 export default router;
