@@ -45,6 +45,16 @@ const router: IRouter = Router();
 const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 
 const companyNameCache = new Map<string, string>();
+const assetTypeCache = new Map<string, string>();
+
+function cacheAssetType(symbol: string, reference: { assetType?: unknown; assetMainType?: unknown } | null | undefined) {
+  const raw = reference?.assetType ?? reference?.assetMainType;
+  if (typeof raw === "string" && raw.trim()) assetTypeCache.set(symbol.toUpperCase(), raw.trim());
+}
+
+function cachedAssetType(symbol: string): string | undefined {
+  return assetTypeCache.get(symbol.toUpperCase());
+}
 
 export function getCachedCompanyName(symbol: string): string | undefined {
   return companyNameCache.get(symbol.toUpperCase());
@@ -206,6 +216,7 @@ async function fetchCompanyNameBackground(displaySymbol: string, apiSymbol: stri
     const entry = json[apiSymbol] ?? json[displaySymbol] ?? Object.values(json)[0];
     if (!entry) return;
     const ref = entry.reference ?? entry;
+    cacheAssetType(displaySymbol, ref);
     const q = entry.quote ?? {};
     const name =
       ref?.description ?? ref?.companyName ??
@@ -267,7 +278,7 @@ router.get("/quote", async (req, res) => {
       fiftyTwoWeekHigh: w52.high,
       fiftyTwoWeekLow: w52.low,
     });
-    return res.json(data);
+    return res.json({ ...data, assetType: cachedAssetType(displaySymbol) });
   }
 
   // ── SCHWAB REST ─────────────────────────────────────────────────────────
@@ -306,6 +317,7 @@ router.get("/quote", async (req, res) => {
     const quote = entry?.["quote"] as Record<string, unknown> | undefined;
     const fundamental = entry?.["fundamental"] as Record<string, unknown> | undefined;
     const reference = entry?.["reference"] as Record<string, unknown> | undefined;
+    cacheAssetType(displaySymbol, reference);
 
     const description =
       (reference?.["description"] as string | undefined) ||
@@ -430,6 +442,7 @@ router.get("/quote", async (req, res) => {
       ...data,
       bidSize: pickNum("bidSize") ?? undefined,
       askSize: pickNum("askSize") ?? undefined,
+      assetType: cachedAssetType(displaySymbol),
     });
     return;
   } catch (err) {

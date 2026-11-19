@@ -23,5 +23,7 @@ export interface QuoteResponse {
   /** True when price fields are from REST rather than the live Schwab streamer. */
   not_streaming?: boolean;
   nextEarningsDate?: string;
+  /** Schwab reference assetType or assetMainType. */
+  assetType?: string;
   error?: string;
 }

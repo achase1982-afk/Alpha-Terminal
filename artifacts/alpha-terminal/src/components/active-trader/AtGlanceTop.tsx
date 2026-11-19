@@ -68,6 +68,8 @@ export type AtGlanceTopProps = {
   };
   ladderHeatSource?: AtLadderHeatSourceMeta;
   expiryPickerLoading?: boolean;
+  /** Equity or ETF share ladder. Hides option expiry, walls, and option flow. */
+  stockTemplate?: boolean;
 };
 
 function LevelsCell({
@@ -103,6 +105,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   skipNetwork,
   ladderHeatSource,
   expiryPickerLoading,
+  stockTemplate = false,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
   const { data: quote, restQuote } = useQuote(symbol);
@@ -197,7 +200,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {dayLabel}
           </span>
         </div>
-        {mode !== "futures" ? (
+        {mode !== "futures" && !stockTemplate ? (
           <div className="shrink-0 ml-2 flex items-center justify-end" style={{ maxWidth: "42%" }}>
             <AtExpiryPicker loading={expiryPickerLoading} />
           </div>
@@ -235,7 +238,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden data-at-day-levels-divider />
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0 }} hidden={stockTemplate}>
               <LevelsCell
                 label="High zone bottom"
                 value={highZoneVal}
@@ -263,7 +266,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden />
-            <div style={{ minWidth: 0 }}>
+            <div style={{ minWidth: 0 }} hidden={stockTemplate}>
               <LevelsCell
                 label="Low zone top"
                 value={lowZoneVal}
@@ -276,7 +279,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </div>
       ) : null}
 
-      <div
+      {!stockTemplate ? <div
         data-at-glance-flow-band
         style={{
           padding: "4px 16px 2px",
@@ -311,7 +314,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             forceDashAmounts={flowDashShell}
           />
         </div>
-      </div>
+      </div> : null}
     </header>
   );
 });

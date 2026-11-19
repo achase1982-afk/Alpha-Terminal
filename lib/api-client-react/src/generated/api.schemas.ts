@@ -55,6 +55,8 @@ export interface QuoteResponse {
   fiftyTwoWeekLow?: number;
   peRatio?: number;
   nextEarningsDate?: string;
+  /** Schwab reference assetType or assetMainType. */
+  assetType?: string;
   error?: string;
 }
 
