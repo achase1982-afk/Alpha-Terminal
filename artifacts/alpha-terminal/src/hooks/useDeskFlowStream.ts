@@ -26,6 +26,7 @@ import { parseDeskFlowFrame } from "@/lib/active-trader/deskFlowFrameTypes";
 import { deskFlowReplayForSymbol } from "@/lib/active-trader/deskFlowReplay";
 import { buildAuthenticatedEventSourceUrl, fetchWithAuth } from "@/lib/fetchWithAuth";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
+import { reduceFlowSessionClosed } from "@/lib/active-trader/deskFlowSession";
 
 const API_BASE = import.meta.env.BASE_URL + "api";
 const INITIAL_BACKOFF_MS = 1_000;
@@ -213,10 +214,11 @@ export function useDeskFlowStream(symbol: string, enabled: boolean): DeskFlowStr
         if (cancelled) return;
         try {
           const j = JSON.parse((ev as MessageEvent).data) as { sessionClosed?: boolean };
-          if (j.sessionClosed === true) {
-            setSessionClosed(true);
-            sessionClosedRef.current = true;
-          }
+          const next = reduceFlowSessionClosed(sessionClosedRef.current, j);
+          if (next === sessionClosedRef.current) return;
+          sessionClosedRef.current = next;
+          setSessionClosed(next);
+          schedulePaint();
         } catch {
           /* ignore */
         }
