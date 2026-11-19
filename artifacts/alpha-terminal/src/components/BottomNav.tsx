@@ -329,6 +329,7 @@ export function BottomNav({
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
               "relative flex flex-col items-center gap-1 min-w-0 px-1 py-1.5 select-none transition-colors",
+              tabId === "activeTrader" ? "w-full" : "",
               isActive ? "text-white" : "text-muted-foreground",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
