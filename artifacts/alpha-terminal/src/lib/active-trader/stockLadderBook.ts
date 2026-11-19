@@ -94,6 +94,70 @@ export function stockSizeByPrice(levels: readonly StockLevel[]): Map<string, num
   return out;
 }
 
+/** Four columns: volume, bid size, price, ask size. Shared with the stock header. */
+export const STOCK_LADDER_GRID = "minmax(0,1fr) minmax(0,1fr) 76px minmax(0,1fr)";
+
+export const STOCK_PRINT_WINDOW_MS = 30_000;
+
+/** A live book or quote older than this is shown and marked stale. */
+export const STOCK_FEED_STALE_MS = 45_000;
+
+export type StockFeedMark = "live" | "stale" | "unavailable" | "connecting";
+
+export type StockVenueSize = { venue: string; size: number };
+
+export type StockPriceSize = { total: number; parts: StockVenueSize[] };
+
+/** Sum each venue at a price and keep the per-venue breakdown. */
+export function stockBookByPrice(
+  books: readonly { venue: string; levels: readonly StockLevel[] }[],
+): Map<string, StockPriceSize> {
+  const out = new Map<string, StockPriceSize>();
+  for (const book of books) {
+    const summed = stockSizeByPrice(book.levels);
+    for (const [key, size] of summed) {
+      const cur = out.get(key);
+      if (!cur) out.set(key, { total: size, parts: [{ venue: book.venue, size }] });
+      else {
+        cur.total += size;
+        cur.parts.push({ venue: book.venue, size });
+      }
+    }
+  }
+  return out;
+}
+
+/** 0–1 against one shared peak. Bids and asks pass the same peak. */
+export function stockHeatTone(size: number, peak: number): number {
+  if (!(size > 0) || !(peak > 0)) return 0;
+  return Math.min(1, size / peak);
+}
+
+export function stockPeak(values: Iterable<number>): number {
+  let max = 0;
+  for (const n of values) if (n > max) max = n;
+  return max;
+}
+
+export function epochMs(raw: number | null | undefined): number | null {
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  if (raw > 1e12) return raw;
+  if (raw > 1e9) return raw * 1000;
+  return null;
+}
+
+export function stockFeedMark(input: {
+  streamStatus: "offline" | "connecting" | "live";
+  newestMs: number | null;
+  now: number;
+}): StockFeedMark {
+  if (input.streamStatus === "offline") return "unavailable";
+  if (input.newestMs == null) return input.streamStatus === "live" ? "connecting" : "unavailable";
+  if (input.now - input.newestMs > STOCK_FEED_STALE_MS) return "stale";
+  if (input.streamStatus === "connecting") return "live";
+  return "live";
+}
+
 export function stockBestPrice(levels: readonly StockLevel[], side: "bid" | "ask"): number | null {
   let best: number | null = null;
   for (const level of levels) {
