@@ -91,6 +91,7 @@ export const GetQuoteResponse = zod.object({
       "True when price fields are from REST rather than the live Schwab streamer.",
     ),
   nextEarningsDate: zod.string().optional(),
+  assetType: zod.string().optional(),
   error: zod.string().optional(),
 });
 

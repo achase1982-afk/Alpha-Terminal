@@ -96,6 +96,10 @@ export interface LiveQuote {
   tradeTimeMs?: number | null;
   /** Quote origin for merge policy (Cboe One vs Schwab vs IBKR PRO breadth). */
   quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
+  /** Set only when this frame carried both bid price and bid size. */
+  bidQuoteTs?: number | null;
+  /** Set only when this frame carried both ask price and ask size. */
+  askQuoteTs?: number | null;
 }
 
 /** One qualifying field-8 volume sample on this stream frame (not carried across merges). */
@@ -1952,15 +1956,46 @@ function processEquityTick(content: Record<string, unknown>[]) {
       changePct = (change / close) * 100;
     }
 
+    const bidPxIn = schwabFieldPresent(item, "1");
+    const bidSzIn = schwabFieldPresent(item, "4");
+    const askPxIn = schwabFieldPresent(item, "2");
+    const askSzIn = schwabFieldPresent(item, "5");
+    let bid = existing?.bid ?? null;
+    let bidSize = existing?.bidSize ?? null;
+    let bidQuoteTs = existing?.bidQuoteTs ?? null;
+    let ask = existing?.ask ?? null;
+    let askSize = existing?.askSize ?? null;
+    let askQuoteTs = existing?.askQuoteTs ?? null;
+    if (bidPxIn && bidSzIn) {
+      const px = numOrNull(item["1"]);
+      const sz = numOrNull(item["4"]);
+      if (px != null && px > 0 && sz != null && sz >= 0) {
+        bid = px;
+        bidSize = sz;
+        bidQuoteTs = now;
+      }
+    }
+    if (askPxIn && askSzIn) {
+      const px = numOrNull(item["2"]);
+      const sz = numOrNull(item["5"]);
+      if (px != null && px > 0 && sz != null && sz >= 0) {
+        ask = px;
+        askSize = sz;
+        askQuoteTs = now;
+      }
+    }
+
     const baseQuote: LiveQuote = {
       symbol: streamKey,
       last,
       regularLast,
       extendedLast: last,
-      bid: numOrNull(item["1"]) ?? existing?.bid ?? null,
-      ask: numOrNull(item["2"]) ?? existing?.ask ?? null,
-      bidSize: numOrNull(item["4"]) ?? existing?.bidSize ?? null,
-      askSize: numOrNull(item["5"]) ?? existing?.askSize ?? null,
+      bid,
+      ask,
+      bidSize,
+      askSize,
+      bidQuoteTs,
+      askQuoteTs,
       change,
       changePct,
       volume: numOrNull(item["8"]) ?? existing?.volume ?? null,

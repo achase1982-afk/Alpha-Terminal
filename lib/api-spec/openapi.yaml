@@ -462,6 +462,9 @@ components:
           description: True when price fields are from REST rather than the live Schwab streamer.
         nextEarningsDate:
           type: string
+        assetType:
+          type: string
+          description: Schwab reference assetType or assetMainType for this symbol.
         error:
           type: string
       required:

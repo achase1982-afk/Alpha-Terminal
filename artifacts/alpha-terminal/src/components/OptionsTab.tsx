@@ -52,6 +52,7 @@ import {
   type AtChainQueryParams,
 } from "@/lib/active-trader/atLadderWindow";
 import type { OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
+import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import {
   canAddChainDraftLeg,
   CHAIN_LEG_LIMIT_MESSAGE,
@@ -1541,6 +1542,11 @@ export function OptionsTab({
   );
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
+  const atEntryViewRef = useRef(optionsSubView);
+  atEntryViewRef.current = optionsSubView;
+  useEffect(() => {
+    if (requestedSubView === "at") noteAtEntry(symbol, atEntryViewRef.current === "chain");
+  }, [requestedSubView, symbol]);
   const [atExpiration, setAtExpirationState] = useState<string | null>(() =>
     useOptionsExpiryStore.getState().getSelected(symbol),
   );

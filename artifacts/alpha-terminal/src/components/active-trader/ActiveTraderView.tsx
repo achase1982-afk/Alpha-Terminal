@@ -16,7 +16,6 @@ import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
 import { auditNearAtmLadderQuotes, type LadderQuoteHealthAudit } from "@/lib/active-trader/atLadderQuoteHealth";
 import {
   equityOptionsClosedPill,
-  equityOptionsSessionEnded,
   equityOptionsSessionOpen,
 } from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
@@ -76,6 +75,15 @@ import { LadderBody, type AtTradeContext, type LadderRowModel } from "./LadderBo
 import { filterAtExpiryPillGroups } from "@/lib/optionsExpirationPick";
 import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
 import { AtTradeActionBar } from "./AtTradeActionBar";
+import { AtInstrumentModePill } from "./AtInstrumentModePill";
+import { StockLadderBody } from "./StockLadderBody";
+import {
+  instrumentClassFromAssetType,
+  resolveInstrumentTemplate,
+  saveExplicitInstrumentTemplate,
+  stockTemplateAvailable,
+  type AtInstrumentTemplate,
+} from "@/lib/active-trader/atInstrumentMode";
 import {
   atLadderNudgeToClearSheet,
   atLadderRowFullyVisible,
@@ -352,7 +360,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const symbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
   const spxMode = isSpxSymbol(symbol);
-  const { data: underlyingQuote } = useQuote(symbol);
+  const { data: underlyingQuote, restQuote } = useQuote(symbol);
+  const instrumentClass = instrumentClassFromAssetType(restQuote?.assetType, symbol);
+  const canStock = stockTemplateAvailable(instrumentClass);
+  const [template, setTemplate] = useState<AtInstrumentTemplate>("options");
+  useEffect(() => {
+    setTemplate(resolveInstrumentTemplate(symbol, instrumentClass));
+  }, [symbol, instrumentClass]);
+  const stockTemplate = canStock && template === "stock";
+  const toggleTemplate = useCallback(() => {
+    if (!canStock) return;
+    const next: AtInstrumentTemplate = template === "stock" ? "options" : "stock";
+    saveExplicitInstrumentTemplate(symbol, next);
+    setTemplate(next);
+  }, [canStock, template, symbol]);
   const keepawayUseMean = useAtChromeStore((s) => s.keepawayUseMean);
   const setKeepawayUseMean = useAtChromeStore((s) => s.setKeepawayUseMean);
   const fetchedKeepaway = useSpxKeepawayStats(spxMode && !presentation?.skipNetwork);
@@ -1267,6 +1288,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           skipNetwork={!!presentation?.skipNetwork}
           embedded
           expiryPickerLoading={!ladderDataReady && !!activeExpiration}
+          stockTemplate={stockTemplate}
           orderSettings={{
             prefs,
             primaryInstruction: settingsSummaryInstruction,
@@ -1276,6 +1298,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           }}
           ladderHeatSource={ladderHeatSourceDisplay}
         />
+        <div hidden={stockTemplate}>
         <AtOrderDefaultsSheet
           open={settingsOpen}
           prefs={prefs}
@@ -1292,9 +1315,50 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             saveAtSettingsPanelOpen(false);
           }}
         />
+        </div>
       </div>
 
+      {stockTemplate ? (
+        <div className="flex flex-1 min-h-0 flex-col" data-at-stock-template>
+          <div
+            className="grid items-center shrink-0"
+            style={{
+              height: AT_LADDER_GROUP_HDR_H,
+              gridTemplateColumns: "minmax(0,1fr) 96px minmax(0,1fr)",
+              background: AT_HEADER_BG,
+              borderBottom: `1px solid ${BORDER}`,
+            }}
+          >
+            <span />
+            <span className="flex items-center justify-center">
+              <AtInstrumentModePill template="stock" onToggle={toggleTemplate} />
+            </span>
+            <span />
+          </div>
+          <div
+            className="grid items-center shrink-0"
+            style={{
+              height: AT_LADDER_COL_HDR_H,
+              gridTemplateColumns: "minmax(0,1fr) 96px minmax(0,1fr)",
+              paddingLeft: AT_LADDER_GUTTER_X,
+              paddingRight: AT_LADDER_GUTTER_X,
+              fontSize: 13,
+              color: AT_LABEL,
+              fontWeight: 600,
+              background: AT_HEADER_BG,
+              borderBottom: `1px solid ${BORDER}`,
+            }}
+          >
+            <span className="text-right" style={{ paddingRight: 8 }}>BID SIZE</span>
+            <span className="text-center">PRICE</span>
+            <span className="text-left" style={{ paddingLeft: 8 }}>ASK SIZE</span>
+          </div>
+          <StockLadderBody symbol={symbol} />
+        </div>
+      ) : null}
+
       <div
+        hidden={stockTemplate}
         className="shrink-0 z-[48]"
         style={{
           background: AT_HEADER_BG,
@@ -1323,26 +1387,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           >
             CALLS
           </span>
-          <span
-            data-at-ladder-heat-caption
-            data-at-ladder-group-metric
-            className="text-center"
-            title={
-              equityOptionsSessionEnded(Date.now())
-                ? "Contracts traded in the completed session"
-                : "Contracts traded in the last 30 seconds"
-            }
-            style={{
-              fontSize: 13,
-              fontWeight: 500,
-              color: AT_LABEL,
-              letterSpacing: 0,
-              textTransform: "none",
-              whiteSpace: "nowrap",
-              lineHeight: 1.15,
-            }}
-          >
-            {equityOptionsSessionEnded(Date.now()) ? "Contracts · day" : "Contracts · 30s"}
+          <span className="flex items-center justify-center" data-at-ladder-group-metric>
+            {canStock ? <AtInstrumentModePill template="options" onToggle={toggleTemplate} /> : null}
           </span>
           <span
             className="text-center col-span-2 font-bold"
@@ -1380,6 +1426,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       </div>
 
       <div
+        hidden={stockTemplate}
         className="shrink-0"
         data-at-leg-tray-slot
         style={{
@@ -1404,7 +1451,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         The ladder owns everything from the column header down to the bottom
         nav. The order sheet is drawn over its lower part and never resizes it.
       */}
-      <div className="relative flex-1 min-h-0" data-at-ladder-area>
+      <div hidden={stockTemplate} className="relative flex-1 min-h-0" data-at-ladder-area>
         <div
           ref={ladderScrollRef}
           data-at-ladder-scroll
