@@ -57,8 +57,8 @@ export const AT_LADDER_SELECT_SELL = "#ff7164";
 export const AT_LADDER_GAMMA = "#d7acfd";
 
 /** CALLS / PUTS group header colors (mockup). */
-export const AT_LADDER_CALLS_HDR = "#4ec685";
-export const AT_LADDER_PUTS_HDR = "#ca5c52";
+export const AT_LADDER_CALLS_HDR = "#5df1a0";
+export const AT_LADDER_PUTS_HDR = "#ff7164";
 
 /**
  * Volume heat. A pair with no socket volume stays uncolored.

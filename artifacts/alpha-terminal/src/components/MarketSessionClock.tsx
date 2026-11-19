@@ -193,11 +193,12 @@ export function MarketSessionClock({ compact = false }: { compact?: boolean }) {
       <span
         className="ml-auto whitespace-nowrap"
         style={{
-          color: info.color,
+          color: "#ffcd36",
           fontFamily: "Inter, system-ui, sans-serif",
           fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.02em",
+          fontWeight: 700,
+          letterSpacing: "0.04em",
+          marginRight: 4,
         }}
       >
         {info.label}
