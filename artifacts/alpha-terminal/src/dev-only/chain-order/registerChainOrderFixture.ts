@@ -16,16 +16,21 @@ import {
 } from "./spxChainOrderFixture";
 import type { ChainOrderFixtureLegPick } from "@/lib/dev-only/chainOrderFixtureBridge";
 
-function scenePicks(scene: ChainOrderFixtureScene): ChainOrderFixtureLegPick[] {
+function scenePicks(scene: ChainOrderFixtureScene, creditVertical = false): ChainOrderFixtureLegPick[] {
   switch (scene) {
     case "1-leg":
       return [{ strike: 7540, type: "CALL", side: "ask" }];
     case "vertical":
     case "confirm":
-      return [
-        { strike: 7540, type: "CALL", side: "ask" },
-        { strike: 7550, type: "CALL", side: "bid" },
-      ];
+      return creditVertical
+        ? [
+            { strike: 7540, type: "CALL", side: "bid" },
+            { strike: 7550, type: "CALL", side: "ask" },
+          ]
+        : [
+            { strike: 7540, type: "CALL", side: "ask" },
+            { strike: 7550, type: "CALL", side: "bid" },
+          ];
     case "iron-condor":
       return [
         { strike: 7525, type: "PUT", side: "ask" },
@@ -51,8 +56,15 @@ export function registerChainOrderFixtureFromLocation(): void {
   if (!import.meta.env.DEV) return;
 
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-  const scene = (params.get("scene") ?? "1-leg") as ChainOrderFixtureScene;
-  const openReviewOnMount = scene === "confirm" || params.get("confirm") === "1";
+  const bracketParam = params.get("bracket");
+  const bracketSpreadTpHarness = bracketParam === "1";
+  const bracketSingleSlHarness = bracketParam === "sl";
+  const bracketHarness = bracketSpreadTpHarness || bracketSingleSlHarness;
+  const scene = (
+    bracketSingleSlHarness ? "1-leg" : bracketSpreadTpHarness ? "vertical" : (params.get("scene") ?? "1-leg")
+  ) as ChainOrderFixtureScene;
+  const openReviewOnMount =
+    scene === "confirm" || params.get("confirm") === "1" || bracketHarness;
 
   const override: ChainOrderFixtureOverride = {
     enabled: true,
@@ -61,9 +73,47 @@ export function registerChainOrderFixtureFromLocation(): void {
     symbol: "SPX",
     chain: buildFixtureChain(),
     underlyingPrice: FIXTURE_SPX_SPOT,
-    selectedLegs: scenePicks(scene),
+    selectedLegs: scenePicks(scene, bracketSpreadTpHarness),
     openReviewOnMount,
     sheetCollapsed: false,
+    mockPlaceOrder: bracketHarness && params.get("mockPlaceOrder") !== "0",
+    atBracketDraft: bracketSpreadTpHarness
+      ? {
+          prefs: {
+            template: "TRG w/ bracket",
+            qty: 1,
+            orderType: "LIMIT",
+            limitAnchor: "Mid",
+            takeProfit: { enabled: true, mode: "percent", offset: 25 },
+            stopLoss: { enabled: false, mode: "percent", offset: -10 },
+            autoSend: { enabled: false, armed: false },
+            ladderMode: "single",
+            verticalWidth: 5,
+            exitDuration: "GOOD_TILL_CANCEL",
+            stopLossOrderType: "STOP",
+            stopLimitOffset: 0.05,
+          },
+          primaryInstruction: "SELL_TO_OPEN",
+        }
+      : bracketSingleSlHarness
+        ? {
+            prefs: {
+              template: "TRG w/ bracket",
+              qty: 1,
+              orderType: "LIMIT",
+              limitAnchor: "Mid",
+              takeProfit: { enabled: false, mode: "percent", offset: 25 },
+              stopLoss: { enabled: true, mode: "percent", offset: -10 },
+              autoSend: { enabled: false, armed: false },
+              ladderMode: "single",
+              verticalWidth: 5,
+              exitDuration: "GOOD_TILL_CANCEL",
+              stopLossOrderType: "STOP",
+              stopLimitOffset: 0.05,
+            },
+            primaryInstruction: "BUY_TO_OPEN",
+          }
+        : undefined,
   };
 
   setChainOrderFixtureOverride(override);

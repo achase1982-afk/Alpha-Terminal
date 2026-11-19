@@ -63,18 +63,36 @@ describe("buildChainSheetAtBracketConfirm", () => {
     expect(children.some((c) => c.orderKind === "STOP")).toBe(true);
   });
 
-  it("multi-leg bracket draft is explicitly unsupported", () => {
+  it("multi-leg spread with TP only builds trigger preview", () => {
     const result = buildChainSheetAtBracketConfirm({
       prefs: basePrefs,
       legCount: 2,
-      primaryInstruction: "BUY_TO_OPEN",
-      limitPrice: 1.5,
+      primaryInstruction: "SELL_TO_OPEN",
+      limitPrice: 2,
+      optionSymbol: SYM,
+      underlyingSymbol: "SPX",
+    });
+    expect(result.mode).toBe("trigger");
+    if (result.mode !== "trigger") return;
+    const close = result.summary.orders.find((o) => o.positionEffect === "[TO CLOSE]");
+    expect(close?.instructionLine).toMatch(/BUY/);
+  });
+
+  it("multi-leg spread with stop loss is unsupported", () => {
+    const result = buildChainSheetAtBracketConfirm({
+      prefs: {
+        ...basePrefs,
+        stopLoss: { enabled: true, mode: "percent", offset: -10 },
+      },
+      legCount: 2,
+      primaryInstruction: "SELL_TO_OPEN",
+      limitPrice: 2,
       optionSymbol: SYM,
       underlyingSymbol: "SPX",
     });
     expect(result.mode).toBe("unsupported");
     if (result.mode === "unsupported") {
-      expect(result.message).toMatch(/not supported on multi-leg/i);
+      expect(result.message).toMatch(/Stop loss/i);
     }
   });
 });

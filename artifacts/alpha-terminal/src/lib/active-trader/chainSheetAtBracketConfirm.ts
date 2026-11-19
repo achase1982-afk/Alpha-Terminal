@@ -27,12 +27,14 @@ export function buildChainSheetAtBracketConfirm(input: {
     return { mode: "single" };
   }
 
-  if (input.legCount !== 1) {
+  const isSpread = input.legCount > 1;
+
+  if (isSpread && input.prefs.stopLoss?.enabled) {
     return {
       mode: "unsupported",
       testId: "at-chain-bracket-unsupported",
       message:
-        "Bracket exit preview is not supported on multi-leg chain sheet yet. Build a single-leg order or switch template to Single.",
+        "Stop loss is not supported on multi-leg spreads in this builder. Use take profit only or switch to Single.",
     };
   }
 
@@ -58,6 +60,7 @@ export function buildChainSheetAtBracketConfirm(input: {
     exitDuration: input.prefs.exitDuration,
     stopLossOrderType: input.prefs.stopLossOrderType,
     stopLimitOffset: input.prefs.stopLimitOffset,
+    isSpread,
   };
 
   const planned = planAtOrderLegs(buildInput);
