@@ -741,6 +741,21 @@ function equityChainDates(fromDate?: string, toDate?: string): { fromDate: strin
   return { fromDate: today, toDate: addCalendarDaysNy(today, EQUITY_CHAIN_MAX_DTE) };
 }
 
+/**
+ * Equity chain cache identity. Discovery (one strike, wide dates) and the
+ * ladder (full strike window, one expiry) must not share a ticker-only entry.
+ */
+function equityChainCacheKey(
+  symbol: string,
+  bounds: { fromDate?: string; toDate?: string; strikeCount: number; range: "NTM" | "SAK" | "SBK" },
+): string {
+  const dates = equityChainDates(bounds.fromDate, bounds.toDate);
+  const strikes = Number.isFinite(bounds.strikeCount) && bounds.strikeCount > 0
+    ? Math.round(bounds.strikeCount)
+    : 10;
+  return `${symbol.toUpperCase()}|${dates.fromDate}|${dates.toDate}|${bounds.range}|${strikes}`;
+}
+
 function ymdSpanDays(fromDate: string, toDate: string): number {
   const start = Date.parse(`${fromDate}T00:00:00Z`);
   const end = Date.parse(`${toDate}T00:00:00Z`);
@@ -1266,16 +1281,25 @@ router.get("/options", async (req, res) => {
   try {
     const isFuturesSymbol = isFutures(displaySymbol);
     const isIndexSymbol = isIndex(displaySymbol);
+    const fromDate = readQueryDate(req.query["fromDate"]);
+    const toDate = readQueryDate(req.query["toDate"]);
     const indexWindow = isIndexSymbol
       ? resolveIndexChainWindow({
-          fromDate: readQueryDate(req.query["fromDate"]),
-          toDate: readQueryDate(req.query["toDate"]),
+          fromDate,
+          toDate,
           strikeCount,
           range: requestedRange,
           series: readChainSeries(req.query["series"]),
         })
       : null;
-    const ntmKey = indexWindow ? indexChainCacheKey(displaySymbol, indexWindow) : displaySymbol;
+    const ntmKey = indexWindow
+      ? indexChainCacheKey(displaySymbol, indexWindow)
+      : equityChainCacheKey(displaySymbol, {
+          fromDate,
+          toDate,
+          strikeCount,
+          range: requestedRange,
+        });
     const ntmCached = optionsNtmCache.get(ntmKey);
     if (ntmCached && (Date.now() - ntmCached.fetchedAt) < optionsTtlMs) {
       return res.json(sliceAndReturn(ntmCached, "ntm-cache", indexWindow?.series));
@@ -1320,8 +1344,8 @@ router.get("/options", async (req, res) => {
 
     if (!isIndexSymbol) {
       const bounded = await fetchBoundedEquityChain(displaySymbol, accessToken, req.log, {
-        fromDate: readQueryDate(req.query["fromDate"]),
-        toDate: readQueryDate(req.query["toDate"]),
+        fromDate,
+        toDate,
         strikeCount,
         range: requestedRange,
         signal: req.socket.destroyed ? AbortSignal.abort() : undefined,

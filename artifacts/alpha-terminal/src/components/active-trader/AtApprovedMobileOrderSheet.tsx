@@ -76,6 +76,11 @@ export type AtApprovedMobileOrderSheetProps = {
   sendDisabled: boolean;
   /** Why Send cannot be used. Shown on the ticket; it does not enable a live route. */
   sendDetail?: string | null;
+  /** In-flight and broker result for the docked ticket. Success that closes the dock uses a toast. */
+  sendPhase?: "idle" | "submitting" | "error" | "sent";
+  sendError?: string | null;
+  orderReceipt?: string | null;
+  onDismissSendError?: () => void;
   /** Net credit when true. Debit is a green Buy; credit is a red Sell. */
   isCredit?: boolean;
   /** Reverse every draft leg. The parent keeps strikes, expirations, and quantities. */
@@ -108,6 +113,68 @@ const SHEET_TAP_SLOP_PX = 8;
  * swipe down — a tap on that strip, or anywhere else inside the ticket, leaves
  * it open. A swipe up still expands a collapsed bar.
  */
+function DockSendStatus({
+  sendPhase,
+  sendError,
+  orderReceipt,
+  onDismissSendError,
+}: {
+  sendPhase: "idle" | "submitting" | "error" | "sent";
+  sendError?: string | null;
+  orderReceipt?: string | null;
+  onDismissSendError?: () => void;
+}) {
+  if (sendPhase === "idle") return null;
+  if (sendPhase === "submitting") {
+    return (
+      <p
+        data-at-send-phase="submitting"
+        style={{ marginTop: 6, marginBottom: 0, fontSize: 13, lineHeight: 1.35, fontWeight: 650, color: GOLD }}
+      >
+        Sending…
+      </p>
+    );
+  }
+  if (sendPhase === "error") {
+    return (
+      <div data-at-send-phase="error" style={{ marginTop: 6 }}>
+        <p
+          style={{
+            margin: 0,
+            fontSize: 13,
+            lineHeight: 1.35,
+            fontWeight: 650,
+            color: "#ff4d4d",
+            maxHeight: 72,
+            overflow: "auto",
+          }}
+        >
+          {sendError?.trim() || "Order was not confirmed."}
+        </p>
+        {onDismissSendError ? (
+          <button
+            type="button"
+            data-at-send-dismiss
+            onClick={onDismissSendError}
+            className="mt-1 text-[12px] font-semibold"
+            style={{ color: WHITE, background: "transparent", border: "none", padding: 0 }}
+          >
+            Edit order
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  return (
+    <p
+      data-at-send-phase="sent"
+      style={{ marginTop: 6, marginBottom: 0, fontSize: 13, lineHeight: 1.35, fontWeight: 650, color: UP }}
+    >
+      {orderReceipt ? `Order sent · #${orderReceipt}` : "Order sent"}
+    </p>
+  );
+}
+
 function SheetHandle({
   collapsed,
   onCollapsedChange,
@@ -200,6 +267,10 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   sendLabel,
   sendDisabled,
   sendDetail,
+  sendPhase = "idle",
+  sendError,
+  orderReceipt,
+  onDismissSendError,
   isCredit,
   onFlipSides,
   onSend,
@@ -208,6 +279,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
 }: AtApprovedMobileOrderSheetProps) {
   if (legs.length === 0) return null;
 
+  const sendHeld = sendDisabled || sendPhase === "submitting";
   const creditOrder = isCredit ?? entryLabel.toLowerCase().includes("credit");
   const entryColor = entryLabel.toLowerCase().includes("credit") ? UP : DOWN_TEXT;
   const sideTone = creditOrder ? DOWN : UP;
@@ -234,6 +306,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           data-at-approved-ticket
           data-at-docked-order-panel
           data-at-order-sheet-collapsed
+          data-at-send-phase={sendPhase}
         >
           <SheetHandle collapsed onCollapsedChange={onCollapsedChange}>
             <span
@@ -250,8 +323,20 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
                 </span>
                 <span style={{ ...META_VALUE, color: entryColor }}>{fmtMoney(entryAmount)}</span>
               </span>
-              <span className="flex items-center gap-1 shrink-0" style={PEER_LABEL}>
-                Ticket
+              <span
+                className="flex items-center gap-1 shrink-0"
+                style={{
+                  ...PEER_LABEL,
+                  color: sendPhase === "error" ? "#ff4d4d" : sendPhase === "sent" ? UP : GRAY,
+                }}
+              >
+                {sendPhase === "submitting"
+                  ? "Sending…"
+                  : sendPhase === "error"
+                    ? "Not sent"
+                    : sendPhase === "sent"
+                      ? "Order sent"
+                      : "Ticket"}
                 <ChevronUp className="w-4 h-4" style={{ color: GRAY }} aria-hidden />
               </span>
             </span>
@@ -266,6 +351,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
         data-testid="options-chain-order-sheet"
         data-at-approved-ticket
         data-at-docked-order-panel
+        data-at-send-phase={sendPhase}
       >
         <SheetHandle collapsed={false} onCollapsedChange={onCollapsedChange} overlay />
         <div className="flex flex-col" style={{ padding: "5px 12px 4px" }}>
@@ -388,6 +474,12 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             {sendDetail}
           </p>
         ) : null}
+        <DockSendStatus
+          sendPhase={sendPhase}
+          sendError={sendError}
+          orderReceipt={orderReceipt}
+          onDismissSendError={onDismissSendError}
+        />
 
         <div className="flex items-center" style={{ marginTop: 4, gap: 6 }}>
           <button
@@ -509,7 +601,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
 
           <button
             type="button"
-            disabled={sendDisabled}
+            disabled={sendHeld}
             title={sendDetail || undefined}
             onClick={onSend}
             data-testid={primaryActionTestId}
@@ -519,8 +611,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
               fontSize: sendLabel.length > 6 ? 11 : 14,
               lineHeight: 1.1,
               whiteSpace: "normal",
-              background: sendDisabled ? AT_ORDER_BTN_DISABLED : sideTone,
-              color: sendDisabled ? GRAY : creditOrder ? WHITE : AT_ORDER_BTN_TEXT_DARK,
+              background: sendHeld ? AT_ORDER_BTN_DISABLED : sideTone,
+              color: sendHeld ? GRAY : creditOrder ? WHITE : AT_ORDER_BTN_TEXT_DARK,
             }}
           >
             {sendLabel}
@@ -712,14 +804,14 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
 
         <button
           type="button"
-          disabled={sendDisabled}
+          disabled={sendHeld}
           onClick={onSend}
           data-testid={primaryActionTestId}
           className="w-full py-2.5 rounded-lg font-semibold disabled:opacity-45"
           style={{
             fontSize: 13,
-            background: sendDisabled ? AT_ORDER_BTN_DISABLED : GOLD,
-            color: sendDisabled ? GRAY : AT_ORDER_BTN_TEXT_DARK,
+            background: sendHeld ? AT_ORDER_BTN_DISABLED : GOLD,
+            color: sendHeld ? GRAY : AT_ORDER_BTN_TEXT_DARK,
           }}
         >
           {sendLabel}
