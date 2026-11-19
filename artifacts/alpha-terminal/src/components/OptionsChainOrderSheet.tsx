@@ -57,6 +57,7 @@ import {
   buildChainSheetAtBracketConfirm,
   type ChainSheetAtBracketConfirm,
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
+import { buildChainSheetBracketEconomics } from "@/lib/active-trader/chainSheetBracketEconomics";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
@@ -443,31 +444,49 @@ export function OptionsChainOrderSheet({
     setReviewLimitSnapped(px);
     setPriceError("");
     const draft = atBracketDraft;
-    if (draft) {
+    if (draft && bracketPrefsActive(draft.prefs)) {
       const leg = legs[0];
       const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
       const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
-      setAtBracketConfirmSnapshot(
-        sym
-          ? buildChainSheetAtBracketConfirm({
-              prefs: draft.prefs,
-              legCount: distinctLegs,
-              primaryInstruction: draft.primaryInstruction,
-              limitPrice: px,
-              optionSymbol: sym,
-              underlyingSymbol: symbol.replace(/^\$/, ""),
-            })
-          : {
-              mode: "unsupported",
-              testId: "at-chain-bracket-unsupported",
-              message: "Missing option symbol — cannot preview bracket exits on this leg.",
-            },
-      );
+      const entryGross =
+        summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
+      const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+      if (sym) {
+        const econ = buildChainSheetBracketEconomics({
+          prefs: draft.prefs,
+          primaryInstruction: draft.primaryInstruction,
+          lockedLimit: px,
+          legCount: distinctLegs,
+          optionSymbol: sym,
+          underlyingSymbol: symbol.replace(/^\$/, ""),
+          spreadQuantity: quantity,
+          totalContracts,
+          entryGrossDollars: entryGross,
+          isCredit,
+        });
+        setAtBracketConfirmSnapshot(econ.bracketConfirm);
+      } else {
+        setAtBracketConfirmSnapshot({
+          mode: "unsupported",
+          testId: "at-chain-bracket-unsupported",
+          message: "Missing option symbol — cannot preview bracket exits on this leg.",
+        });
+      }
     } else {
       setAtBracketConfirmSnapshot(null);
     }
     setStage("review");
-  }, [snapLimitForSubmit, guardDraftLegCount, atBracketDraft, legs, draftDistinctLegCount, symbol]);
+  }, [
+    snapLimitForSubmit,
+    guardDraftLegCount,
+    atBracketDraft,
+    legs,
+    draftDistinctLegCount,
+    symbol,
+    summary?.grossNotional,
+    quantity,
+    isCredit,
+  ]);
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
@@ -550,6 +569,44 @@ export function OptionsChainOrderSheet({
 
   const effectiveAtBracketDraft = atBracketDraft;
 
+  const bracketEconomics = useMemo(() => {
+    const draft = atBracketDraft;
+    if (!draft || !bracketPrefsActive(draft.prefs)) return null;
+    const leg = legs[0];
+    const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
+    if (!sym) return null;
+    const limitForBracket = submittedLimit;
+    const entryGross =
+      summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
+    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const econ = buildChainSheetBracketEconomics({
+      prefs: draft.prefs,
+      primaryInstruction: draft.primaryInstruction,
+      lockedLimit: limitForBracket,
+      legCount: draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs),
+      optionSymbol: sym,
+      underlyingSymbol: symbol.replace(/^\$/, ""),
+      spreadQuantity: quantity,
+      totalContracts,
+      entryGrossDollars: entryGross,
+      isCredit,
+    });
+    if (!limitLocked && draft.prefs.takeProfit?.enabled) {
+      return { ...econ, estNetProfit: null, estNetUnavailable: true };
+    }
+    return econ;
+  }, [
+    atBracketDraft,
+    legs,
+    symbol,
+    quantity,
+    submittedLimit,
+    limitLocked,
+    summary?.grossNotional,
+    isCredit,
+    draftDistinctLegCount,
+  ]);
+
   const atBracketConfirm = useMemo((): ChainSheetAtBracketConfirm | null => {
     if (stage !== "review") return null;
     const snap = atBracketConfirmSnapshot;
@@ -607,16 +664,10 @@ export function OptionsChainOrderSheet({
       summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
     const legacyEntryAbs =
       summary?.grossNotional != null ? Math.abs(summary.grossNotional) * entryMultiplier : null;
-    const exitRaw = isCredit ? spreadPrices?.spreadBid : spreadPrices?.spreadAsk;
-    const exitAbs = exitRaw != null ? Math.abs(exitRaw) * entryMultiplier : null;
-    const dockedEstNetProfit = (() => {
-      if (entryDollars == null || exitAbs == null) return feeAdjustedNetCash;
-      const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
-      const oneWayFees = estimateSchwabOptionFees(totalContracts);
-      const roundTripFees = 2 * (oneWayFees.commission + oneWayFees.regulatoryEst);
-      const grossEdge = isCredit ? entryDollars - exitAbs : exitAbs - entryDollars;
-      return Number((grossEdge - roundTripFees).toFixed(2));
-    })();
+    const exitAbs = bracketEconomics?.targetExitDollars ?? null;
+    const dockedEstNetProfit = bracketEconomics?.estNetUnavailable
+      ? null
+      : bracketEconomics?.estNetProfit ?? null;
     const maxLossLabel =
       summary?.maxLoss != null
         ? `$${Math.round(summary.maxLoss).toLocaleString("en-US")}`
@@ -664,10 +715,12 @@ export function OptionsChainOrderSheet({
       );
     }
 
+    const bracketBlocksSend = bracketEconomics?.bracketConfirm.mode === "unsupported";
     const dockedValid =
       legs.length > 0 &&
       (orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
-      quantity > 0;
+      quantity > 0 &&
+      !bracketBlocksSend;
 
     return (
       <AtApprovedMobileOrderSheet
@@ -682,7 +735,11 @@ export function OptionsChainOrderSheet({
         entryAmount={atDocked ? entryDollars : legacyEntryAbs}
         targetExitAmount={exitAbs}
         estNetAmount={atDocked ? dockedEstNetProfit : feeAdjustedNetCash}
-        estNetUnavailable={feeAdjustedNetCash == null && summary?.grossNotional != null}
+        estNetUnavailable={
+          atDocked
+            ? (bracketEconomics?.estNetUnavailable ?? true)
+            : feeAdjustedNetCash == null && summary?.grossNotional != null
+        }
         maxLossLabel={atDocked ? maxLossLabel : summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—"}
         midDisplay={mid}
         limitPrice={limitPrice}
