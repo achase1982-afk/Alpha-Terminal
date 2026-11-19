@@ -330,12 +330,6 @@ let subscribedFuturesOptionSymbols = new Set<string>();
 let subscribedTimesaleEquitySymbols = new Set<string>();
 /** Equities whose book and prints are fanned out to the Active Trader stock ladder. */
 const clientEquityTapeSymbols = new Set<string>();
-/** Last TIMESALE_EQUITY receipt per symbol; L1 trade fields backfill only while this feed is silent. */
-const clientEquityLastTimesaleRxAt = new Map<string, number>();
-/** One-shot cross-feed dedupe when a delayed TIMESALE arrives after an L1 fallback print. */
-const clientEquityL1FallbackPrint = new Map<string, { signature: string; expiresAt: number }>();
-const CLIENT_EQUITY_TIMESALE_SILENT_MS = 5_000;
-const CLIENT_EQUITY_L1_DEDUPE_MS = 5_000;
 let subscribedChartEquitySymbols = new Set<string>();
 let subscribedNyseBookSymbols = new Set<string>();
 let subscribedNasdaqBookSymbols = new Set<string>();
@@ -2044,7 +2038,7 @@ function processEquityTick(content: Record<string, unknown>[]) {
       tradeTime > 0 &&
       tradeTime !== existing?.tradeTimeMs
     ) {
-      broadcastClientEquityL1Fallback(streamKey, last, lastSize, tradeTime);
+      broadcastClientEquityTrade(streamKey, last, lastSize, tradeTime);
     }
     deskLiveFlowTapeOnEquityL1(streamKey, item, now);
   }
@@ -2212,52 +2206,29 @@ function asEquityEpochMs(raw: number | null): number {
   return now;
 }
 
-function equityPrintSignature(price: number, size: number, ts: number): string {
-  return `${price.toFixed(4)}|${size}|${asEquityEpochMs(ts)}`;
-}
-
 /**
- * LEVELONE_EQUITIES carries last price (3), last size (9), and trade time
- * (35). Use those fields only when TIMESALE_EQUITY has gone quiet so the
- * Active Trader volume profile continues updating overnight.
+ * Canonical live equity-volume event for Active Trader. Every value is copied
+ * directly from LEVELONE_EQUITIES: last price (3), last size in shares (9),
+ * and exchange trade time (35). No volume delta or inferred quantity.
  */
-function broadcastClientEquityL1Fallback(
+function broadcastClientEquityTrade(
   streamKey: string,
   price: number,
   size: number,
   tradeTime: number,
 ): void {
-  if (tapeBroadcastSymbols(streamKey).length === 0) return;
-  const now = Date.now();
-  if (now - (clientEquityLastTimesaleRxAt.get(streamKey) ?? 0) <= CLIENT_EQUITY_TIMESALE_SILENT_MS) {
-    return;
-  }
+  const targets = tapeBroadcastSymbols(streamKey);
+  if (targets.length === 0) return;
   const when = asEquityEpochMs(tradeTime);
-  clientEquityL1FallbackPrint.set(streamKey, {
-    signature: equityPrintSignature(price, size, when),
-    expiresAt: now + CLIENT_EQUITY_L1_DEDUPE_MS,
-  });
-  broadcastClientEquityPrint(streamKey, price, size, when);
-}
-
-/** Mark TIMESALE live and suppress one matching print already emitted from L1. */
-function clientEquityTimesaleShouldBroadcast(
-  streamKey: string,
-  price: number,
-  size: number,
-  tradeTime: number,
-): boolean {
-  const now = Date.now();
-  clientEquityLastTimesaleRxAt.set(streamKey, now);
-  const fallback = clientEquityL1FallbackPrint.get(streamKey);
-  if (!fallback) return true;
-  if (fallback.expiresAt < now) {
-    clientEquityL1FallbackPrint.delete(streamKey);
-    return true;
+  for (const symbol of targets) {
+    broadcast("equityPrint", {
+      symbol,
+      price,
+      size,
+      ts: when,
+      source: "LEVELONE_EQUITIES",
+    });
   }
-  if (fallback.signature !== equityPrintSignature(price, size, tradeTime)) return true;
-  clientEquityL1FallbackPrint.delete(streamKey);
-  return false;
 }
 
 function compactBookSide(side: unknown, dir: "bid" | "ask"): Array<{ price: number; size: number }> {
@@ -2272,15 +2243,6 @@ function compactBookSide(side: unknown, dir: "bid" | "ask"): Array<{ price: numb
   const out = [...byPx.values()];
   out.sort((a, b) => (dir === "bid" ? b.price - a.price : a.price - b.price));
   return out.slice(0, 80);
-}
-
-function broadcastClientEquityPrint(streamKey: string, price: number, size: number, ts: number): void {
-  const targets = tapeBroadcastSymbols(streamKey);
-  if (targets.length === 0) return;
-  const when = asEquityEpochMs(ts);
-  for (const symbol of targets) {
-    broadcast("equityPrint", { symbol, price, size, ts: when });
-  }
 }
 
 function broadcastClientEquityBook(
@@ -2331,9 +2293,6 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
     if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
       appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
       deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice, ev.lastSize, ev.tradeTimeMs, ev.sequence);
-      if (clientEquityTimesaleShouldBroadcast(symbol, ev.lastPrice, ev.lastSize, tsMs)) {
-        broadcastClientEquityPrint(symbol, ev.lastPrice, ev.lastSize, tsMs);
-      }
     }
     emitTimesaleEquityListeners(ev);
   }
@@ -3043,8 +3002,6 @@ export function stopStreamer() {
   subscribedFuturesOptionSymbols.clear();
   subscribedTimesaleEquitySymbols.clear();
   clientEquityTapeSymbols.clear();
-  clientEquityLastTimesaleRxAt.clear();
-  clientEquityL1FallbackPrint.clear();
   subscribedChartEquitySymbols.clear();
   subscribedNyseBookSymbols.clear();
   subscribedNasdaqBookSymbols.clear();

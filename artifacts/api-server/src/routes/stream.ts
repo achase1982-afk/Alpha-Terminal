@@ -105,7 +105,6 @@ router.post("/equity-tape", async (req, res) => {
   const dayEndMs = new Date(`${nextDate}T00:00:00${nyOffsetForYmd(nextDate)}`).getTime();
   const throughMs = Math.min(Date.now(), dayEndMs);
   const volumeByPrice: Record<string, Record<string, number>> = {};
-  const profileComplete: Record<string, boolean> = {};
   for (const symbol of cleaned) {
     const profile: Record<string, number> = {};
     const sessionPoints = getStrategistTimesalePoints(symbol).filter(
@@ -116,18 +115,12 @@ router.post("/equity-tape", async (req, res) => {
       profile[key] = (profile[key] ?? 0) + point.size;
     }
     volumeByPrice[symbol] = profile;
-    // The ring is exact only when it reaches the beginning of the NY calendar
-    // day. A server restart or ring-cap eviction leaves a partial profile; the
-    // client then seeds from extended-hours minute history instead.
-    profileComplete[symbol] =
-      sessionPoints.length > 0 && sessionPoints[0]!.ts <= dayStartMs + 60 * 60_000;
   }
   res.json({
     ok: true,
     count: cleaned.length,
     sessionDate,
     volumeByPrice,
-    profileComplete,
   });
 });
 
