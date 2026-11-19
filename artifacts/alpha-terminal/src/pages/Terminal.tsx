@@ -30,6 +30,7 @@ import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card
 import type { StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
 import { loadActiveTraderPrefs, type ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
@@ -871,6 +872,12 @@ export default function TerminalPage() {
   }, [isThreePanel, contextTab]);
 
   useEffect(() => {
+    if (activeBottom !== "markets" || contextTab !== "options") {
+      useAtChromeStore.getState().leaveActiveTrader();
+    }
+  }, [activeBottom, contextTab]);
+
+  useEffect(() => {
     setCompanyPage(0);
   }, [symbol]);
 
@@ -1142,6 +1149,9 @@ export default function TerminalPage() {
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           onNavigate={(dest) => {
+            const chrome = useAtChromeStore.getState();
+            chrome.leaveActiveTrader();
+            chrome.requestOptionsSubView("chain");
             if (dest === "markets") setActiveBottom("markets");
             else if (dest === "portfolio") setActiveBottom("portfolio");
             else if (dest === "ai-pulse") { setActiveBottom("ai"); setAiSubTab("pulse"); }
@@ -1402,11 +1412,18 @@ export default function TerminalPage() {
           if (tab === "search") {
             setSearchOpen(true);
           } else if (tab === "activeTrader") {
-            useAtChromeStore.getState().requestOptionsSubView("at");
+            const chrome = useAtChromeStore.getState();
+            const wasOnOptionsChain =
+              activeBottom === "markets" && contextTab === "options" && !chrome.subViewIsAt;
+            noteAtEntry(useTerminalStore.getState().symbol, wasOnOptionsChain);
+            chrome.enterActiveTrader();
+            chrome.requestOptionsSubView("at");
             setActiveBottom("markets");
             setContextTab("options");
           } else {
-            useAtChromeStore.getState().requestOptionsSubView("chain");
+            const chrome = useAtChromeStore.getState();
+            chrome.leaveActiveTrader();
+            chrome.requestOptionsSubView("chain");
             if (tab === "ai") setAiSubTab("pulse");
             setActiveBottom(tab);
           }
