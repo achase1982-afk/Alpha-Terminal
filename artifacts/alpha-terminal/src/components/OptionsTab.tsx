@@ -163,19 +163,34 @@ function formatExpDate(expStr: string): string {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`;
 }
 
+/** Last Mon–Fri calendar day of the month. Month-end options expire that day, not the whole final week. */
+function lastWeekdayOfMonth(year: number, month: number): number {
+  const last = new Date(year, month + 1, 0, 12, 0, 0);
+  const dow = last.getDay();
+  if (dow === 0) last.setDate(last.getDate() - 2);
+  else if (dow === 6) last.setDate(last.getDate() - 1);
+  return last.getDate();
+}
+
 function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
   const d = parseExpDate(expStr);
   if (!d) return null;
   const date = d.getDate();
   const month = d.getMonth();
   const dow = d.getDay();
-  const lastDayOfMonth = new Date(d.getFullYear(), month + 1, 0).getDate();
-  if (date >= lastDayOfMonth - 4) {
+  const isStandardMonthly = dow === 5 && date >= 15 && date <= 21;
+  if (!isStandardMonthly && date === lastWeekdayOfMonth(d.getFullYear(), month)) {
     const isQuarterEnd = month === 2 || month === 5 || month === 8 || month === 11;
     return isQuarterEnd ? "Quarterly" : "EOM";
   }
-  if (dow === 5 && date >= 15 && date <= 21) return null;
+  if (isStandardMonthly) return null;
   return "Weekly";
+}
+
+function putCallRatio(callVol: number, putVol: number, callOI: number, putOI: number): number | null {
+  if (callVol > 0) return putVol / callVol;
+  if (callOI > 0) return putOI / callOI;
+  return null;
 }
 
 function findATMIndex(strikes: number[], lastPrice: number): number {
@@ -357,11 +372,7 @@ function useStreamingExpirationStats(rows: NormalizedRow[], underlyingPrice: num
       }
     }
 
-    const pcr = totalCallVol > 0
-      ? totalPutVol / totalCallVol
-      : totalCallOI > 0
-        ? totalPutOI / totalCallOI
-        : null;
+    const pcr = putCallRatio(totalCallVol, totalPutVol, totalCallOI, totalPutOI);
 
     return { atmIV, expectedMove, maxOI, maxVol, totalCallOI, totalPutOI, totalCallVol, totalPutVol, pcr };
   }, [rows, underlyingPrice, ticks]);
@@ -1142,7 +1153,11 @@ function ExpirationSection({
   colW?: number;
   chainQuoteTs: number;
 }) {
-  const stats = useStreamingExpirationStats(group.rows, underlyingPrice);
+  const live = useStreamingExpirationStats(group.rows, underlyingPrice);
+  // Live ticks cover the expanded expiration. Collapsed rows still have the
+  // chain snapshot (IV, volume, OI) on the group — show that until ticks arrive.
+  const atmIV = live.atmIV ?? group.atmIV;
+  const pcr = live.pcr ?? putCallRatio(group.totalCallVol, group.totalPutVol, group.totalCallOI, group.totalPutOI);
   const panelId = `options-exp-panel-${group.expiration.replace(/[^a-zA-Z0-9]/g, "-")}`;
 
   return (
@@ -1182,14 +1197,14 @@ function ExpirationSection({
           )}
         </div>
         <div className="flex items-center gap-2" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO }}>
-          {stats.atmIV != null && (
+          {atmIV != null && (
             <span style={{ color: GOLD, fontWeight: FW_PREMIUM }}>
-              IV {stats.atmIV.toFixed(1)}%
+              IV {atmIV.toFixed(1)}%
             </span>
           )}
-          {stats.pcr != null && (
-            <span style={{ color: stats.pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
-              P/C {stats.pcr.toFixed(2)}
+          {pcr != null && (
+            <span style={{ color: pcr > 1 ? DOWN : UP, fontWeight: FW_NORMAL }}>
+              P/C {pcr.toFixed(2)}
             </span>
           )}
         </div>
@@ -1207,7 +1222,7 @@ function ExpirationSection({
           onToggleLeg={onToggleLeg}
           onLongPressCell={onLongPressCell}
           showInlineGreeks={showInlineGreeks}
-          maxOI={stats.maxOI}
+          maxOI={live.maxOI || group.maxOI}
           accentHex={accentHex}
           colW={colW}
           chainQuoteTs={chainQuoteTs}
