@@ -117,6 +117,7 @@ import { AT_HEADER_BG, AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeCon
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { useQuote } from "@/hooks/useQuote";
+import { useSessionInstrumentAssetType } from "@/hooks/useSessionInstrumentAssetType";
 import { useSpxKeepawayStats } from "@/hooks/useSpxKeepawayStats";
 import {
   isSpxSymbol,
@@ -407,7 +408,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const symbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
   const spxMode = isSpxSymbol(symbol);
   const { data: underlyingQuote, restQuote } = useQuote(symbol);
-  const instrumentClass = instrumentClassFromAssetType(restQuote?.assetType, symbol);
+  const sessionAssetType = useSessionInstrumentAssetType(symbol);
+  const instrumentClass = instrumentClassFromAssetType(
+    sessionAssetType ?? restQuote?.assetType,
+    symbol,
+  );
   const canStock = stockTemplateAvailable(instrumentClass);
   const [template, setTemplate] = useState<AtInstrumentTemplate>("options");
   useEffect(() => {
