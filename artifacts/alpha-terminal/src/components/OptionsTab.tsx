@@ -30,6 +30,13 @@ import {
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView, type AtExpirationGroup } from "@/components/active-trader/ActiveTraderView";
+import { AtOrderDefaultsSheet } from "@/components/active-trader/AtOrderDefaultsSheet";
+import {
+  loadActiveTraderPrefs,
+  saveActiveTraderPrefs,
+  type ActiveTraderTemplatePrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import {
   AT_LADDER_STRIKE_CAP,
   atChainDateWindow,
@@ -1495,6 +1502,15 @@ export function OptionsTab({
   const [chainTicketOpen, setChainTicketOpen] = useState(() => hydratedDraft?.chainTicketOpen ?? false);
   const [sheetCollapsed, setSheetCollapsed] = useState(() => hydratedDraft?.sheetCollapsed ?? false);
   const [chainSheetPeek, setChainSheetPeek] = useState(false);
+  const chainOrderSymbolClass = symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity";
+  const [chainOrderPrefs, setChainOrderPrefs] = useState<ActiveTraderTemplatePrefs>(() =>
+    loadActiveTraderPrefs(symbol.toUpperCase().includes("SPX") || symbol.startsWith("$") ? "index" : "equity"),
+  );
+  const [chainDefaultsOpen, setChainDefaultsOpen] = useState(false);
+  const [chainDefaultsWindowSec, setChainDefaultsWindowSec] = useState<30 | 60 | 300>(30);
+  useEffect(() => {
+    setChainOrderPrefs(loadActiveTraderPrefs(chainOrderSymbolClass));
+  }, [chainOrderSymbolClass]);
   const [chainSheetPad, setChainSheetPad] = useState(0);
   const chainSheetObserverRef = useRef<ResizeObserver | null>(null);
   const chainSheetRef = useCallback((node: HTMLDivElement | null) => {
@@ -2197,6 +2213,12 @@ export function OptionsTab({
   );
   const streamTicksForLegs = useOptionTicksForKeys(selectedLegStreamKeys, CHAIN_TICKET_TICK_MS);
 
+  const chainDefaultsInstruction = useMemo((): SchwabInstruction => {
+    const first = selectedLegs.size > 0 ? [...selectedLegs.values()][0] : null;
+    if (first) return first.side === "bid" ? "SELL_TO_OPEN" : "BUY_TO_OPEN";
+    return "BUY_TO_OPEN";
+  }, [selectedLegs]);
+
   const ticketLegs = useMemo(() => {
     if (selectedLegs.size === 0) return [];
     const entries = [...selectedLegs.entries()].map(([key, l]) => {
@@ -2600,9 +2622,24 @@ export function OptionsTab({
             atDocked
             restoredSheetSession={restoredSheetSession}
             onSheetSessionPersist={persistSheetSession}
+            onAdvancedOrders={() => setChainDefaultsOpen(true)}
+            atBracketDraft={{ prefs: chainOrderPrefs, primaryInstruction: chainDefaultsInstruction }}
           />
         </div>
       )}
+      <AtOrderDefaultsSheet
+        open={chainDefaultsOpen}
+        prefs={chainOrderPrefs}
+        primaryInstruction={chainDefaultsInstruction}
+        windowSec={chainDefaultsWindowSec}
+        onWindowSecChange={setChainDefaultsWindowSec}
+        onClose={() => setChainDefaultsOpen(false)}
+        onSave={(next) => {
+          setChainOrderPrefs(next);
+          saveActiveTraderPrefs(chainOrderSymbolClass, next);
+          setChainDefaultsOpen(false);
+        }}
+      />
       </div>
       )}
       {isFuturesSymbol && (
