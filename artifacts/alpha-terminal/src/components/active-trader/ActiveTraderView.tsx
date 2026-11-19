@@ -53,6 +53,7 @@ import {
   quoteSideFromTap,
   type AtLadderLegPick,
 } from "@/lib/active-trader/atLadderLegKeys";
+import type { ChainDraftSheetSession } from "@/lib/orders/chainDraftSessionStore";
 import {
   atSelectionClear,
   atSelectionRemoveLeg,
@@ -157,6 +158,24 @@ interface ActiveTraderViewProps {
   /** Legs built on the chain subview, applied when AT mounts or chain legs change. */
   buildLegsFromChain?: AtLadderLegPick[];
   buildLegQtyFromChain?: Map<string, number>;
+  /** Writes ladder edits into the one Options draft the chain ticket uses. */
+  onSharedDraftChange?: (legs: AtLadderLegPick[], quantities: Map<string, number>) => void;
+  sheetCollapsed?: boolean;
+  onSheetCollapsedChange?: (collapsed: boolean) => void;
+  restoredSheetSession?: ChainDraftSheetSession;
+  onSheetSessionPersist?: (session: ChainDraftSheetSession) => void;
+}
+
+function sharedDraftSig(legs: Iterable<AtLadderLegPick>, qty: Iterable<[string, number]>): string {
+  const legPart = [...legs]
+    .map((leg) => `${leg.expiration}|${leg.contract.strike}|${leg.type}|${leg.side}`)
+    .sort()
+    .join(",");
+  const qtyPart = [...qty]
+    .map(([key, value]) => `${key}:${value}`)
+    .sort()
+    .join(",");
+  return `${legPart}#${qtyPart}`;
 }
 
 function selectedLegsFromChain(
@@ -222,6 +241,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   ladderRestWindow,
   buildLegsFromChain,
   buildLegQtyFromChain,
+  onSharedDraftChange,
+  sheetCollapsed: sheetCollapsedProp,
+  onSheetCollapsedChange,
+  restoredSheetSession,
+  onSheetSessionPersist,
 }: ActiveTraderViewProps) {
   const expiryClockMinute = useMinuteClock();
   const tradableGroups = useMemo(
@@ -229,10 +253,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     [groups, expiryClockMinute],
   );
   const primary = useMemo(() => {
-    if (activeExpiration && tradableGroups.some((g) => g.expiration === activeExpiration)) {
-      return tradableGroups.find((g) => g.expiration === activeExpiration) ?? null;
-    }
-    return tradableGroups[0] ?? null;
+    if (!activeExpiration) return tradableGroups[0] ?? null;
+    return tradableGroups.find((g) => g.expiration === activeExpiration) ?? null;
   }, [tradableGroups, activeExpiration]);
   const ladderDataReady = !!(primary && primary.rows.length > 0);
   const ladderWaitMessage = useMemo(() => {
@@ -267,22 +289,60 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     () =>
       buildLegsFromChain?.length
         ? buildLegsFromChain
-            .map((l) => `${l.contract.strike}|${l.type}|${l.side}`)
+            .map((l) => `${l.expiration}|${l.contract.strike}|${l.type}|${l.side}`)
             .sort()
             .join(",")
         : "",
     [buildLegsFromChain],
   );
+  const chainQtySig = useMemo(() => {
+    if (!buildLegQtyFromChain?.size) return "";
+    return [...buildLegQtyFromChain.entries()]
+      .map(([key, value]) => `${key}:${value}`)
+      .sort()
+      .join(",");
+  }, [buildLegQtyFromChain]);
+  const publishedDraftSigRef = useRef<string | null>(null);
+  const legQtyRef = useRef(legQuantities);
+  legQtyRef.current = legQuantities;
+  const publishDraft = useCallback(
+    (legs: Iterable<AtLadderLegPick>, qty: Map<string, number>) => {
+      if (!onSharedDraftChange) return;
+      publishedDraftSigRef.current = sharedDraftSig(legs, qty.entries());
+      onSharedDraftChange([...legs], qty);
+    },
+    [onSharedDraftChange],
+  );
 
   useEffect(() => {
-    if (!buildLegsFromChain?.length) return;
-    atSelectionSetLegs(selection, selectedLegsFromChain(buildLegsFromChain));
-    if (buildLegQtyFromChain) {
-      setLegQuantities(new Map(buildLegQtyFromChain));
+    const incoming = selectedLegsFromChain(buildLegsFromChain);
+    const incomingQty = buildLegQtyFromChain ?? new Map<string, number>();
+    const incomingSig = sharedDraftSig(incoming.values(), incomingQty.entries());
+    const localSig = sharedDraftSig(selection.getState().legs.values(), legQtyRef.current.entries());
+    if (localSig === incomingSig) {
+      publishedDraftSigRef.current = null;
+      return;
     }
-    setChainSheetCollapsed(false);
-    setChainSheetPeek(false);
-  }, [chainLegSyncSig, buildLegsFromChain, buildLegQtyFromChain, selection]);
+    // The parent still has the draft from before this ladder edit.
+    if (publishedDraftSigRef.current && publishedDraftSigRef.current !== incomingSig) return;
+    publishedDraftSigRef.current = null;
+    atSelectionSetLegs(selection, incoming);
+    setLegQuantities((prev) => {
+      if (prev.size === incomingQty.size && [...incomingQty].every(([key, value]) => prev.get(key) === value)) {
+        return prev;
+      }
+      return new Map(incomingQty);
+    });
+  }, [chainLegSyncSig, chainQtySig, buildLegsFromChain, buildLegQtyFromChain, selection]);
+  const sheetCollapsedControlled = onSheetCollapsedChange != null;
+  const collapsed = sheetCollapsedControlled ? (sheetCollapsedProp ?? false) : chainSheetCollapsed;
+  const setCollapsed = useCallback(
+    (next: boolean) => {
+      if (onSheetCollapsedChange) onSheetCollapsedChange(next);
+      else setChainSheetCollapsed(next);
+    },
+    [onSheetCollapsedChange],
+  );
   const [selected, setSelected] = useState<{ contract: OptionsContract; type: "CALL" | "PUT" } | null>(null);
   const [lastLegQuoteSide, setLastLegQuoteSide] = useState<"bid" | "ask">("ask");
   const [regimeLabel, setRegimeLabel] = useState<string | null>(null);
@@ -762,20 +822,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const handleToggleLeg = useCallback(
     (contract: OptionsContract, type: "CALL" | "PUT", side: "bid" | "ask") => {
       const result = atSelectionToggleLeg(selection, contract, type, side);
+      if (result === "rejected") return result;
+      const key = atLadderLegKey(contract, type);
+      const qty = new Map(legQtyRef.current);
+      if (result === "removed") qty.delete(key);
       if (result === "removed") {
-        startTransition(() => {
-          const key = atLadderLegKey(contract, type);
-          setLegQuantities((q) => {
-            if (!q.has(key)) return q;
-            const nq = new Map(q);
-            nq.delete(key);
-            return nq;
-          });
-        });
+        startTransition(() => setLegQuantities(qty));
       }
+      publishDraft(selection.getState().legs.values(), result === "removed" ? qty : legQtyRef.current);
       return result;
     },
-    [selection],
+    [selection, publishDraft],
   );
 
   const handleQuoteTap = useCallback(
@@ -802,8 +859,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   // A new ticket opens expanded; one the user collapsed stays collapsed while they pick more legs.
   const hasLegs = selectedLegs.size > 0;
   useEffect(() => {
-    if (!hasLegs) setChainSheetCollapsed(false);
-  }, [hasLegs]);
+    if (!hasLegs && !sheetCollapsedControlled) setChainSheetCollapsed(false);
+  }, [hasLegs, sheetCollapsedControlled]);
 
   useEffect(() => {
     const onSheet = (ev: Event) => {
@@ -934,33 +991,33 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const handleClearLegs = useCallback(() => {
     atSelectionClear(selection);
-    setLegQuantities(new Map());
-    setChainSheetCollapsed(false);
+    const empty = new Map<string, number>();
+    setLegQuantities(empty);
     setTradeStripStrike(null);
-  }, [selection]);
+    if (onSharedDraftChange) publishDraft([], empty);
+    else setChainSheetCollapsed(false);
+  }, [selection, onSharedDraftChange, publishDraft]);
 
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
     const key = selectionKeyFromLegId(legId);
-    setLegQuantities((prev) => {
-      const next = new Map(prev);
-      next.set(key, Math.max(1, quantity));
-      return next;
-    });
-  }, []);
+    const next = new Map(legQtyRef.current);
+    next.set(key, Math.max(1, quantity));
+    setLegQuantities(next);
+    publishDraft(selection.getState().legs.values(), next);
+  }, [selection, publishDraft]);
 
   const handleSheetRemoveLeg = useCallback(
     (legId: string) => {
       const key = selectionKeyFromLegId(legId);
       atSelectionRemoveLeg(selection, key);
-      setLegQuantities((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
+      const next = new Map(legQtyRef.current);
+      next.delete(key);
+      setLegQuantities(next);
+      publishDraft(selection.getState().legs.values(), next);
     },
-    [selection],
+    [selection, publishDraft],
   );
 
   const atAddLegFromLadder = useCallback(
@@ -1408,7 +1465,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           <div
             ref={sheetRef}
             data-at-order-sheet
-            data-at-order-sheet-state={chainSheetCollapsed ? "collapsed" : "open"}
+            data-at-order-sheet-state={collapsed ? "collapsed" : "open"}
             className="absolute left-0 right-0 bottom-0"
             // Above the ladder rows and Recenter, and above the header (z 50) for the
             // full-screen review step, which is rendered inside this element.
@@ -1416,8 +1473,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           >
             <OptionsChainOrderSheet
               legs={ticketLegs}
-              collapsed={chainSheetCollapsed}
-              onCollapsedChange={setChainSheetCollapsed}
+              collapsed={collapsed}
+              onCollapsedChange={setCollapsed}
               sheetPeek={chainSheetPeek}
               onSheetPeekChange={setChainSheetPeek}
               onClearAll={handleClearLegs}
@@ -1428,6 +1485,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               atDocked
               atBracketDraft={atBracketDraft}
               onAdvancedOrders={toggleSettings}
+              restoredSheetSession={restoredSheetSession}
+              onSheetSessionPersist={onSheetSessionPersist}
             />
           </div>
         ) : null}

@@ -48,13 +48,17 @@ import {
   CHAIN_LEG_LIMIT_MESSAGE,
   CHAIN_MAX_DRAFT_LEGS,
 } from "@/lib/orders/chainDraftLegLimits";
-import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
+import { useChainDraftSessionStore, type ChainDraftSheetSession } from "@/lib/orders/chainDraftSessionStore";
+import type { AtLadderLegPick } from "@/lib/active-trader/atLadderLegKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
 import {
   filterAtExpiryPillGroups,
+  mergeExpiryCatalog,
   nearestTradableExpiration,
+  resolveSelectedExpiration,
+  type ExpiryCatalogRow,
 } from "@/lib/optionsExpirationPick";
 import { chainQuoteReasonLabel, resolveAtmStrike } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -1392,6 +1396,7 @@ export function OptionsTab({
   const requestedSubView = useAtChromeStore((s) => s.requestedSubView);
   const consumeRequestedSubView = useAtChromeStore((s) => s.consumeRequestedSubView);
   const [atExpiration, setAtExpiration] = useState<string | null>(null);
+  const [expiryCatalog, setExpiryCatalog] = useState<ExpiryCatalogRow[]>([]);
   const expiryClockMinute = useMinuteClock();
   const expiryNowMs = expiryClockMinute * 60_000;
   useEffect(() => {
@@ -1724,13 +1729,26 @@ export function OptionsTab({
   }, [optionsSubView, tradableAtGroups, atExpiration]);
 
   useEffect(() => {
-    if (!atGroups.length) return;
-    setAtExpiration((prev) => {
-      if (!tradableAtGroups.length) return null;
-      if (prev && tradableAtGroups.some((g) => g.expiration === prev)) return prev;
-      return nearestTradableExpiration(tradableAtGroups, expiryNowMs)?.expiration ?? null;
-    });
-  }, [atGroups.length, tradableAtGroups, expiryNowMs]);
+    const source = optionsSubView === "chain" ? groups : atGroups;
+    setExpiryCatalog((prev) =>
+      mergeExpiryCatalog(
+        prev,
+        source.map((group) => ({ expiration: group.expiration, dte: group.dte })),
+        optionsSubView,
+      ),
+    );
+  }, [optionsSubView, groups, atGroups]);
+
+  useEffect(() => {
+    setAtExpiration((prev) =>
+      resolveSelectedExpiration({
+        previous: prev,
+        catalog: expiryCatalog,
+        expanded: expandedExps,
+        nowMs: expiryNowMs,
+      }),
+    );
+  }, [expiryCatalog, expandedExps, expiryNowMs]);
 
   useEffect(() => {
     if (optionsSubView === "chain" && atExpiration) {
@@ -1743,19 +1761,23 @@ export function OptionsTab({
   }, [optionsSubView, atExpiration]);
 
   useEffect(() => {
-    if (optionsSubView !== "at" || !tradableAtGroups.length || !atExpiration) {
+    if (optionsSubView !== "at" || !atExpiration) {
       clearAtExpiryChrome();
       return;
     }
+    const tradable = filterAtExpiryPillGroups(expiryCatalog, expiryNowMs);
+    const rows = tradable.some((row) => row.expiration === atExpiration)
+      ? tradable
+      : [...tradable, { expiration: atExpiration, dte: 0 }];
     setAtExpiryChrome({
-      options: tradableAtGroups.map((g) => ({
-        expiration: g.expiration,
-        pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
+      options: rows.map((group) => ({
+        expiration: group.expiration,
+        pillLabel: formatAtExpiryPill(group.expiration, group.dte, symbol),
       })),
       selectedExpiration: atExpiration,
       onSelect: setAtExpiration,
     });
-  }, [optionsSubView, tradableAtGroups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
+  }, [optionsSubView, expiryCatalog, atExpiration, symbol, expiryNowMs, setAtExpiryChrome, clearAtExpiryChrome]);
 
   useChainOptionHold(
     chainHoldSig?.holdSig,
@@ -1765,8 +1787,18 @@ export function OptionsTab({
     underlyingPrice ?? data?.underlyingPrice ?? null,
   );
 
+  const symbolResetRef = useRef<string | null>(null);
   useEffect(() => {
+    // Mount runs this even when the symbol did not change, which wiped a draft
+    // hydrated from the session store on Portfolio → Options.
+    if (symbolResetRef.current === null || symbolResetRef.current === symbol) {
+      symbolResetRef.current = symbol;
+      return;
+    }
+    symbolResetRef.current = symbol;
     setExpandedExps(new Set());
+    setExpiryCatalog([]);
+    setAtExpiration(null);
     setSelectedLegs(new Map());
     setLegQuantities(new Map());
     setSheetCollapsed(false);
@@ -1850,11 +1882,14 @@ export function OptionsTab({
   useEffect(() => {}, [groups.length]);
 
   const toggleExp = (exp: string) => {
-    setExpandedExps(prev => {
+    const opening = !expandedExps.has(exp);
+    setExpandedExps((prev) => {
       const next = new Set(prev);
-      if (next.has(exp)) next.delete(exp); else next.add(exp);
+      if (next.has(exp)) next.delete(exp);
+      else next.add(exp);
       return next;
     });
+    if (opening) setAtExpiration(exp);
   };
 
   const rejectLegLimit = useCallback(() => {
@@ -1912,6 +1947,37 @@ export function OptionsTab({
     setLegLimitRejected(false);
     useChainDraftSessionStore.getState().clear();
   }, []);
+
+  const selectedLegsRef = useRef(selectedLegs);
+  selectedLegsRef.current = selectedLegs;
+  const handleAtDraftChange = useCallback((legs: AtLadderLegPick[], qty: Map<string, number>) => {
+    if (legs.length === 0) {
+      handleClearSelection();
+      return;
+    }
+    const hadLegs = selectedLegsRef.current.size > 0;
+    const next = new Map<string, SelectedLeg>();
+    for (const leg of legs) {
+      next.set(makeLegKey(leg.contract, leg.type), {
+        contract: leg.contract,
+        type: leg.type,
+        expiration: leg.expiration,
+        side: leg.side,
+      });
+    }
+    setSelectedLegs(next);
+    setLegQuantities(new Map(qty));
+    setChainTicketOpen(true);
+    if (!hadLegs) setSheetCollapsed(false);
+  }, [handleClearSelection]);
+
+  const persistSheetSession = useCallback((session: ChainDraftSheetSession) => {
+    useChainDraftSessionStore.getState().setSheetSession(session);
+  }, []);
+  const restoredSheetSession =
+    useChainDraftSessionStore.getState().symbol === symbol
+      ? useChainDraftSessionStore.getState().sheet
+      : undefined;
 
   const handleBuildStrategy = useCallback(() => {
     if (!onOpenStrategyBuilder || groups.length === 0) return;
@@ -2176,6 +2242,11 @@ export function OptionsTab({
           initialTradeSelection={atInitialTradeSelection}
           buildLegsFromChain={atSyncLegsFromChain}
           buildLegQtyFromChain={legQuantities}
+          onSharedDraftChange={handleAtDraftChange}
+          sheetCollapsed={sheetCollapsed}
+          onSheetCollapsedChange={setSheetCollapsed}
+          restoredSheetSession={restoredSheetSession}
+          onSheetSessionPersist={persistSheetSession}
         />
       )}
       {optionsSubView === "chain" && (
@@ -2372,12 +2443,8 @@ export function OptionsTab({
             demoFixture={!!chainFixtureOverride}
             draftDistinctLegCount={selectedLegs.size}
             atDocked
-            restoredSheetSession={
-              useChainDraftSessionStore.getState().symbol === symbol
-                ? useChainDraftSessionStore.getState().sheet
-                : undefined
-            }
-            onSheetSessionPersist={(session) => useChainDraftSessionStore.getState().setSheetSession(session)}
+            restoredSheetSession={restoredSheetSession}
+            onSheetSessionPersist={persistSheetSession}
           />
         </div>
       )}

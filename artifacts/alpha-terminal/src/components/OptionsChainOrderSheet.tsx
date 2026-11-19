@@ -212,7 +212,9 @@ export function OptionsChainOrderSheet({
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
   const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
     useState<ChainSheetAtBracketConfirm | null>(null);
-  const limitUserEditedRef = useRef(false);
+  const limitUserEditedRef = useRef(
+    !!restoredSheetSession?.limitLocked || !!restoredSheetSession?.limitPrice?.trim(),
+  );
   const legsHydrateKeyRef = useRef("");
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");

@@ -15,6 +15,7 @@ import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
+import { AtExpirySelect } from "./AtExpirySelect";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -192,6 +193,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {dayLabel}
           </span>
         </div>
+        <AtExpirySelect compact />
       </div>
 
       {sessionLevels.showRow && mode !== "futures" ? (
