@@ -350,6 +350,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+@keyframes at-heat-breathe {
+  0%,
+  100% {
+    background-color: var(--at-heat-rest);
+    box-shadow: var(--at-heat-glow-rest);
+  }
+  50% {
+    background-color: var(--at-heat-peak);
+    box-shadow: var(--at-heat-glow-peak);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-at-quote-heat] {
+    animation: none !important;
+  }
+}
+
 /* Tight spacer above the wordmark/ticker. In regular Safari iOS handles
    the notch via its own chrome, so we only need a few pixels of breathing
    room — no inset-clearing needed. */

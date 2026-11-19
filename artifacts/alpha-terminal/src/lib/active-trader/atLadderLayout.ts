@@ -61,10 +61,10 @@ export const AT_LADDER_CALLS_HDR = "#5df1a0";
 export const AT_LADDER_PUTS_HDR = "#ff7164";
 
 /**
- * Volume heat. A pair with no socket volume stays uncolored.
- * Call volume paints green; put volume paints red. Alpha scales with intensity.
+ * Volume heat. No socket volume stays transparent (the cell stays black).
+ * Live volume lifts a call from black to bright green, a put from black to bright red.
  */
-export const AT_HEAT_CALL_RGB = "40, 110, 70";
-export const AT_HEAT_PUT_RGB = "140, 50, 48";
+export const AT_HEAT_CALL_RGB = "4, 8, 6";
+export const AT_HEAT_PUT_RGB = "12, 5, 5";
 export const AT_HEAT_WASH_ALPHA = 0;
-export const AT_HEAT_MAX_ALPHA = 0.78;
+export const AT_HEAT_MAX_ALPHA = 0.94;
