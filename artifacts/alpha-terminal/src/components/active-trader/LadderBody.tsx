@@ -903,13 +903,10 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   /** Keyboard and assistive-tech activation arrive as a click with no pointer gesture before it. */
   const handleClick = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>) => {
-      // detail 0 is a keyboard or assistive-tech click, not a pointer follow-up.
-      if (e.detail === 0) {
-        suppressClickRef.current = false;
-      } else if (
+      const followUp =
         suppressClickRef.current ||
-        performance.now() - lastPointerHandledAtRef.current < CLICK_AFTER_POINTER_MS
-      ) {
+        performance.now() - lastPointerHandledAtRef.current < CLICK_AFTER_POINTER_MS;
+      if (followUp) {
         suppressClickRef.current = false;
         return;
       }
