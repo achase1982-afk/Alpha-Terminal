@@ -309,8 +309,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const publishDraft = useCallback(
     (legs: Iterable<AtLadderLegPick>, qty: Map<string, number>) => {
       if (!onSharedDraftChange) return;
-      publishedDraftSigRef.current = sharedDraftSig(legs, qty.entries());
-      onSharedDraftChange([...legs], qty);
+      const legList = [...legs];
+      publishedDraftSigRef.current = sharedDraftSig(legList, qty.entries());
+      onSharedDraftChange(legList, qty);
     },
     [onSharedDraftChange],
   );
