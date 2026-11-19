@@ -2,6 +2,7 @@ import { Router, type IRouter, type Request } from "express";
 import {
   addSseClient,
   getSnapshot,
+  getStrategistTimesalePoints,
   getStreamerStatus,
   isConnected,
   addSymbols as addSchwabSymbols,
@@ -19,6 +20,11 @@ import {
   streamerSubTouch,
 } from "../lib/streamerSubscriptionManager.js";
 import { hasValidTokens } from "../lib/tokenStore.js";
+import {
+  addCalendarDaysNy,
+  nyCalendarYmd,
+  nyOffsetForYmd,
+} from "../lib/usEquityMarketCalendar.js";
 
 const router: IRouter = Router();
 
@@ -75,15 +81,54 @@ router.post("/symbols", (req, res) => {
   res.json({ ok: true });
 });
 
-router.post("/equity-tape", (req, res) => {
+router.post("/equity-tape", async (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   if (!Array.isArray(symbols)) {
     res.status(400).json({ ok: false, error: "symbols required" });
     return;
   }
-  const cleaned = symbols.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+  const cleaned = [
+    ...new Set(
+      symbols
+        .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+        .map((s) => s.trim().toUpperCase()),
+    ),
+  ];
   setClientEquityTape(cleaned);
-  res.json({ ok: true, count: cleaned.length });
+
+  // A newly opened ladder must not start today's volume profile at zero.
+  // Seed every print from the current NY calendar day—without market-hours
+  // cutoffs—then continue incrementing the same buckets over SSE.
+  const sessionDate = nyCalendarYmd(new Date());
+  const nextDate = addCalendarDaysNy(sessionDate, 1);
+  const dayStartMs = new Date(`${sessionDate}T00:00:00${nyOffsetForYmd(sessionDate)}`).getTime();
+  const dayEndMs = new Date(`${nextDate}T00:00:00${nyOffsetForYmd(nextDate)}`).getTime();
+  const throughMs = Math.min(Date.now(), dayEndMs);
+  const volumeByPrice: Record<string, Record<string, number>> = {};
+  const profileComplete: Record<string, boolean> = {};
+  for (const symbol of cleaned) {
+    const profile: Record<string, number> = {};
+    const sessionPoints = getStrategistTimesalePoints(symbol).filter(
+      (point) => point.ts >= dayStartMs && point.ts < throughMs,
+    );
+    for (const point of sessionPoints) {
+      const key = point.price.toFixed(2);
+      profile[key] = (profile[key] ?? 0) + point.size;
+    }
+    volumeByPrice[symbol] = profile;
+    // The ring is exact only when it reaches the beginning of the NY calendar
+    // day. A server restart or ring-cap eviction leaves a partial profile; the
+    // client then seeds from extended-hours minute history instead.
+    profileComplete[symbol] =
+      sessionPoints.length > 0 && sessionPoints[0]!.ts <= dayStartMs + 60 * 60_000;
+  }
+  res.json({
+    ok: true,
+    count: cleaned.length,
+    sessionDate,
+    volumeByPrice,
+    profileComplete,
+  });
 });
 
 router.post("/option-symbols", (req, res) => {
