@@ -36,9 +36,9 @@ export const AT_LADDER_PRICE_COLOR = "#d4d6d7";
 export const AT_LADDER_PRICE_SIZE = 16;
 export const AT_LADDER_PRICE_WEIGHT = 400;
 
-/** Center strike — mockup one step above premiums. */
+/** Center strike — same size as the mockup, regular weight so the column does not read heavy. */
 export const AT_LADDER_STRIKE_SIZE = 18;
-export const AT_LADDER_STRIKE_WEIGHT = 500;
+export const AT_LADDER_STRIKE_WEIGHT = 400;
 
 /** BUY / SELL under a selected premium. */
 export const AT_LADDER_LEG_TAG_SIZE = 8;
