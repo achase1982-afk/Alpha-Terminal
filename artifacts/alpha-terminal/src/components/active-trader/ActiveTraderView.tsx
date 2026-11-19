@@ -1034,8 +1034,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     () => ({ prefs, primaryInstruction: settingsSummaryInstruction }),
     [prefs, settingsSummaryInstruction],
   );
-  const openAdvancedOrders = useCallback(() => setSettingsOpen(true), []);
-
   const toggleSettings = useCallback(() => {
     setSettingsOpen((prev) => {
       const next = !prev;
@@ -1043,6 +1041,25 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const closeIfOutside = (event: Event) => {
+      const node = event.target;
+      if (!(node instanceof Element)) return;
+      if (
+        node.closest(
+          "[data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox']",
+        )
+      ) {
+        return;
+      }
+      setSettingsOpen(false);
+      saveAtSettingsPanelOpen(false);
+    };
+    document.addEventListener("pointerdown", closeIfOutside, true);
+    return () => document.removeEventListener("pointerdown", closeIfOutside, true);
+  }, [settingsOpen]);
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
@@ -1453,7 +1470,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               demoFixture={blockLiveSend}
               atDocked
               atBracketDraft={atBracketDraft}
-              onAdvancedOrders={openAdvancedOrders}
+              onAdvancedOrders={toggleSettings}
             />
           </div>
         ) : null}
