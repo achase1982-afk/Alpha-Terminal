@@ -394,9 +394,9 @@ describe("LadderBody", () => {
         [warm.streamKey!]: { availability: "live", contracts30s: 115, intensity: 0.5 },
       });
     });
-    expect(pair(7325, "call").style.backgroundColor).toContain("126, 255, 186");
+    expect(pair(7325, "call").style.backgroundColor).toContain("6, 148, 64");
     expect(pair(7325, "call").style.animation).toContain("at-heat-breathe");
-    expect(pair(7335, "put").style.backgroundColor).toContain("118, 41, 37");
+    expect(pair(7335, "put").style.backgroundColor).toContain("87, 16, 20");
     expect(pair(7335, "put").style.animation).toContain("at-heat-breathe");
     expect(pair(7400, "call").style.animation).toBe("none");
     expect(alpha(pair(7325, "call"))).toBeCloseTo(AT_HEAT_MAX_ALPHA, 3);
