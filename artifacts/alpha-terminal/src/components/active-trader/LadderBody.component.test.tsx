@@ -169,9 +169,10 @@ describe("LadderBody", () => {
     expect(view.container.querySelector('[data-at-spot-row="1"]')?.getAttribute("data-at-ladder-row")).toBe("7320");
     expect(view.container.querySelector('[data-at-gamma-flip-row="1"]')?.getAttribute("data-at-ladder-row")).toBe("7295");
     const flipTag = view.container.querySelector<HTMLElement>("[data-at-strike-gamma-flip]")!;
-    expect(flipTag.textContent).toBe("FLIP");
+    expect(flipTag.textContent).toBe("GAMMAFLIP");
     expect(flipTag.style.fontSize).toBe("7px");
-    expect(flipTag.parentElement?.classList.contains("left-0.5")).toBe(true);
+    expect(flipTag.style.border).toBe("");
+    expect(flipTag.style.left).toBe("0px");
   });
 
   it("a quote re-renders its own contract and nothing else", () => {
@@ -347,8 +348,10 @@ describe("LadderBody", () => {
     const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
     expect(strike.style.fontWeight).toBe("400");
     expect(strike.style.fontSize).toBe("18px");
-    const spot = view.container.querySelector<HTMLElement>('[data-at-strike="7320"] > div')!;
-    expect(spot.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
+    const spotCell = view.container.querySelector<HTMLElement>('[data-at-strike="7320"]')!;
+    expect(spotCell.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    const spot = spotCell.querySelector<HTMLElement>("div")!;
+    expect(spot.style.background).toBe("transparent");
     expect(spot.style.fontWeight).toBe("500");
   });
 
@@ -360,7 +363,9 @@ describe("LadderBody", () => {
     expect(putRow.getAttribute("data-at-ladder-row")).toBe("7300");
     expect(callRow.querySelector("[data-at-call-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(251,\s*191,\s*36\)/);
     expect(putRow.querySelector("[data-at-put-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(20,\s*184,\s*166\)/);
-    expect(view.container.querySelector("[data-at-strike-wall]")).toBeNull();
+    expect(callRow.querySelector("[data-at-strike-call-wall]")?.textContent).toBe("CALLWALL");
+    expect(putRow.querySelector("[data-at-strike-put-wall]")?.textContent).toBe("PUTWALL");
+    expect(callRow.querySelector("[data-at-strike-call-wall]")?.getAttribute("style")).not.toMatch(/border/);
   });
 
   it("draws a thin outline + BUY/SELL tag on a selected cell with no fill wash", () => {
