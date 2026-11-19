@@ -202,6 +202,39 @@ const AT_VISIBLE_SETTLE_MS = 140;
 const AT_ORDER_SHEET_Z = 120;
 /** After a tap, how long the tapped strike is kept clear of a sheet that is still opening or growing. */
 const AT_NUDGE_WINDOW_MS = 1_200;
+/** A programmatic scroll that never emits an event drops this flag. Scroll events extend it. */
+const AT_PROGRAMMATIC_SCROLL_ARM_MS = 80;
+const AT_PROGRAMMATIC_SCROLL_HOLD_MS = 120;
+const AT_USER_SCROLL_HOLD_MS = 180;
+const AT_LADDER_SCROLL_KEYS = new Set([
+  "ArrowUp",
+  "ArrowDown",
+  "PageUp",
+  "PageDown",
+  "Home",
+  "End",
+  " ",
+]);
+
+function sameStrikeList(a: readonly number[], b: readonly number[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** First visible strike and how far its top sits from the viewport top. */
+function ladderScrollAnchor(
+  strikes: readonly number[],
+  scrollTop: number,
+  rowHeight: number,
+  key: string,
+): { key: string; strike: number; offsetPx: number } | null {
+  if (strikes.length === 0 || rowHeight <= 0) return null;
+  const first = Math.min(strikes.length - 1, Math.max(0, Math.floor(scrollTop / rowHeight)));
+  const strike = strikes[first];
+  if (strike == null) return null;
+  return { key, strike, offsetPx: first * rowHeight - scrollTop };
+}
 
 /** Header quote-health pill and order-settings mid: a human reads them, so a few updates a second is plenty. */
 const AT_QUOTE_AUDIT_MS = 2_000;
@@ -472,6 +505,20 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const scrollInputRef = useRef({ ladderStrikes, ladderRowH, spotStrike, onReachEdge, sheetPad });
   scrollInputRef.current = { ladderStrikes, ladderRowH, spotStrike, onReachEdge, sheetPad };
+  const programmaticRef = useRef(false);
+  const progTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userScrollUntilRef = useRef(0);
+  const armProgrammaticScroll = useCallback(() => {
+    programmaticRef.current = true;
+    if (progTimerRef.current) clearTimeout(progTimerRef.current);
+    progTimerRef.current = setTimeout(() => {
+      programmaticRef.current = false;
+      progTimerRef.current = null;
+    }, AT_PROGRAMMATIC_SCROLL_ARM_MS);
+  }, []);
+  useEffect(() => () => {
+    if (progTimerRef.current) clearTimeout(progTimerRef.current);
+  }, []);
 
   /** The part of the ladder that is not under the order sheet. */
   const readViewport = useCallback((el: HTMLElement) => {
@@ -500,8 +547,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     const idx = scrollInputRef.current.ladderStrikes.indexOf(pending.strike);
     if (idx < 0) return;
     const px = atLadderNudgeToClearSheet(idx, readViewport(el));
-    if (px > 0) el.scrollBy({ top: px, behavior: "smooth" });
-  }, [readViewport]);
+    if (px > 0) {
+      armProgrammaticScroll();
+      el.scrollBy({ top: px, behavior: "smooth" });
+    }
+  }, [readViewport, armProgrammaticScroll]);
   useLayoutEffect(() => {
     nudgeTappedStrikeAboveSheet();
   }, [sheetPad, nudgeTappedStrikeAboveSheet]);
@@ -869,12 +919,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       const peekPx = (ev as CustomEvent<{ peekPx?: number }>).detail?.peekPx ?? AT_MOBILE_PEEK_MAX_PX;
       if (tradeStripStrike == null) return;
       requestAnimationFrame(() => {
+        armProgrammaticScroll();
         scrollAtLadderToStrikeAboveSheet(ladderScrollRef.current, tradeStripStrike, peekPx);
       });
     };
     window.addEventListener("at-mobile-sheet-open", onSheet);
     return () => window.removeEventListener("at-mobile-sheet-open", onSheet);
-  }, [tradeStripStrike]);
+  }, [tradeStripStrike, armProgrammaticScroll]);
 
   const handleVerticalTap = useCallback(
     (payload: {
@@ -1096,18 +1147,45 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     setVisibleStrikes(null);
   }, [symbol, activeExpiration]);
 
-  /** Keep the strikes on screen where they are when a page of strikes lands above them. */
+  /**
+   * Keep the strikes on screen where they are when a page of strikes lands above
+   * them. One correction per update: the row-count shift, or, when that shift is
+   * zero, the visible strike and its pixel offset. Never both.
+   */
   const prevStrikesRef = useRef<{ key: string; strikes: number[] }>({ key: "", strikes: [] });
+  const scrollAnchorRef = useRef<{ key: string; strike: number; offsetPx: number } | null>(null);
   useLayoutEffect(() => {
     const el = ladderScrollRef.current;
     const key = `${symbol}|${activeExpiration ?? ""}`;
     const prev = prevStrikesRef.current;
-    if (el && prev.key === key) {
+    if (el && prev.key === key && prev.strikes.length > 0) {
       const shift = atLadderScrollShiftForRows(prev.strikes, ladderStrikes, ladderRowH);
-      if (shift !== 0) el.scrollTop += shift;
+      if (shift !== 0) {
+        armProgrammaticScroll();
+        el.scrollTop += shift;
+      } else {
+        const anchor = scrollAnchorRef.current;
+        if (anchor && anchor.key === key && !sameStrikeList(prev.strikes, ladderStrikes)) {
+          const idx = ladderStrikes.indexOf(anchor.strike);
+          if (idx >= 0) {
+            const max = Math.max(0, ladderStrikes.length * ladderRowH - el.clientHeight);
+            const nextTop = Math.min(max, Math.max(0, idx * ladderRowH - anchor.offsetPx));
+            if (nextTop !== el.scrollTop) {
+              armProgrammaticScroll();
+              el.scrollTop = nextTop;
+            }
+          }
+        }
+      }
+    } else if (prev.key !== key) {
+      scrollAnchorRef.current = null;
     }
     prevStrikesRef.current = { key, strikes: ladderStrikes };
-  }, [ladderStrikes, ladderRowH, symbol, activeExpiration]);
+    if (el && prev.key === key) {
+      const nextAnchor = ladderScrollAnchor(ladderStrikes, el.scrollTop, ladderRowH, key);
+      if (nextAnchor) scrollAnchorRef.current = nextAnchor;
+    }
+  }, [ladderStrikes, ladderRowH, symbol, activeExpiration, armProgrammaticScroll]);
 
   /**
    * Center on spot once, when this symbol and expiry's strikes first arrive,
@@ -1128,8 +1206,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     const idx = ladderStrikes.indexOf(spotStrike);
     if (idx < 0) return;
     centeredKeyRef.current = key;
+    armProgrammaticScroll();
     el.scrollTop = atLadderScrollTopForRow(idx, readViewport(el));
-  }, [symbol, activeExpiration, ladderDataReady, spotStrike, ladderStrikes, readViewport]);
+    const nextAnchor = ladderScrollAnchor(ladderStrikes, el.scrollTop, ladderRowH, key);
+    if (nextAnchor) scrollAnchorRef.current = nextAnchor;
+  }, [symbol, activeExpiration, ladderDataReady, spotStrike, ladderStrikes, ladderRowH, readViewport, armProgrammaticScroll]);
 
   const scrollLadderToSpot = useCallback(() => {
     const el = ladderScrollRef.current;
@@ -1137,8 +1218,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!el || cur.spotStrike == null) return;
     const idx = cur.ladderStrikes.indexOf(cur.spotStrike);
     if (idx < 0) return;
+    armProgrammaticScroll();
     el.scrollTo({ top: atLadderScrollTopForRow(idx, readViewport(el)), behavior: "smooth" });
-  }, [readViewport]);
+  }, [readViewport, armProgrammaticScroll]);
 
   const upArmedRef = useRef(true);
   const downArmedRef = useRef(true);
@@ -1213,21 +1295,73 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       }
     };
 
+    const noteUserScroll = () => {
+      userScrollUntilRef.current = performance.now() + AT_USER_SCROLL_HOLD_MS;
+    };
+    const onWheel = () => noteUserScroll();
+    const onTouchMove = () => noteUserScroll();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!AT_LADDER_SCROLL_KEYS.has(event.key)) return;
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        target.closest("input, textarea, select, [contenteditable='true']")
+      ) {
+        return;
+      }
+      noteUserScroll();
+    };
+    let scrollbarPointer = false;
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.target === el) scrollbarPointer = true;
+    };
+    const onPointerMove = () => {
+      if (scrollbarPointer) noteUserScroll();
+    };
+    const onPointerUp = () => {
+      scrollbarPointer = false;
+    };
+
     const onScroll = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        measure(true);
+        if (programmaticRef.current) {
+          if (progTimerRef.current) clearTimeout(progTimerRef.current);
+          progTimerRef.current = setTimeout(() => {
+            programmaticRef.current = false;
+            progTimerRef.current = null;
+          }, AT_PROGRAMMATIC_SCROLL_HOLD_MS);
+          measure(false);
+          return;
+        }
+        const userScrolling = performance.now() < userScrollUntilRef.current;
+        if (userScrolling) noteUserScroll();
+        measure(userScrolling);
       });
     };
     measureLadderRef.current = () => measure(false);
     measure(false);
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("keydown", onKeyDown);
+    el.addEventListener("pointerdown", onPointerDown);
+    el.addEventListener("pointermove", onPointerMove);
+    el.addEventListener("pointerup", onPointerUp);
+    el.addEventListener("pointercancel", onPointerUp);
     const ro = new ResizeObserver(() => measure(false));
     ro.observe(el);
     return () => {
       measureLadderRef.current = null;
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("keydown", onKeyDown);
+      el.removeEventListener("pointerdown", onPointerDown);
+      el.removeEventListener("pointermove", onPointerMove);
+      el.removeEventListener("pointerup", onPointerUp);
+      el.removeEventListener("pointercancel", onPointerUp);
       ro.disconnect();
       if (frame) cancelAnimationFrame(frame);
       if (visibleTimer != null) clearTimeout(visibleTimer);
