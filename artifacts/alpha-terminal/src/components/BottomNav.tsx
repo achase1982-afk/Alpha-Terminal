@@ -48,8 +48,6 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
 interface BottomNavProps {
   activeTab: BottomTab;
   onTabChange: (tab: BottomTab) => void;
-  activeTrader?: boolean;
-  onActiveTraderMarkets?: () => void;
   /**
    * When the user leaves the AI hub, show a persistent cue on the AI tab that
    * Strategist work is still running or a new result is waiting (server-side
@@ -62,8 +60,6 @@ interface BottomNavProps {
 export function BottomNav({
   activeTab,
   onTabChange,
-  activeTrader = false,
-  onActiveTraderMarkets,
   strategistRunningCount = 0,
   strategistUnviewedCount = 0,
 }: BottomNavProps) {
@@ -254,82 +250,6 @@ export function BottomNav({
       document.removeEventListener("click", clickBlocker, { capture: true });
     };
   }, [stopJiggle]);
-
-  if (activeTrader) {
-    const tabs = [
-      {
-        label: "Markets",
-        action: () => (onActiveTraderMarkets ? onActiveTraderMarkets() : onTabChange("markets")),
-        icon: <Activity className="h-[19px] w-[19px]" />,
-      },
-      {
-        label: "Portfolio",
-        action: () => onTabChange("portfolio"),
-        icon: (
-          <svg aria-hidden viewBox="0 0 20 20" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="3.5" y="2.5" width="13" height="15" />
-            <path d="M6.5 6h7M6.5 9h7M6.5 12h7M6.5 15h7" />
-          </svg>
-        ),
-      },
-      {
-        label: "Options",
-        action: () => onTabChange("markets"),
-        icon: (
-          <svg aria-hidden viewBox="0 0 20 20" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M10 2.3 17.7 10 10 17.7 2.3 10 10 2.3Z" />
-            <path d="M10 6.9 13.1 10 10 13.1 6.9 10 10 6.9Z" />
-          </svg>
-        ),
-        active: true,
-      },
-      {
-        label: "Watchlist",
-        action: () => onTabChange("watchlist"),
-        icon: (
-          <svg aria-hidden viewBox="0 0 20 20" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <path d="M3 4h3M9 4h8M3 10h3M9 10h8M3 16h3M9 16h8" />
-          </svg>
-        ),
-      },
-      {
-        label: "Search",
-        action: () => onTabChange("search"),
-        icon: <Search className="h-[18px] w-[18px]" />,
-      },
-    ];
-
-    return (
-      <nav
-        ref={containerRef}
-        data-bottom-nav
-        data-at-bottom-nav
-        className="z-50 flex shrink-0 items-stretch border-t"
-        style={{ height: 65, background: "#131617", borderColor: "#2d3236" }}
-      >
-        {tabs.map((tab) => (
-          <button
-            key={tab.label}
-            type="button"
-            onClick={tab.action}
-            className="flex min-w-0 flex-1 flex-col items-center justify-center"
-            style={{
-              gap: 3,
-              color: tab.active ? "#ffcd36" : "#a7adb0",
-              padding: "5px 2px 4px",
-            }}
-            aria-current={tab.active ? "page" : undefined}
-            aria-label={`${tab.label} tab`}
-          >
-            {tab.icon}
-            <span style={{ fontSize: 9, fontWeight: tab.active ? 500 : 400, lineHeight: 1 }}>
-              {tab.label}
-            </span>
-          </button>
-        ))}
-      </nav>
-    );
-  }
 
   const displayOrder = dragging && previewOrder.length === order.length ? previewOrder : order;
   const dragOffset = dragging ? dragX - dragOriginX : 0;
