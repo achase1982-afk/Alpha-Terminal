@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { OptionsTab } from "./OptionsTab";
 
 vi.mock("@/lib/active-trader/atGlanceFeature", () => ({
@@ -147,18 +147,10 @@ describe("OptionsTab subview toggle", () => {
     cleanup();
   });
 
-  it("renders Chain / Active Trader toggle when glance top is default and switches to AT", async () => {
+  it("does not put a Chain / Active Trader switch on the options toolbar", () => {
     render(<OptionsTab />);
 
+    expect(screen.queryByRole("switch", { name: "Options view" })).toBeNull();
     expect(screen.queryByTestId("active-trader-pane")).toBeNull();
-
-    const viewSwitch = screen.getByRole("switch", { name: "Options view" });
-    expect(viewSwitch).toBeTruthy();
-
-    fireEvent.click(viewSwitch);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("active-trader-pane")).toBeTruthy();
-    });
   });
 });
