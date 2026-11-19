@@ -47,9 +47,24 @@ const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 const companyNameCache = new Map<string, string>();
 const assetTypeCache = new Map<string, string>();
 
-function cacheAssetType(symbol: string, reference: { assetType?: unknown; assetMainType?: unknown } | null | undefined) {
+function pickReferenceAssetType(
+  reference: { assetType?: unknown; assetMainType?: unknown } | null | undefined,
+): string | null {
   const raw = reference?.assetType ?? reference?.assetMainType;
-  if (typeof raw === "string" && raw.trim()) assetTypeCache.set(symbol.toUpperCase(), raw.trim());
+  return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+}
+
+function verifiedInstrumentAssetType(entry: Record<string, unknown> | null | undefined): string | null {
+  const direct = pickReferenceAssetType(entry);
+  if (direct) return direct;
+  const nested = entry?.["instrument"];
+  if (!nested || typeof nested !== "object") return null;
+  return pickReferenceAssetType(nested as { assetType?: unknown; assetMainType?: unknown });
+}
+
+function cacheAssetType(symbol: string, reference: { assetType?: unknown; assetMainType?: unknown } | null | undefined) {
+  const raw = pickReferenceAssetType(reference);
+  if (raw) assetTypeCache.set(symbol.toUpperCase(), raw.trim());
 }
 
 function cachedAssetType(symbol: string): string | undefined {
@@ -1619,7 +1634,7 @@ function exactInstrumentEntry(
 
 router.get("/fundamentals", async (req, res) => {
   const symbol = req.query["symbol"] as string;
-  const accessToken = schwabAccessTokenFromRequest(req);
+  const accessToken = schwabAccessTokenFromRequest(req, true);
 
   if (!symbol || !accessToken) {
     return res.status(400).json({ symbol: "", error: "symbol and accessToken are required" });
@@ -1650,12 +1665,14 @@ router.get("/fundamentals", async (req, res) => {
 
     const rawNextEarnings = fundamental["nextEarningsDate"] ?? fundamental["nextEarning"] ?? fundamental["earningsDate"];
     const nextEarningsDate = typeof rawNextEarnings === "string" ? rawNextEarnings : null;
+    const assetType = verifiedInstrumentAssetType(entry);
+    if (assetType) cacheAssetType(displaySymbol, { assetType });
 
     res.json({
       symbol: displaySymbol,
       description: (entry["description"] as string) ?? null,
       exchange: (entry["exchange"] as string) ?? null,
-      assetType: (entry["assetType"] as string) ?? null,
+      assetType,
       marketCap: (fundamental["marketCap"] as number) ?? null,
       sharesOutstanding: (fundamental["sharesOutstanding"] as number) ?? null,
       peRatio: (fundamental["peRatio"] as number) ?? null,
