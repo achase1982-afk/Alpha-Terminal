@@ -582,7 +582,7 @@ const DataCell = memo(function DataCell({
   const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
+    <div className="flex flex-col justify-center overflow-hidden" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
       <span
         className="leading-none"
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
@@ -603,7 +603,19 @@ const DataCell = memo(function DataCell({
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
       {asOfLabel ? (
-        <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{asOfLabel}</span>
+        <span
+          title={asOfLabel}
+          style={{
+            fontSize: 8,
+            color: MUTED,
+            lineHeight: 1,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          stale
+        </span>
       ) : null}
       {showPriceReason ? (
         <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{showPriceReason}</span>
@@ -648,7 +660,8 @@ const DataCell = memo(function DataCell({
         onPointerLeave={handlePointerLeave}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); } }}
         aria-pressed={isSelected}
-        aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}`}
+        aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}${asOfLabel ? `, ${asOfLabel}` : ""}`}
+        title={asOfLabel ?? undefined}
         className="w-full text-left cursor-pointer select-none relative"
         style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
