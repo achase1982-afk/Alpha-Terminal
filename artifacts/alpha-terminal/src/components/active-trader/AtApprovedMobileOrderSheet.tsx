@@ -74,6 +74,8 @@ export type AtApprovedMobileOrderSheetProps = {
   limitTickCtx: LimitTickContext;
   sendLabel: string;
   sendDisabled: boolean;
+  /** Why Send cannot be used. Shown on the ticket; it does not enable a live route. */
+  sendDetail?: string | null;
   onSend: () => void;
   onAdvancedOrders?: () => void;
   primaryActionTestId?: string;
@@ -171,6 +173,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   onOrderTypeChange,
   sendLabel,
   sendDisabled,
+  sendDetail,
   onSend,
   onAdvancedOrders,
   primaryActionTestId,
@@ -322,6 +325,15 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           </div>
         </div>
 
+        {sendDetail ? (
+          <p
+            data-at-send-reason
+            style={{ marginTop: 6, fontSize: 13, lineHeight: 1.35, fontWeight: 650, color: "#ff4d4d" }}
+          >
+            {sendDetail}
+          </p>
+        ) : null}
+
         <div className="flex items-center" style={{ marginTop: 4, gap: 4 }}>
           <div
               className="relative inline-flex w-20 shrink-0 items-center rounded-md px-2.5"
@@ -413,6 +425,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           <button
             type="button"
             disabled={sendDisabled}
+            title={sendDetail || undefined}
             onClick={onSend}
             data-testid={primaryActionTestId}
             className="ml-auto mr-px w-[156px] shrink-0 rounded-md px-3.5 font-medium disabled:opacity-45 whitespace-nowrap"
