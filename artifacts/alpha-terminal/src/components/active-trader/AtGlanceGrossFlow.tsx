@@ -8,7 +8,7 @@ import { resolveCallWallDisplay, resolvePutWallDisplay } from "@/lib/active-trad
 
 const TRACK_H = 18;
 const TEXT_PX = 13;
-const FLOW_GRID = "46px 112px minmax(28px, 1fr) 118px 8px 108px";
+const FLOW_GRID = "36px minmax(0, max-content) minmax(8px, 1fr) minmax(0, max-content) 6px 104px";
 const SCALE_FLOOR = 50_000;
 const SCALE_DECAY = 0.94;
 
@@ -52,7 +52,7 @@ function GrossFlowTrack({
       data-at-gross-flow-row={side}
       data-at-flow-gross-sold-usd={dashAmounts ? "" : String(soldUsd)}
       data-at-flow-gross-bought-usd={dashAmounts ? "" : String(boughtUsd)}
-      className="grid items-center min-w-0"
+      className="grid items-center min-w-0 w-full"
       style={{ height: TRACK_H, gridTemplateColumns: FLOW_GRID }}
     >
       <span
@@ -62,12 +62,15 @@ function GrossFlowTrack({
         {sideTag}
       </span>
       <span
-        className="num shrink-0 whitespace-nowrap"
+        className="num whitespace-nowrap"
         style={{
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
           color: DOWN_TEXT,
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         Sold {fmtSoldBought(soldUsd, dashAmounts)}
@@ -106,13 +109,16 @@ function GrossFlowTrack({
         <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.28)" }} />
       </div>
       <span
-        className="num shrink-0 whitespace-nowrap"
+        className="num whitespace-nowrap"
         style={{
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
           color: UP,
           textAlign: "left",
+          minWidth: 0,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
         Bought {fmtSoldBought(boughtUsd, dashAmounts)}
@@ -120,12 +126,12 @@ function GrossFlowTrack({
       <div aria-hidden style={{ width: 1, height: 14, justifySelf: "center", background: `${GOLD}88` }} />
       <div
         data-at-flow-wall={side}
-        className="num text-right whitespace-nowrap"
+        className="num whitespace-nowrap"
         style={{
           lineHeight: 1,
           fontSize: TEXT_PX,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
+          textAlign: "left",
+          justifySelf: "start",
         }}
         title={`${wallLabel} ${wallText}`}
       >
