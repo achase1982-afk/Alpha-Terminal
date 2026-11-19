@@ -2560,9 +2560,10 @@ export function OptionsTab({
             toDate: atDates.toDate,
             strikeCount: atRest.strikeCount,
             range: atRest.range,
+            ...(atSeriesRoot ? { series: atSeriesRoot } : {}),
           }
         : undefined,
-    [atDates, atRest.strikeCount, atRest.range],
+    [atDates, atRest.strikeCount, atRest.range, atSeriesRoot],
   );
   const atHoldSubs = useMemo(
     () => ({ subscribeOptionSymbols, releaseOptionHold }),

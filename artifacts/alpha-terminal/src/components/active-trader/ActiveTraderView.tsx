@@ -159,12 +159,13 @@ interface ActiveTraderViewProps {
   chainQuoteTs?: number;
   /** Ladder scrolled to the first or last loaded strike — ask for the next page. */
   onReachEdge?: (edge: "up" | "down") => void;
-  /** Same expiry window the ladder REST-fetched, used only if the stream goes quiet. */
+  /** Selected expiry, series, and strike window for the ladder quote fallback. */
   ladderRestWindow?: {
     fromDate: string;
     toDate: string;
     strikeCount: number;
     range: string;
+    series?: string;
   };
   /** Chain fetch / brokerage state for skeleton messaging. */
   ladderPlug?: {

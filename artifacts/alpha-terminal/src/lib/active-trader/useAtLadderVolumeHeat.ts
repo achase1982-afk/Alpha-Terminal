@@ -107,6 +107,56 @@ type RestChainLeg = {
   vega?: number | null;
 };
 
+const OCC_SUFFIX = /^\d{6}[CP]\d{8}$/;
+
+/** Root plus the 15-character OCC suffix, so spacing cannot hide the same contract. */
+export function canonicalOccSymbol(symbol: string | null | undefined): string | null {
+  if (!symbol) return null;
+  let raw = symbol.trim().toUpperCase();
+  if (raw.startsWith(".")) raw = raw.slice(1);
+  raw = raw.replace(/\s+/g, "");
+  if (raw.length < 15) return null;
+  const suffix = raw.slice(-15);
+  if (!OCC_SUFFIX.test(suffix)) return null;
+  const root = raw.slice(0, -15);
+  if (!/^[A-Z][A-Z0-9]{0,5}$/.test(root)) return null;
+  return `${root}${suffix}`;
+}
+
+function occKeyIndex(want: Set<string>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const key of want) {
+    const occ = canonicalOccSymbol(key);
+    if (!occ || map.has(occ)) continue;
+    map.set(occ, key);
+  }
+  return map;
+}
+
+function wantedContractKey(
+  raw: string | null | undefined,
+  want: Set<string>,
+  occToKey: Map<string, string>,
+): string | null {
+  if (!raw) return null;
+  const occ = canonicalOccSymbol(raw);
+  if (occ) return occToKey.get(occ) ?? null;
+  if (want.has(raw)) return raw;
+  const trimmed = raw.trim();
+  return trimmed !== raw && want.has(trimmed) ? trimmed : null;
+}
+
+function legContractKey(
+  leg: RestChainLeg,
+  want: Set<string>,
+  occToKey: Map<string, string>,
+): string | null {
+  return (
+    wantedContractKey(leg.streamKey, want, occToKey) ??
+    wantedContractKey(leg.schwabSymbol, want, occToKey)
+  );
+}
+
 export function applyRestQuotes(
   engine: AtLadderVolumeHeatEngine,
   legs: RestChainLeg[],
@@ -115,11 +165,18 @@ export function applyRestQuotes(
 ): { matched: number; quoteTimeMs: number | null } {
   const batch: OptionTick[] = [];
   const quoteTimes: Array<number | null> = [];
+  const occToKey = occKeyIndex(want);
+  const ticks = useOptionsStreamStore.getState().ticks;
   for (const leg of legs) {
-    const rawKey = leg.streamKey ?? leg.schwabSymbol ?? "";
-    const key = want.has(rawKey) ? rawKey : rawKey.trim();
-    if (!key || (want.size > 0 && !want.has(key))) continue;
+    const key = legContractKey(leg, want, occToKey);
+    if (!key) continue;
     const quoteTime = upstreamQuoteTimeMs(leg.quoteTimeMs);
+    if (quoteTime != null) {
+      const existing = ticks[key];
+      const existingQuote = upstreamQuoteTimeMs(existing?.quoteTime) ?? upstreamQuoteTimeMs(existing?.ts);
+      // A successful poll is not a refresh. A newer socket quote stays.
+      if (existingQuote != null && quoteTime < existingQuote) continue;
+    }
     quoteTimes.push(quoteTime);
     if (quoteTime == null) continue;
     batch.push({
@@ -161,10 +218,16 @@ export function applyRestQuotes(
   return { matched: quoteTimes.length, quoteTimeMs };
 }
 
-function restWindowPath(
-  symbol: string,
-  window: { fromDate: string; toDate: string; strikeCount: number; range: string },
-): string {
+export type LadderRestWindow = {
+  fromDate: string;
+  toDate: string;
+  strikeCount: number;
+  range: string;
+  /** OCC root for the selected series, when the expiry distinguishes one. */
+  series?: string;
+};
+
+function restWindowPath(symbol: string, window: LadderRestWindow): string {
   const q = new URLSearchParams({
     symbol: symbol.replace(/^\$/, ""),
     strikeCount: String(window.strikeCount),
@@ -174,7 +237,23 @@ function restWindowPath(
     toDate: window.toDate,
     ladderHeat: "1",
   });
+  const series = window.series?.trim();
+  if (series) q.set("series", series);
   return `/api/market/options?${q.toString()}`;
+}
+
+function sameLadderExpiry(a: LadderRestWindow | undefined, b: LadderRestWindow | undefined): boolean {
+  return !!a && !!b
+    && a.fromDate === b.fromDate
+    && a.toDate === b.toDate
+    && (a.series ?? "") === (b.series ?? "");
+}
+
+function ladderContractKeys(streamKeys: readonly string[], seedKeys: readonly string[]): Set<string> {
+  const want = new Set<string>();
+  for (const key of streamKeys) if (key) want.add(key);
+  for (const key of seedKeys) if (key) want.add(key);
+  return want;
 }
 
 export type AtLadderSeedContractVolume = {
@@ -187,8 +266,8 @@ export function useAtLadderVolumeHeat(input: {
   symbol: string;
   streamKeys: string[];
   skipNetwork?: boolean;
-  /** Visible expiry window. Polled when the stream volume feed goes quiet. */
-  restWindow?: { fromDate: string; toDate: string; strikeCount: number; range: string };
+  /** Selected expiry, series, and strike window. The quote fallback polls this book. */
+  restWindow?: LadderRestWindow;
   /** Initial chain contract volumes so the first live tick computes a delta immediately. */
   seedContracts?: readonly AtLadderSeedContractVolume[];
 }): { heatStore: AtLadderHeatStore; source: AtLadderHeatSourceMeta } {
@@ -206,6 +285,8 @@ export function useAtLadderVolumeHeat(input: {
   const restBadgeRef = useRef<RestBadge>({ quoteTimeMs: null });
   const restWindowRef = useRef(input.restWindow);
   restWindowRef.current = input.restWindow;
+  const seedKeysRef = useRef<string[]>([]);
+  seedKeysRef.current = (input.seedContracts ?? []).map((c) => c.key).filter((key) => key.length > 0);
   const [restActive, setRestActive] = useState(false);
 
   const fx = getAtFixtureOverride();
@@ -502,16 +583,18 @@ export function useAtLadderVolumeHeat(input: {
   useEffect(() => {
     if (mode !== "poll" || input.skipNetwork) return;
     let cancelled = false;
+    let inFlight = false;
     const engine = engineRef.current!;
-    const sym = input.symbol.replace(/^\$/, "");
 
     const poll = async () => {
+      const requested = restWindowRef.current;
+      if (!requested?.fromDate || !requested.toDate || inFlight) return;
+      inFlight = true;
       try {
-        const res = await fetchWithAuth(
-          `/api/market/options?symbol=${encodeURIComponent(sym)}&strikeCount=40&contractType=ALL&ladderHeat=1`,
-          { clerkTokenTimeoutMs: 4_000 },
-        );
-        if (cancelled) return;
+        const res = await fetchWithAuth(restWindowPath(input.symbol, requested), {
+          clerkTokenTimeoutMs: 4_000,
+        });
+        if (cancelled || !sameLadderExpiry(requested, restWindowRef.current)) return;
         if (!res.ok) {
           restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
           return;
@@ -521,8 +604,9 @@ export function useAtLadderVolumeHeat(input: {
           calls?: RestChainLeg[];
           puts?: RestChainLeg[];
         };
+        if (cancelled || !sameLadderExpiry(requested, restWindowRef.current)) return;
         const receiptMs = Date.now();
-        const want = new Set(input.streamKeys);
+        const want = ladderContractKeys(streamKeysRef.current, seedKeysRef.current);
         restWriteRef.current = true;
         let summary = { matched: 0, quoteTimeMs: null as number | null };
         try {
@@ -539,7 +623,11 @@ export function useAtLadderVolumeHeat(input: {
         });
         schedulePaintRef.current?.();
       } catch {
-        restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
+        if (!cancelled && sameLadderExpiry(requested, restWindowRef.current)) {
+          restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
+        }
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -549,7 +637,16 @@ export function useAtLadderVolumeHeat(input: {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [mode, input.skipNetwork, input.symbol, input.streamKeys.join("|")]);
+  }, [
+    mode,
+    input.skipNetwork,
+    input.symbol,
+    input.restWindow?.fromDate,
+    input.restWindow?.toDate,
+    input.restWindow?.range,
+    input.restWindow?.strikeCount,
+    input.restWindow?.series,
+  ]);
 
   useEffect(() => {
     if (mode !== "stream" || input.skipNetwork) {
@@ -561,12 +658,12 @@ export function useAtLadderVolumeHeat(input: {
 
     const poll = async () => {
       const windowQuery = restWindowRef.current;
-      if (!windowQuery) return;
+      if (!windowQuery?.fromDate || !windowQuery.toDate) return;
       try {
         const res = await fetchWithAuth(restWindowPath(input.symbol, windowQuery), {
           clerkTokenTimeoutMs: 4_000,
         });
-        if (cancelled) return;
+        if (cancelled || !sameLadderExpiry(windowQuery, restWindowRef.current)) return;
         const engine = engineRef.current!;
         if (!res.ok) {
           restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
@@ -578,6 +675,7 @@ export function useAtLadderVolumeHeat(input: {
           calls?: RestChainLeg[];
           puts?: RestChainLeg[];
         };
+        if (cancelled || !sameLadderExpiry(windowQuery, restWindowRef.current)) return;
         const receiptMs = Date.now();
         restWriteRef.current = true;
         let summary = { matched: 0, quoteTimeMs: null as number | null };
@@ -585,7 +683,7 @@ export function useAtLadderVolumeHeat(input: {
           summary = applyRestQuotes(
             engine,
             [...(data.calls ?? []), ...(data.puts ?? [])],
-            new Set(streamKeysRef.current),
+            ladderContractKeys(streamKeysRef.current, seedKeysRef.current),
             receiptMs,
           );
         } finally {
@@ -601,6 +699,7 @@ export function useAtLadderVolumeHeat(input: {
         if (!cancelled) setRestActive(restBadgeFresh(restBadgeRef.current, receiptMs));
         schedulePaintRef.current?.();
       } catch {
+        if (cancelled || !sameLadderExpiry(windowQuery, restWindowRef.current)) return;
         const engine = engineRef.current;
         if (engine) restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
         if (!cancelled) setRestActive(false);
@@ -647,6 +746,7 @@ export function useAtLadderVolumeHeat(input: {
     input.restWindow?.toDate,
     input.restWindow?.range,
     input.restWindow?.strikeCount,
+    input.restWindow?.series,
   ]);
 
   return { heatStore, source };

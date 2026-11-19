@@ -1315,9 +1315,10 @@ router.get("/options", async (req, res) => {
           strikeCount,
           range: requestedRange,
         });
+    const requestedSeries = indexWindow?.series ?? readChainSeries(req.query["series"]);
     const ntmCached = optionsNtmCache.get(ntmKey);
     if (ntmCached && (Date.now() - ntmCached.fetchedAt) < optionsTtlMs) {
-      return res.json(sliceAndReturn(ntmCached, "ntm-cache", indexWindow?.series));
+      return res.json(sliceAndReturn(ntmCached, "ntm-cache", requestedSeries));
     }
 
     if (isIndexSymbol) {
@@ -1378,7 +1379,7 @@ router.get("/options", async (req, res) => {
         const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
         optionsNtmCache.delete(oldest[0]);
       }
-      return res.json(sliceAndReturn(entry, "schwab"));
+      return res.json(sliceAndReturn(entry, "schwab", requestedSeries));
     }
 
     const chainSymbol = isIndexSymbol ? formatSchwabSymbol(displaySymbol) : displaySymbol;
