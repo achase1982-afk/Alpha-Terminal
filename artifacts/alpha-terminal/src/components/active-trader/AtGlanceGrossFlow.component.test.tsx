@@ -35,7 +35,7 @@ const zones: ZoneModel = {
 };
 
 describe("AtGlanceGrossFlow walls", () => {
-  it("shows the closed roll status once inside the existing two rows", () => {
+  it("shows a dash for the closed call and put wall inside the existing two rows", () => {
     const { container } = render(
       <div style={{ width: 440 }}>
         <AtGlanceGrossFlow
@@ -46,7 +46,8 @@ describe("AtGlanceGrossFlow walls", () => {
       </div>,
     );
     const hits = container.textContent?.match(/rolls at open/g) ?? [];
-    expect(hits).toHaveLength(1);
+    expect(hits).toHaveLength(0);
+    expect(container.querySelector('[data-at-flow-wall="shared"]')?.textContent).toContain("\u2014");
     expect(container.textContent).toContain("Call · Put wall");
     expect(container.querySelector('[data-at-flow-wall="shared"]')).toBeTruthy();
     expect(container.querySelectorAll("[data-at-gross-flow-row]")).toHaveLength(2);
