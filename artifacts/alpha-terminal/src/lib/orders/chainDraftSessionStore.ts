@@ -14,6 +14,8 @@ export type ChainDraftSheetSession = {
   limitLocked: boolean;
   /** True only after a typed, nudged, or locked limit. An auto-filled price stays false across remounts. */
   limitUserEdited?: boolean;
+  /** Spread multiplier. Per-leg ratios stay on the legs. A missing value is a new draft at 1. */
+  spreadQuantity?: number;
 };
 
 type ChainDraftSessionState = {
