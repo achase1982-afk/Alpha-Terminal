@@ -1618,7 +1618,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               borderBottom: `1px solid ${BORDER}`,
             }}
           >
-            <span className="text-center">VOL</span>
+            <span
+              className="flex flex-col items-center justify-center text-center"
+              style={{ fontSize: 8, lineHeight: 1 }}
+              title="Accumulated volume today"
+            >
+              <span>ACC</span><span>VOL</span>
+            </span>
             <span className="text-center">QTY</span>
             <span className="text-center">ORD</span>
             <span className="text-center">BID SIZE</span>
@@ -1626,7 +1632,13 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             <span className="text-center">ASK SIZE</span>
             <span className="text-center">ORD</span>
             <span className="text-center">QTY</span>
-            <span className="text-center">VOL</span>
+            <span
+              className="flex flex-col items-center justify-center text-center"
+              style={{ fontSize: 8, lineHeight: 1 }}
+              title="Accumulated volume today"
+            >
+              <span>ACC</span><span>VOL</span>
+            </span>
           </div>
           <StockLadderBody symbol={symbol} />
         </div>
