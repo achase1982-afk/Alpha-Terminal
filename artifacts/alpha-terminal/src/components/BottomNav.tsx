@@ -10,18 +10,18 @@ import {
 
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "activeTrader";
 
-const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode; isAi?: boolean }> = {
+const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
   scanner:      { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
   markets:      { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
-  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} />, isAi: true },
+  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} /> },
   search:       { label: "SEARCH",    icon: (c) => <Search className={c} /> },
   portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
-  activeTrader: { label: "TRADER",    icon: (c) => <ChartCandlestick className={c} /> },
+  activeTrader: { label: "ACTIVE TRADER", icon: (c) => <ChartCandlestick className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["ai", "markets", "activeTrader", "search", "watchlist"];
-const STORAGE_KEY = "alphaTerminalBottomNavOrder";
+const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "search"];
+const STORAGE_KEY = "alphaTerminalBottomNavOrder:v2";
 const LONG_PRESS_MS = 450;
 
 function loadOrder(): BottomTab[] {
@@ -295,7 +295,6 @@ export function BottomNav({
         const def = TAB_DEFS[tabId];
         const isActive = activeTab === tabId;
         const isBeingDragged = dragging && tabId === dragTabId;
-        const isAi = !!def.isAi;
 
         const style: React.CSSProperties = {};
         if (isBeingDragged) {
@@ -306,16 +305,7 @@ export function BottomNav({
           style.animationDelay = `${i * 70}ms`;
         }
 
-        if (isAi) {
-          const showStrategistBadge =
-            activeTab !== "ai" &&
-            (strategistRunningCount > 0 || strategistUnviewedCount > 0);
-          const badgeIsRunning = strategistRunningCount > 0;
-          const badgeNumber = badgeIsRunning
-            ? strategistRunningCount
-            : strategistUnviewedCount;
-          const showBadgeNumber = badgeNumber > 1;
-
+        if (tabId === "activeTrader") {
           return (
             <button
               key={tabId}
@@ -323,51 +313,40 @@ export function BottomNav({
               onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
               onTouchStart={(e) => handleTouchStart(i, e)}
               className={[
-                "relative flex flex-col items-center justify-center w-12 h-12 rounded-full transition-transform active:scale-95 select-none",
-                isActive ? "bg-[#18181b] text-[#FFB800]" : "bg-[#18181b] text-[#FFB800]/80",
-                jiggling && !isBeingDragged ? "bnav-jiggle" : "",
+                "flex shrink-0 flex-col items-center justify-center select-none",
+                jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
                 isBeingDragged ? "bnav-dragging" : "",
               ].join(" ")}
-              style={style}
-              aria-label={
-                showStrategistBadge
-                  ? badgeIsRunning
-                    ? `AI — ${strategistRunningCount} Strategist ${strategistRunningCount === 1 ? "analysis" : "analyses"} in progress`
-                    : `AI — ${strategistUnviewedCount} new Strategist ${strategistUnviewedCount === 1 ? "result" : "results"}`
-                  : "AI tab"
-              }
+              style={{
+                ...style,
+                height: 44,
+                minWidth: 72,
+                padding: "4px 8px",
+                borderRadius: 12,
+                background: isActive ? "#FFB800" : "rgba(255,184,0,0.14)",
+                color: isActive ? "#0c0c0c" : "#FFB800",
+                border: "1px solid #FFB800",
+                boxShadow: isActive ? "0 0 12px rgba(255,184,0,0.35)" : "none",
+              }}
+              aria-label="Active Trader tab"
               aria-current={isActive ? "page" : undefined}
             >
-              {def.icon("w-6 h-6")}
-              {showStrategistBadge && (
-                <span
-                  className={badgeIsRunning ? "animate-pulse" : ""}
-                  style={{
-                    position: "absolute",
-                    top: 2,
-                    right: 2,
-                    minWidth: showBadgeNumber ? 14 : 7,
-                    height: showBadgeNumber ? 14 : 7,
-                    padding: showBadgeNumber ? "0 3px" : 0,
-                    borderRadius: 9999,
-                    background: badgeIsRunning ? "#FFB800" : "#00d166",
-                    boxShadow: badgeIsRunning ? "0 0 6px #FFB800" : "0 0 4px #00d166",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 9,
-                    fontWeight: 800,
-                    fontFamily: "ui-monospace, monospace",
-                    color: badgeIsRunning ? "#0c0c0c" : "#0c0c0c",
-                    lineHeight: 1,
-                  }}
-                >
-                  {showBadgeNumber ? badgeNumber : ""}
-                </span>
-              )}
+              <span className="text-center font-mono font-bold tracking-tight" style={{ fontSize: 9, lineHeight: 1.15 }}>
+                ACTIVE
+                <br />
+                TRADER
+              </span>
             </button>
           );
         }
+
+        const showStrategistBadge =
+          tabId === "ai" &&
+          activeTab !== "ai" &&
+          (strategistRunningCount > 0 || strategistUnviewedCount > 0);
+        const badgeIsRunning = strategistRunningCount > 0;
+        const badgeNumber = badgeIsRunning ? strategistRunningCount : strategistUnviewedCount;
+        const showBadgeNumber = badgeNumber > 1;
 
         return (
           <button
@@ -376,16 +355,48 @@ export function BottomNav({
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
-              "flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",
+              "relative flex flex-col items-center gap-1 min-w-0 px-2 py-1.5 select-none transition-colors",
               isActive ? "text-white" : "text-muted-foreground",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
             style={style}
-            aria-label={`${def.label} tab`}
+            aria-label={
+              showStrategistBadge
+                ? badgeIsRunning
+                  ? `AI — ${strategistRunningCount} Strategist ${strategistRunningCount === 1 ? "analysis" : "analyses"} in progress`
+                  : `AI — ${strategistUnviewedCount} new Strategist ${strategistUnviewedCount === 1 ? "result" : "results"}`
+                : `${def.label} tab`
+            }
             aria-current={isActive ? "page" : undefined}
           >
             {def.icon("w-[24px] h-[24px]")}
+            {showStrategistBadge && (
+              <span
+                className={badgeIsRunning ? "animate-pulse" : ""}
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  right: 6,
+                  minWidth: showBadgeNumber ? 14 : 7,
+                  height: showBadgeNumber ? 14 : 7,
+                  padding: showBadgeNumber ? "0 3px" : 0,
+                  borderRadius: 9999,
+                  background: badgeIsRunning ? "#FFB800" : "#00d166",
+                  boxShadow: badgeIsRunning ? "0 0 6px #FFB800" : "0 0 4px #00d166",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  fontFamily: "ui-monospace, monospace",
+                  color: "#0c0c0c",
+                  lineHeight: 1,
+                }}
+              >
+                {showBadgeNumber ? badgeNumber : ""}
+              </span>
+            )}
             <span className="text-[9px] font-mono font-bold tracking-tight">{def.label}</span>
           </button>
         );
