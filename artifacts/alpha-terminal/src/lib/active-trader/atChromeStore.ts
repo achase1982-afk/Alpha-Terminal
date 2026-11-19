@@ -26,6 +26,10 @@ interface AtChromeState {
   pickAtExpiration: (expiration: string) => void;
   enterActiveTrader: () => void;
   leaveActiveTrader: () => void;
+  /** Footer asks the options tab to show Active Trader or the chain. Consumed on read. */
+  requestedSubView: "at" | "chain" | null;
+  requestOptionsSubView: (view: "at" | "chain") => void;
+  consumeRequestedSubView: () => void;
   /** Opt back to the user's saved Header Behavior while staying in AT. */
   restoreSavedHeaderMode: () => void;
   reapplyAtCompactHeader: () => void;
@@ -37,6 +41,9 @@ export const useAtChromeStore = create<AtChromeState>()((set, get) => ({
   keepawayUseMean: false,
   setKeepawayUseMean: (v) => set({ keepawayUseMean: v }),
   subViewIsAt: false,
+  requestedSubView: null,
+  requestOptionsSubView: (view) => set({ requestedSubView: view }),
+  consumeRequestedSubView: () => set({ requestedSubView: null }),
   savedHeaderMode: null,
   atExpiryOptions: [],
   atSelectedExpiration: null,

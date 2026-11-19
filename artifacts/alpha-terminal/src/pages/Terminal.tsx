@@ -1393,7 +1393,7 @@ export default function TerminalPage() {
 
       {!isWide && (
         <BottomNav
-          activeTab={activeBottom === "dashboard" ? "markets" : activeBottom}
+          activeTab={atOptionsChrome ? "activeTrader" : activeBottom === "dashboard" ? "markets" : activeBottom}
           strategistRunningCount={strategistRunningCount}
           strategistUnviewedCount={strategistUnviewedCount}
           onTabChange={(tab) => {
@@ -1401,7 +1401,12 @@ export default function TerminalPage() {
           setSidebarOpen(false);
           if (tab === "search") {
             setSearchOpen(true);
+          } else if (tab === "activeTrader") {
+            useAtChromeStore.getState().requestOptionsSubView("at");
+            setActiveBottom("markets");
+            setContextTab("options");
           } else {
+            useAtChromeStore.getState().requestOptionsSubView("chain");
             if (tab === "ai") setAiSubTab("pulse");
             setActiveBottom(tab);
           }

@@ -1377,16 +1377,33 @@ export function OptionsTab({
     ? { chain: futuresEsFixture.chain, underlyingPrice: futuresEsFixture.underlyingPrice }
     : null;
   const fixtureChain = atFixtureOverride ?? chainFixtureOverride ?? futuresEsFixtureChain;
-  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(
-    () => atFixtureOverride?.initialSubView ?? futuresEsFixture?.initialSubView ?? "chain",
-  );
+  const [optionsSubView, setOptionsSubView] = useState<OptionsSubView>(() => {
+    const fixtureView = atFixtureOverride?.initialSubView ?? futuresEsFixture?.initialSubView;
+    if (fixtureView) return fixtureView;
+    const api = useAtChromeStore as unknown as {
+      getState?: () => { requestedSubView?: "at" | "chain" | null; consumeRequestedSubView?: () => void };
+    };
+    const requested = api.getState?.().requestedSubView;
+    if (requested === "at" || requested === "chain") {
+      api.getState?.().consumeRequestedSubView?.();
+      return requested;
+    }
+    return "chain";
+  });
   const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
   const leaveActiveTrader = useAtChromeStore((s) => s.leaveActiveTrader);
   const setAtExpiryChrome = useAtChromeStore((s) => s.setAtExpiryChrome);
   const clearAtExpiryChrome = useAtChromeStore((s) => s.clearAtExpiryChrome);
+  const requestedSubView = useAtChromeStore((s) => s.requestedSubView);
+  const consumeRequestedSubView = useAtChromeStore((s) => s.consumeRequestedSubView);
   const [atExpiration, setAtExpiration] = useState<string | null>(null);
   const expiryClockMinute = useMinuteClock();
   const expiryNowMs = expiryClockMinute * 60_000;
+  useEffect(() => {
+    if (requestedSubView !== "at" && requestedSubView !== "chain") return;
+    setOptionsSubView(requestedSubView);
+    consumeRequestedSubView?.();
+  }, [requestedSubView, consumeRequestedSubView]);
   useEffect(() => {
     if (optionsSubView === "at") {
       enterActiveTrader();
