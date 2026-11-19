@@ -42,7 +42,7 @@ import {
   atLadderPlaceholderOk,
   type AtChainQueryParams,
 } from "@/lib/active-trader/atLadderWindow";
-import { OptionsSubViewToggle, type OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
+import type { OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
   ChainDraftStrip,
   CHAIN_DRAFT_STRIP_HEIGHT_PX,
@@ -2138,9 +2138,6 @@ export function OptionsTab({
   );
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
-  const chainViewChrome = (
-    <OptionsSubViewToggle placement="chain-toolbar" view={optionsSubView} onChange={setOptionsSubView} />
-  );
   const atChainLoading = !atLadderHasRows && (isLoadingEffective || isFetching);
   const atChainError = error ? "Option chain request failed" : rawData?.error ?? null;
   const atBrokerLinked = schwabLinked || isAuthDisabled();
@@ -2266,7 +2263,6 @@ export function OptionsTab({
             isFetching={isFetching}
             hasData={!!data}
           />
-          {chainViewChrome}
         </div>
       </div>
 
