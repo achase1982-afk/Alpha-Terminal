@@ -1910,7 +1910,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
               style={{
                 flex: 1, padding: "8px 0", fontSize: 12, fontWeight: 500, textTransform: "uppercase", letterSpacing: 0.8,
                 fontFamily: f, color: subTab === tab ? C.gold : C.dim, background: "transparent", border: "none",
-                borderBottom: "2px solid transparent", cursor: "pointer",
+                borderBottom: subTab === tab ? `2px solid ${C.gold}` : "2px solid transparent", cursor: "pointer",
               }}
             >
               {tab === "balance" ? "Balances" : tab.charAt(0).toUpperCase() + tab.slice(1)}

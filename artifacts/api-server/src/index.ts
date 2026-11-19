@@ -636,6 +636,11 @@ async function boot() {
       const { initSchwab2TokenStore } = await import("./lib/desk/deskSchwab2TokenStore.js");
       await initSchwab2TokenStore();
       startExitMonitor();
+      void import("./journalInsights/sync.js")
+        .then((mod) => mod.startJournalSync())
+        .catch((err) => {
+          logger.warn({ err }, "Journal sync did not start");
+        });
       startTelemetryCleanup();
       startTelemetryRetentionJob();
       initDeltaEngine();

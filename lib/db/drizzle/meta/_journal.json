@@ -316,6 +316,13 @@
       "when": 1780500000000,
       "tag": "0052_desk_spx_tape_raw",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1780600000000,
+      "tag": "0053_journal_ledger",
+      "breakpoints": true
     }
   ]
 }

@@ -251,6 +251,10 @@ const ChainOrderFixtureDevPage = import.meta.env.DEV
 const FuturesEsFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/FuturesEsFixtureDevPage"))
   : null;
+
+const JournalFixtureDevPage = import.meta.env.DEV
+  ? lazy(() => import("@/dev-only/JournalFixtureDevPage"))
+  : null;
 function Router() {
   return (
     <Switch>
@@ -268,6 +272,15 @@ function Router() {
           {() => (
             <Suspense fallback={null}>
               <FuturesEsFixtureDevPage />
+            </Suspense>
+          )}
+        </Route>
+      ) : null}
+      {JournalFixtureDevPage ? (
+        <Route path="/dev/journal">
+          {() => (
+            <Suspense fallback={null}>
+              <JournalFixtureDevPage />
             </Suspense>
           )}
         </Route>

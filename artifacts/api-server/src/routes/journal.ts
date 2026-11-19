@@ -3,6 +3,8 @@ import { db } from "@workspace/db";
 import { tradeJournalTable, stagedExitsTable } from "@workspace/db/schema";
 import { eq, desc } from "@workspace/db";
 import { logger } from "../lib/logger.js";
+import { readInsights } from "../journalInsights/store.js";
+import { startJournalSync } from "../journalInsights/sync.js";
 
 const router: IRouter = Router();
 
@@ -118,6 +120,32 @@ router.get("/staged-exits", async (_req, res) => {
   } catch (err) {
     logger.error({ err }, "Failed to fetch staged exits");
     res.status(500).json({ error: "db_error" });
+  }
+});
+
+router.get("/insights", async (req, res) => {
+  const period = req.query.period === "lifetime" ? "lifetime" : "ytd";
+  try {
+    const payload = await readInsights(period);
+    res.json(payload);
+    return;
+  } catch (err) {
+    logger.error({ err }, "Journal insights failed");
+    return res.status(500).json({ error: "journal_unavailable" });
+  }
+});
+
+router.post("/sync", async (_req, res) => {
+  try {
+    const result = await startJournalSync();
+    if (!result.ok && result.reason === "no_token") {
+      return res.status(401).json({ error: "no_token" });
+    }
+    res.json(result);
+    return;
+  } catch (err) {
+    logger.error({ err }, "Journal sync failed");
+    return res.status(500).json({ error: "journal_unavailable" });
   }
 });
 

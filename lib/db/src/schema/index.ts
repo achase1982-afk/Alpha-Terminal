@@ -1635,3 +1635,122 @@ export const deskSpxTapeRawTable = pgTable(
 );
 
 export type DeskSpxTapeRawRow = typeof deskSpxTapeRawTable.$inferSelect;
+
+/** Closed-trade ledger rebuilt from account activity. */
+export const journalActivitiesTable = pgTable(
+  "journal_activities",
+  {
+    id: text("id").primaryKey(),
+    accountRef: text("account_ref").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    kind: text("kind").notNull(),
+    netAmount: doublePrecision("net_amount").notNull().default(0),
+    fees: doublePrecision("fees").notNull().default(0),
+    orderRef: text("order_ref"),
+    description: text("description").notNull().default(""),
+    legs: jsonb("legs").notNull(),
+    payload: jsonb("payload"),
+  },
+  (t) => [index("journal_activities_account_time_idx").on(t.accountRef, t.occurredAt)],
+);
+
+export type JournalActivityRow = typeof journalActivitiesTable.$inferSelect;
+
+export const journalOrdersTable = pgTable(
+  "journal_orders",
+  {
+    id: text("id").primaryKey(),
+    accountRef: text("account_ref").notNull(),
+    enteredAt: timestamp("entered_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    status: text("status").notNull().default(""),
+    legs: jsonb("legs").notNull(),
+    payload: jsonb("payload"),
+  },
+  (t) => [index("journal_orders_account_idx").on(t.accountRef, t.enteredAt)],
+);
+
+export type JournalOrderRow = typeof journalOrdersTable.$inferSelect;
+
+export const journalPositionsTable = pgTable(
+  "journal_positions",
+  {
+    id: text("id").primaryKey(),
+    accountRef: text("account_ref").notNull(),
+    strategy: text("strategy").notNull(),
+    assetClass: text("asset_class").notNull(),
+    underlying: text("underlying").notNull().default(""),
+    label: text("label").notNull(),
+    status: text("status").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    ticketAt: timestamp("ticket_at", { withTimezone: true }).notNull(),
+    quantity: doublePrecision("quantity").notNull().default(0),
+    remainingQty: doublePrecision("remaining_qty").notNull().default(0),
+    netPnl: doublePrecision("net_pnl").notNull().default(0),
+    grossPnl: doublePrecision("gross_pnl").notNull().default(0),
+    fees: doublePrecision("fees").notNull().default(0),
+    unrealizedPnl: doublePrecision("unrealized_pnl"),
+    rolledFromId: text("rolled_from_id"),
+    legs: jsonb("legs").notNull(),
+  },
+  (t) => [index("journal_positions_account_idx").on(t.accountRef, t.closedAt)],
+);
+
+export type JournalPositionRow = typeof journalPositionsTable.$inferSelect;
+
+export const journalLotsTable = pgTable(
+  "journal_lots",
+  {
+    id: text("id").primaryKey(),
+    accountRef: text("account_ref").notNull(),
+    positionId: text("position_id").notNull(),
+    instrumentKey: text("instrument_key").notNull(),
+    side: text("side").notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    openQty: doublePrecision("open_qty").notNull(),
+    remainingQty: doublePrecision("remaining_qty").notNull(),
+    openPrice: doublePrecision("open_price").notNull(),
+    multiplier: doublePrecision("multiplier").notNull(),
+    fees: doublePrecision("fees").notNull().default(0),
+    realizedPnl: doublePrecision("realized_pnl").notNull().default(0),
+  },
+  (t) => [index("journal_lots_account_idx").on(t.accountRef, t.instrumentKey)],
+);
+
+export type JournalLotRow = typeof journalLotsTable.$inferSelect;
+
+export const journalSyncStateTable = pgTable("journal_sync_state", {
+  accountRef: text("account_ref").primaryKey(),
+  backfillComplete: boolean("backfill_complete").notNull().default(false),
+  syncedThrough: timestamp("synced_through", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type JournalSyncStateRow = typeof journalSyncStateTable.$inferSelect;
+
+export const journalEquitySnapshotsTable = pgTable(
+  "journal_equity_snapshots",
+  {
+    accountRef: text("account_ref").notNull(),
+    capturedOn: date("captured_on").notNull(),
+    liquidationValue: doublePrecision("liquidation_value").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountRef, t.capturedOn] })],
+);
+
+export type JournalEquitySnapshotRow = typeof journalEquitySnapshotsTable.$inferSelect;
+
+export const journalMarksTable = pgTable(
+  "journal_marks",
+  {
+    accountRef: text("account_ref").notNull(),
+    instrumentKey: text("instrument_key").notNull(),
+    mid: doublePrecision("mid").notNull(),
+    capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.accountRef, t.instrumentKey] })],
+);
+
+export type JournalMarkRow = typeof journalMarksTable.$inferSelect;
