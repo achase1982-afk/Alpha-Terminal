@@ -5,7 +5,7 @@ import {
 } from "@workspace/order-ticket-math";
 import type { SchwabInstruction } from "./atSchwabOrderBuilder";
 
-export type BracketOffsetMode = "percent" | "points" | "dollars";
+export type BracketOffsetMode = "percent" | "points" | "dollars" | "stdev";
 
 export interface BracketLegConfig {
   enabled: boolean;
@@ -22,6 +22,8 @@ export interface BracketPriceInput {
   sl: BracketLegConfig;
   underlyingSymbol?: string;
   assetType?: "OPTION" | "EQUITY";
+  /** One standard deviation of the option premium, in premium dollars. */
+  premiumStdev?: number | null;
 }
 
 export function isLongEntry(instruction: SchwabInstruction): boolean {
@@ -52,7 +54,8 @@ function modeToPriceDelta(
   signedOffset: number,
   entryPrice: number,
   quantity: number,
-): number {
+  premiumStdev: number | null | undefined,
+): number | null {
   switch (mode) {
     case "percent":
       return entryPrice * (signedOffset / 100);
@@ -62,9 +65,32 @@ function modeToPriceDelta(
       const contracts = Math.max(1, quantity);
       return signedOffset / (contracts * 100);
     }
+    case "stdev": {
+      if (premiumStdev == null || !(premiumStdev > 0)) return null;
+      return signedOffset * premiumStdev;
+    }
     default:
       return 0;
   }
+}
+
+/** Option premium move for one standard deviation: |delta| × spot × IV × √(DTE/365). */
+export function optionPremiumStdev(input: {
+  delta?: number | null;
+  iv?: number | null;
+  dte?: number | null;
+  underlyingPrice?: number | null;
+}): number | null {
+  const { delta, iv: ivRaw, dte, underlyingPrice } = input;
+  if (delta == null || ivRaw == null || dte == null || underlyingPrice == null) return null;
+  if (!Number.isFinite(delta) || !Number.isFinite(ivRaw) || !Number.isFinite(dte) || !Number.isFinite(underlyingPrice)) {
+    return null;
+  }
+  if (!(underlyingPrice > 0) || !(dte >= 0)) return null;
+  const iv = ivRaw > 3 ? ivRaw / 100 : ivRaw;
+  if (!(iv > 0)) return null;
+  const move = Math.abs(delta) * underlyingPrice * iv * Math.sqrt(dte / 365);
+  return move > 0 ? move : null;
 }
 
 export function computeBracketPrices(input: BracketPriceInput): {
@@ -76,26 +102,30 @@ export function computeBracketPrices(input: BracketPriceInput): {
 
   let takeProfit: number | null = null;
   if (input.tp.enabled && entry > 0) {
-    const delta = modeToPriceDelta(input.tp.mode, input.tp.offset, entry, input.quantity);
-    const raw = long ? entry + Math.abs(delta) : entry - Math.abs(delta);
-    takeProfit = roundAtPremium(raw, input);
-    if (takeProfit != null) {
-      const sym = input.underlyingSymbol ?? "SPX";
-      const tick = optionPremiumTickForSymbol(sym, entry) ?? 0.01;
-      if (long && takeProfit <= entry) {
-        takeProfit = roundAtPremium(entry + tick, input);
-      } else if (!long && takeProfit >= entry) {
-        takeProfit = roundAtPremium(Math.max(tick, entry - tick), input);
+    const delta = modeToPriceDelta(input.tp.mode, input.tp.offset, entry, input.quantity, input.premiumStdev);
+    if (delta != null) {
+      const raw = long ? entry + Math.abs(delta) : entry - Math.abs(delta);
+      takeProfit = roundAtPremium(raw, input);
+      if (takeProfit != null) {
+        const sym = input.underlyingSymbol ?? "SPX";
+        const tick = optionPremiumTickForSymbol(sym, entry) ?? 0.01;
+        if (long && takeProfit <= entry) {
+          takeProfit = roundAtPremium(entry + tick, input);
+        } else if (!long && takeProfit >= entry) {
+          takeProfit = roundAtPremium(Math.max(tick, entry - tick), input);
+        }
       }
     }
   }
 
   let stopLoss: number | null = null;
   if (input.sl.enabled && entry > 0) {
-    const delta = modeToPriceDelta(input.sl.mode, input.sl.offset, entry, input.quantity);
-    const magnitude = Math.abs(delta);
-    const raw = long ? entry - magnitude : entry + magnitude;
-    stopLoss = roundAtPremium(raw, input);
+    const delta = modeToPriceDelta(input.sl.mode, input.sl.offset, entry, input.quantity, input.premiumStdev);
+    if (delta != null) {
+      const magnitude = Math.abs(delta);
+      const raw = long ? entry - magnitude : entry + magnitude;
+      stopLoss = roundAtPremium(raw, input);
+    }
   }
 
   return { takeProfit, stopLoss };
@@ -105,6 +135,7 @@ export function formatSignedOffset(offset: number, mode: BracketOffsetMode = "pe
   const sign = offset > 0 ? `+${offset}` : String(offset);
   if (mode === "percent") return `${sign}%`;
   if (mode === "dollars") return `${sign} $ P/L`;
+  if (mode === "stdev") return `${sign} σ`;
   return `${sign} pts`;
 }
 

@@ -5,6 +5,7 @@ import {
   atBracketLegPreviewPrice,
   atBracketPreviewPrices,
   buildAtSchwabOrderJson,
+  buildAtSpreadSchwabOrder,
   closingInstructionForOpen,
   planAtOrderLegs,
   validateAtChildLegs,
@@ -326,6 +327,93 @@ describe("buildAtSchwabOrderJson", () => {
     const legB = (singles[1].orderLegCollection as { instruction: string }[])[0];
     expect(legA.instruction).toBe("BUY_TO_CLOSE");
     expect(legB.instruction).toBe("BUY_TO_CLOSE");
+  });
+
+  it("market, stop, and trailing entries omit a limit price", () => {
+    const market = buildAtSchwabOrderJson({
+      ...base,
+      template: "Single",
+      schwabEntryType: "MARKET",
+      advancedRoute: "SINGLE",
+    });
+    expect(market.orderType).toBe("MARKET");
+    expect(market.price).toBeUndefined();
+
+    const stop = buildAtSchwabOrderJson({
+      ...base,
+      template: "Single",
+      schwabEntryType: "STOP",
+      advancedRoute: "SINGLE",
+    });
+    expect(stop.orderType).toBe("STOP");
+    expect(stop.stopPrice).toBe(3.6);
+    expect(stop.price).toBeUndefined();
+
+    const trail = buildAtSchwabOrderJson({
+      ...base,
+      template: "Single",
+      schwabEntryType: "TRAILING_STOP",
+      advancedRoute: "SINGLE",
+      trailOffset: 0.2,
+      trailLinkType: "PERCENT",
+    });
+    expect(trail.orderType).toBe("TRAILING_STOP");
+    expect(trail.stopPriceLinkBasis).toBe("MARK");
+    expect(trail.stopPriceLinkType).toBe("PERCENT");
+    expect(trail.stopPriceOffset).toBe(0.2);
+    expect(trail.price).toBeUndefined();
+  });
+
+  it("explicit OCO is two closing orders and no entry parent", () => {
+    const o = buildAtSchwabOrderJson({
+      ...base,
+      advancedRoute: "OCO",
+      takeProfit: { enabled: true, mode: "percent", offset: 10 },
+      stopLoss: { enabled: true, mode: "percent", offset: -10 },
+    });
+    expect(o.orderStrategyType).toBe("OCO");
+    expect(o.orderLegCollection).toBeUndefined();
+    const children = o.childOrderStrategies as Record<string, unknown>[];
+    expect(children).toHaveLength(2);
+    expect((children[0].orderLegCollection as { instruction: string }[])[0].instruction).toBe("SELL_TO_CLOSE");
+    expect((children[1].orderLegCollection as { instruction: string }[])[0].instruction).toBe("SELL_TO_CLOSE");
+    expect(children[1].orderType).toBe("STOP");
+  });
+
+  it("routes a non-BEST destination onto the entry and the closing child", () => {
+    const o = buildAtSchwabOrderJson({
+      ...base,
+      template: "TRG w/ bracket",
+      routing: "ARCA",
+      takeProfit: { enabled: true, mode: "percent", offset: 25 },
+    });
+    expect(o.requestedDestination).toBe("ARCA");
+    const child = (o.childOrderStrategies as Record<string, unknown>[])[0];
+    expect(child.requestedDestination).toBe("ARCA");
+    expect((child.orderLegCollection as { instruction: string }[])[0].instruction).toBe("SELL_TO_CLOSE");
+  });
+
+  it("spread take profit triggers a closing net credit", () => {
+    const o = buildAtSpreadSchwabOrder({
+      ...base,
+      template: "TRG w/ bracket",
+      isCredit: false,
+      complexOrderStrategyType: "VERTICAL",
+      takeProfit: { enabled: true, mode: "percent", offset: 25 },
+      stopLoss: { enabled: false, mode: "percent", offset: -10 },
+      spreadLegs: [
+        { instruction: "BUY_TO_OPEN", quantity: 1, symbol: "SPX   261117P07315000" },
+        { instruction: "SELL_TO_OPEN", quantity: 1, symbol: "SPX   261117P07320000" },
+      ],
+    });
+    expect(o.orderStrategyType).toBe("TRIGGER");
+    expect(o.orderType).toBe("NET_DEBIT");
+    const parentLegs = o.orderLegCollection as { instruction: string }[];
+    expect(parentLegs.map((leg) => leg.instruction)).toEqual(["BUY_TO_OPEN", "SELL_TO_OPEN"]);
+    const child = (o.childOrderStrategies as Record<string, unknown>[])[0];
+    expect(child.orderType).toBe("NET_CREDIT");
+    const childLegs = child.orderLegCollection as { instruction: string }[];
+    expect(childLegs.map((leg) => leg.instruction)).toEqual(["SELL_TO_CLOSE", "BUY_TO_CLOSE"]);
   });
 
   it("blocks futures roots, dotted-slash symbols, and FUTURE asset type", () => {

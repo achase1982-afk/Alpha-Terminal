@@ -63,10 +63,16 @@ export function buildAtOrderPayload(
     takeProfit: prefs.takeProfit,
     stopLoss: prefs.stopLoss,
     entryOrderType: prefs.orderType,
-    entryDuration,
+    entryDuration: prefs.entryDuration ?? entryDuration,
     exitDuration: prefs.exitDuration,
     stopLossOrderType: prefs.stopLossOrderType,
     stopLimitOffset: prefs.stopLimitOffset,
+    session: prefs.session,
+    advancedRoute: prefs.advancedRoute,
+    schwabEntryType: prefs.schwabEntryType,
+    routing: prefs.routing,
+    trailOffset: prefs.trailOffset,
+    trailLinkType: prefs.trailLinkType,
   };
   const { validationError } = planAtOrderLegs(shared);
   if (validationError) return { error: validationError };
