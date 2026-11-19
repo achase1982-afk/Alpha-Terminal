@@ -19,6 +19,8 @@ import {
   WHITE,
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
+import { useQuoteMoveArrows, type QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
+import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
   AT_HEAT_MAX_ALPHA,
   AT_HEAT_WASH_ALPHA,
@@ -133,50 +135,35 @@ function fmtPx(n: number | null | undefined): string {
   return n.toFixed(2);
 }
 
-/** Re-export heat bounds so tests can assert volume-only coloring. */
+/** Re-export heat bounds so existing imports keep resolving. */
 export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
-/** Near-black rest tone. Volume walks this toward HEAT_BRIGHT. */
-const HEAT_DEEP = {
-  call: [4, 8, 6],
-  put: [12, 5, 5],
-} as const;
-const HEAT_BRIGHT = {
-  call: [6, 148, 64],
-  put: [184, 30, 40],
-} as const;
+const VOLUME_ZERO = [0x10, 0x15, 0x1a] as const;
+const VOLUME_MID = [0x17, 0x39, 0x4f] as const;
+const VOLUME_HIGH = [0x24, 0x58, 0x75] as const;
+const ARROW_SLOT_PX = 11;
+const ARROW_UP = "#8AF0B0";
+const ARROW_DOWN = "#FFB3AB";
 
 function heatTone(intensity: number): number {
   return Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
 }
 
-/** Keeps a light print close to black and saves the bright end for heavy volume. */
-function heatLift(intensity: number): number {
-  return Math.pow(heatTone(intensity), 1.2);
+function mixChannel(from: number, to: number, t: number): number {
+  return Math.round(from + (to - from) * t);
 }
 
-function mixHeatRgb(side: "call" | "put", lift: number): string {
-  const deep = HEAT_DEEP[side];
-  const bright = HEAT_BRIGHT[side];
-  const t = Math.min(1, Math.max(0, lift));
-  const r = Math.round(deep[0] + (bright[0] - deep[0]) * t);
-  const g = Math.round(deep[1] + (bright[1] - deep[1]) * t);
-  const b = Math.round(deep[2] + (bright[2] - deep[2]) * t);
-  return `${r}, ${g}, ${b}`;
-}
-
-/** Alpha of a pair's heat colour for a 0-1 intensity. Zero volume stays transparent. */
-export function atHeatAlpha(intensity: number): number {
+/** Charcoal at zero, dark blue at medium, brighter blue at high. Same scale both sides. */
+export function volumeHeatColor(intensity: number): string {
   const t = heatTone(intensity);
-  if (t <= 0) return 0;
-  const presence = 0.7 + 0.3 * t;
-  return AT_HEAT_WASH_ALPHA + (AT_HEAT_MAX_ALPHA - AT_HEAT_WASH_ALPHA) * presence;
+  const [from, to, u] = t <= 0.5
+    ? [VOLUME_ZERO, VOLUME_MID, t / 0.5]
+    : [VOLUME_MID, VOLUME_HIGH, (t - 0.5) / 0.5];
+  return `rgb(${mixChannel(from[0], to[0], u)}, ${mixChannel(from[1], to[1], u)}, ${mixChannel(from[2], to[2], u)})`;
 }
 
-function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSProperties {
-  const t = heatTone(view.intensity);
-  const alpha = atHeatAlpha(t);
-  if (alpha <= 0) {
+function heatPairStyle(view: LadderHeatCellView, neutral: boolean): CSSProperties {
+  if (neutral || view.availability === "unavailable") {
     return {
       backgroundColor: "transparent",
       backgroundImage: "none",
@@ -184,25 +171,40 @@ function heatPairStyle(view: LadderHeatCellView, side: "call" | "put"): CSSPrope
       animation: "none",
     };
   }
-  const lift = heatLift(t);
-  const rest = mixHeatRgb(side, lift);
-  const peak = mixHeatRgb(side, Math.min(1, lift + 0.16 + 0.12 * t));
-  const restAlpha = alpha.toFixed(3);
-  const peakAlpha = Math.min(1, alpha + 0.06).toFixed(3);
-  const restGlow = (0.04 + 0.22 * t).toFixed(3);
-  const peakGlow = (0.2 + 0.55 * t).toFixed(3);
-  const bright = HEAT_BRIGHT[side].join(", ");
-  const seconds = (2.6 - t * 0.9).toFixed(2);
   return {
-    backgroundColor: `rgba(${rest}, ${restAlpha})`,
+    backgroundColor: volumeHeatColor(view.intensity),
     backgroundImage: "none",
-    boxShadow: `inset 0 0 ${Math.round(6 + 10 * t)}px rgba(${bright}, ${restGlow})`,
-    ["--at-heat-rest" as string]: `rgba(${rest}, ${restAlpha})`,
-    ["--at-heat-peak" as string]: `rgba(${peak}, ${peakAlpha})`,
-    ["--at-heat-glow-rest" as string]: `inset 0 0 ${Math.round(6 + 10 * t)}px rgba(${bright}, ${restGlow})`,
-    ["--at-heat-glow-peak" as string]: `inset 0 0 ${Math.round(16 + 22 * t)}px rgba(${bright}, ${peakGlow})`,
-    animation: `at-heat-breathe ${seconds}s ease-in-out infinite`,
+    boxShadow: "none",
+    animation: "none",
   };
+}
+
+function volumeCountLabel(view: LadderHeatCellView, neutral: boolean): string {
+  if (neutral || view.availability === "unavailable") return "—";
+  return `${Math.round(view.contracts30s)} contracts / 30s`;
+}
+
+function PriceWithMove({ text, arrow }: { text: string; arrow: QuoteArrow }) {
+  return (
+    <span className="inline-flex items-center justify-center" style={{ pointerEvents: "none" }}>
+      <span
+        data-at-quote-move={arrow ?? undefined}
+        aria-hidden="true"
+        style={{
+          display: "inline-block",
+          width: ARROW_SLOT_PX,
+          flex: "0 0 auto",
+          textAlign: "center",
+          fontSize: 10,
+          lineHeight: 1,
+          color: arrow === "up" ? ARROW_UP : arrow === "down" ? ARROW_DOWN : "transparent",
+        }}
+      >
+        {arrow === "up" ? "▲" : arrow === "down" ? "▼" : "▲"}
+      </span>
+      <span>{text}</span>
+    </span>
+  );
 }
 
 function quoteAriaLabel(input: {
@@ -235,6 +237,7 @@ type QuoteCellProps = {
   selection: AtLadderSelectionStore;
   dataAttr: string;
   dividerLeft?: boolean;
+  arrow: QuoteArrow;
 };
 
 /**
@@ -259,6 +262,7 @@ const QuoteCell = memo(function QuoteCell({
   selection,
   dataAttr,
   dividerLeft,
+  arrow,
 }: QuoteCellProps) {
   renderProbe("cell");
   const flags = useAtLadderCellFlags(selection, legKey, quoteSide, cellKey);
@@ -294,7 +298,7 @@ const QuoteCell = memo(function QuoteCell({
         borderRight: "none",
         borderBottom: "none",
         boxSizing: "border-box",
-        padding: 0,
+        padding: "0 0 9px",
         overflow: "hidden",
         touchAction: "manipulation",
         WebkitTapHighlightColor: "transparent",
@@ -322,15 +326,7 @@ const QuoteCell = memo(function QuoteCell({
             pointerEvents: "none",
           }}
         >
-          <span
-            style={{
-              fontSize: AT_LADDER_PRICE_SIZE,
-              fontWeight: AT_LADDER_PRICE_WEIGHT,
-              color: AT_LADDER_PRICE_COLOR,
-            }}
-          >
-            {unavailableReason ?? fmtPx(price)}
-          </span>
+          <PriceWithMove text={unavailableReason ?? fmtPx(price)} arrow={arrow} />
           {legSelected ? (
             <span
               style={{
@@ -361,7 +357,7 @@ const QuoteCell = memo(function QuoteCell({
               : { color: AT_LADDER_PRICE_COLOR, pointerEvents: "none", padding: "0 4px" }
           }
         >
-          {unavailableReason ?? fmtPx(price)}
+          <PriceWithMove text={unavailableReason ?? fmtPx(price)} arrow={arrow} />
           {statusReason ? (
             <span style={{ fontSize: 7, color: GRAY, letterSpacing: "0.03em", lineHeight: 1 }}>
               {statusReason}
@@ -428,11 +424,15 @@ const ContractPair = memo(function ContractPair({
   const near = useAtLadderQuote(contract, chainQuoteTs, clockMinute);
   const farQuote = useAtLadderQuote(vertical ? far : null, chainQuoteTs, clockMinute);
   const nearHeat = useAtLadderHeatCell(heat, contract?.streamKey);
-  const farHeat = useAtLadderHeatCell(heat, vertical ? far?.streamKey : null);
+  const quoteEpoch = useOptionsStreamStore((s) => s.quoteEpoch);
 
   let bidPx = near.bid;
   let askPx = near.ask;
-  let heatView = nearHeat;
+  // Leg prints are not executions of the spread. The spread stays neutral
+  // until a feed reports volume for that exact spread.
+  const heatView = vertical
+    ? { availability: "unavailable" as const, contracts30s: 0, intensity: 0 }
+    : nearHeat;
   if (vertical) {
     const spread = aggregateSpreadNBBO(
       { bid: near.bid, ask: near.ask },
@@ -440,14 +440,14 @@ const ContractPair = memo(function ContractPair({
     );
     bidPx = spread.bid;
     askPx = spread.ask;
-    if (contract?.streamKey && far?.streamKey) {
-      heatView = {
-        availability: nearHeat.availability,
-        contracts30s: nearHeat.contracts30s + farHeat.contracts30s,
-        intensity: Math.max(nearHeat.intensity, farHeat.intensity),
-      };
-    }
   }
+  const moveIdentity = vertical
+    ? contract?.streamKey && far?.streamKey
+      ? `spread:${contract.streamKey}|${far.streamKey}`
+      : null
+    : contract?.streamKey ?? null;
+  const arrows = useQuoteMoveArrows(moveIdentity, bidPx, askPx, quoteEpoch);
+  const volumeText = volumeCountLabel(heatView, vertical);
 
   const legKey = contract ? atLadderLegKey(contract, type) : null;
   const bidTapable = vertical ? bidPx != null : near.bidTapable;
@@ -459,13 +459,32 @@ const ContractPair = memo(function ContractPair({
       style={{
         gridColumn: "span 2",
         gridTemplateColumns: "1fr 1fr",
-        ...heatPairStyle(heatView, pairSide),
+        ...heatPairStyle(heatView, vertical),
       }}
       data-at-quote-heat={pairSide}
-      data-at-quote-heat-state={heatView.availability}
-      data-at-quote-heat-intensity={heatView.intensity.toFixed(3)}
-      data-at-quote-heat-contracts={heatView.contracts30s}
+      data-at-quote-heat-state={vertical ? "neutral" : heatView.availability}
+      data-at-quote-heat-intensity={vertical ? "0.000" : heatView.intensity.toFixed(3)}
+      data-at-quote-heat-contracts={vertical ? undefined : heatView.contracts30s}
+      data-at-quote-volume={volumeText}
     >
+      <span
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 2,
+          height: 9,
+          lineHeight: "9px",
+          textAlign: "center",
+          fontSize: 8,
+          fontVariantNumeric: "tabular-nums",
+          color: "#c5ced4",
+          pointerEvents: "none",
+        }}
+      >
+        {volumeText}
+      </span>
       <QuoteCell
         cellKey={contract ? atLadderQuoteCellKey(contract, type, "bid") : null}
         legKey={legKey}
@@ -482,6 +501,7 @@ const ContractPair = memo(function ContractPair({
         expiryLabel={expiryLabel}
         selection={selection}
         dataAttr={`${pairSide}-bid-${strike}`}
+        arrow={arrows.bid}
       />
       <QuoteCell
         cellKey={contract ? atLadderQuoteCellKey(contract, type, "ask") : null}
@@ -500,6 +520,7 @@ const ContractPair = memo(function ContractPair({
         selection={selection}
         dataAttr={`${pairSide}-ask-${strike}`}
         dividerLeft
+        arrow={arrows.ask}
       />
     </div>
   );
