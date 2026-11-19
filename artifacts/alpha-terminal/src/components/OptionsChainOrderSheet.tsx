@@ -313,11 +313,10 @@ export function OptionsChainOrderSheet({
         visible: orderType,
         isCredit,
         legCount: legs.length,
-        session: atBracketDraft?.prefs.session,
       }),
-    [orderType, isCredit, legs.length, atBracketDraft?.prefs.session],
+    [orderType, isCredit, legs.length],
   );
-  const resolvedOrderLabel = resolvedOrder.ok ? resolvedOrder.label : resolvedOrder.reason;
+  const resolvedOrderLabel = resolvedOrder.label;
 
   const summary = useMemo(
     () =>
@@ -459,10 +458,6 @@ export function OptionsChainOrderSheet({
 
   const validateAndReview = useCallback(() => {
     if (!guardDraftLegCount()) return;
-    if (!resolvedOrder.ok) {
-      setPriceError(resolvedOrder.reason);
-      return;
-    }
     const px = resolvedOrder.orderType === "MARKET" ? 0 : snapLimitForSubmit();
     if (resolvedOrder.orderType !== "MARKET" && (px == null || px <= 0)) {
       setPriceError("Set a valid limit price (Mid / Natural or enter manually).");
@@ -530,11 +525,6 @@ export function OptionsChainOrderSheet({
 
   const handleSubmit = useCallback(async () => {
     if (!guardDraftLegCount()) return;
-    if (!resolvedOrder.ok) {
-      setPriceError(resolvedOrder.reason);
-      setStage("form");
-      return;
-    }
     if (!sendAllowed) return;
     if (placeOrderInFlightRef.current || stage === "submitting") return;
     if (!demoFixture && !accountHash) return;
@@ -775,7 +765,6 @@ export function OptionsChainOrderSheet({
     const bracketBlocksSend = bracketEconomics?.bracketConfirm.mode === "unsupported";
     const dockedValid =
       legs.length > 0 &&
-      resolvedOrder.ok &&
       (resolvedOrder.orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
       quantity > 0 &&
       !bracketBlocksSend;
@@ -811,8 +800,6 @@ export function OptionsChainOrderSheet({
         onNudgeLimit={nudgePrice}
         orderType={orderType}
         onOrderTypeChange={setOrderType}
-        orderTypeLabel={resolvedOrderLabel}
-        orderTypeBlocked={!resolvedOrder.ok}
         limitTickCtx={limitTickCtx}
         sendLabel={
           sendUnavailableReason

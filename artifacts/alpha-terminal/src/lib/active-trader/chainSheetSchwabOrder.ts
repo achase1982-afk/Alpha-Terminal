@@ -38,36 +38,28 @@ function wantsAdvancedOrder(prefs: ActiveTraderTemplatePrefs | undefined): boole
 
 export type VisibleTicketOrderType = "LIMIT" | "MARKET";
 
-export type ResolvedChainOrderType =
-  | { ok: true; orderType: "LIMIT" | "MARKET" | "NET_CREDIT" | "NET_DEBIT"; label: string }
-  | { ok: false; reason: string };
+export type ResolvedChainOrderType = {
+  orderType: "LIMIT" | "MARKET" | "NET_CREDIT" | "NET_DEBIT";
+  label: string;
+};
 
-/** One order type for the dock, Review, and the Schwab payload. */
+/**
+ * The ticket's Limit/Market picker, as Review and the Schwab payload should say it.
+ * A limit spread is Net credit or Net debit. Market stays Market; the existing
+ * order builder still applies its own market rules.
+ */
 export function resolveVisibleChainOrderType(input: {
   visible: VisibleTicketOrderType;
   isCredit: boolean;
   legCount: number;
-  session?: string | null;
 }): ResolvedChainOrderType {
-  if (input.visible === "MARKET" && input.session === "SEAMLESS") {
-    return {
-      ok: false,
-      reason: "Market orders aren't available for a seamless session. Choose Limit.",
-    };
-  }
-  if (input.visible === "MARKET" && input.legCount > 1) {
-    return {
-      ok: false,
-      reason: "Market orders aren't available for this strategy. Choose Limit.",
-    };
-  }
-  if (input.visible === "MARKET") return { ok: true, orderType: "MARKET", label: "Market" };
+  if (input.visible === "MARKET") return { orderType: "MARKET", label: "Market" };
   if (input.legCount > 1) {
     return input.isCredit
-      ? { ok: true, orderType: "NET_CREDIT", label: "Net credit" }
-      : { ok: true, orderType: "NET_DEBIT", label: "Net debit" };
+      ? { orderType: "NET_CREDIT", label: "Net credit" }
+      : { orderType: "NET_DEBIT", label: "Net debit" };
   }
-  return { ok: true, orderType: "LIMIT", label: "Limit" };
+  return { orderType: "LIMIT", label: "Limit" };
 }
 
 function netOrder(input: {
@@ -119,9 +111,7 @@ export function buildChainSheetSchwabOrder(input: {
     visible,
     isCredit: input.isCredit,
     legCount: input.legs.length,
-    session: prefs?.session ?? "NORMAL",
   });
-  if (!resolved.ok) return { error: resolved.reason };
   const duration =
     prefs?.entryDuration === "GOOD_TILL_CANCEL"
       ? "GOOD_TILL_CANCEL"
