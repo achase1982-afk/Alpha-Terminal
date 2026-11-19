@@ -1,8 +1,9 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useTerminalStore } from "@/lib/store";
+import { mergeStreamLiveQuote, useTerminalStore } from "@/lib/store";
 import { useOptionsStreamStore, type OptionTick } from "@/lib/options-stream-store";
 import { createOptionTickBatcher, type OptionTickBatcher } from "@/lib/optionTickBatcher";
 import { useDepthStore, type DepthBook } from "@/lib/depth-store";
+import { useEquityTapeStore, type EquityTapeLevel, type EquityTapeVenue } from "@/lib/active-trader/equityTapeStore";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { SchwabAccountSummary } from "@/lib/schwab-account-types";
@@ -16,7 +17,7 @@ import { signalSchwabAuthLost } from "@/lib/authNoticeStore";
 import { isAuthDisabled } from "@/lib/authMode";
 import { schwabAccessTokenForRequest } from "@/lib/schwabBrokerageSession";
 import { refreshSchwabViaServer, syncSchwabTokensFromServer } from "@/lib/schwabTokenSync";
-import type { LiveQuote, LiveNewsItem } from "@/lib/store";
+import type { LiveNewsItem, LiveQuote } from "@/lib/store";
 import { useShallow } from "zustand/react/shallow";
 import { buildStreamHolderId, getStreamClientId } from "@/lib/streamClientId";
 import {
@@ -314,7 +315,8 @@ export function useMarketStream() {
   }, [setStreamQuote, setStreamQuotes]);
 
   const queueStreamQuote = useCallback((q: LiveQuote) => {
-    pendingQuotesRef.current.set(q.symbol, q);
+    const prev = pendingQuotesRef.current.get(q.symbol);
+    pendingQuotesRef.current.set(q.symbol, prev ? mergeStreamLiveQuote(prev, q) : q);
     if (quoteFlushTimerRef.current == null) {
       quoteFlushTimerRef.current = setTimeout(flushQueuedQuotes, QUOTE_COALESCE_MS);
     }
@@ -346,6 +348,33 @@ export function useMarketStream() {
       if (useTerminalStore.getState().streamStatus !== "live") setStreamStatus("live");
       rejectedRetries.current = 0;
       queueStreamQuote(data as LiveQuote);
+    } else if (event === "equityPrint") {
+      const d = data as { symbol?: string; price?: number; size?: number; ts?: number };
+      if (typeof d.symbol === "string" && d.price != null && d.size != null) {
+        useEquityTapeStore.getState().pushPrint({
+          symbol: d.symbol,
+          price: d.price,
+          size: d.size,
+          ts: d.ts ?? Date.now(),
+        });
+      }
+    } else if (event === "equityBook") {
+      const d = data as {
+        symbol?: string;
+        venue?: string;
+        bids?: EquityTapeLevel[];
+        asks?: EquityTapeLevel[];
+        ts?: number;
+      };
+      if (typeof d.symbol === "string" && (d.venue === "NYSE" || d.venue === "NASDAQ")) {
+        useEquityTapeStore.getState().pushBook({
+          symbol: d.symbol,
+          venue: d.venue as EquityTapeVenue,
+          bids: Array.isArray(d.bids) ? d.bids : [],
+          asks: Array.isArray(d.asks) ? d.asks : [],
+          ts: d.ts ?? Date.now(),
+        });
+      }
     } else if (event === "optionQuote") {
       optionTickBatcherRef.current?.push(data as OptionTick);
     } else if (event === "depth") {
@@ -427,6 +456,8 @@ export function useMarketStream() {
     };
 
     es.addEventListener("quote", parseEvent("quote"));
+    es.addEventListener("equityPrint", parseEvent("equityPrint"));
+    es.addEventListener("equityBook", parseEvent("equityBook"));
     es.addEventListener("optionQuote", parseEvent("optionQuote"));
     es.addEventListener("streamerStatus", parseEvent("streamerStatus"));
     es.addEventListener("heartbeat", () => {});

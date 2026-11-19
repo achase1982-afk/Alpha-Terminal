@@ -328,6 +328,8 @@ let subscribedOptionSymbols = new Set<string>();
 const tuningWatchlistOptionRoots = new Set<string>();
 let subscribedFuturesOptionSymbols = new Set<string>();
 let subscribedTimesaleEquitySymbols = new Set<string>();
+/** Equities whose book and prints are fanned out to the Active Trader stock ladder. */
+const clientEquityTapeSymbols = new Set<string>();
 let subscribedChartEquitySymbols = new Set<string>();
 let subscribedNyseBookSymbols = new Set<string>();
 let subscribedNasdaqBookSymbols = new Set<string>();
@@ -2176,6 +2178,64 @@ function processTimesaleFutures(content: Record<string, unknown>[]) {
   }
 }
 
+function tapeBroadcastSymbols(streamKey: string): string[] {
+  const displays = getClassShareDisplaysForKey(streamKey);
+  const candidates = displays.size > 0 ? [streamKey, ...displays] : [streamKey];
+  if (!candidates.some((c) => clientEquityTapeSymbols.has(c))) return [];
+  return [...new Set(candidates.filter((c) => clientEquityTapeSymbols.has(c)))];
+}
+
+function asEquityEpochMs(raw: number | null): number {
+  const now = Date.now();
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return now;
+  if (raw > 1e12) return raw;
+  if (raw > 1e9) return raw * 1000;
+  return now;
+}
+
+function compactBookSide(side: unknown, dir: "bid" | "ask"): Array<{ price: number; size: number }> {
+  const byPx = new Map<string, { price: number; size: number }>();
+  for (const row of extractSchwabBookRows(side)) {
+    if (!(row.price > 0) || !(row.size > 0)) continue;
+    const key = row.price.toFixed(4);
+    const prev = byPx.get(key);
+    if (prev) prev.size += row.size;
+    else byPx.set(key, { price: row.price, size: row.size });
+  }
+  const out = [...byPx.values()];
+  out.sort((a, b) => (dir === "bid" ? b.price - a.price : a.price - b.price));
+  return out.slice(0, 80);
+}
+
+function broadcastClientEquityPrint(streamKey: string, price: number, size: number, ts: number): void {
+  const targets = tapeBroadcastSymbols(streamKey);
+  if (targets.length === 0) return;
+  const when = asEquityEpochMs(ts);
+  for (const symbol of targets) {
+    broadcast("equityPrint", { symbol, price, size, ts: when });
+  }
+}
+
+function broadcastClientEquityBook(
+  venue: "NYSE" | "NASDAQ",
+  streamKey: string,
+  bids: unknown,
+  asks: unknown,
+  ts: number | null,
+): void {
+  const targets = tapeBroadcastSymbols(streamKey);
+  if (targets.length === 0) return;
+  const payload = {
+    venue,
+    bids: compactBookSide(bids, "bid"),
+    asks: compactBookSide(asks, "ask"),
+    ts: asEquityEpochMs(ts),
+  };
+  for (const symbol of targets) {
+    broadcast("equityBook", { ...payload, symbol });
+  }
+}
+
 /**
  * Field mapping: 1 = trade time (ms), 2 = last price, 3 = last size, 4 = sequence (Streamer Guide / TD lineage).
  */
@@ -2204,6 +2264,7 @@ function processTimesaleEquity(content: Record<string, unknown>[]) {
     if (ev.lastPrice != null && ev.lastPrice > 0 && ev.lastSize != null && ev.lastSize > 0) {
       appendStrategistTimesale(symbol, { ts: tsMs, price: ev.lastPrice, size: ev.lastSize });
       deskLiveFlowTapeOnTimesaleEquity(symbol, ev.lastPrice, ev.lastSize, ev.tradeTimeMs, ev.sequence);
+      broadcastClientEquityPrint(symbol, ev.lastPrice, ev.lastSize, tsMs);
     }
     emitTimesaleEquityListeners(ev);
   }
@@ -2277,6 +2338,7 @@ function processNyseBook(content: Record<string, unknown>[]) {
       recvTs: Date.now(),
     });
     dispatchBookListeners(nyseBookListeners, ev);
+    broadcastClientEquityBook("NYSE", symbol, ev.bids, ev.asks, ev.bookTimeMs ?? Date.now());
   }
 }
 
@@ -2307,6 +2369,7 @@ function processNasdaqBook(content: Record<string, unknown>[]) {
       recvTs: Date.now(),
     });
     dispatchBookListeners(nasdaqBookListeners, ev);
+    broadcastClientEquityBook("NASDAQ", symbol, ev.bids, ev.asks, ev.bookTimeMs ?? Date.now());
   }
 }
 
@@ -2910,6 +2973,7 @@ export function stopStreamer() {
   tuningWatchlistOptionRoots.clear();
   subscribedFuturesOptionSymbols.clear();
   subscribedTimesaleEquitySymbols.clear();
+  clientEquityTapeSymbols.clear();
   subscribedChartEquitySymbols.clear();
   subscribedNyseBookSymbols.clear();
   subscribedNasdaqBookSymbols.clear();
@@ -3137,6 +3201,36 @@ export function addNasdaqBookSymbols(symbols: string[]) {
   }
   if (newSyms.length > 0 && connectionState === "connected") {
     sendNasdaqBookSubscription([...subscribedNasdaqBookSymbols]);
+  }
+}
+
+/** Active Trader stock ladder: L1, prints, and both venue books for these symbols only. */
+export function setClientEquityTape(symbols: string[]): void {
+  const cleaned = [
+    ...new Set(
+      symbols
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => s.length > 0 && !s.startsWith("/")),
+    ),
+  ];
+  clientEquityTapeSymbols.clear();
+  for (const s of cleaned) {
+    clientEquityTapeSymbols.add(s);
+    clientEquityTapeSymbols.add(equityStreamKeyFromCaller(s));
+  }
+  if (cleaned.length === 0) return;
+  addSymbols(cleaned);
+  addTimesaleEquitySymbols(cleaned);
+  addNyseBookSymbols(cleaned);
+  addNasdaqBookSymbols(cleaned);
+  for (const s of cleaned) {
+    const key = equityStreamKeyFromCaller(s);
+    const nyse = nyseBookStrategistCache.get(key);
+    if (nyse) broadcastClientEquityBook("NYSE", key, nyse.rawBids, nyse.rawAsks, nyse.bookTimeMs ?? nyse.recvTs);
+    const nasdaq = nasdaqBookStrategistCache.get(key);
+    if (nasdaq) {
+      broadcastClientEquityBook("NASDAQ", key, nasdaq.rawBids, nasdaq.rawAsks, nasdaq.bookTimeMs ?? nasdaq.recvTs);
+    }
   }
 }
 

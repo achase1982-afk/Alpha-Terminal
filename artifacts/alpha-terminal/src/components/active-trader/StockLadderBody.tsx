@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import {
   readStockDraft,
@@ -8,14 +8,19 @@ import {
   type AtStockSide,
 } from "@/lib/active-trader/atStockDraft";
 import { AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
+import { useEquityTapeStore } from "@/lib/active-trader/equityTapeStore";
 import {
   reduceStockTop,
+  stockBestPrice,
   stockLadderAnchor,
   stockLadderPrices,
   stockPriceKey,
+  stockSizeByPrice,
   EMPTY_STOCK_TOP,
+  type StockLevel,
   type StockTopBook,
 } from "@/lib/active-trader/stockLadderBook";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 import { useTerminalStore } from "@/lib/store";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
@@ -34,14 +39,26 @@ function fmtNotional(amount: number): string {
   return `$${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+const EMPTY_PRINTS: { price: number; size: number; ts: number }[] = [];
+
+function printWash(intensity: number): string | undefined {
+  if (!(intensity > 0)) return undefined;
+  const alpha = 0.18 + 0.6 * Math.min(1, intensity);
+  return `rgba(6, 148, 64, ${alpha.toFixed(3)})`;
+}
+
 export function StockLadderBody({ symbol }: { symbol: string }) {
+  const upper = symbol.toUpperCase();
   const quote = useTerminalStore((s) => {
-    const upper = symbol.toUpperCase();
     return (s.streamPrices[upper] ?? s.streamPrices[upper.replace(/^\$/, "")]) as LiveQuote | undefined;
   });
+  const streamStatus = useTerminalStore((s) => s.streamStatus);
+  const venueBooks = useEquityTapeStore((s) => s.books[upper]);
+  const prints = useEquityTapeStore((s) => s.prints[upper] ?? EMPTY_PRINTS);
   const [book, setBook] = useState<StockTopBook>(EMPTY_STOCK_TOP);
   const [draft, setDraft] = useState<AtStockDraft>(() => readStockDraft(symbol));
   const [prices, setPrices] = useState<number[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setDraft(readStockDraft(symbol));
@@ -50,10 +67,42 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   }, [symbol]);
 
   useEffect(() => {
+    const sym = symbol.trim().toUpperCase();
+    if (!sym || sym.startsWith("/") || sym.startsWith("$")) return;
+    void fetchWithAuth("/api/stream/equity-tape", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: [sym] }),
+    }).catch(() => {});
+  }, [symbol, streamStatus]);
+
+  useEffect(() => {
     setBook((prev) => reduceStockTop(prev, quote));
   }, [quote]);
 
-  const anchor = stockLadderAnchor(book, quote?.last ?? null);
+  const depthBids = useMemo<StockLevel[]>(
+    () => [...(venueBooks?.NYSE?.bids ?? []), ...(venueBooks?.NASDAQ?.bids ?? [])],
+    [venueBooks],
+  );
+  const depthAsks = useMemo<StockLevel[]>(
+    () => [...(venueBooks?.NYSE?.asks ?? []), ...(venueBooks?.NASDAQ?.asks ?? [])],
+    [venueBooks],
+  );
+  const bidSizes = useMemo(() => stockSizeByPrice(depthBids), [depthBids]);
+  const askSizes = useMemo(() => stockSizeByPrice(depthAsks), [depthAsks]);
+  const printShares = useMemo(() => stockSizeByPrice(prints), [prints]);
+  const printPeak = useMemo(() => {
+    let max = 0;
+    for (const size of printShares.values()) if (size > max) max = size;
+    return max;
+  }, [printShares]);
+
+  const anchor = stockLadderAnchor(
+    book,
+    quote?.last ?? null,
+    stockBestPrice(depthBids, "bid"),
+    stockBestPrice(depthAsks, "ask"),
+  );
   useEffect(() => {
     if (anchor == null) return;
     setPrices((prev) => {
@@ -64,6 +113,27 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
       return stockLadderPrices(anchor);
     });
   }, [anchor]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || prices.length === 0) return;
+    let frames = 0;
+    let raf = 0;
+    const tick = () => {
+      frames += 1;
+      const mid = prices[Math.floor(prices.length / 2)];
+      const row = mid == null
+        ? null
+        : el.querySelector<HTMLElement>(`[data-at-stock-price="${stockPriceKey(mid)}"]`);
+      if (row && el.clientHeight > 0) {
+        el.scrollTop = Math.max(0, row.offsetTop - el.clientHeight / 2 + row.offsetHeight / 2);
+        return;
+      }
+      if (frames < 8) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [prices]);
 
   const bidKey = book.bid ? stockPriceKey(book.bid.price) : null;
   const askKey = book.ask ? stockPriceKey(book.ask.price) : null;
@@ -79,22 +149,28 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
 
   return (
     <div className="flex flex-col flex-1 min-h-0" data-at-stock-ladder={symbol}>
-      <div className="flex-1 min-h-0 overflow-y-auto" data-at-stock-scroll>
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" data-at-stock-scroll>
         {prices.map((price) => {
           const key = stockPriceKey(price);
-          const bidSize = bidKey === key ? book.bid?.size : null;
-          const askSize = askKey === key ? book.ask?.size : null;
+          const depthBid = bidSizes.get(key) ?? 0;
+          const depthAsk = askSizes.get(key) ?? 0;
+          const bidSize = depthBid > 0 ? depthBid : bidKey === key ? book.bid?.size ?? null : null;
+          const askSize = depthAsk > 0 ? depthAsk : askKey === key ? book.ask?.size ?? null : null;
+          const traded = printShares.get(key) ?? 0;
+          const intensity = printPeak > 0 ? traded / printPeak : 0;
+          const wash = printWash(intensity);
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
           return (
             <div
               key={key}
               data-at-stock-price={key}
+              data-at-stock-traded={traded > 0 ? String(Math.round(traded)) : undefined}
               className="grid items-center"
               style={{
                 gridTemplateColumns: GRID,
                 height: AT_LADDER_ROW_H,
                 borderBottom: `1px solid ${BORDER}`,
-                background: selected ? "rgba(255,255,255,0.04)" : "transparent",
+                background: wash ?? (selected ? "rgba(255,255,255,0.04)" : "transparent"),
                 boxSizing: "border-box",
               }}
             >

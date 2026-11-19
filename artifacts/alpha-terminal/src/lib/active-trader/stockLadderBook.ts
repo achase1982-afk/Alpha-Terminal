@@ -26,8 +26,8 @@ function pairedSide(
 }
 
 /**
- * Accept a side only from a Schwab quote that already paired price, size, and timestamp.
- * A trade-only frame keeps the previous pair. An unpaired price cannot reuse an old size.
+ * Accept a side when price and size arrived together.
+ * A missing timestamp uses the quote time. A frame with no size keeps the previous pair.
  */
 function sameSide(a: StockSideQuote | null, b: StockSideQuote | null): boolean {
   if (a === b) return true;
@@ -35,11 +35,15 @@ function sameSide(a: StockSideQuote | null, b: StockSideQuote | null): boolean {
   return a.price === b.price && a.size === b.size && a.ts === b.ts && a.source === b.source;
 }
 
+function sideTs(quote: LiveQuote, explicit: number | null | undefined): number | null {
+  if (explicit != null && Number.isFinite(explicit)) return explicit;
+  return Number.isFinite(quote.ts) ? quote.ts : null;
+}
+
 export function reduceStockTop(prev: StockTopBook, quote: LiveQuote | null | undefined): StockTopBook {
   if (!quote) return prev;
-  if (quote.quoteSource && quote.quoteSource !== "SCHWAB") return prev;
-  const bid = pairedSide(quote.bid, quote.bidSize, quote.bidQuoteTs) ?? prev.bid;
-  const ask = pairedSide(quote.ask, quote.askSize, quote.askQuoteTs) ?? prev.ask;
+  const bid = pairedSide(quote.bid, quote.bidSize, sideTs(quote, quote.bidQuoteTs)) ?? prev.bid;
+  const ask = pairedSide(quote.ask, quote.askSize, sideTs(quote, quote.askQuoteTs)) ?? prev.ask;
   if (sameSide(bid, prev.bid) && sameSide(ask, prev.ask)) return prev;
   return { bid, ask };
 }
@@ -65,7 +69,37 @@ export function stockLadderPrices(anchor: number | null): number[] {
   return out;
 }
 
-export function stockLadderAnchor(book: StockTopBook, last: number | null): number | null {
-  if (book.bid && book.ask) return (book.bid.price + book.ask.price) / 2;
-  return book.bid?.price ?? book.ask?.price ?? (last != null && last > 0 ? last : null);
+export function stockLadderAnchor(
+  book: StockTopBook,
+  last: number | null,
+  depthBid: number | null = null,
+  depthAsk: number | null = null,
+): number | null {
+  const bid = book.bid?.price ?? (depthBid != null && depthBid > 0 ? depthBid : null);
+  const ask = book.ask?.price ?? (depthAsk != null && depthAsk > 0 ? depthAsk : null);
+  if (bid != null && ask != null) return (bid + ask) / 2;
+  return bid ?? ask ?? (last != null && last > 0 ? last : null);
+}
+
+export type StockLevel = { price: number; size: number };
+
+export function stockSizeByPrice(levels: readonly StockLevel[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const level of levels) {
+    if (!(level.price > 0) || !(level.size > 0)) continue;
+    if (!Number.isFinite(level.price) || !Number.isFinite(level.size)) continue;
+    const key = stockPriceKey(level.price);
+    out.set(key, (out.get(key) ?? 0) + level.size);
+  }
+  return out;
+}
+
+export function stockBestPrice(levels: readonly StockLevel[], side: "bid" | "ask"): number | null {
+  let best: number | null = null;
+  for (const level of levels) {
+    if (!(level.price > 0) || !(level.size > 0)) continue;
+    if (best == null) best = level.price;
+    else best = side === "bid" ? Math.max(best, level.price) : Math.min(best, level.price);
+  }
+  return best;
 }

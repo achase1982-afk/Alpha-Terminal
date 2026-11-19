@@ -8,6 +8,7 @@ import {
   addFuturesSymbols as addSchwabFuturesSymbols,
   addOptionSymbols as addSchwabOptionSymbols,
   addFuturesOptionSymbols as addSchwabFuturesOptionSymbols,
+  setClientEquityTape,
   startStreamer,
 } from "../lib/schwabStreamer.js";
 import {
@@ -72,6 +73,17 @@ router.post("/symbols", (req, res) => {
   const { symbols } = req.body as { symbols?: unknown };
   subscribeSymbolsToSchwab(symbols);
   res.json({ ok: true });
+});
+
+router.post("/equity-tape", (req, res) => {
+  const { symbols } = req.body as { symbols?: unknown };
+  if (!Array.isArray(symbols)) {
+    res.status(400).json({ ok: false, error: "symbols required" });
+    return;
+  }
+  const cleaned = symbols.filter((s): s is string => typeof s === "string" && s.trim().length > 0);
+  setClientEquityTape(cleaned);
+  res.json({ ok: true, count: cleaned.length });
 });
 
 router.post("/option-symbols", (req, res) => {
