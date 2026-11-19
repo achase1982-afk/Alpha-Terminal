@@ -112,6 +112,7 @@ import {
   AT_LADDER_PUTS_HDR,
   AT_LADDER_ROW_H,
   AT_LADDER_THIN_SEP,
+  AT_STOCK_LADDER_GRID,
 } from "@/lib/active-trader/atLadderLayout";
 import { AT_HEADER_BG, AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeContrast";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
@@ -1593,34 +1594,39 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             className="grid items-center shrink-0"
             style={{
               height: AT_LADDER_GROUP_HDR_H,
-              gridTemplateColumns: "minmax(0,1fr) 96px minmax(0,1fr)",
+              gridTemplateColumns: AT_STOCK_LADDER_GRID,
               background: AT_HEADER_BG,
               borderBottom: `1px solid ${BORDER}`,
             }}
           >
-            <span />
+            <span /><span /><span /><span />
             <span className="flex items-center justify-center">
               <AtInstrumentModePill template="stock" onToggle={toggleTemplate} />
             </span>
-            <span />
+            <span /><span /><span /><span />
           </div>
           <div
-            className="grid items-center shrink-0"
+            className="grid items-center shrink-0 at-ladder-num"
             style={{
               height: AT_LADDER_COL_HDR_H,
-              gridTemplateColumns: "minmax(0,1fr) 96px minmax(0,1fr)",
-              paddingLeft: AT_LADDER_GUTTER_X,
-              paddingRight: AT_LADDER_GUTTER_X,
-              fontSize: 13,
+              gridTemplateColumns: AT_STOCK_LADDER_GRID,
+              fontSize: 9,
               color: AT_LABEL,
               fontWeight: 600,
+              letterSpacing: "0.02em",
               background: AT_HEADER_BG,
               borderBottom: `1px solid ${BORDER}`,
             }}
           >
-            <span className="text-right" style={{ paddingRight: 8 }}>BID SIZE</span>
-            <span className="text-center">PRICE</span>
-            <span className="text-left" style={{ paddingLeft: 8 }}>ASK SIZE</span>
+            <span className="text-center">VOL</span>
+            <span className="text-center">QTY</span>
+            <span className="text-center">ORD</span>
+            <span className="text-center">BID SIZE</span>
+            <span className="text-center" style={{ fontSize: 11 }}>PRICE</span>
+            <span className="text-center">ASK SIZE</span>
+            <span className="text-center">ORD</span>
+            <span className="text-center">QTY</span>
+            <span className="text-center">VOL</span>
           </div>
           <StockLadderBody symbol={symbol} />
         </div>
