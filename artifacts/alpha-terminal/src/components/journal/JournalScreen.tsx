@@ -173,7 +173,7 @@ function Comparison(props: { payload: InsightsPayload }) {
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
         <div>
           <div style={kicker}>Account</div>
-          <div style={{ fontSize: 22, fontWeight: 750, color: signColor(comparison.accountReturn), fontVariantNumeric: "tabular-nums" }}>{signedPct(comparison.accountReturn)}</div>
+          <div style={{ fontSize: comparison.accountReturn == null ? 13 : 22, fontWeight: 750, color: signColor(comparison.accountReturn), fontVariantNumeric: "tabular-nums" }}>{comparison.accountReturn == null ? "Unavailable" : signedPct(comparison.accountReturn)}</div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={kicker}>S&amp;P 500</div>
