@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
+import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
@@ -52,24 +53,66 @@ function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash
 }
 
 function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () => void }) {
-  const { data } = useQuote(sym);
+  const exact = sym.trim().toUpperCase();
+  const [lookup, setLookup] = useState(exact);
+  const [instrumentName, setInstrumentName] = useState<{ symbol: string; name: string | null } | null>(null);
+  const { data, restQuote } = useQuote(lookup === exact ? exact : "");
   const { addToWatchlist, removeFromWatchlist } = useTerminalStore(useShallow((s) => ({ addToWatchlist: s.addToWatchlist, removeFromWatchlist: s.removeFromWatchlist })));
   const watchlistSymbols = useActiveWatchlist();
-  const isInWatchlist = watchlistSymbols.includes(sym.toUpperCase());
+  const isInWatchlist = watchlistSymbols.includes(exact);
   const [flash, setFlash] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setLookup(exact), 300);
+    return () => clearTimeout(t);
+  }, [exact]);
+
+  const quoteForExact = lookup === exact && data?.symbol?.toUpperCase() === exact ? data : null;
+  const quoteName = quoteForExact?.description?.trim() || "";
+  const quoteSettled = lookup === exact && (data != null || restQuote != null);
+  const quoteError = lookup === exact ? restQuote?.error : undefined;
+
+  useEffect(() => {
+    if (!exact || !quoteSettled || quoteName || quoteError) return;
+    const requested = exact;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetchWithAuth(`/api/market/fundamentals?symbol=${encodeURIComponent(requested)}`);
+        const body = await res.json() as { symbol?: string; description?: string | null; error?: string };
+        if (cancelled) return;
+        const bodySymbol = (body.symbol ?? "").trim().toUpperCase();
+        const name = typeof body.description === "string" ? body.description.trim() : "";
+        if (body.error || bodySymbol !== requested || !name) {
+          setInstrumentName({ symbol: requested, name: null });
+          return;
+        }
+        setInstrumentName({ symbol: requested, name });
+      } catch {
+        if (!cancelled) setInstrumentName({ symbol: requested, name: null });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [exact, quoteSettled, quoteName, quoteError]);
 
   const handleWatchlistToggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (isInWatchlist) {
-      removeFromWatchlist(sym);
+      removeFromWatchlist(exact);
     } else {
-      addToWatchlist(sym);
+      addToWatchlist(exact);
     }
     setFlash(true);
     setTimeout(() => setFlash(false), 400);
-  }, [sym, isInWatchlist, addToWatchlist, removeFromWatchlist]);
+  }, [exact, isInWatchlist, addToWatchlist, removeFromWatchlist]);
 
-  if (!data?.description) return null;
+  if (!exact) return null;
+
+  const description =
+    quoteName ||
+    (instrumentName?.symbol === exact ? instrumentName.name?.trim() || "" : "");
 
   return (
     <div
@@ -80,10 +123,12 @@ function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () =>
         onClick={onNavigate}
         className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer active:opacity-70 transition-opacity"
       >
-        <span className="font-mono text-[15px] font-bold text-white tracking-wide shrink-0">{sym}</span>
-        <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
-          {data.description.toUpperCase()}
-        </span>
+        <span className="font-mono text-[15px] font-bold text-white tracking-wide shrink-0">{exact}</span>
+        {description ? (
+          <span className="font-mono text-[12px] font-bold text-[#FFB800] tracking-wide truncate">
+            {description.toUpperCase()}
+          </span>
+        ) : null}
       </div>
       <div
         onClick={handleWatchlistToggle}
@@ -168,13 +213,12 @@ interface SearchOverlayProps {
 export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlayProps) {
   const { symbol, setSymbol, recentSymbols } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, setSymbol: s.setSymbol, recentSymbols: s.recentSymbols })));
   const [inputVal, setInputVal] = useState("");
-  const [debouncedVal, setDebouncedVal] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const exactInput = inputVal.trim().toUpperCase();
 
   useEffect(() => {
     if (isOpen) {
       setInputVal("");
-      setDebouncedVal("");
       setTimeout(() => inputRef.current?.focus(), 350);
     }
   }, [isOpen]);
@@ -194,16 +238,6 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     return () => window.removeEventListener("keydown", onKey);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    const trimmed = inputVal.trim().toUpperCase();
-    if (!trimmed) {
-      setDebouncedVal("");
-      return;
-    }
-    const t = setTimeout(() => setDebouncedVal(trimmed), 300);
-    return () => clearTimeout(t);
-  }, [inputVal]);
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = inputVal.trim().toUpperCase();
@@ -211,7 +245,6 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
       inputRef.current?.blur();
       setSymbol(trimmed);
       setInputVal("");
-      setDebouncedVal("");
       onSelectSymbol(trimmed);
     }
   };
@@ -290,15 +323,14 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </form>
         </div>
 
-        {debouncedVal && (
+        {exactInput && (
           <SymbolLivePreview
-            sym={debouncedVal}
+            sym={exactInput}
             onNavigate={() => {
               inputRef.current?.blur();
-              setSymbol(debouncedVal);
+              setSymbol(exactInput);
               setInputVal("");
-              setDebouncedVal("");
-              onSelectSymbol(debouncedVal);
+              onSelectSymbol(exactInput);
             }}
           />
         )}
