@@ -17,9 +17,11 @@ import {
   journalPositionsTable,
   journalSyncStateTable,
 } from "@workspace/db/schema";
+import { medianRecordedLine } from "./excursion.js";
 import { rebuildBook } from "./ledger.js";
 import { buildInsights, type BenchmarkPoint, type EquityPoint } from "./metrics.js";
-import type { BuiltLot, BuiltPosition, InsightsPayload, NormalizedActivity, NormalizedLeg, NormalizedOrder } from "./types.js";
+import { excursionMap, loadBooks } from "./quotes.js";
+import type { BuiltLot, BuiltPosition, ExcursionView, InsightPeriod, InsightSlice, InsightsPayload, NormalizedActivity, NormalizedLeg, NormalizedOrder } from "./types.js";
 
 const BATCH = 200;
 
@@ -261,13 +263,36 @@ export async function loadAdjustedBenchmark(startDate: string, endDate: string):
     .map((row) => ({ date: row.date, adjustedClose: row.adjustedClose }));
 }
 
-export async function readInsights(period: "ytd" | "lifetime", asOf = new Date()): Promise<InsightsPayload> {
-  const [activities, orders, snapshots, marks] = await Promise.all([
+const NOT_RECORDED: ExcursionView = {
+  record: "none",
+  mfe: null,
+  mae: null,
+  timeToMfeMin: null,
+  peakCapturePct: null,
+  bestAt: null,
+  label: "Not recorded",
+};
+
+function stampSlice(slice: InsightSlice | null, map: Record<string, ExcursionView>): void {
+  if (!slice) return;
+  for (const trade of slice.closedTrades) trade.excursion = map[trade.id] ?? NOT_RECORDED;
+  slice.recordedLine = medianRecordedLine(slice.closedTrades.flatMap((trade) => trade.excursion ? [trade.excursion] : []));
+}
+
+export async function readInsights(period: InsightPeriod, asOf = new Date(), accountId = "all_live"): Promise<InsightsPayload> {
+  const [activities, orders, snapshots, marks, books] = await Promise.all([
     loadActivities(),
     loadOrders(),
     loadSnapshots(),
     loadMarks(),
+    loadBooks(),
   ]);
+  const paper = new Set(books.filter((book) => book.paper).map((book) => book.id));
+  const allow = (ref: string) => {
+    if (accountId === "all_live") return !paper.has(ref);
+    if (accountId === "paper_sandbox") return paper.has(ref) || ref === "paper_sandbox";
+    return ref === accountId;
+  };
   const endDate = asOf.toISOString().slice(0, 10);
   let benchmark: BenchmarkPoint[] = [];
   try {
@@ -276,14 +301,26 @@ export async function readInsights(period: "ytd" | "lifetime", asOf = new Date()
     benchmark = [];
   }
   const { positions } = rebuildBook({ activities, orders, marks });
-  return buildInsights({
-    positions,
-    activities,
+  const payload = buildInsights({
+    positions: positions.filter((position) => allow(position.accountRef)),
+    activities: activities.filter((activity) => allow(activity.accountRef)),
     period,
     asOf: asOf.toISOString(),
-    snapshots,
+    snapshots: snapshots.filter((point) => !point.accountRef || allow(point.accountRef)),
     benchmark,
   });
+  const map = await excursionMap(payload.positions.map((position) => position.id));
+  for (const position of payload.positions) position.excursion = map[position.id] ?? NOT_RECORDED;
+  stampSlice(payload.account, map);
+  for (const slice of Object.values(payload.byStrategy)) stampSlice(slice, map);
+  payload.accountId = accountId;
+  payload.paper = accountId === "paper_sandbox" || (accountId !== "all_live" && paper.has(accountId));
+  payload.books = [
+    { id: "all_live", label: "All Live Accounts", paper: false },
+    ...books,
+    ...(books.some((book) => book.paper) ? [] : [{ id: "paper_sandbox", label: "Paper Sandbox", paper: true }]),
+  ];
+  return payload;
 }
 
 export async function rebuildAccount(accountRef: string): Promise<void> {

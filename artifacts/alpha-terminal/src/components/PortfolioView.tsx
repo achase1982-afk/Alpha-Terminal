@@ -20,6 +20,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { JournalTab } from "./JournalTab";
+import type { JournalPeriod } from "./journal/journalModel";
 import type { OrderLeg } from "./OrderTicket";
 import { SchwabAccountHeader } from "./SchwabAccountHeader";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
@@ -1211,6 +1212,8 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
   const [subTab, setSubTab] = useState<SubTab>("positions");
+  const [journalPeriod, setJournalPeriod] = useState<JournalPeriod>("ytd");
+  const [journalAccount, setJournalAccount] = useState("all_live");
   const accountsFingerprint = usePortfolioStreamStore((s) => s.accountsFingerprint);
   const pickerAccountCount = useSchwabAccountStore((s) => s.accounts.length);
   const viewSelection = useSchwabAccountStore((s) => s.viewSelection);
@@ -2184,7 +2187,12 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
         )}
 
         {subTab === "journal" && (
-          <JournalTab />
+          <JournalTab
+            period={journalPeriod}
+            onPeriod={setJournalPeriod}
+            accountId={journalAccount}
+            onAccount={setJournalAccount}
+          />
         )}
       </div>
 
