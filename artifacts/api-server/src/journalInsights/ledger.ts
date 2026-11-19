@@ -368,6 +368,7 @@ function mergeScaleIns(positions: Map<string, WorkingPosition>, lots: BuiltLot[]
 
 interface VerticalShape {
   id: string;
+  accountRef: string;
   right: "put" | "call";
   credit: boolean;
   underlying: string;
@@ -390,6 +391,7 @@ function asVertical(position: WorkingPosition): VerticalShape | null {
   const credit = short.putCall === "put" ? short.strike > long.strike : short.strike < long.strike;
   return {
     id: position.id,
+    accountRef: position.accountRef,
     right: short.putCall!,
     credit,
     underlying: short.underlying,
@@ -410,6 +412,7 @@ function pairIronCondors(positions: Map<string, WorkingPosition>, lots: BuiltLot
     let bestGap = Infinity;
     for (const call of calls) {
       if (used.has(call.id) || call.credit !== put.credit) continue;
+      if (call.accountRef !== put.accountRef) continue;
       if (call.underlying !== put.underlying || call.expiration !== put.expiration) continue;
       if (Math.abs(call.qty - put.qty) > EPS) continue;
       const gap = Math.abs(call.ticketAt - put.ticketAt);
@@ -429,6 +432,7 @@ function pairIronCondors(positions: Map<string, WorkingPosition>, lots: BuiltLot
 
 function absorb(keep: WorkingPosition, drop: WorkingPosition, lots: BuiltLot[]): void {
   if (keep.id === drop.id || drop.absorbed) return;
+  if (keep.accountRef !== drop.accountRef) return;
   drop.absorbed = true;
   keep.netPnl += drop.netPnl;
   keep.grossPnl += drop.grossPnl;
