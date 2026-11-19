@@ -1,4 +1,3 @@
-import { isDeskAllowedOptionKey } from "./deskTapeFrameFilter.js";
 import {
   applyL1oFlowTick,
   parseL1oSchwabRow,
@@ -6,6 +5,8 @@ import {
   type FlowIncrement,
 } from "./deskLiveFlowClassify.js";
 import { deskLiveFlowOptionSide, deskLiveFlowIsSpxOptionKey } from "./deskLiveFlowOcc.js";
+import { deskLiveFlowSubsSymbolActive } from "./deskLiveFlowSubs.js";
+import { parseOccUnderlyingRoot } from "../streamerSubPlanSort.js";
 import {
   deskLiveFlowBroadcastFrame,
   wrapDeskLiveFlowFrame,
@@ -64,11 +65,32 @@ type Bucket60s = {
   n_contracts: Set<string>;
 };
 
+type OpenFlow = {
+  b1: Bucket1s | null;
+  b60: Bucket60s | null;
+  lastEmitted60sMinuteMs: number | null;
+};
+
 const contractState = new Map<string, ContractFlowState>();
-let open1s: Bucket1s | null = null;
-let open60s: Bucket60s | null = null;
-let lastEmittedFlow60sMinuteMs: number | null = null;
+const openBySym = new Map<string, OpenFlow>();
 let lastIdleFlowHeartbeatBucketMs: number | null = null;
+
+function openFlow(sym: string): OpenFlow {
+  let slot = openBySym.get(sym);
+  if (!slot) {
+    slot = { b1: null, b60: null, lastEmitted60sMinuteMs: null };
+    openBySym.set(sym, slot);
+  }
+  return slot;
+}
+
+/** SPX/SPXW stay on the SPX tape. Other roots only when that equity flow subscription is live. */
+function optionFlowSymbol(key: string): string | null {
+  if (deskLiveFlowIsSpxOptionKey(key)) return "SPX";
+  const root = parseOccUnderlyingRoot(key);
+  if (!root || !deskLiveFlowSubsSymbolActive(root, "equity")) return null;
+  return root;
+}
 
 const UW_BAR_MAP_CAP = 512;
 
@@ -148,12 +170,13 @@ function emitFlowHeartbeat(bucketMs: number, rxMs: number, empty: boolean): void
   recordFrame(wrapDeskLiveFlowFrame(payload, bucketMs, rxMs));
 }
 
-function applyIncrementToBuckets(inc: FlowIncrement, hadL1oFrame: boolean): void {
+function applyIncrementToBuckets(inc: FlowIncrement, hadL1oFrame: boolean, sym: string): void {
   ensureBucketTimer();
+  const slot = openFlow(sym);
   const bms = bucketMs1s(inc.rxMs);
-  if (!open1s || open1s.bucket_ms !== bms) {
-    if (open1s) emitFlow1s(open1s, inc.rxMs);
-    open1s = freshBucket1s(bms);
+  if (!slot.b1 || slot.b1.bucket_ms !== bms) {
+    if (slot.b1) emitFlow1s(sym, slot.b1, inc.rxMs);
+    slot.b1 = freshBucket1s(bms);
   }
   const sideKey = `${inc.optionSide}_${inc.side}` as const;
   const map: Record<string, keyof Pick<Bucket1s, "call_buy" | "call_sell" | "call_mid" | "put_buy" | "put_sell" | "put_mid">> = {
@@ -165,37 +188,33 @@ function applyIncrementToBuckets(inc: FlowIncrement, hadL1oFrame: boolean): void
     put_mid: "put_mid",
   };
   const field = map[sideKey];
-  if (field) open1s[field] += inc.dollars;
-  if (hadL1oFrame) open1s.n_l1o_updates += 1;
-  open1s.n_increments += 1;
-  open1s.n_contracts.add(inc.key);
+  if (field) slot.b1[field] += inc.dollars;
+  if (hadL1oFrame) slot.b1.n_l1o_updates += 1;
+  slot.b1.n_increments += 1;
+  slot.b1.n_contracts.add(inc.key);
 
   const mms = minuteMs(bms);
-  if (!open60s || open60s.minute_ms !== mms) {
-    if (open60s) emitFlow60s(open60s, inc.rxMs);
-    open60s = freshBucket60s(bms);
+  if (!slot.b60 || slot.b60.minute_ms !== mms) {
+    if (slot.b60) emitFlow60s(sym, slot, slot.b60, inc.rxMs);
+    slot.b60 = freshBucket60s(bms);
   }
   const field60 = map[sideKey];
-  if (field60) open60s[field60] += inc.dollars;
-  if (hadL1oFrame) open60s.n_l1o_updates += 1;
-  open60s.n_increments += 1;
-  open60s.n_contracts.add(inc.key);
+  if (field60) slot.b60[field60] += inc.dollars;
+  if (hadL1oFrame) slot.b60.n_l1o_updates += 1;
+  slot.b60.n_increments += 1;
+  slot.b60.n_contracts.add(inc.key);
 }
 
-function emitFlow1s(b: Bucket1s, rxMs: number, forceEmpty = false): void {
+function emitFlow1s(sym: string, b: Bucket1s, rxMs: number): void {
   const has =
     b.call_buy || b.call_sell || b.call_mid || b.put_buy || b.put_sell || b.put_mid || b.n_increments > 0;
-  if (!has && !forceEmpty) {
-    emitFlowHeartbeat(b.bucket_ms, rxMs, true);
-    return;
-  }
-  if (!has && forceEmpty) {
-    emitFlowHeartbeat(b.bucket_ms, rxMs, true);
+  if (!has) {
+    if (sym === "SPX") emitFlowHeartbeat(b.bucket_ms, rxMs, true);
     return;
   }
   const payload = {
     type: "flow_1s",
-    sym: "SPX",
+    sym,
     bucket_ms: b.bucket_ms,
     call_buy: b.call_buy,
     call_sell: b.call_sell,
@@ -212,15 +231,15 @@ function emitFlow1s(b: Bucket1s, rxMs: number, forceEmpty = false): void {
   recordFrame(wrapDeskLiveFlowFrame(payload, b.bucket_ms + 999, rxMs));
 }
 
-function emitFlow60s(b: Bucket60s, rxMs: number): void {
-  if (lastEmittedFlow60sMinuteMs != null && b.minute_ms <= lastEmittedFlow60sMinuteMs) return;
+function emitFlow60s(sym: string, slot: OpenFlow, b: Bucket60s, rxMs: number): void {
+  if (slot.lastEmitted60sMinuteMs != null && b.minute_ms <= slot.lastEmitted60sMinuteMs) return;
   const has =
     b.call_buy || b.call_sell || b.call_mid || b.put_buy || b.put_sell || b.put_mid || b.n_increments > 0;
   if (!has) return;
-  lastEmittedFlow60sMinuteMs = b.minute_ms;
+  slot.lastEmitted60sMinuteMs = b.minute_ms;
   const payload = {
     type: "flow_60s",
-    sym: "SPX",
+    sym,
     bar_start_ms: b.minute_ms,
     call_buy: b.call_buy,
     call_sell: b.call_sell,
@@ -238,15 +257,17 @@ function emitFlow60s(b: Bucket60s, rxMs: number): void {
 }
 
 export function deskLiveFlowBucketTick(nowMs: number): void {
-  if (open1s && bucketDueToClose(open1s.bucket_ms, nowMs, 1000)) {
-    emitFlow1s(open1s, nowMs, true);
-    open1s = null;
+  for (const [sym, slot] of openBySym) {
+    if (slot.b1 && bucketDueToClose(slot.b1.bucket_ms, nowMs, 1000)) {
+      emitFlow1s(sym, slot.b1, nowMs);
+      slot.b1 = null;
+    }
+    if (slot.b60 && bucketDueToClose(slot.b60.minute_ms, nowMs, 60_000)) {
+      emitFlow60s(sym, slot, slot.b60, nowMs);
+      slot.b60 = null;
+    }
   }
-  if (open60s && bucketDueToClose(open60s.minute_ms, nowMs, 60_000)) {
-    emitFlow60s(open60s, nowMs);
-    open60s = null;
-  }
-  if (deskLiveFlowL1oEnabled() && !open1s) {
+  if (deskLiveFlowL1oEnabled() && !openBySym.get("SPX")?.b1) {
     const b = bucketMs1s(nowMs);
     if (lastIdleFlowHeartbeatBucketMs !== b) {
       emitFlowHeartbeat(b, nowMs, true);
@@ -322,9 +343,7 @@ export function deskLiveFlowEmitPx(symKey: string, item: Record<string, unknown>
 
 export function deskLiveFlowOnStreamerSessionReset(_reason: string): void {
   contractState.clear();
-  open1s = null;
-  open60s = null;
-  lastEmittedFlow60sMinuteMs = null;
+  openBySym.clear();
   lastIdleFlowHeartbeatBucketMs = null;
   lastEmittedPxSrcTs = 0;
   pxTrailing = null;
@@ -357,15 +376,43 @@ export function deskLiveFlowOnL1oRows(
   }
   for (const item of content) {
     const key = String(item["key"] ?? "").trim();
-    if (!key || !isDeskAllowedOptionKey(key) || !deskLiveFlowIsSpxOptionKey(key)) continue;
+    const sym = optionFlowSymbol(key);
+    if (!sym) continue;
     const side = deskLiveFlowOptionSide(key);
     if (!side) continue;
     const row = parseL1oSchwabRow(key, item, rxMs, side);
     const prev = contractState.get(key);
     const { next, increments } = applyL1oFlowTick(prev, row);
     contractState.set(key, next);
-    for (const inc of increments) applyIncrementToBuckets(inc, true);
+    for (const inc of increments) applyIncrementToBuckets(inc, true, sym);
   }
+}
+
+/** Option rows the desk tape filter drops. Classified only for an active equity flow subscription. */
+export function deskLiveFlowIngestEquityOptions(
+  msg: Record<string, unknown>,
+  rxMs: number,
+  connectionId?: number,
+): void {
+  if (!deskLiveFlowL1oEnabled()) return;
+  if (connectionId != null && deskLiveFlowSessionMarkConnection(connectionId)) {
+    deskLiveFlowOnStreamerSessionReset("connection_frame");
+  }
+  const data = msg["data"];
+  if (!Array.isArray(data)) return;
+  const rows: Record<string, unknown>[] = [];
+  for (const raw of data) {
+    if (!raw || typeof raw !== "object") continue;
+    const item = raw as { service?: string; content?: unknown[] };
+    if (item.service !== "LEVELONE_OPTIONS" || !Array.isArray(item.content)) continue;
+    for (const row of item.content) {
+      if (!row || typeof row !== "object") continue;
+      const key = String((row as { key?: unknown }).key ?? "").trim();
+      if (!key || deskLiveFlowIsSpxOptionKey(key)) continue;
+      rows.push(row as Record<string, unknown>);
+    }
+  }
+  if (rows.length > 0) deskLiveFlowOnL1oRows(rows, rxMs);
 }
 
 export function deskLiveFlowOnInbound(
@@ -430,13 +477,15 @@ export function deskLiveFlowOnUwNetPremRows(
 }
 
 export function deskLiveFlowFlushOpenBuckets(rxMs: number): void {
-  if (open1s) {
-    emitFlow1s(open1s, rxMs);
-    open1s = null;
-  }
-  if (open60s) {
-    emitFlow60s(open60s, rxMs);
-    open60s = null;
+  for (const [sym, slot] of openBySym) {
+    if (slot.b1) {
+      emitFlow1s(sym, slot.b1, rxMs);
+      slot.b1 = null;
+    }
+    if (slot.b60) {
+      emitFlow60s(sym, slot, slot.b60, rxMs);
+      slot.b60 = null;
+    }
   }
 }
 
@@ -456,14 +505,12 @@ export function deskLiveFlowReplayL1o(
 
 export function deskLiveFlowResetEngineForTests(): void {
   contractState.clear();
-  open1s = null;
-  open60s = null;
+  openBySym.clear();
   lastPx = { last: null, bid: null, ask: null };
   pxWindowStartMs = 0;
   pxEmitsInWindow = 0;
   pxTrailing = null;
   uwBarByKey.clear();
-  lastEmittedFlow60sMinuteMs = null;
   lastIdleFlowHeartbeatBucketMs = null;
   lastEmittedPxSrcTs = 0;
   bucketsHooked = false;
