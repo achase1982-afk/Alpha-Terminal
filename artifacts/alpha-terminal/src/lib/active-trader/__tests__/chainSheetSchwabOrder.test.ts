@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import type { StrategyLeg } from "@/components/StrategyBuilder";
 import { buildChainSheetSchwabOrder } from "../chainSheetSchwabOrder";
 import type { ActiveTraderTemplatePrefs } from "../activeTraderPrefs";
 
@@ -18,51 +17,34 @@ const prefs = (): ActiveTraderTemplatePrefs => ({
   stopLimitOffset: 0.05,
 });
 
-const verticalCreditLegs: StrategyLeg[] = [
+const verticalCreditLegs = [
   {
-    id: "a",
-    optionType: "CALL",
-    direction: "SELL_TO_OPEN",
-    strike: 600,
-    expiration: "2026-12-19",
+    direction: "SELL_TO_OPEN" as const,
     quantity: 1,
-    bid: 2.85,
-    ask: 2.92,
     schwabSymbol: "SPY   261219C00600000",
+    expiration: "2026-12-19",
   },
   {
-    id: "b",
-    optionType: "CALL",
-    direction: "BUY_TO_OPEN",
-    strike: 605,
-    expiration: "2026-12-19",
+    direction: "BUY_TO_OPEN" as const,
     quantity: 1,
-    bid: 1.1,
-    ask: 1.15,
     schwabSymbol: "SPY   261219C00605000",
+    expiration: "2026-12-19",
   },
 ];
 
 describe("buildChainSheetSchwabOrder", () => {
   it("credit vertical with 25% TP: TRIGGER parent + NET_DEBIT child at $1.50 with both closes", () => {
-    const order = buildChainSheetSchwabOrder(
-      {
-        symbol: "SPY",
-        legs: verticalCreditLegs,
-        spreadQuantity: 1,
-        limitPrice: "2.00",
-        limitTickCtx: { underlyingSymbol: "SPY", isOption: true },
-        timeInForce: "DAY",
-        isCredit: true,
-        entryGrossDollars: 200,
-        distinctLegCount: 2,
-        atBracketDraft: {
-          prefs: prefs(),
-          primaryInstruction: "SELL_TO_OPEN",
-        },
-      },
-      2,
-    );
+    const order = buildChainSheetSchwabOrder({
+      prefs: prefs(),
+      primaryInstruction: "SELL_TO_OPEN",
+      legs: verticalCreditLegs,
+      quantityMultiplier: 1,
+      limitPrice: 2,
+      isCredit: true,
+      complexOrderStrategyType: "VERTICAL",
+      underlyingSymbol: "SPY",
+      timeInForce: "DAY",
+    });
     expect(order.error).toBeUndefined();
     expect(order.orderStrategyType).toBe("TRIGGER");
     expect(order.orderType).toBe("NET_CREDIT");
@@ -85,35 +67,24 @@ describe("buildChainSheetSchwabOrder", () => {
       takeProfit: { enabled: false, mode: "percent", offset: 25 },
       stopLoss: { enabled: true, mode: "percent", offset: -10 },
     };
-    const longLeg: StrategyLeg = {
-      id: "a",
-      optionType: "CALL",
-      direction: "BUY_TO_OPEN",
-      strike: 600,
-      expiration: "2026-12-19",
-      quantity: 1,
-      bid: 1.95,
-      ask: 2.05,
-      schwabSymbol: "SPY   261219C00600000",
-    };
-    const order = buildChainSheetSchwabOrder(
-      {
-        symbol: "SPY",
-        legs: [longLeg],
-        spreadQuantity: 1,
-        limitPrice: "2.00",
-        limitTickCtx: { underlyingSymbol: "SPY", isOption: true },
-        timeInForce: "DAY",
-        isCredit: false,
-        entryGrossDollars: -200,
-        distinctLegCount: 1,
-        atBracketDraft: {
-          prefs: slPrefs,
-          primaryInstruction: "BUY_TO_OPEN",
+    const order = buildChainSheetSchwabOrder({
+      prefs: slPrefs,
+      primaryInstruction: "BUY_TO_OPEN",
+      legs: [
+        {
+          direction: "BUY_TO_OPEN",
+          quantity: 1,
+          schwabSymbol: "SPY   261219C00600000",
+          expiration: "2026-12-19",
         },
-      },
-      2,
-    );
+      ],
+      quantityMultiplier: 1,
+      limitPrice: 2,
+      isCredit: false,
+      complexOrderStrategyType: "NONE",
+      underlyingSymbol: "SPY",
+      timeInForce: "DAY",
+    });
     expect(order.error).toBeUndefined();
     expect(order.orderStrategyType).toBe("TRIGGER");
     expect(order.price).toBe(2);
@@ -125,21 +96,15 @@ describe("buildChainSheetSchwabOrder", () => {
   });
 
   it("returns SINGLE when bracket inactive", () => {
-    const order = buildChainSheetSchwabOrder(
-      {
-        symbol: "SPY",
-        legs: verticalCreditLegs,
-        spreadQuantity: 1,
-        limitPrice: "2.00",
-        limitTickCtx: { underlyingSymbol: "SPY", isOption: true },
-        timeInForce: "DAY",
-        isCredit: true,
-        entryGrossDollars: 200,
-        distinctLegCount: 2,
-        atBracketDraft: null,
-      },
-      2,
-    );
+    const order = buildChainSheetSchwabOrder({
+      legs: verticalCreditLegs,
+      quantityMultiplier: 1,
+      limitPrice: 2,
+      isCredit: true,
+      complexOrderStrategyType: "VERTICAL",
+      underlyingSymbol: "SPY",
+      timeInForce: "DAY",
+    });
     expect(order.orderStrategyType).toBe("SINGLE");
     expect(order.childOrderStrategies).toBeUndefined();
   });

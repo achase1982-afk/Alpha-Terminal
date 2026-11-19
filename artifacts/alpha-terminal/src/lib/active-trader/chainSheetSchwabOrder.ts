@@ -1,171 +1,150 @@
-import type { StrategyLeg } from "@/components/StrategyBuilder";
-import {
-  inferSchwabComplexOrderStrategyType,
-  schwabPriceFromTicket,
-  type LimitTickContext,
-} from "@workspace/order-ticket-math";
 import type { ActiveTraderTemplatePrefs } from "./activeTraderPrefs";
-import { buildAtSchwabOrderJson, type SchwabInstruction } from "./atSchwabOrderBuilder";
-import { buildChainSheetBracketEconomics } from "./chainSheetBracketEconomics";
-import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
+import { optionPremiumStdev } from "./atBracketMath";
+import {
+  buildAtSchwabOrderJson,
+  buildAtSpreadSchwabOrder,
+  type AtOrderBuildInput,
+  type SchwabInstruction,
+} from "./atSchwabOrderBuilder";
 
-function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | undefined {
-  const trimmed = leg.schwabSymbol?.trim();
-  if (trimmed) return trimmed;
-  const built = buildSchwabOptionKey(
-    underlying,
-    leg.expiration,
-    leg.strike,
-    leg.optionType === "CALL" ? "C" : "P",
-  );
-  const key = built.trim();
-  return key || undefined;
+export interface ChainSheetOrderLeg {
+  direction: SchwabInstruction;
+  quantity: number;
+  schwabSymbol: string;
+  expiration?: string;
+  delta?: number | null;
+  iv?: number | null;
 }
 
-export type ChainSheetOrderBuildInput = {
-  symbol: string;
-  legs: StrategyLeg[];
-  spreadQuantity: number;
-  limitPrice: string;
-  limitTickCtx: LimitTickContext;
-  timeInForce: "DAY" | "GTC";
+function daysToExpiry(expiration: string | undefined, now = Date.now()): number | null {
+  if (!expiration) return null;
+  const day = expiration.slice(0, 10);
+  const parsed = new Date(`${day}T16:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Math.max(0, (parsed.getTime() - now) / 86_400_000);
+}
+
+function wantsAdvancedOrder(prefs: ActiveTraderTemplatePrefs | undefined): boolean {
+  if (!prefs) return false;
+  if (prefs.takeProfit.enabled || prefs.stopLoss.enabled) return true;
+  const route = prefs.advancedRoute ?? "AUTO";
+  if (route !== "AUTO" && route !== "SINGLE") return true;
+  const entry = prefs.schwabEntryType;
+  if (entry && entry !== "LIMIT" && entry !== "MARKET") return true;
+  if (prefs.routing && prefs.routing !== "BEST") return true;
+  if (prefs.session && prefs.session !== "NORMAL") return true;
+  return false;
+}
+
+function netOrder(input: {
   isCredit: boolean;
-  entryGrossDollars: number | null;
-  atBracketDraft?: {
-    prefs: ActiveTraderTemplatePrefs;
-    primaryInstruction: SchwabInstruction;
-  } | null;
-  distinctLegCount: number;
-};
-
-function bracketPrefsActive(prefs: ActiveTraderTemplatePrefs): boolean {
-  return (
-    prefs.template !== "Single" || !!(prefs.takeProfit?.enabled || prefs.stopLoss?.enabled)
-  );
-}
-
-function closingInstruction(open: string): string {
-  if (open === "SELL_TO_OPEN") return "BUY_TO_CLOSE";
-  if (open === "BUY_TO_OPEN") return "SELL_TO_CLOSE";
-  return open;
-}
-
-function inferComplexType(legs: StrategyLeg[]): string {
-  return inferSchwabComplexOrderStrategyType(
-    legs.map((leg) => ({
-      strike: leg.strike,
-      optionType: leg.optionType,
-      instruction: leg.direction,
-      quantity: leg.quantity,
-      expiration: leg.expiration,
-      schwabSymbol: leg.schwabSymbol,
-    })),
-  );
-}
-
-function buildSpreadNetEntry(input: ChainSheetOrderBuildInput, price: number): Record<string, unknown> {
-  const complexType = inferComplexType(input.legs);
-  return {
+  duration: string;
+  session: string;
+  complexOrderStrategyType: string;
+  legs: ChainSheetOrderLeg[];
+  quantityMultiplier: number;
+  limitPrice: number;
+  routing?: ActiveTraderTemplatePrefs["routing"];
+}): Record<string, unknown> {
+  const order: Record<string, unknown> = {
     orderType: input.isCredit ? "NET_CREDIT" : "NET_DEBIT",
-    session: "NORMAL",
-    duration: input.timeInForce,
-    complexOrderStrategyType: complexType,
+    session: input.session,
+    duration: input.duration,
+    complexOrderStrategyType: input.complexOrderStrategyType,
     orderStrategyType: "SINGLE",
     orderLegCollection: input.legs.map((leg) => ({
       instruction: leg.direction,
-      quantity: leg.quantity * input.spreadQuantity,
+      quantity: leg.quantity * input.quantityMultiplier,
       instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
     })),
-    price,
+    price: input.limitPrice > 0 ? input.limitPrice : undefined,
   };
+  if (input.routing && input.routing !== "BEST") order.requestedDestination = input.routing;
+  return order;
 }
 
-export function buildChainSheetSchwabOrder(
-  input: ChainSheetOrderBuildInput,
-  priceOverride?: number,
-): Record<string, unknown> {
-  const parsed = priceOverride ?? schwabPriceFromTicket(input.limitTickCtx, input.limitPrice);
-  if (parsed == null || parsed <= 0) {
-    return { error: "invalid_limit" };
-  }
-
-  const draft = input.atBracketDraft;
-  if (!draft || !bracketPrefsActive(draft.prefs)) {
-    return buildSpreadNetEntry(input, parsed);
-  }
-
-  const leg = input.legs[0];
-  const optionSymbol = leg ? primaryLegOptionSymbol(leg, input.symbol) : undefined;
-  if (!optionSymbol) {
-    return { error: "missing_option_symbol" };
-  }
-
-  const totalContracts =
-    input.legs.reduce((s, l) => s + l.quantity, 0) * input.spreadQuantity;
-
-  const econ = buildChainSheetBracketEconomics({
-    prefs: draft.prefs,
-    primaryInstruction: draft.primaryInstruction,
-    lockedLimit: parsed,
-    legCount: input.distinctLegCount,
-    optionSymbol,
-    underlyingSymbol: input.symbol.replace(/^\$/, ""),
-    spreadQuantity: input.spreadQuantity,
-    totalContracts,
-    entryGrossDollars: input.entryGrossDollars,
-    isCredit: input.isCredit,
-  });
-
-  if (econ.bracketConfirm.mode === "unsupported") {
-    return { error: econ.bracketConfirm.message };
-  }
-
-  const exitDuration = draft.prefs.exitDuration ?? "GOOD_TILL_CANCEL";
-
-  if (input.distinctLegCount === 1) {
-    return buildAtSchwabOrderJson({
-      template: draft.prefs.template,
-      assetType: "OPTION",
-      symbol: optionSymbol,
-      underlyingSymbol: input.symbol.replace(/^\$/, ""),
-      primaryInstruction: draft.primaryInstruction,
-      quantity: input.spreadQuantity,
-      limitPrice: parsed,
-      takeProfit: draft.prefs.takeProfit,
-      stopLoss: draft.prefs.stopLoss,
-      entryOrderType: draft.prefs.orderType,
-      entryDuration: input.timeInForce,
-      exitDuration,
-      stopLossOrderType: draft.prefs.stopLossOrderType,
-      stopLimitOffset: draft.prefs.stopLimitOffset,
+/** Order body posted to Schwab from the chain / Active Trader ticket. */
+export function buildChainSheetSchwabOrder(input: {
+  prefs?: ActiveTraderTemplatePrefs;
+  primaryInstruction?: SchwabInstruction;
+  legs: ChainSheetOrderLeg[];
+  quantityMultiplier: number;
+  limitPrice: number;
+  isCredit: boolean;
+  complexOrderStrategyType: string;
+  underlyingSymbol: string;
+  underlyingPrice?: number | null;
+  timeInForce: string;
+  now?: number;
+}): Record<string, unknown> {
+  const prefs = input.prefs;
+  const duration =
+    prefs?.entryDuration === "GOOD_TILL_CANCEL"
+      ? "GOOD_TILL_CANCEL"
+      : prefs?.entryDuration === "FILL_OR_KILL"
+        ? "FILL_OR_KILL"
+        : input.timeInForce === "GTC"
+          ? "GOOD_TILL_CANCEL"
+          : "DAY";
+  const session = prefs?.session ?? "NORMAL";
+  if (!prefs || !wantsAdvancedOrder(prefs) || input.legs.length === 0) {
+    return netOrder({
+      isCredit: input.isCredit,
+      duration,
+      session,
+      complexOrderStrategyType: input.complexOrderStrategyType,
+      legs: input.legs,
+      quantityMultiplier: input.quantityMultiplier,
+      limitPrice: input.limitPrice,
+      routing: prefs?.routing,
     });
   }
 
-  if (!draft.prefs.takeProfit?.enabled || econ.takeProfitLimit == null) {
-    return buildSpreadNetEntry(input, parsed);
-  }
+  const first = input.legs[0]!;
+  const primary = input.primaryInstruction ?? first.direction;
+  const stdevMode = prefs.takeProfit.mode === "stdev" || prefs.stopLoss.mode === "stdev";
+  const premiumStdev = stdevMode
+    ? optionPremiumStdev({
+        delta: first.delta,
+        iv: first.iv,
+        dte: daysToExpiry(first.expiration, input.now),
+        underlyingPrice: input.underlyingPrice,
+      })
+    : null;
+  const shared: AtOrderBuildInput = {
+    template: prefs.template,
+    assetType: "OPTION",
+    symbol: first.schwabSymbol,
+    underlyingSymbol: input.underlyingSymbol.replace(/^\$/, ""),
+    primaryInstruction: primary,
+    quantity: first.quantity * input.quantityMultiplier,
+    limitPrice: input.limitPrice,
+    takeProfit: prefs.takeProfit,
+    stopLoss: prefs.stopLoss,
+    entryOrderType: prefs.orderType,
+    entryDuration: duration,
+    exitDuration: prefs.exitDuration,
+    stopLossOrderType: prefs.stopLossOrderType,
+    stopLimitOffset: prefs.stopLimitOffset,
+    session,
+    advancedRoute: prefs.advancedRoute,
+    schwabEntryType: prefs.schwabEntryType,
+    routing: prefs.routing,
+    trailOffset: prefs.trailOffset,
+    trailLinkType: prefs.trailLinkType,
+    premiumStdev,
+    isSpread: input.legs.length > 1,
+  };
 
-  const exitPrice = econ.takeProfitLimit;
-
-  const entry = buildSpreadNetEntry(input, parsed);
-  const closeIsDebit = input.isCredit;
-  const child: Record<string, unknown> = {
-    orderStrategyType: "SINGLE",
-    session: "NORMAL",
-    duration: exitDuration,
-    complexOrderStrategyType: entry.complexOrderStrategyType,
-    orderType: closeIsDebit ? "NET_DEBIT" : "NET_CREDIT",
-    price: exitPrice,
-    orderLegCollection: input.legs.map((leg) => ({
-      instruction: closingInstruction(leg.direction),
-      quantity: leg.quantity * input.spreadQuantity,
-      instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
+  if (input.legs.length === 1) return buildAtSchwabOrderJson(shared);
+  return buildAtSpreadSchwabOrder({
+    ...shared,
+    isCredit: input.isCredit,
+    complexOrderStrategyType: input.complexOrderStrategyType,
+    spreadLegs: input.legs.map((leg) => ({
+      instruction: leg.direction,
+      quantity: leg.quantity * input.quantityMultiplier,
+      symbol: leg.schwabSymbol,
     })),
-  };
-
-  return {
-    ...entry,
-    orderStrategyType: "TRIGGER",
-    childOrderStrategies: [child],
-  };
+  });
 }

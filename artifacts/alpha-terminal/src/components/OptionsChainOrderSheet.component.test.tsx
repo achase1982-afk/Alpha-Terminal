@@ -277,4 +277,39 @@ describe("OptionsChainOrderSheet", () => {
     expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);
     expect(screen.queryByText(/Bracket review not supported/i)).toBeNull();
   });
+
+  it("AT take profit posts a Schwab trigger whose child is the closing instruction", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "TRG w/ bracket",
+      qty: 1,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: { enabled: true, mode: "percent", offset: 25 },
+      stopLoss: { enabled: false, mode: "percent", offset: -10 },
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+      entryDuration: "DAY",
+      schwabEntryType: "LIMIT",
+      submission: "review",
+    };
+    renderSheet({ atBracketDraft: { prefs, primaryInstruction: "BUY_TO_OPEN" } });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    fireEvent.click(screen.getByTestId("chain-sheet-send"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(String(init.body)) as { order: Record<string, unknown> };
+    expect(body.order.orderStrategyType).toBe("TRIGGER");
+    expect(body.order.duration).toBe("DAY");
+    const child = (body.order.childOrderStrategies as Record<string, unknown>[])[0];
+    expect(child.orderType).toBe("LIMIT");
+    expect((child.orderLegCollection as { instruction: string }[])[0].instruction).toBe("SELL_TO_CLOSE");
+  });
 });

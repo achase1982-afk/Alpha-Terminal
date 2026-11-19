@@ -44,6 +44,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { computeOrderEconomics } from "@workspace/order-ticket-math";
 import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
 import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { buildChainSheetSchwabOrder } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
 import {
   assertChainDraftLegCount,
@@ -58,7 +59,6 @@ import {
   type ChainSheetAtBracketConfirm,
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
 import { buildChainSheetBracketEconomics } from "@/lib/active-trader/chainSheetBracketEconomics";
-import { buildChainSheetSchwabOrder } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
@@ -205,7 +205,7 @@ export function OptionsChainOrderSheet({
 
   const [limitPrice, setLimitPrice] = useState(restoredSheetSession?.limitPrice ?? "");
   const [quantity, setQuantity] = useState(1);
-  const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
+  const [timeInForce, setTimeInForce] = useState<string>("DAY");
   const [stage, setStage] = useState<Stage>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -213,7 +213,9 @@ export function OptionsChainOrderSheet({
   const [reviewLimitSnapped, setReviewLimitSnapped] = useState<number | null>(null);
   const [atBracketConfirmSnapshot, setAtBracketConfirmSnapshot] =
     useState<ChainSheetAtBracketConfirm | null>(null);
-  const limitUserEditedRef = useRef(false);
+  const limitUserEditedRef = useRef(
+    !!restoredSheetSession?.limitLocked || !!restoredSheetSession?.limitPrice?.trim(),
+  );
   const legsHydrateKeyRef = useRef("");
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
@@ -395,35 +397,39 @@ export function OptionsChainOrderSheet({
   );
 
   const buildSchwabOrder = useCallback(
-    (priceOverride?: number) =>
-      buildChainSheetSchwabOrder(
-        {
-          symbol,
-          legs,
-          spreadQuantity: quantity,
-          limitPrice,
-          limitTickCtx,
-          timeInForce,
-          isCredit,
-          entryGrossDollars:
-            summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null,
-          atBracketDraft,
-          distinctLegCount: draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs),
-        },
-        priceOverride,
-      ),
-    [
-      symbol,
-      legs,
-      quantity,
-      limitPrice,
-      limitTickCtx,
-      timeInForce,
-      isCredit,
-      summary?.grossNotional,
-      atBracketDraft,
-      draftDistinctLegCount,
-    ],
+    (priceOverride?: number) => {
+      const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
+      const complexType = inferSchwabComplexOrderStrategyType(
+        legs.map((leg) => ({
+          strike: leg.strike,
+          optionType: leg.optionType,
+          instruction: leg.direction,
+          quantity: leg.quantity,
+          expiration: leg.expiration,
+          schwabSymbol: leg.schwabSymbol,
+        })),
+      );
+      return buildChainSheetSchwabOrder({
+        prefs: atBracketDraft?.prefs,
+        primaryInstruction: atBracketDraft?.primaryInstruction,
+        legs: legs.map((leg) => ({
+          direction: leg.direction,
+          quantity: leg.quantity,
+          schwabSymbol: leg.schwabSymbol,
+          expiration: leg.expiration,
+          delta: leg.delta,
+          iv: leg.iv,
+        })),
+        quantityMultiplier: quantity,
+        limitPrice: parsed,
+        isCredit,
+        complexOrderStrategyType: complexType,
+        underlyingSymbol: symbol,
+        underlyingPrice: underlyingSpot,
+        timeInForce,
+      });
+    },
+    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx, atBracketDraft, symbol, underlyingSpot],
   );
 
   const guardDraftLegCount = useCallback(() => {
@@ -527,11 +533,11 @@ export function OptionsChainOrderSheet({
     setStage("submitting");
     try {
       const order = buildSchwabOrder(px);
-      if (order.error) {
+      if (typeof order.error === "string") {
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
-        setErrorMsg(typeof order.error === "string" ? order.error : "Order could not be built.");
-        setStage("error");
+        setPriceError(order.error);
+        setStage("form");
         return;
       }
       const res = await fetchWithAuth("/api/portfolio/place-order", {
@@ -765,17 +771,22 @@ export function OptionsChainOrderSheet({
         onOrderTypeChange={setOrderType}
         limitTickCtx={limitTickCtx}
         sendLabel={
-          atDocked
-            ? "Send to Schwab"
-            : limitLocked
-              ? "Review (sending off)"
-              : "Lock limit to send"
+          atBracketDraft?.prefs.submission === "send"
+            ? sendAllowed
+              ? "Send to Schwab"
+              : "Sending off"
+            : atDocked
+              ? "Send to Schwab"
+              : limitLocked
+                ? "Review (sending off)"
+                : "Lock limit to send"
         }
         sendDisabled={atDocked ? !dockedValid : !limitLocked || !isValid}
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
           if (!atDocked && !limitLocked) return;
-          validateAndReview();
+          if (atBracketDraft?.prefs.submission === "send") void handleSubmit();
+          else validateAndReview();
         }}
         onAdvancedOrders={onAdvancedOrders}
       />
