@@ -1,0 +1,49 @@
+import { equityOptionsSessionOpen } from "@workspace/order-ticket-math";
+
+/** Same window the ladder uses for a live quote. */
+export const LADDER_QUOTE_FRESH_MS = 12_000;
+
+export type RestBadge = {
+  /** Upstream quote timestamp. Null when the sample has no quote time. */
+  quoteTimeMs: number | null;
+};
+
+export type RestPollResult =
+  | { type: "error" }
+  | { type: "no-match" }
+  | { type: "sample"; quoteTimeMs: number | null };
+
+export function upstreamQuoteTimeMs(raw: number | null | undefined): number | null {
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : null;
+}
+
+/**
+ * A quote is eligible only when the session is open and the exchange timestamp
+ * is inside the live window. Receipt time is not a quote time.
+ */
+export function restQuoteEligible(
+  quoteTimeMs: number | null,
+  nowMs: number,
+  sessionOpen = equityOptionsSessionOpen(nowMs),
+): boolean {
+  if (!sessionOpen || quoteTimeMs == null) return false;
+  const age = nowMs - quoteTimeMs;
+  return age >= 0 && age <= LADDER_QUOTE_FRESH_MS;
+}
+
+export function wsSampleFresh(lastRxMs: number | null, nowMs: number): boolean {
+  if (lastRxMs == null) return false;
+  const age = nowMs - lastRxMs;
+  return age >= 0 && age <= LADDER_QUOTE_FRESH_MS;
+}
+
+/** Cold WS starts not-fresh. Errors clear REST. An empty body does not refresh. */
+export function reduceRestBadge(prev: RestBadge, poll: RestPollResult): RestBadge {
+  if (poll.type === "error") return { quoteTimeMs: null };
+  if (poll.type === "no-match") return prev;
+  return { quoteTimeMs: poll.quoteTimeMs };
+}
+
+export function restBadgeFresh(badge: RestBadge, nowMs: number, sessionOpen = equityOptionsSessionOpen(nowMs)): boolean {
+  return restQuoteEligible(badge.quoteTimeMs, nowMs, sessionOpen);
+}

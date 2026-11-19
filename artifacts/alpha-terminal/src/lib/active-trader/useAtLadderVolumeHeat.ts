@@ -14,7 +14,14 @@ import {
   ladderVolumeHeatFixtureSamples,
   type AtLadderVolumeHeatFixtureScene,
 } from "./atLadderVolumeHeatFixture";
-import { equityOptionsSessionEnded } from "@workspace/order-ticket-math";
+import { equityOptionsSessionEnded, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
+import {
+  reduceRestBadge,
+  restBadgeFresh,
+  upstreamQuoteTimeMs,
+  wsSampleFresh,
+  type RestBadge,
+} from "./atLadderRestFreshness";
 
 /** Single-name chain poll — ~1 Hz (Schwab-safe while AT ladder is open). */
 export const AT_LADDER_HEAT_POLL_MS = 1_000;
@@ -42,22 +49,44 @@ function formatPollBadge(
   const cadenceMs = chain?.ttlMs ?? 25_000;
   const coarseCadence = cadenceMs >= AT_LADDER_HEAT_WINDOW_MS - 500;
 
-  if (volFresh && !coarseCadence) {
+  const quoteMs = chain?.quoteTimeMs ?? null;
+  const quoteFresh = restBadgeFresh({ quoteTimeMs: quoteMs }, now);
+  if (volFresh && !coarseCadence && quoteFresh) {
     return {
       label: `Live · ~${Math.round(pollMs / 1000)}s poll`,
       sourceFresh: true,
     };
   }
-  if (chain?.fetchedAt != null) {
-    const ageSec = Math.max(0, Math.round((now - chain.fetchedAt) / 1000));
+  if (quoteFresh && quoteMs != null) {
+    const ageSec = Math.max(0, Math.round((now - quoteMs) / 1000));
     const cadenceSec = Math.round(cadenceMs / 1000);
-    const withinTtl = now - chain.fetchedAt <= cadenceMs + 12_000;
     return {
-      label: withinTtl ? `Snapshot · ${ageSec}s old · ~${cadenceSec}s` : "",
-      sourceFresh: withinTtl,
+      label: `Snapshot · ${ageSec}s old · ~${cadenceSec}s`,
+      sourceFresh: true,
     };
   }
   return { label: "", sourceFresh: false };
+}
+
+function recordRestPoll(
+  engine: AtLadderVolumeHeatEngine,
+  badge: RestBadge,
+  outcome:
+    | { ok: false }
+    | { ok: true; matched: number; quoteTimeMs: number | null; receiptMs: number; ttlMs: number },
+): RestBadge {
+  if (!outcome.ok) {
+    engine.setPollChainMeta(null);
+    return reduceRestBadge(badge, { type: "error" });
+  }
+  if (outcome.matched === 0) return reduceRestBadge(badge, { type: "no-match" });
+  const next = reduceRestBadge(badge, { type: "sample", quoteTimeMs: outcome.quoteTimeMs });
+  engine.setPollChainMeta({
+    fetchedAt: outcome.receiptMs,
+    ttlMs: outcome.ttlMs,
+    quoteTimeMs: next.quoteTimeMs,
+  });
+  return next;
 }
 
 type RestChainLeg = {
@@ -68,6 +97,7 @@ type RestChainLeg = {
   last?: number | null;
   volume?: number | null;
   volumeSampledAt?: number;
+  quoteTimeMs?: number | null;
   openInterest?: number | null;
   iv?: number | null;
   delta?: number | null;
@@ -76,12 +106,21 @@ type RestChainLeg = {
   vega?: number | null;
 };
 
-function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[], want: Set<string>, now: number): void {
+export function applyRestQuotes(
+  engine: AtLadderVolumeHeatEngine,
+  legs: RestChainLeg[],
+  want: Set<string>,
+  receiptMs: number,
+): { matched: number; quoteTimeMs: number | null } {
   const batch: OptionTick[] = [];
+  const quoteTimes: Array<number | null> = [];
   for (const leg of legs) {
     const rawKey = leg.streamKey ?? leg.schwabSymbol ?? "";
     const key = want.has(rawKey) ? rawKey : rawKey.trim();
     if (!key || (want.size > 0 && !want.has(key))) continue;
+    const quoteTime = upstreamQuoteTimeMs(leg.quoteTimeMs);
+    quoteTimes.push(quoteTime);
+    if (quoteTime == null) continue;
     batch.push({
       key,
       bid: leg.bid ?? null,
@@ -100,9 +139,9 @@ function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[],
       change: null,
       lastSize: null,
       underlyingPrice: null,
-      quoteTime: now,
+      quoteTime,
       tradeTime: null,
-      ts: now,
+      ts: receiptMs,
       volumeSample: null,
     });
     if (
@@ -116,6 +155,9 @@ function applyRestQuotes(engine: AtLadderVolumeHeatEngine, legs: RestChainLeg[],
   }
   // One store write for the whole poll body, not one per contract.
   if (batch.length > 0) useOptionsStreamStore.getState().mergeTicks(batch);
+  const known = quoteTimes.filter((q): q is number => q != null);
+  const quoteTimeMs = quoteTimes.length > 0 && known.length === quoteTimes.length ? Math.min(...known) : null;
+  return { matched: quoteTimes.length, quoteTimeMs };
 }
 
 function restWindowPath(
@@ -160,6 +202,7 @@ export function useAtLadderVolumeHeat(input: {
   const streamRxRef = useRef<number | null>(null);
   const streamVolRxRef = useRef<number | null>(null);
   const restWriteRef = useRef(false);
+  const restBadgeRef = useRef<RestBadge>({ quoteTimeMs: null });
   const restWindowRef = useRef(input.restWindow);
   restWindowRef.current = input.restWindow;
   const [restActive, setRestActive] = useState(false);
@@ -187,12 +230,14 @@ export function useAtLadderVolumeHeat(input: {
 
     if (mode === "stream") {
       const rx = streamRxRef.current;
-      const wsFresh = rx != null && now - rx <= 12_000;
-      const usingRest = !wsFresh && restActiveRef.current;
+      const sessionOpen = equityOptionsSessionOpen(now);
+      const wsFresh = wsSampleFresh(rx, now) && sessionOpen;
+      const restFresh = restBadgeFresh(restBadgeRef.current, now, sessionOpen);
+      const usingRest = !wsFresh && restFresh;
       return {
         kind: usingRest ? "poll" : "stream",
-        label: usingRest ? "REST" : "WS",
-        sourceFresh: wsFresh || usingRest || rx == null,
+        label: wsFresh ? "WS" : restFresh ? "REST" : "",
+        sourceFresh: wsFresh || restFresh,
         lastSourceRxMs,
         pollMs: usingRest ? AT_LADDER_HEAT_POLL_MS : undefined,
       };
@@ -462,26 +507,35 @@ export function useAtLadderVolumeHeat(input: {
           `/api/market/options?symbol=${encodeURIComponent(sym)}&strikeCount=40&contractType=ALL&ladderHeat=1`,
           { clerkTokenTimeoutMs: 4_000 },
         );
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        if (!res.ok) {
+          restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
+          return;
+        }
         const data = (await res.json()) as {
-          fetchedAt?: number;
           cacheTtlMs?: number;
           calls?: RestChainLeg[];
           puts?: RestChainLeg[];
         };
-        const chainFetchedAt = data.fetchedAt ?? Date.now();
-        const cacheTtlMs = data.cacheTtlMs ?? 25_000;
-        engine.setPollChainMeta({ fetchedAt: chainFetchedAt, ttlMs: cacheTtlMs });
+        const receiptMs = Date.now();
         const want = new Set(input.streamKeys);
         restWriteRef.current = true;
+        let summary = { matched: 0, quoteTimeMs: null as number | null };
         try {
-          applyRestQuotes(engine, [...(data.calls ?? []), ...(data.puts ?? [])], want, Date.now());
+          summary = applyRestQuotes(engine, [...(data.calls ?? []), ...(data.puts ?? [])], want, receiptMs);
         } finally {
           restWriteRef.current = false;
         }
+        restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, {
+          ok: true,
+          matched: summary.matched,
+          quoteTimeMs: summary.quoteTimeMs,
+          receiptMs,
+          ttlMs: data.cacheTtlMs ?? 25_000,
+        });
         schedulePaintRef.current?.();
       } catch {
-        /* next poll */
+        restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
       }
     };
 
@@ -508,33 +562,44 @@ export function useAtLadderVolumeHeat(input: {
         const res = await fetchWithAuth(restWindowPath(input.symbol, windowQuery), {
           clerkTokenTimeoutMs: 4_000,
         });
-        if (!res.ok || cancelled) return;
+        if (cancelled) return;
+        const engine = engineRef.current!;
+        if (!res.ok) {
+          restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
+          if (!cancelled) setRestActive(false);
+          return;
+        }
         const data = (await res.json()) as {
-          fetchedAt?: number;
           cacheTtlMs?: number;
           calls?: RestChainLeg[];
           puts?: RestChainLeg[];
         };
-        const engine = engineRef.current!;
-        engine.setPollChainMeta({
-          fetchedAt: data.fetchedAt ?? Date.now(),
-          ttlMs: data.cacheTtlMs ?? 1_000,
-        });
+        const receiptMs = Date.now();
         restWriteRef.current = true;
+        let summary = { matched: 0, quoteTimeMs: null as number | null };
         try {
-          applyRestQuotes(
+          summary = applyRestQuotes(
             engine,
             [...(data.calls ?? []), ...(data.puts ?? [])],
             new Set(streamKeysRef.current),
-            Date.now(),
+            receiptMs,
           );
         } finally {
           restWriteRef.current = false;
         }
-        if (!cancelled) setRestActive(true);
+        restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, {
+          ok: true,
+          matched: summary.matched,
+          quoteTimeMs: summary.quoteTimeMs,
+          receiptMs,
+          ttlMs: data.cacheTtlMs ?? 1_000,
+        });
+        if (!cancelled) setRestActive(restBadgeFresh(restBadgeRef.current, receiptMs));
         schedulePaintRef.current?.();
       } catch {
-        /* next poll */
+        const engine = engineRef.current;
+        if (engine) restBadgeRef.current = recordRestPoll(engine, restBadgeRef.current, { ok: false });
+        if (!cancelled) setRestActive(false);
       }
     };
 
