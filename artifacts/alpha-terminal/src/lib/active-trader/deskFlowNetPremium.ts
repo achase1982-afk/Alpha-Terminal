@@ -258,14 +258,39 @@ export function buildDeskNetPremiumGlance(
     const t = sumTape1sWindow(internal.tape1s, nowMs, windowMs);
     grossTapeBuy = t.buy;
     grossTapeSell = t.sell;
-    const mag = Math.max(Math.abs(t.buy - t.sell), 25_000);
-    scaleMax = Math.max(scaleMax * SCALE_DECAY, mag);
-    const lift = buildTrack("tape_lift", "Lift", t.buy, t.sell, scaleMax, hysteresis, nowMs);
-    hysteresis = lift.hysteresis;
-    const hit = buildTrack("tape_hit", "Hit", t.sell, t.buy, scaleMax, hysteresis, nowMs);
-    hysteresis = hit.hysteresis;
-    calls = lift.track;
-    puts = hit.track;
+    const opt = sumFlow1sWindow(internal.flow1s, nowMs, windowMs);
+    const callBuy = opt.call_buy ?? 0;
+    const callSell = opt.call_sell ?? 0;
+    const putBuy = opt.put_buy ?? 0;
+    const putSell = opt.put_sell ?? 0;
+    const classified = callBuy !== 0 || callSell !== 0 || putBuy !== 0 || putSell !== 0;
+    if (agg.mode === "stock" && classified) {
+      grossCallsBuy = callBuy;
+      grossCallsSell = callSell;
+      grossPutsBuy = putBuy;
+      grossPutsSell = putSell;
+      const mag = Math.max(
+        Math.abs(grossCallsBuy - grossCallsSell),
+        Math.abs(grossPutsBuy - grossPutsSell),
+        50_000,
+      );
+      scaleMax = Math.max(scaleMax * SCALE_DECAY, mag);
+      const c = buildTrack("calls", "Calls", grossCallsBuy, grossCallsSell, scaleMax, hysteresis, nowMs);
+      hysteresis = c.hysteresis;
+      const p = buildTrack("puts", "Puts", grossPutsBuy, grossPutsSell, scaleMax, hysteresis, nowMs);
+      hysteresis = p.hysteresis;
+      calls = c.track;
+      puts = p.track;
+    } else if (agg.mode === "futures") {
+      const mag = Math.max(Math.abs(t.buy - t.sell), 25_000);
+      scaleMax = Math.max(scaleMax * SCALE_DECAY, mag);
+      const lift = buildTrack("tape_lift", "Lift", t.buy, t.sell, scaleMax, hysteresis, nowMs);
+      hysteresis = lift.hysteresis;
+      const hit = buildTrack("tape_hit", "Hit", t.sell, t.buy, scaleMax, hysteresis, nowMs);
+      hysteresis = hit.hysteresis;
+      calls = lift.track;
+      puts = hit.track;
+    }
   }
 
   return {

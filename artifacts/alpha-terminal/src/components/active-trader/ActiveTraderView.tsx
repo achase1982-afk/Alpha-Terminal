@@ -956,18 +956,59 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       side: "BUY" | "SELL";
       nearContract: OptionsContract;
     }) => {
+      const farRow = rowByStrike.get(payload.farStrike);
+      const farContract = payload.type === "CALL" ? farRow?.call ?? null : farRow?.put ?? null;
+      if (!farContract) {
+        setSelected({ contract: payload.nearContract, type: payload.type });
+        setTradeContext({
+          mode: "vertical",
+          type: payload.type,
+          anchorStrike: payload.anchorStrike,
+          farStrike: payload.farStrike,
+          width: prefs.verticalWidth,
+          nearContract: payload.nearContract,
+        });
+        setTradeStripStrike(payload.anchorStrike);
+        return;
+      }
+      const nearSide = payload.side === "SELL" ? "bid" : "ask";
+      const farSide = payload.side === "SELL" ? "ask" : "bid";
+      const nearKey = atLadderLegKey(payload.nearContract, payload.type);
+      const farKey = atLadderLegKey(farContract, payload.type);
+      const legs = new Map<string, AtLadderLegPick>([
+        [
+          nearKey,
+          {
+            contract: payload.nearContract,
+            type: payload.type,
+            expiration: payload.nearContract.expiration,
+            side: nearSide,
+          },
+        ],
+        [
+          farKey,
+          {
+            contract: farContract,
+            type: payload.type,
+            expiration: farContract.expiration,
+            side: farSide,
+          },
+        ],
+      ]);
+      const prevQty = legQtyRef.current;
+      const qty = new Map<string, number>([
+        [nearKey, prevQty.get(nearKey) ?? 1],
+        [farKey, prevQty.get(farKey) ?? 1],
+      ]);
+      atSelectionSetLegs(selection, legs);
+      setLegQuantities(qty);
+      publishDraft(legs.values(), qty);
+      setTradeContext(null);
       setSelected({ contract: payload.nearContract, type: payload.type });
-      setTradeContext({
-        mode: "vertical",
-        type: payload.type,
-        anchorStrike: payload.anchorStrike,
-        farStrike: payload.farStrike,
-        width: prefs.verticalWidth,
-        nearContract: payload.nearContract,
-      });
       setTradeStripStrike(payload.anchorStrike);
+      setCollapsed(false);
     },
-    [prefs.verticalWidth],
+    [prefs.verticalWidth, rowByStrike, selection, publishDraft, setCollapsed],
   );
 
   useEffect(() => {
@@ -1596,7 +1637,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             ...noScrollbar,
             overflowY: "auto",
             overflowX: "hidden",
-            overscrollBehavior: "contain",
+            overscrollBehaviorX: "contain",
+            overscrollBehaviorY: "none",
             WebkitOverflowScrolling: "touch",
             touchAction: "pan-y",
             background: AT_LADDER_PANEL_BG,

@@ -11,6 +11,7 @@ import { deskCaptureInboundFrame } from "./deskSpxTapeRaw.js";
 import { logger } from "../logger.js";
 import { deskLiveFlowEnabled } from "./deskLiveFlowConfig.js";
 import {
+  deskLiveFlowIngestEquityOptions,
   deskLiveFlowOnConnectionOpened,
   deskLiveFlowOnInbound,
 } from "./deskLiveFlowEngine.js";
@@ -130,18 +131,26 @@ export function onSchwabInboundFrame(raw: string): void {
   const parsed = parseSchwabFrame(raw);
   if (!parsed) return;
   const filtered = filterDeskTapeStreamerMessage(parsed);
-  if (!filtered) return;
-  const frame = wrapFrame(filtered);
-  deskCaptureInboundFrame({
-    c: frame.c,
-    rx_ns: frame.rx_ns,
-    m: frame.m,
-    session_date: frame.session_date,
-  });
-  broadcastFrame(frame);
-  maybeTouchFeedsFromFrame(filtered, frame.rx_utc_ms);
+  let rxMs = Date.now();
+  let connectionId = connectionNumber;
+  if (filtered) {
+    const frame = wrapFrame(filtered);
+    rxMs = frame.rx_utc_ms;
+    connectionId = frame.c;
+    deskCaptureInboundFrame({
+      c: frame.c,
+      rx_ns: frame.rx_ns,
+      m: frame.m,
+      session_date: frame.session_date,
+    });
+    broadcastFrame(frame);
+    maybeTouchFeedsFromFrame(filtered, frame.rx_utc_ms);
+    if (deskLiveFlowEnabled()) {
+      deskLiveFlowOnInbound(filtered, frame.rx_utc_ms, frame.c);
+    }
+  }
   if (deskLiveFlowEnabled()) {
-    deskLiveFlowOnInbound(filtered, frame.rx_utc_ms, frame.c);
+    deskLiveFlowIngestEquityOptions(parsed, rxMs, connectionId);
   }
 }
 

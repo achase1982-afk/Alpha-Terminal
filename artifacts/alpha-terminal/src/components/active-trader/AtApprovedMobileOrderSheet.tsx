@@ -76,6 +76,9 @@ export type AtApprovedMobileOrderSheetProps = {
   sendDisabled: boolean;
   /** Why Send cannot be used. Shown on the ticket; it does not enable a live route. */
   sendDetail?: string | null;
+  /** Strategy-wide spread count. Each leg keeps its own ratio. */
+  spreadQuantity?: number;
+  onSpreadQuantityChange?: (next: number) => void;
   /** In-flight and broker result for the docked ticket. Success that closes the dock uses a toast. */
   sendPhase?: "idle" | "submitting" | "error" | "sent";
   sendError?: string | null;
@@ -113,6 +116,56 @@ const SHEET_TAP_SLOP_PX = 8;
  * swipe down — a tap on that strip, or anywhere else inside the ticket, leaves
  * it open. A swipe up still expands a collapsed bar.
  */
+function SpreadQuantityStepper({
+  quantity,
+  onChange,
+}: {
+  quantity: number;
+  onChange: (next: number) => void;
+}) {
+  const count = Math.max(1, Math.floor(quantity) || 1);
+  return (
+    <div
+      className="flex items-center justify-between"
+      style={{ marginTop: 6, height: 28 }}
+      data-at-spread-qty
+    >
+      <span style={PEER_LABEL}>Spreads</span>
+      <div
+        className="inline-flex items-center"
+        style={{ border: `1px solid ${AT_ORDER_PANEL_BORDER}`, borderRadius: 6, height: 28 }}
+      >
+        <button
+          type="button"
+          aria-label="Fewer spreads"
+          disabled={count <= 1}
+          onClick={() => onChange(count - 1)}
+          className="inline-flex items-center justify-center disabled:opacity-40"
+          style={{ width: 28, height: 28, background: "transparent", border: "none", padding: 0, color: WHITE }}
+        >
+          <Minus className="w-3.5 h-3.5" />
+        </button>
+        <span
+          data-at-spread-qty-value
+          className="tabular-nums"
+          style={{ minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 650, color: WHITE }}
+        >
+          {count}
+        </span>
+        <button
+          type="button"
+          aria-label="More spreads"
+          onClick={() => onChange(count + 1)}
+          className="inline-flex items-center justify-center"
+          style={{ width: 28, height: 28, background: "transparent", border: "none", padding: 0, color: WHITE }}
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function DockSendStatus({
   sendPhase,
   sendError,
@@ -267,6 +320,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   sendLabel,
   sendDisabled,
   sendDetail,
+  spreadQuantity = 1,
+  onSpreadQuantityChange,
   sendPhase = "idle",
   sendError,
   orderReceipt,
@@ -467,6 +522,13 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             </span>
           </div>
         </div>
+
+        {onSpreadQuantityChange ? (
+          <SpreadQuantityStepper
+            quantity={spreadQuantity}
+            onChange={onSpreadQuantityChange}
+          />
+        ) : null}
 
         {sendDetail ? (
           <p

@@ -12,6 +12,8 @@ export type ChainDraftStoredLeg = {
 export type ChainDraftSheetSession = {
   limitPrice: string;
   limitLocked: boolean;
+  /** True only after a typed, nudged, or locked limit. An auto-filled price stays false across remounts. */
+  limitUserEdited?: boolean;
 };
 
 type ChainDraftSessionState = {

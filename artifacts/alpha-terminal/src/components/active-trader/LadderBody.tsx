@@ -539,6 +539,44 @@ function StrikeSideTag({
   );
 }
 
+function signedContractQty(
+  qtyByKey: Map<string, number>,
+  contract: OptionsContract | null | undefined,
+): number | null {
+  if (!contract) return null;
+  const keys = [
+    contract.streamKey?.trim(),
+    typeof contract.schwabSymbol === "string" ? contract.schwabSymbol.trim() : "",
+  ];
+  for (const key of keys) {
+    if (!key) continue;
+    const qty = qtyByKey.get(key);
+    if (qty != null && qty !== 0) return qty;
+  }
+  return null;
+}
+
+function PositionQtyBadge({ qty, side }: { qty: number; side: "call" | "put" }) {
+  return (
+    <span
+      data-at-position-badge
+      data-at-position-side={side}
+      className="leading-none"
+      style={{
+        fontSize: 10,
+        fontWeight: 700,
+        padding: "1px 5px",
+        borderRadius: 999,
+        color: AT_SPOT_PILL_TEXT,
+        background: qty > 0 ? UP : DOWN,
+      }}
+    >
+      {qty > 0 ? "+" : "−"}
+      {Math.abs(qty)}
+    </span>
+  );
+}
+
 type LadderRowViewProps = {
   row: LadderRowModel;
   callFar: OptionsContract | null;
@@ -552,7 +590,8 @@ type LadderRowViewProps = {
   putWallRow: boolean;
   zoneTag: string | null;
   keepawayForbidden: boolean;
-  positionQty: number | null;
+  positionCallQty: number | null;
+  positionPutQty: number | null;
   workChip?: string;
   heat: AtLadderHeatStore;
   selection: AtLadderSelectionStore;
@@ -573,7 +612,8 @@ const LadderRowView = memo(function LadderRowView({
   callWallRow,
   putWallRow,
   keepawayForbidden,
-  positionQty,
+  positionCallQty,
+  positionPutQty,
   workChip,
   heat,
   selection,
@@ -685,22 +725,10 @@ const LadderRowView = memo(function LadderRowView({
           }}
         >
           <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
-          {positionQty != null && (
-            <span
-              data-at-position-badge
-              className="leading-none"
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                padding: "1px 5px",
-                borderRadius: 999,
-                color: AT_SPOT_PILL_TEXT,
-                background: positionQty > 0 ? UP : DOWN,
-                marginTop: 1,
-              }}
-            >
-              {positionQty > 0 ? "+" : "−"}
-              {Math.abs(positionQty)}
+          {(positionCallQty != null || positionPutQty != null) && (
+            <span className="flex items-center justify-center gap-0.5" style={{ marginTop: 1 }}>
+              {positionCallQty != null ? <PositionQtyBadge qty={positionCallQty} side="call" /> : null}
+              {positionPutQty != null ? <PositionQtyBadge qty={positionPutQty} side="put" /> : null}
             </span>
           )}
         </div>
@@ -934,15 +962,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
       onClick={handleClick}
     >
       {rows.map((row) => {
-        let positionQty: number | null = null;
-        for (const key of [row.call?.streamKey, row.put?.streamKey]) {
-          if (!key) continue;
-          const q = props.positionQtyByKey.get(key);
-          if (q != null && q !== 0) {
-            positionQty = q;
-            break;
-          }
-        }
+        const positionCallQty = signedContractQty(props.positionQtyByKey, row.call);
+        const positionPutQty = signedContractQty(props.positionQtyByKey, row.put);
         const chipKey = row.call?.streamKey ?? row.put?.streamKey;
         const putKeepaway = props.keepawayPutLine != null && row.strike < props.keepawayPutLine;
         const callKeepaway = props.keepawayCallLine != null && row.strike > props.keepawayCallLine;
@@ -969,7 +990,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             putWallRow={putWallStrike === row.strike}
             zoneTag={ladderStrikeZoneTag(zoneLevels, row.strike)}
             keepawayForbidden={putKeepaway || callKeepaway}
-            positionQty={positionQty}
+            positionCallQty={positionCallQty}
+            positionPutQty={positionPutQty}
             workChip={chipKey ? props.workingOrderChips?.get(chipKey) : undefined}
             heat={props.heat}
             selection={selection}
