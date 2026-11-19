@@ -23,10 +23,17 @@ import {
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
   AT_LADDER_GRID,
+  AT_LADDER_LEG_TAG_SIZE,
   AT_LADDER_PANEL_BG,
+  AT_LADDER_PRICE_SIZE,
+  AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_ROW_H,
+  AT_LADDER_SELECT_INSET,
+  AT_LADDER_SELECT_RADIUS,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_COL_W,
+  AT_LADDER_STRIKE_SIZE,
+  AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
@@ -96,10 +103,6 @@ export type AtTradeContext =
       width: number;
       nearContract: OptionsContract;
     };
-
-/** Prices are regular weight, strikes medium, in the system font (`.at-ladder-num`). */
-const AT_LADDER_PRICE_WEIGHT = 400;
-const AT_LADDER_STRIKE_WEIGHT = 500;
 
 /** Finger travel past this many CSS px turns a press into a scroll and drops it. */
 export const AT_TAP_SLOP_PX = 8;
@@ -212,8 +215,7 @@ const QuoteCell = memo(function QuoteCell({
 
   const selectColor = side === "BUY" ? UP : DOWN_TEXT;
   const selectBorder = side === "BUY" ? UP : DOWN;
-  const selectFill = side === "BUY" ? "rgba(0, 209, 102, 0.14)" : "rgba(242, 54, 69, 0.16)";
-  const pressFill = side === "BUY" ? "rgba(0, 209, 102, 0.22)" : "rgba(242, 54, 69, 0.24)";
+  const pressWash = side === "BUY" ? "rgba(0, 209, 102, 0.12)" : "rgba(242, 54, 69, 0.14)";
 
   return (
     <button
@@ -228,19 +230,19 @@ const QuoteCell = memo(function QuoteCell({
       data-at-quote-locked={locked ? "1" : undefined}
       data-at-pressed={pressed ? "1" : undefined}
       data-at-leg-selected={legSelected ? side : undefined}
-      className="relative w-full h-full flex items-center justify-center px-1"
+      className="relative w-full h-full flex items-center justify-center"
       style={{
-        fontSize: 14,
+        fontSize: AT_LADDER_PRICE_SIZE,
         fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
         color: WHITE,
-        background: pressed && !legSelected ? pressFill : "transparent",
-        boxShadow: pressed && !legSelected ? `inset 0 0 0 1px ${selectBorder}` : undefined,
+        background: "transparent",
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
         borderRight: "none",
         borderBottom: "none",
         boxSizing: "border-box",
+        padding: 0,
         touchAction: "manipulation",
         WebkitTapHighlightColor: "transparent",
         WebkitTouchCallout: "none",
@@ -253,25 +255,29 @@ const QuoteCell = memo(function QuoteCell({
           data-at-selected-leg-chip={side}
           className="inline-flex flex-col items-center justify-center"
           style={{
-            minWidth: 52,
-            padding: "1px 7px 2px",
-            borderRadius: 5,
+            boxSizing: "border-box",
+            width: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+            height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+            margin: AT_LADDER_SELECT_INSET,
+            padding: "0 2px",
+            borderRadius: AT_LADDER_SELECT_RADIUS,
             border: `1px solid ${selectBorder}`,
-            background: pressed ? pressFill : selectFill,
-            lineHeight: 1.04,
+            background: pressed ? pressWash : "transparent",
+            lineHeight: 1.05,
             pointerEvents: "none",
           }}
         >
-          <span style={{ fontSize: 13, fontWeight: AT_LADDER_STRIKE_WEIGHT, color: WHITE }}>
+          <span style={{ fontSize: AT_LADDER_PRICE_SIZE, fontWeight: AT_LADDER_PRICE_WEIGHT, color: WHITE }}>
             {unavailableReason ?? fmtPx(price)}
           </span>
           <span
             style={{
-              fontSize: 8,
+              fontSize: AT_LADDER_LEG_TAG_SIZE,
               fontWeight: 700,
               color: selectColor,
-              letterSpacing: "0.04em",
+              letterSpacing: "0.06em",
               marginTop: 1,
+              textTransform: "uppercase",
             }}
           >
             {side}
@@ -279,10 +285,29 @@ const QuoteCell = memo(function QuoteCell({
         </span>
       ) : (
         <span
+          className="inline-flex items-center justify-center"
           style={
-            unavailableReason
-              ? { fontSize: 9, fontWeight: 500, color: GRAY, letterSpacing: "0.02em", pointerEvents: "none" }
-              : { color: WHITE, pointerEvents: "none" }
+            pressed
+              ? {
+                  boxSizing: "border-box",
+                  width: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+                  height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+                  margin: AT_LADDER_SELECT_INSET,
+                  borderRadius: AT_LADDER_SELECT_RADIUS,
+                  border: `1px solid ${selectBorder}`,
+                  background: pressWash,
+                  pointerEvents: "none",
+                }
+              : unavailableReason
+                ? {
+                    fontSize: 9,
+                    fontWeight: 500,
+                    color: GRAY,
+                    letterSpacing: "0.02em",
+                    pointerEvents: "none",
+                    padding: "0 4px",
+                  }
+                : { color: WHITE, pointerEvents: "none", padding: "0 4px" }
           }
         >
           {unavailableReason ?? fmtPx(price)}
@@ -459,14 +484,16 @@ const LadderRowView = memo(function LadderRowView({
     zIndex: gammaFlipRow ? 2 : undefined,
   };
 
-  const isWall = zoneTag === "CALL WALL" || zoneTag === "PUT WALL";
+  const isCallWall = zoneTag === "CALL WALL";
+  const isPutWall = zoneTag === "PUT WALL";
+  const isWall = isCallWall || isPutWall;
+  const wallColor = isCallWall ? GOLD : isPutWall ? PUT_WALL : null;
   const strikeBorder = spotRow
     ? "none"
-    : zoneTag === "CALL WALL"
-      ? `1px solid ${GOLD}`
-      : zoneTag === "PUT WALL"
-        ? `1px solid ${PUT_WALL}`
-        : "none";
+    : wallColor
+      ? `1.5px solid ${wallColor}`
+      : "none";
+  const strikePad = spotRow || isWall || gammaFlipRow;
 
   return (
     <div
@@ -475,6 +502,8 @@ const LadderRowView = memo(function LadderRowView({
       data-at-ladder-row={row.strike}
       data-at-spot-row={spotRow ? "1" : undefined}
       data-at-gamma-flip-row={gammaFlipRow ? "1" : undefined}
+      data-at-call-wall-row={isCallWall ? "1" : undefined}
+      data-at-put-wall-row={isPutWall ? "1" : undefined}
     >
       <ContractPair
         pairSide="call"
@@ -496,7 +525,7 @@ const LadderRowView = memo(function LadderRowView({
           background: AT_LADDER_STRIKE_BG,
           borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
           borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-          padding: spotRow || isWall ? "3px 4px" : 0,
+          padding: strikePad ? "3px 4px" : 0,
           boxSizing: "border-box",
           fontVariantNumeric: "tabular-nums",
         }}
@@ -514,11 +543,12 @@ const LadderRowView = memo(function LadderRowView({
           style={{
             background: spotRow ? GOLD : "transparent",
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
-            borderRadius: spotRow || isWall ? 4 : 0,
+            borderRadius: spotRow || isWall ? AT_LADDER_SELECT_RADIUS : 0,
             border: strikeBorder,
-            fontSize: 15,
+            fontSize: AT_LADDER_STRIKE_SIZE,
             fontWeight: spotRow ? 700 : AT_LADDER_STRIKE_WEIGHT,
             lineHeight: 1.05,
+            letterSpacing: spotRow ? "-0.02em" : "0.01em",
           }}
         >
           <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
@@ -545,7 +575,7 @@ const LadderRowView = memo(function LadderRowView({
               data-at-strike-zone-tag
               data-at-strike-gamma-flip
               style={{
-                fontSize: 8,
+                fontSize: AT_LADDER_LEG_TAG_SIZE,
                 fontWeight: 600,
                 lineHeight: 1.05,
                 marginTop: 1,
@@ -558,23 +588,23 @@ const LadderRowView = memo(function LadderRowView({
           ) : isWall ? (
             <span
               data-at-strike-zone-tag
-              data-at-strike-wall={zoneTag === "CALL WALL" ? "call" : "put"}
+              data-at-strike-wall={isCallWall ? "call" : "put"}
               style={{
-                fontSize: 8,
+                fontSize: AT_LADDER_LEG_TAG_SIZE,
                 fontWeight: 600,
                 lineHeight: 1.05,
                 marginTop: 1,
-                color: spotRow ? AT_SPOT_PILL_TEXT : zoneTag === "CALL WALL" ? GOLD : PUT_WALL,
+                color: spotRow ? AT_SPOT_PILL_TEXT : wallColor!,
                 whiteSpace: "nowrap",
               }}
             >
-              {zoneTag === "CALL WALL" ? "Call wall" : "Put wall"}
+              {isCallWall ? "Call wall" : "Put wall"}
             </span>
           ) : zoneTag ? (
             <span
               data-at-strike-zone-tag
               style={{
-                fontSize: 8,
+                fontSize: AT_LADDER_LEG_TAG_SIZE,
                 lineHeight: 1.05,
                 marginTop: 1,
                 opacity: 0.75,
