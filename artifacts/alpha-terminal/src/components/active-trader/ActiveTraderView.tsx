@@ -22,7 +22,12 @@ import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
-import { workingSpreadRow, type ReportedOrder } from "@/lib/active-trader/atWorkingOrder";
+import {
+  isVerifiedOrderReport,
+  workingSpreadRow,
+  type VerifiedOrderReport,
+  type WorkingOrderAnchor,
+} from "@/lib/active-trader/atWorkingOrder";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -745,24 +750,39 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [positions, primary?.rows]);
 
   const accounts = useSchwabAccountStore((s) => s.accounts);
-  const [reportedOrders, setReportedOrders] = useState<ReportedOrder[]>([]);
+  const [workingAnchor, setWorkingAnchor] = useState<WorkingOrderAnchor | null>(null);
+  const [orderReport, setOrderReport] = useState<VerifiedOrderReport | null>(null);
+  const orderPollSeq = useRef(0);
+  const onWorkingOrderAccepted = useCallback((anchor: WorkingOrderAnchor) => {
+    setWorkingAnchor(anchor);
+  }, []);
   useEffect(() => {
-    if (!tradingHash || stockTemplate) {
-      setReportedOrders([]);
+    if (!tradingHash || stockTemplate || !workingAnchor || workingAnchor.accountHash !== tradingHash) {
+      setOrderReport(null);
       return;
     }
     let cancelled = false;
-    setReportedOrders([]);
     const load = async () => {
+      const seq = ++orderPollSeq.current;
       try {
         const res = await fetchWithAuth(
-          `/api/portfolio/orders?accountHash=${encodeURIComponent(tradingHash)}&days=2`,
+          `/api/portfolio/orders?accountHash=${encodeURIComponent(tradingHash)}&accountIdentity=1&days=2`,
         );
-        if (!res.ok) return;
+        if (cancelled || seq !== orderPollSeq.current) return;
+        if (!res.ok) {
+          setOrderReport(null);
+          return;
+        }
         const data: unknown = await res.json();
-        if (!cancelled && Array.isArray(data)) setReportedOrders(data as ReportedOrder[]);
+        if (cancelled || seq !== orderPollSeq.current) return;
+        if (!isVerifiedOrderReport(data) || data.accountHash !== tradingHash) {
+          setOrderReport(null);
+          return;
+        }
+        setOrderReport(data);
       } catch {
-        /* Keep the last report Schwab already returned. */
+        if (cancelled || seq !== orderPollSeq.current) return;
+        setOrderReport(null);
       }
     };
     void load();
@@ -771,11 +791,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [tradingHash, stockTemplate]);
-  const workingOrder = useMemo(
-    () => workingSpreadRow(reportedOrders, symbol),
-    [reportedOrders, symbol],
-  );
+  }, [tradingHash, stockTemplate, workingAnchor]);
+  const workingOrder = useMemo(() => {
+    if (!workingAnchor || !orderReport || orderReport.accountHash !== tradingHash) return null;
+    if (workingAnchor.accountHash !== tradingHash) return null;
+    return workingSpreadRow(orderReport.orders, workingAnchor, activeExpiration ?? null, symbol);
+  }, [orderReport, workingAnchor, tradingHash, activeExpiration, symbol]);
   const workingRowPad = workingOrder ? AT_WORKING_ROW_H : 0;
   const tradeEpochRef = useRef<string | null>(null);
   useEffect(() => {
@@ -1839,6 +1860,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               onAdvancedOrders={toggleSettings}
               restoredSheetSession={restoredSheetSession}
               onSheetSessionPersist={onSheetSessionPersist}
+              onWorkingOrderAccepted={onWorkingOrderAccepted}
             />
           </div>
         ) : null}
