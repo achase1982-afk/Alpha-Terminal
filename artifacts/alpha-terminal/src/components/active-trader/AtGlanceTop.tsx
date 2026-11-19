@@ -1,4 +1,5 @@
 import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
+import { ChevronRight } from "lucide-react";
 import { BORDER, UP, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
@@ -19,6 +20,7 @@ import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessio
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { formatGlanceOrderSettingsLine } from "@/lib/active-trader/atSummaryFormat";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
 
@@ -100,6 +102,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   sessionClosed,
   skipNetwork,
   viewSelector,
+  orderSettings,
   ladderHeatSource,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
@@ -124,6 +127,14 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
   const flipLabel = resolveGammaFlipDisplay(zones);
+  const orderLine =
+    orderSettings != null
+      ? formatGlanceOrderSettingsLine(
+          orderSettings.prefs,
+          orderSettings.limitMid,
+          orderSettings.primaryInstruction,
+        )
+      : null;
 
   const lowZoneVal =
     sessionLevels.lowZone.status === "value" ? formatRefZoneHalf(sessionLevels.lowZone.top) : "\u2014";
@@ -264,7 +275,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         data-at-glance-flow-band
         style={{
           height: 79,
-          padding: "6px 13px 5px",
+          padding: "5px 13px 3px",
           display: "flex",
           flexDirection: "column",
           boxSizing: "border-box",
@@ -289,13 +300,39 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           </span>
         </div>
 
-        <div data-at-glance-flow-row style={{ marginTop: 4, height: 45 }}>
+        <div data-at-glance-flow-row style={{ marginTop: 2, height: 31 }}>
           <AtGlanceGrossFlow
             glance={netPremium}
             zones={zones}
             forceDashAmounts={flowDashShell}
           />
         </div>
+        {orderLine != null && orderSettings != null ? (
+          <button
+            type="button"
+            data-at-order-settings-row
+            data-at-settings-summary
+            data-at-advanced-order-trigger
+            className="flex w-full items-center justify-between gap-1 min-w-0"
+            style={{
+              height: 18,
+              marginTop: 2,
+              padding: "2px 0 0",
+              background: "transparent",
+              border: "none",
+              borderTop: `1px solid ${BORDER}`,
+              color: AT_SECONDARY,
+              fontSize: 9,
+              lineHeight: 1,
+              boxSizing: "border-box",
+            }}
+            onClick={orderSettings.onToggle}
+            aria-expanded={orderSettings.open}
+          >
+            <span className="truncate text-left">{orderLine}</span>
+            <ChevronRight className="w-3 h-3 shrink-0" style={{ color: AT_LABEL }} aria-hidden />
+          </button>
+        ) : null}
       </div>
     </header>
   );
