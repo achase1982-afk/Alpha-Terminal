@@ -1541,6 +1541,7 @@ export function OptionsTab({
     return "custom";
   }, [strikeCount]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customStrikeGenRef = useRef(0);
 
   const [atDepth, setAtDepth] = useState({ above: 20, below: 20 });
   const atBookRef = useRef<{ symbol: string; ymd: string | null; calls: Contract[]; puts: Contract[] } | null>(null);
@@ -2274,29 +2275,41 @@ export function OptionsTab({
     if (selectedLegs.size <= 1) setChainTicketOpen(false);
   }, [withPreservedChainScroll, selectedLegs.size]);
 
+  const clearPendingCustomStrike = useCallback(() => {
+    customStrikeGenRef.current += 1;
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
   const handleStrikeModeChange = useCallback((val: string) => {
+    clearPendingCustomStrike();
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
     setIsCustomMode(false);
     const n = parseInt(val);
     if (!isNaN(n) && n > 0) setStrikeCount(n);
-  }, [setStrikeCount, strikeCount]);
+  }, [clearPendingCustomStrike, setStrikeCount, strikeCount]);
 
   const handleCustomStrikeChange = useCallback((raw: string) => {
     setLocalCustomValue(raw);
     setCustomStrikeInput(raw);
-    if (debounceRef.current) clearTimeout(debounceRef.current);
+    clearPendingCustomStrike();
     if (raw === "") return;
+    const gen = customStrikeGenRef.current;
     debounceRef.current = setTimeout(() => {
+      debounceRef.current = null;
+      if (gen !== customStrikeGenRef.current) return;
       const n = parseInt(raw);
       if (!isNaN(n) && n >= 2 && n <= 100) setStrikeCount(n);
     }, 400);
-  }, [setCustomStrikeInput, setStrikeCount]);
+  }, [clearPendingCustomStrike, setCustomStrikeInput, setStrikeCount]);
 
   const handleExitCustomMode = useCallback(() => {
-    if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; }
+    clearPendingCustomStrike();
     setIsCustomMode(false);
     if (![6, 10, 20].includes(strikeCount)) setStrikeCount(10);
-  }, [strikeCount, setStrikeCount]);
+  }, [clearPendingCustomStrike, strikeCount, setStrikeCount]);
 
   useEffect(() => {
     return () => {
