@@ -388,7 +388,9 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
                 {sendPhase === "submitting"
                   ? "Sending…"
                   : sendPhase === "error"
-                    ? "Not sent"
+                    ? sendError?.trim() === "Order was not confirmed." || !sendError?.trim()
+                      ? "Order was not confirmed."
+                      : "Not sent"
                     : sendPhase === "sent"
                       ? "Order sent"
                       : "Ticket"}
