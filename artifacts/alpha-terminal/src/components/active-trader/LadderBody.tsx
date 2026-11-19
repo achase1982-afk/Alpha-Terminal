@@ -41,7 +41,6 @@ import {
   AT_LADDER_STRIKE_SIZE,
   AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
-  AT_SPOT_PILL,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
@@ -501,6 +500,41 @@ const ContractPair = memo(function ContractPair({
   );
 });
 
+function StrikeSideTag({
+  marker,
+  color,
+  lines,
+}: {
+  marker: "gamma-flip" | "call-wall" | "put-wall";
+  color: string;
+  lines: readonly [string, string];
+}) {
+  return (
+    <div
+      data-at-strike-zone-tag
+      data-at-strike-gamma-flip={marker === "gamma-flip" ? "" : undefined}
+      data-at-strike-call-wall={marker === "call-wall" ? "" : undefined}
+      data-at-strike-put-wall={marker === "put-wall" ? "" : undefined}
+      className="pointer-events-none absolute z-[4]"
+      style={{
+        left: 0,
+        top: "50%",
+        transform: "translateY(-50%)",
+        color,
+        fontSize: 7,
+        fontWeight: 700,
+        lineHeight: 1.05,
+        letterSpacing: "0.03em",
+        textAlign: "left",
+      }}
+    >
+      {lines[0]}
+      <br />
+      {lines[1]}
+    </div>
+  );
+}
+
 type LadderRowViewProps = {
   row: LadderRowModel;
   callFar: OptionsContract | null;
@@ -557,8 +591,6 @@ const LadderRowView = memo(function LadderRowView({
     zIndex: gammaFlipRow || callWallRow || putWallRow ? 2 : undefined,
   };
 
-  const strikePad = spotRow;
-
   return (
     <div
       className="grid items-stretch w-full"
@@ -610,12 +642,12 @@ const LadderRowView = memo(function LadderRowView({
         className="relative flex items-center justify-center h-full"
         style={{
           width: AT_LADDER_STRIKE_COL_W,
-          background: AT_LADDER_STRIKE_BG,
           borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
           borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-          padding: strikePad ? "3px 4px" : 0,
+          padding: 0,
           boxSizing: "border-box",
           fontVariantNumeric: "tabular-nums",
+          background: spotRow ? GOLD : AT_LADDER_STRIKE_BG,
         }}
         data-at-strike={row.strike}
       >
@@ -627,31 +659,20 @@ const LadderRowView = memo(function LadderRowView({
           </div>
         ) : null}
         {gammaFlipRow ? (
-          <div className="pointer-events-none absolute top-0.5 left-0.5 z-[4]">
-            <span
-              data-at-strike-zone-tag
-              data-at-strike-gamma-flip
-              className="px-0.5 rounded border"
-              style={{
-                fontSize: 7,
-                fontWeight: 600,
-                lineHeight: 1.05,
-                color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
-                borderColor: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
-                display: "block",
-                whiteSpace: "nowrap",
-              }}
-            >
-              FLIP
-            </span>
-          </div>
+          <StrikeSideTag marker="gamma-flip" color={spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA} lines={["GAMMA", "FLIP"]} />
+        ) : null}
+        {callWallRow && !gammaFlipRow ? (
+          <StrikeSideTag marker="call-wall" color={spotRow ? AT_SPOT_PILL_TEXT : GOLD} lines={["CALL", "WALL"]} />
+        ) : null}
+        {putWallRow && !gammaFlipRow && !callWallRow ? (
+          <StrikeSideTag marker="put-wall" color={spotRow ? AT_SPOT_PILL_TEXT : PUT_WALL} lines={["PUT", "WALL"]} />
         ) : null}
         <div
           className="w-full h-full flex flex-col items-center justify-center"
           style={{
-            background: spotRow ? AT_SPOT_PILL : "transparent",
+            background: "transparent",
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
-            borderRadius: spotRow ? AT_LADDER_SELECT_RADIUS : 0,
+            borderRadius: 0,
             border: "none",
             fontSize: AT_LADDER_STRIKE_SIZE,
             fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
