@@ -11,7 +11,6 @@ import {
 } from "@/lib/active-trader/atLadderSelection";
 import {
   AT_HEAT_MAX_ALPHA,
-  AT_HEAT_WASH_ALPHA,
   LadderBody,
   atHeatAlpha,
   type AtLadderRenderProbe,
@@ -376,15 +375,16 @@ describe("LadderBody", () => {
     expect(price.style.fontSize).toBe("16px");
   });
 
-  it("gives every pair a side tint and scales it with heat", () => {
+  it("leaves quiet pairs uncolored and scales live volume heat", () => {
     const { rows, heat, view } = setup();
     const pair = (strike: number, side: "call" | "put") =>
       view.container.querySelector<HTMLElement>(`[data-at-ladder-row="${strike}"] [data-at-quote-heat="${side}"]`)!;
     const alpha = (el: HTMLElement) => Number(/rgba\([^)]*,\s*([0-9.]+)\)/.exec(el.style.backgroundColor)![1]);
 
-    expect(alpha(pair(7400, "call"))).toBeCloseTo(AT_HEAT_WASH_ALPHA, 3);
-    expect(pair(7400, "call").style.backgroundColor).toContain("40, 110, 70");
-    expect(pair(7400, "put").style.backgroundColor).toContain("140, 50, 48");
+    expect(pair(7400, "call").style.backgroundColor).toBe("transparent");
+    expect(pair(7400, "put").style.backgroundColor).toBe("transparent");
+    expect(pair(7400, "call").style.backgroundImage).toBe("none");
+    expect(pair(7400, "put").style.backgroundImage).toBe("none");
 
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     const warm = rows.find((r) => r.strike === 7335)!.put!;
@@ -394,9 +394,11 @@ describe("LadderBody", () => {
         [warm.streamKey!]: { availability: "live", contracts30s: 115, intensity: 0.5 },
       });
     });
+    expect(pair(7325, "call").style.backgroundColor).toContain("40, 110, 70");
+    expect(pair(7335, "put").style.backgroundColor).toContain("140, 50, 48");
     expect(alpha(pair(7325, "call"))).toBeCloseTo(AT_HEAT_MAX_ALPHA, 3);
-    expect(alpha(pair(7335, "put"))).toBeCloseTo((AT_HEAT_WASH_ALPHA + AT_HEAT_MAX_ALPHA) / 2, 3);
-    expect(atHeatAlpha(0)).toBeCloseTo(AT_HEAT_WASH_ALPHA, 6);
+    expect(alpha(pair(7335, "put"))).toBeCloseTo(atHeatAlpha(0.5), 3);
+    expect(atHeatAlpha(0)).toBe(0);
     expect(atHeatAlpha(2)).toBeCloseTo(AT_HEAT_MAX_ALPHA, 6);
   });
 

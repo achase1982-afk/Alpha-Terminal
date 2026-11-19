@@ -1,6 +1,6 @@
 import { memo, useMemo, type CSSProperties, type ReactNode } from "react";
 import { ChevronRight } from "lucide-react";
-import { BORDER, UP, WHITE } from "@/components/options/optionsTheme";
+import { BORDER, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
@@ -15,7 +15,6 @@ import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
 import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
-import { useSpotTickCue } from "@/lib/active-trader/atSpotDirection";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
 import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
@@ -34,7 +33,9 @@ const NUM_FEAT: CSSProperties = {
 const SPOT_PAINT_MS = 250;
 
 const LABEL_PX = 13;
-const VALUE_PX = 14;
+const VALUE_PX = 15;
+const SECTION_RULE = "#2b3033";
+const SPOT_COLOR = "#5df1a0";
 
 const cellLine: CSSProperties = {
   display: "flex",
@@ -85,7 +86,7 @@ function LevelsCell({
 }) {
   return (
     <div {...dataAttrs} title={title} style={cellLine}>
-      <span className="truncate" style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 400 }}>
+      <span className="truncate" style={{ color: AT_LABEL, fontSize: LABEL_PX, fontWeight: 500 }}>
         {label}
       </span>
       <span className="num shrink-0 text-right" style={{ ...NUM_FEAT, color: valueTone, fontWeight: 600, fontSize: VALUE_PX }}>
@@ -111,7 +112,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
-  const tickCue = useSpotTickCue(liveSpot, SPOT_PAINT_MS);
 
   const sessionChange = useMemo(
     () => resolveAtHeaderSessionChange(quote, restQuote, spotShown),
@@ -157,37 +157,42 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
 
       <div
-        className="flex items-center gap-1 min-w-0"
+        className="flex items-center min-w-0"
         style={{
-          height: 42,
+          height: 44,
           padding: "0 13px",
-          borderBottom: `1px solid ${BORDER}`,
+          borderBottom: `1px solid ${SECTION_RULE}`,
           boxSizing: "border-box",
           lineHeight: 1,
         }}
       >
-        <div className="flex items-baseline gap-1.5 min-w-0 flex-1 overflow-hidden">
+        <div className="flex items-baseline min-w-0 flex-1 overflow-hidden" style={{ gap: 8 }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: AT_SECONDARY, letterSpacing: "0.01em" }}>{symLabel}</span>
-          <span
-            className="num"
-            data-ui-audit="at-glance-spot"
-            style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 500, color: UP, letterSpacing: "-0.02em" }}
-          >
-            {spotLabel}
-          </span>
-          {tickCue.glyph ? (
-            <span data-at-tick-cue style={{ fontSize: 9, color: tickCue.color, lineHeight: 1 }}>
-              {tickCue.glyph}
+          <span className="inline-flex items-baseline" style={{ gap: 4 }}>
+            <span
+              className="num"
+              data-ui-audit="at-glance-spot"
+              style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: SPOT_COLOR, letterSpacing: "-0.03em" }}
+            >
+              {spotLabel}
             </span>
-          ) : null}
+            {dayStatus.kind === "up" || dayStatus.kind === "down" ? (
+              <span
+                data-at-day-direction={dayStatus.kind}
+                style={{ fontSize: 11, lineHeight: 1, color: dayStatusColor(dayStatus) }}
+              >
+                {dayStatus.kind === "up" ? "\u25b2" : "\u25bc"}
+              </span>
+            ) : null}
+          </span>
           <span
             data-at-day-status={dayStatus.kind}
             className="shrink-0"
             style={{
               fontSize: 11,
-              fontWeight: 600,
+              fontWeight: 700,
               color: dayStatusColor(dayStatus),
-              marginLeft: 1,
+              letterSpacing: "0.01em",
               whiteSpace: "nowrap",
             }}
           >
@@ -206,19 +211,20 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           data-at-day-levels-grid
           style={{
             display: "grid",
-            gridTemplateRows: "26px 26px",
+            gridTemplateRows: "28px 28px",
             width: "100%",
-            height: 52,
+            height: 56,
             boxSizing: "border-box",
           }}
         >
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "161px 24px 1px 15px minmax(0, 1fr)",
+              gridTemplateColumns: "minmax(0, 1fr) 1px minmax(0, 1fr)",
+              columnGap: 16,
               alignItems: "center",
-              padding: "0 13px",
-              borderBottom: `1px solid ${BORDER}`,
+              padding: "0 14px",
+              borderBottom: `1px solid ${SECTION_RULE}`,
               boxSizing: "border-box",
             }}
           >
@@ -230,8 +236,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
                 "data-at-day-low-kind": sessionLevels.dayLow.kind,
               }}
             />
-            <span style={{ gridColumn: 3, width: 1, height: 14, background: AT_LABEL, opacity: 0.35 }} aria-hidden data-at-day-levels-divider />
-            <div style={{ gridColumn: 5, minWidth: 0 }}>
+            <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden data-at-day-levels-divider />
+            <div style={{ minWidth: 0 }}>
               <LevelsCell
                 label="Low zone top"
                 value={lowZoneVal}
@@ -244,9 +250,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "161px 24px 1px 15px minmax(0, 1fr)",
+              gridTemplateColumns: "minmax(0, 1fr) 1px minmax(0, 1fr)",
+              columnGap: 16,
               alignItems: "center",
-              padding: "0 13px",
+              padding: "0 14px",
               boxSizing: "border-box",
             }}
           >
@@ -258,8 +265,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
                 "data-at-day-high-kind": sessionLevels.dayHigh.kind,
               }}
             />
-            <span style={{ gridColumn: 3, width: 1, height: 14, background: AT_LABEL, opacity: 0.35 }} aria-hidden />
-            <div style={{ gridColumn: 5, minWidth: 0 }}>
+            <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden />
+            <div style={{ minWidth: 0 }}>
               <LevelsCell
                 label="High zone bottom"
                 value={highZoneVal}

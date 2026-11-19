@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useQuote } from "@/hooks/useQuote";
 import { isSpxSymbol } from "@workspace/order-ticket-math";
+import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import type { DayLowDisplay } from "@/lib/active-trader/atDayLow";
 import type { DayHighDisplay } from "@/lib/active-trader/atDayHigh";
 import { resolveSessionLowHighFromQuote } from "@/lib/active-trader/atSessionRangeRollup";
@@ -37,6 +38,7 @@ export function useAtGlanceSessionLevels(
 ): AtGlanceSessionLevels {
   const { data: quote } = useQuote(symbol);
   const spx = isSpxSymbol(symbol);
+  const futures = resolveAtGlanceMode(symbol) === "futures";
   const skipNetwork = !!opts?.skipNetwork;
   const showZones = opts?.showZoneSlots !== false;
   const [now, setNow] = useState(() => new Date());
@@ -47,7 +49,7 @@ export function useAtGlanceSessionLevels(
 
   return useMemo((): AtGlanceSessionLevels => {
     const zoneEmphasisFull = isAfter1PmEt(now);
-    if (!spx) {
+    if (futures) {
       return {
         showRow: false,
         dayLow: { kind: "unavailable", value: null },
@@ -65,7 +67,7 @@ export function useAtGlanceSessionLevels(
     let dayLow: DayLowDisplay;
     let dayHigh: DayHighDisplay;
 
-    if (skipNetwork) {
+    if (skipNetwork && spx) {
       dayLow = { kind: "current", value: FIXTURE_SESSION_LOW };
       dayHigh = { kind: "current", value: FIXTURE_SESSION_HIGH };
     } else {
@@ -91,5 +93,5 @@ export function useAtGlanceSessionLevels(
       highZoneLabel: highZoneBottomLabel(highZone),
       zoneEmphasisFull,
     };
-  }, [spx, skipNetwork, quote, quote?.last, quote?.low, quote?.high, showZones, now, symbol]);
+  }, [futures, spx, skipNetwork, quote, quote?.last, quote?.low, quote?.high, showZones, now, symbol]);
 }

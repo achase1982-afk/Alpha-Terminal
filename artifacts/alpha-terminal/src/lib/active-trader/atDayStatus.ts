@@ -1,6 +1,9 @@
 import type { SessionChangeDisplay } from "@/lib/atQuoteSessionChange";
-import { DOWN_TEXT, UP, WHITE } from "@/components/options/optionsTheme";
+import { WHITE } from "@/components/options/optionsTheme";
 import { AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
+
+const DAY_UP = "#5df1a0";
+const DAY_DOWN = "#ff7164";
 
 export type DayStatusKind = "unavailable" | "down" | "flat" | "up";
 
@@ -34,8 +37,8 @@ export function dayStatusLabel(display: DayStatusDisplay): string {
 }
 
 export function dayStatusColor(display: DayStatusDisplay): string {
-  if (display.kind === "down") return DOWN_TEXT;
-  if (display.kind === "up") return UP;
+  if (display.kind === "down") return DAY_DOWN;
+  if (display.kind === "up") return DAY_UP;
   if (display.kind === "flat") return AT_SECONDARY;
   return WHITE;
 }

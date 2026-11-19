@@ -1028,11 +1028,11 @@ export default function TerminalPage() {
       <header
         id="terminal-header"
         className={`shrink-0 z-[105] safe-top ${atOptionsChrome ? "" : "border-b border-card-border bg-card"}`}
-        style={atOptionsChrome ? { background: "#151719" } : undefined}
+        style={atOptionsChrome ? { background: "#151617" } : undefined}
       >
         <div
           className={`relative flex items-center ${atOptionsChrome ? "px-3" : "h-12 px-4 bg-card"}`}
-          style={atOptionsChrome ? { height: 61, background: "#151719" } : undefined}
+          style={atOptionsChrome ? { height: 61, background: "#151617" } : undefined}
         >
           <button
             onClick={() => setSidebarOpen(true)}
@@ -1045,16 +1045,16 @@ export default function TerminalPage() {
             <span
               className="font-sans text-foreground"
               style={{
-                fontSize: 16,
+                fontSize: atOptionsChrome ? 18 : 16,
                 fontWeight: 800,
-                letterSpacing: atOptionsChrome ? "0.05em" : "0.08em",
+                letterSpacing: atOptionsChrome ? "0.04em" : "0.08em",
               }}
             >
               ALPHA
             </span>
             <span
               className="font-sans font-semibold text-primary"
-              style={{ fontSize: atOptionsChrome ? 9 : 10, letterSpacing: "0.25em", marginTop: 3 }}
+              style={{ fontSize: atOptionsChrome ? 9 : 10, letterSpacing: "0.22em", marginTop: atOptionsChrome ? 4 : 3 }}
             >
               TERMINAL
             </span>

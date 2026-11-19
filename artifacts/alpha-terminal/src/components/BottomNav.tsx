@@ -305,7 +305,7 @@ export function BottomNav({
         data-bottom-nav
         data-at-bottom-nav
         className="z-50 flex shrink-0 items-stretch border-t"
-        style={{ height: 65, background: "#151719", borderColor: "#2d3236" }}
+        style={{ height: 65, background: "#131617", borderColor: "#2d3236" }}
       >
         {tabs.map((tab) => (
           <button
