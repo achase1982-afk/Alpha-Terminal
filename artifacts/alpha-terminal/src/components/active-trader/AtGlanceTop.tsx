@@ -33,7 +33,7 @@ const NUM_FEAT: CSSProperties = {
 const SPOT_PAINT_MS = 250;
 
 const LABEL_PX = 13;
-const VALUE_PX = 15;
+const VALUE_PX = 13;
 const SECTION_RULE = "#2b3033";
 const SPOT_COLOR = "#5df1a0";
 
@@ -159,8 +159,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       <div
         className="flex items-center min-w-0"
         style={{
-          height: 44,
-          padding: "0 13px",
+          height: 40,
+          padding: "0 16px",
           borderBottom: `1px solid ${SECTION_RULE}`,
           boxSizing: "border-box",
           lineHeight: 1,
@@ -179,7 +179,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             {dayStatus.kind === "up" || dayStatus.kind === "down" ? (
               <span
                 data-at-day-direction={dayStatus.kind}
-                style={{ fontSize: 11, lineHeight: 1, color: dayStatusColor(dayStatus) }}
+                style={{ fontSize: 13, lineHeight: 1, color: dayStatusColor(dayStatus) }}
               >
                 {dayStatus.kind === "up" ? "\u25b2" : "\u25bc"}
               </span>
@@ -189,8 +189,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             data-at-day-status={dayStatus.kind}
             className="shrink-0"
             style={{
-              fontSize: 11,
-              fontWeight: 700,
+              fontSize: 13,
+              fontWeight: 600,
               color: dayStatusColor(dayStatus),
               letterSpacing: "0.01em",
               whiteSpace: "nowrap",
@@ -211,9 +211,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           data-at-day-levels-grid
           style={{
             display: "grid",
-            gridTemplateRows: "28px 28px",
+            gridTemplateRows: "22px 22px",
             width: "100%",
-            height: 56,
+            height: 44,
             boxSizing: "border-box",
           }}
         >
@@ -223,7 +223,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               gridTemplateColumns: "minmax(0, 1fr) 1px minmax(0, 1fr)",
               columnGap: 16,
               alignItems: "center",
-              padding: "0 14px",
+              padding: "0 16px",
               borderBottom: `1px solid ${SECTION_RULE}`,
               boxSizing: "border-box",
             }}
@@ -253,7 +253,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               gridTemplateColumns: "minmax(0, 1fr) 1px minmax(0, 1fr)",
               columnGap: 16,
               alignItems: "center",
-              padding: "0 14px",
+              padding: "0 16px",
               boxSizing: "border-box",
             }}
           >
@@ -281,18 +281,17 @@ export const AtGlanceTop = memo(function AtGlanceTop({
       <div
         data-at-glance-flow-band
         style={{
-          height: 79,
-          padding: "5px 13px 3px",
+          padding: "4px 16px 2px",
           display: "flex",
           flexDirection: "column",
           boxSizing: "border-box",
         }}
       >
-        <div className="flex items-center justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 18, lineHeight: 1 }}>
+        <div className="flex items-baseline justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 18, lineHeight: 1 }}>
           <span className="flex items-center min-w-0 overflow-hidden" style={{ flex: "1 1 auto" }}>
             <span
               data-at-flow-now
-              style={{ fontWeight: 500, color: WHITE, fontSize: 15, letterSpacing: 0, whiteSpace: "nowrap" }}
+              style={{ fontWeight: 600, color: WHITE, fontSize: 13, letterSpacing: 0, whiteSpace: "nowrap" }}
             >
               Flow now · {flowWindowSec}s
             </span>
@@ -301,13 +300,13 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <span
             data-at-gamma-flip
             className="num shrink-0 truncate"
-            style={{ ...NUM_FEAT, fontWeight: 500, color: AT_LADDER_GAMMA, fontSize: 14, whiteSpace: "nowrap" }}
+            style={{ ...NUM_FEAT, fontWeight: 600, color: AT_LADDER_GAMMA, fontSize: 13, whiteSpace: "nowrap" }}
           >
             Gamma flip {flipLabel}
           </span>
         </div>
 
-        <div data-at-glance-flow-row style={{ marginTop: 2, height: 31 }}>
+        <div data-at-glance-flow-row style={{ marginTop: 2 }}>
           <AtGlanceGrossFlow
             glance={netPremium}
             zones={zones}
@@ -329,7 +328,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               border: "none",
               borderTop: `1px solid ${BORDER}`,
               color: AT_SECONDARY,
-              fontSize: 9,
+              fontSize: 13,
               lineHeight: 1,
               boxSizing: "border-box",
             }}
