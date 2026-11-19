@@ -297,26 +297,28 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           ) : null}
         </div>
 
-        <div className="flex items-start" style={{ marginTop: 4, gap: 4 }}>
+        <div className="flex items-center" style={{ marginTop: 4, gap: 4 }}>
           {onFlipSides ? (
             <button
               type="button"
               data-at-side-flip
-              aria-label={sideLabel}
+              aria-label={`Reverse ${sideLabel}`}
               onClick={onFlipSides}
-              className="shrink-0 rounded-md font-semibold"
+              className="shrink-0 rounded-md font-semibold inline-flex items-center justify-center"
               style={{
                 height: 30,
-                minWidth: 46,
+                minWidth: 58,
                 padding: "0 8px",
+                gap: 4,
                 fontSize: 12,
                 lineHeight: 1,
-                background: sideTone,
-                color: creditOrder ? WHITE : AT_ORDER_BTN_TEXT_DARK,
-                border: "none",
+                background: "transparent",
+                color: sideTone,
+                border: `1px solid ${sideTone}`,
               }}
             >
               {sideLabel}
+              <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>⇄</span>
             </button>
           ) : null}
           <div
@@ -324,7 +326,6 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             style={{
               display: "grid",
               gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
-              justifyItems: "start",
             }}
             data-at-ticket-legs
           >
@@ -335,18 +336,18 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             return (
               <div
                 key={leg.id}
-                className="flex h-[30px] w-fit max-w-full items-center gap-1.5 rounded-md py-0 pl-2 pr-0.5 min-w-0"
+                className="flex h-[30px] w-full items-center gap-1.5 rounded-md py-0 pl-2 pr-0.5 min-w-0"
                 style={{
                   border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
                   background: "rgba(255,255,255,0.025)",
                 }}
               >
-                <span style={{ fontSize: 10, fontWeight: 700, color: tone, letterSpacing: "0.02em" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: tone, letterSpacing: "0.02em", flexShrink: 0 }}>
                   {isBuy ? "BUY" : "SELL"}
                 </span>
                 <span
-                  className="truncate tabular-nums"
-                  style={{ fontSize: 14, fontWeight: 500, color: WHITE }}
+                  className="tabular-nums"
+                  style={{ fontSize: 13, fontWeight: 500, color: WHITE, whiteSpace: "nowrap" }}
                 >
                   {leg.strike} {type} · ×{leg.quantity}
                 </span>
