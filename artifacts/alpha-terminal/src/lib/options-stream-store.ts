@@ -101,6 +101,8 @@ function mergeOptionTicks(existing: OptionTick, incoming: OptionTick): OptionTic
 
 interface OptionsStreamState {
   ticks: Record<string, OptionTick>;
+  /** Bumps when the book is cleared so the next quotes are a fresh baseline. */
+  quoteEpoch: number;
   mergeTick: (tick: OptionTick) => void;
   /** Apply a batch of ticks as ONE store write, so subscribers run once per batch instead of once per quote. */
   mergeTicks: (ticks: readonly OptionTick[]) => void;
@@ -126,6 +128,7 @@ function mergeIncomingTick(current: Record<string, OptionTick>, incoming: Option
 
 export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
   ticks: {},
+  quoteEpoch: 0,
   mergeTick: (tick) =>
     set((state) => {
       const merged = mergeIncomingTick(state.ticks, tick);
@@ -154,7 +157,7 @@ export const useOptionsStreamStore = create<OptionsStreamState>()((set) => ({
       }
       return next ? { ticks: next } : state;
     }),
-  clearTicks: () => set({ ticks: {} }),
+  clearTicks: () => set((state) => ({ ticks: {}, quoteEpoch: state.quoteEpoch + 1 })),
 }));
 
 export function useOptionTick(contractKey: string | undefined): OptionTick | undefined {

@@ -10,9 +10,7 @@ import {
   createAtLadderSelectionStore,
 } from "@/lib/active-trader/atLadderSelection";
 import {
-  AT_HEAT_MAX_ALPHA,
   LadderBody,
-  atHeatAlpha,
   type AtLadderRenderProbe,
   type LadderRowModel,
 } from "./LadderBody";
@@ -181,7 +179,7 @@ describe("LadderBody", () => {
     act(() => {
       useOptionsStreamStore.getState().mergeTicks([tick(target, { bid: 2.35, ask: target.ask! })]);
     });
-    expect(cell("call-bid-7330").textContent).toBe("2.35");
+    expect(cell("call-bid-7330").textContent).toBe("▼2.35");
     expect(counts).toEqual({ body: 0, row: 0, pair: 1, cell: 1 });
   });
 
@@ -380,20 +378,18 @@ describe("LadderBody", () => {
     expect(chip.style.background).toBe("transparent");
     expect(chip.style.borderRadius).toBe("5px");
     expect(chip.textContent).toContain("BUY");
-    const price = chip.querySelector("span")!;
-    expect(price.style.fontSize).toBe("16px");
+    expect(cell("call-ask-7330").style.fontSize).toBe("16px");
   });
 
   it("leaves quiet pairs uncolored and scales live volume heat", () => {
     const { rows, heat, view } = setup();
     const pair = (strike: number, side: "call" | "put") =>
       view.container.querySelector<HTMLElement>(`[data-at-ladder-row="${strike}"] [data-at-quote-heat="${side}"]`)!;
-    const alpha = (el: HTMLElement) => Number(/rgba\([^)]*,\s*([0-9.]+)\)/.exec(el.style.backgroundColor)![1]);
-
     expect(pair(7400, "call").style.backgroundColor).toBe("transparent");
     expect(pair(7400, "put").style.backgroundColor).toBe("transparent");
     expect(pair(7400, "call").style.backgroundImage).toBe("none");
     expect(pair(7400, "put").style.backgroundImage).toBe("none");
+    expect(pair(7400, "call").getAttribute("data-at-quote-volume")).toBe("—");
 
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     const warm = rows.find((r) => r.strike === 7335)!.put!;
@@ -403,15 +399,13 @@ describe("LadderBody", () => {
         [warm.streamKey!]: { availability: "live", contracts30s: 115, intensity: 0.5 },
       });
     });
-    expect(pair(7325, "call").style.backgroundColor).toContain("6, 148, 64");
-    expect(pair(7325, "call").style.animation).toContain("at-heat-breathe");
-    expect(pair(7335, "put").style.backgroundColor).toContain("87, 16, 20");
-    expect(pair(7335, "put").style.animation).toContain("at-heat-breathe");
+    expect(pair(7325, "call").style.backgroundColor).toBe("rgb(36, 88, 117)");
+    expect(pair(7325, "call").style.animation).toBe("none");
+    expect(pair(7325, "call").getAttribute("data-at-quote-volume")).toBe("1138 contracts / 30s");
+    expect(pair(7335, "put").style.backgroundColor).toBe("rgb(23, 57, 79)");
+    expect(pair(7335, "put").style.animation).toBe("none");
+    expect(pair(7335, "put").getAttribute("data-at-quote-volume")).toBe("115 contracts / 30s");
     expect(pair(7400, "call").style.animation).toBe("none");
-    expect(alpha(pair(7325, "call"))).toBeCloseTo(AT_HEAT_MAX_ALPHA, 3);
-    expect(alpha(pair(7335, "put"))).toBeCloseTo(atHeatAlpha(0.5), 3);
-    expect(atHeatAlpha(0)).toBe(0);
-    expect(atHeatAlpha(2)).toBeCloseTo(AT_HEAT_MAX_ALPHA, 6);
   });
 
   it("commits keyboard and assistive-tech activation, which arrives as a bare click", () => {
