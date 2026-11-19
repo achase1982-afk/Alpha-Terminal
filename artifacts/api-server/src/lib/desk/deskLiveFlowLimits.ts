@@ -1,50 +1,20 @@
 import { getAppLevelOneEquitiesCount } from "../schwabStreamer.js";
 import { deskComputeDeskEquitiesBudget } from "./deskStreamerBudget.js";
 import { deskLiveFlowSseClientCountForTests, deskLiveFlowSseClientCount } from "./deskLiveFlowHub.js";
-import {
-  deskLiveFlowSubsDistinctNonSpxCount,
-  deskLiveFlowSubsWouldBeNewSymbol,
-} from "./deskLiveFlowSubs.js";
+import { deskLiveFlowSubsWouldBeNewSymbol } from "./deskLiveFlowSubs.js";
 import {
   deskLiveFlowFuturesContractMultiplier,
   deskLiveFlowFuturesRoot,
   deskLiveFlowFuturesSupportedRoots,
   DESK_LIVE_FLOW_FUTURES_ROOTS,
 } from "./deskLiveFlowFuturesMult.js";
-import { deskFlowNormalizeEquityKey } from "./deskLiveFlowSymbol.js";
-
-export const DESK_LIVE_FLOW_MAX_DISTINCT_SYMBOLS = 8;
 export const DESK_LIVE_FLOW_MAX_SSE_CLIENTS = 32;
 
 export type DeskLiveFlowSubscribeReject =
   | { ok: true }
   | { ok: false; status: number; error: string; supported?: string[] };
 
-const KNOWN_EQUITY = new Set([
-  "SPX",
-  "VIX",
-  "RUT",
-  "NDX",
-  "DJX",
-  "XSP",
-  "OEX",
-  "XLF",
-  "QQQ",
-  "SPY",
-  "IWM",
-  "DIA",
-]);
-
 const FUTURES_DISPLAY_RE = /^\/([A-Z0-9]{1,4}?)([FGHJKMNQUVXZ]\d{2})?$/;
-
-function isGarbageEquityTicker(sym: string): boolean {
-  const s = deskFlowNormalizeEquityKey(sym);
-  if (KNOWN_EQUITY.has(s)) return false;
-  if (s.length > 5 && !s.includes(".")) return true;
-  if (/^[A-Z]{6,}$/.test(s)) return true;
-  if (/^(ABCDEF|QWERTY|ASDFGH|ZXCVBN)/.test(s)) return true;
-  return false;
-}
 
 export type DeskLiveFlowRejectReason = {
   error: string;
@@ -74,7 +44,6 @@ export function deskLiveFlowRejectSymbol(sym: string, kind: string): DeskLiveFlo
   if (kind === "equity" || kind === "spx") {
     if (u.startsWith("./")) return { error: "invalid_symbol" };
     if (!/^\$?[A-Z][A-Z0-9.$\-/]{0,14}$/.test(u)) return { error: "invalid_symbol" };
-    if (isGarbageEquityTicker(u)) return { error: "invalid_symbol" };
   }
   return null;
 }
@@ -98,13 +67,6 @@ export function deskLiveFlowCanSubscribe(
     : deskLiveFlowSseClientCountForTests();
   if (clients >= DESK_LIVE_FLOW_MAX_SSE_CLIENTS) {
     return { ok: false, status: 429, error: "live_flow_client_cap" };
-  }
-
-  if (kind !== "spx" && deskLiveFlowSubsWouldBeNewSymbol(sym, kind)) {
-    const distinct = deskLiveFlowSubsDistinctNonSpxCount();
-    if (distinct >= DESK_LIVE_FLOW_MAX_DISTINCT_SYMBOLS) {
-      return { ok: false, status: 429, error: "live_flow_symbol_cap" };
-    }
   }
 
   if (kind === "equity" && deskLiveFlowSubsWouldBeNewSymbol(sym, kind)) {

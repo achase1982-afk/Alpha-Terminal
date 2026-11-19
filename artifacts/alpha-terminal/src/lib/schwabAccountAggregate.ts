@@ -128,3 +128,21 @@ export function formatSchwabAccountType(type: string): string {
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
+
+export function isPaperSchwabAccount(
+  account: Pick<SchwabAccountSummary, "type" | "accountNumber" | "accountNumberRaw" | "hashValue"> | null | undefined,
+): boolean {
+  if (!account) return false;
+  const identity = [
+    account.type,
+    account.accountNumber,
+    account.accountNumberRaw,
+    account.hashValue,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return ["paper", "sandbox", "simulated", "simulation"].some((marker) =>
+    identity.includes(marker),
+  );
+}

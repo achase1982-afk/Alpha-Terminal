@@ -236,7 +236,7 @@ export function startFlowScan(input: FlowScanInput): FlowScanResult {
 async function runFlowScan(job: FlowScanResult, input: FlowScanInput): Promise<void> {
   const apiKey = process.env["POLYGON_API_KEY"];
   if (!apiKey) throw new Error("POLYGON_API_KEY not set");
-  if (!polygonOptionsWsEnabled()) throw new Error("POLYGON_OPTIONS_WS_ENABLED is not set");
+  if (!polygonOptionsWsEnabled()) throw new Error("Polygon options WebSocket is unavailable");
 
   job.status = "running";
   job.startedAt = Date.now();

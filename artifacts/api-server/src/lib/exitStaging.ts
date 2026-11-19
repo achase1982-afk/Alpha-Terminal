@@ -6,7 +6,6 @@ import { logger } from "./logger.js";
 import { sendPushToAll } from "./pushService.js";
 import { broadcastToClients } from "./wsServer.js";
 import { logFailure } from "./telemetry.js";
-import { schwabTradingBlocked } from "./schwabTradingGate.js";
 
 const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 
@@ -31,11 +30,6 @@ export async function handleFillForExitStaging(params: {
   executionPrice: string;
 }) {
   const { schwabOrderId, symbol, side, quantity, executionPrice } = params;
-
-  if (schwabTradingBlocked()) {
-    logger.warn({ schwabOrderId, symbol }, "Exit staging skipped — Schwab trading disabled (auth off)");
-    return;
-  }
 
   try {
     const [journalEntry] = await db

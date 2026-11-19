@@ -773,8 +773,8 @@ async function boot() {
 
   startPolygonPCRatioPoller();
 
-  // Part 2 — start the persistent options watcher. Env-gated by
-  // POLYGON_OPTIONS_WS_ENABLED; when off this is a no-op. Initial
+  // Part 2 — start the persistent options watcher whenever Polygon is configured.
+  // Without POLYGON_API_KEY this is a no-op. Initial
   // watchlist is empty — the deterministic scanner populates HOT/WARM
   // tiers from its top-ranked candidates after each scan.
   void startOptionsWatcher().catch((err) =>

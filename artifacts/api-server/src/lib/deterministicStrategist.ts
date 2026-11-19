@@ -14,9 +14,7 @@ export type StrategyType =
   | "BULL_PUT_SPREAD"
   | "BEAR_CALL_SPREAD"
   | "BULL_CALL_SPREAD"
-  | "BEAR_PUT_SPREAD"
-  | "IRON_CONDOR"
-  | "PROTECTIVE_PUT";
+  | "BEAR_PUT_SPREAD";
 
 export type TradeDirection = "BULLISH" | "BEARISH" | "NEUTRAL";
 export type PositionSize = "FULL" | "HALF";
@@ -315,8 +313,8 @@ export function runDeterministicStrategist(input: StrategistInput): StrategistOu
   let deltaTargets: { shortStrike: number; longStrike: number };
 
   if (mode === "HEDGING_DEFENSIVE") {
-    strategyType = "PROTECTIVE_PUT";
-    deltaTargets = { shortStrike: 0.30, longStrike: 0.20 };
+    strategyType = "BEAR_PUT_SPREAD";
+    deltaTargets = { shortStrike: 0.40, longStrike: 0.30 };
   } else if (premiumSellingApproved && direction !== "NEUTRAL") {
     if (direction === "BULLISH") {
       strategyType = "BULL_PUT_SPREAD";
@@ -326,8 +324,8 @@ export function runDeterministicStrategist(input: StrategistInput): StrategistOu
       deltaTargets = { shortStrike: 0.30, longStrike: 0.20 };
     }
   } else if (premiumSellingApproved && direction === "NEUTRAL") {
-    strategyType = "IRON_CONDOR";
-    deltaTargets = { shortStrike: 0.20, longStrike: 0.10 };
+    strategyType = input.pulse.composite >= 0 ? "BULL_PUT_SPREAD" : "BEAR_CALL_SPREAD";
+    deltaTargets = { shortStrike: 0.30, longStrike: 0.20 };
   } else {
     if (direction === "BULLISH") {
       strategyType = "BULL_CALL_SPREAD";
@@ -346,7 +344,12 @@ export function runDeterministicStrategist(input: StrategistInput): StrategistOu
 
   const criteria: StrategyCriteria = {
     strategyType,
-    direction,
+    direction:
+      direction === "NEUTRAL"
+        ? strategyType === "BULL_PUT_SPREAD"
+          ? "BULLISH"
+          : "BEARISH"
+        : direction,
     ticker: input.symbol,
     dteRange,
     deltaTargets,

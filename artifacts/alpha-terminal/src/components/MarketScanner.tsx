@@ -475,6 +475,7 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
   const [refreshingScreenId, setRefreshingScreenId] = useState<number | null>(null);
   const [showWatchlistEditor, setShowWatchlistEditor] = useState(false);
   const [editingWatchlistId, setEditingWatchlistId] = useState<number | null>(null);
+  const [pendingWatchlistSymbols, setPendingWatchlistSymbols] = useState<string[]>([]);
 
   const REMOVED_PRESETS = new Set(["preset:sp500", "preset:sp100", "preset:ndx100"]);
 
@@ -644,7 +645,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
         if (wl) {
           void universeData.addSymbolToWatchlist(wl.id, sym);
         } else {
-          // TODO: wire "+ Watchlist" from scanner v3 cards when no watchlists exist (create flow or picker).
+          setEditingWatchlistId(null);
+          setPendingWatchlistSymbols([sym]);
+          setShowWatchlistEditor(true);
         }
         return;
       }
@@ -692,8 +695,16 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
             }}
             onRefreshScreen={handleRefreshScreen}
             refreshingScreenId={refreshingScreenId}
-            onCreateWatchlist={() => { setEditingWatchlistId(null); setShowWatchlistEditor(true); }}
-            onEditWatchlist={(id) => { setEditingWatchlistId(id); setShowWatchlistEditor(true); }}
+            onCreateWatchlist={() => {
+              setEditingWatchlistId(null);
+              setPendingWatchlistSymbols([]);
+              setShowWatchlistEditor(true);
+            }}
+            onEditWatchlist={(id) => {
+              setEditingWatchlistId(id);
+              setPendingWatchlistSymbols([]);
+              setShowWatchlistEditor(true);
+            }}
             onDeleteWatchlist={async (id) => {
               await universeData.deleteWatchlist(id);
               if (universe === `watchlist:${id}`) setUniverse("preset:liquidCore130");
@@ -911,7 +922,12 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
       {showWatchlistEditor && (
         <WatchlistEditor
           watchlist={editingWatchlistId != null ? universeData.watchlists.find(w => w.id === editingWatchlistId) ?? null : null}
-          onClose={() => { setShowWatchlistEditor(false); setEditingWatchlistId(null); }}
+          initialSymbols={pendingWatchlistSymbols}
+          onClose={() => {
+            setShowWatchlistEditor(false);
+            setEditingWatchlistId(null);
+            setPendingWatchlistSymbols([]);
+          }}
           onCreate={async (name, symbols) => {
             const wl = await universeData.createWatchlist(name, symbols);
             if (wl) setUniverse(`watchlist:${wl.id}`);

@@ -6,7 +6,11 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
-import { aggregateSchwabAccounts, formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
+import {
+  aggregateSchwabAccounts,
+  formatSchwabAccountType,
+  isPaperSchwabAccount,
+} from "@/lib/schwabAccountAggregate";
 import type { SchwabAccountSummary } from "@/lib/schwab-account-types";
 
 const C = {
@@ -137,7 +141,9 @@ export function SchwabAccountPickerSheet() {
                     )}
                   </div>
                   <div className="text-[12px] text-zinc-500 mt-0.5">
-                    {formatSchwabAccountType(acct.type)}
+                    {isPaperSchwabAccount(acct)
+                      ? `Paper · ${formatSchwabAccountType(acct.type)}`
+                      : formatSchwabAccountType(acct.type)}
                   </div>
                   <div className="mt-0.5">{dayPlLine(acct, hideBalances)}</div>
                 </div>

@@ -4,6 +4,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 
 interface WatchlistEditorProps {
   watchlist?: { id: number; name: string; symbols: string[]; isProtected?: boolean } | null;
+  initialSymbols?: string[];
   onClose: () => void;
   onCreate?: (name: string, symbols: string[]) => Promise<any>;
   onUpdate?: (id: number, data: { name?: string; symbols?: string[] }) => Promise<any>;
@@ -16,10 +17,12 @@ interface SearchResult {
   name: string;
 }
 
-export function WatchlistEditor({ watchlist, onClose, onCreate, onUpdate, onAddSymbol, onRemoveSymbol }: WatchlistEditorProps) {
+export function WatchlistEditor({ watchlist, initialSymbols = [], onClose, onCreate, onUpdate, onAddSymbol, onRemoveSymbol }: WatchlistEditorProps) {
   const isNew = !watchlist;
   const [name, setName] = useState(watchlist?.name ?? "");
-  const [symbols, setSymbols] = useState<string[]>(watchlist?.symbols ?? []);
+  const [symbols, setSymbols] = useState<string[]>(
+    () => watchlist?.symbols ?? [...new Set(initialSymbols.map((symbol) => symbol.trim().toUpperCase()).filter(Boolean))],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);

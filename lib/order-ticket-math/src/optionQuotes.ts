@@ -19,12 +19,12 @@ export function quoteSideState(bid: number | null | undefined, ask: number | nul
   return "ok";
 }
 
-/** Chain / AT display: strict two-sided book with bid>0, ask>0, fresh rx timestamp. */
+/** Default threshold for marking an in-session chain / AT quote stale. */
 export const CHAIN_QUOTE_FRESH_MS = 12_000;
 
 export type ChainQuoteUiState = QuoteSideState | "stale" | "prior_session" | "ok";
 
-/** Short UI label when a chain / AT quote is suppressed (never shown for valid books). */
+/** Short UI status label for incomplete, crossed, or stale chain / AT quotes. */
 export function chainQuoteReasonLabel(state: ChainQuoteUiState): string {
   switch (state) {
     case "crossed":
@@ -62,7 +62,10 @@ export function resolveChainQuotePresentation(input: {
   liveFreshMs?: number;
 }): {
   displayState: ChainQuoteUiState;
+  /** True when either displayed side can stage a leg. */
   tapable: boolean;
+  bidTapable: boolean;
+  askTapable: boolean;
   showBid: number | undefined;
   showAsk: number | undefined;
   asOfLabel: string | null;
@@ -72,12 +75,24 @@ export function resolveChainQuotePresentation(input: {
   const nowMs = input.nowMs ?? Date.now();
   const liveFreshMs = input.liveFreshMs ?? CHAIN_QUOTE_FRESH_MS;
   const side = quoteSideState(input.bid, input.ask);
+  const showBid =
+    input.bid != null && Number.isFinite(input.bid) && input.bid >= 0
+      ? input.bid
+      : undefined;
+  const showAsk =
+    input.ask != null && Number.isFinite(input.ask) && input.ask > 0
+      ? input.ask
+      : undefined;
+  const bidTapable = showBid != null;
+  const askTapable = showAsk != null;
   if (side !== "ok") {
     return {
       displayState: side,
-      tapable: false,
-      showBid: undefined,
-      showAsk: undefined,
+      tapable: bidTapable || askTapable,
+      bidTapable,
+      askTapable,
+      showBid,
+      showAsk,
       asOfLabel: null,
       dimmed: false,
       locked: false,
@@ -94,8 +109,10 @@ export function resolveChainQuotePresentation(input: {
 
   if (carryover || staleLive || !sessionOpen) {
     return {
-      displayState: "prior_session",
-      tapable: false,
+      displayState: staleLive && !carryover ? "stale" : "prior_session",
+      tapable: true,
+      bidTapable: true,
+      askTapable: true,
       showBid: bid,
       showAsk: ask,
       asOfLabel: qt != null && qt > 0 ? formatQuoteAsOfEt(qt) : null,
@@ -106,6 +123,8 @@ export function resolveChainQuotePresentation(input: {
   return {
     displayState: "ok",
     tapable: true,
+    bidTapable: true,
+    askTapable: true,
     showBid: bid,
     showAsk: ask,
     asOfLabel: null,

@@ -11,14 +11,6 @@ import { logger } from "./lib/logger";
 import { httpTimingMiddleware } from "./middleware/httpTiming";
 import { clerkAuthBridge } from "./middleware/clerkAuthBridge";
 import { isAuthDisabled } from "./lib/authMode";
-import {
-  blockBrokerOrdersWhenAuthDisabled,
-  blockDeskBrokerOrdersWhenAuthDisabled,
-} from "./middleware/ordersDisabledWhenAuthOff";
-import {
-  blockReviewerBackfillPost,
-  blockReviewerModeWrites,
-} from "./middleware/reviewerModeWritesGuard";
 
 const authDisabled = isAuthDisabled();
 
@@ -123,13 +115,13 @@ if (authDisabled) {
 }
 
 app.use("/api", healthRouter);
-app.use("/api/desk/v1", blockDeskBrokerOrdersWhenAuthDisabled, deskV1Router);
+app.use("/api/desk/v1", deskV1Router);
 if (authDisabled) {
-  app.use("/api/admin/run-full-backfill", blockReviewerBackfillPost, runFullBackfillRouter);
-  app.use("/api", blockReviewerModeWrites, blockBrokerOrdersWhenAuthDisabled, router);
+  app.use("/api/admin/run-full-backfill", runFullBackfillRouter);
+  app.use("/api", router);
 } else {
   app.use("/api/admin/run-full-backfill", apiRequireAuth, runFullBackfillRouter);
-  app.use("/api", blockReviewerModeWrites, blockBrokerOrdersWhenAuthDisabled, apiRequireAuth, router);
+  app.use("/api", apiRequireAuth, router);
 }
 
 export default app;

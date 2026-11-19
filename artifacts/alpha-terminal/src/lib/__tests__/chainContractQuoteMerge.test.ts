@@ -47,13 +47,15 @@ describe("mergeChainContractWithStream", () => {
     expect(fixed.ask).toBe(11.2);
   });
 
-  it("labels crossed REST book without showing invalid prices", () => {
+  it("labels crossed REST book while keeping both priced sides tappable", () => {
     const now = sessionNow();
     const fixed = resolveChainDisplayQuote({ streamKey: "OPT", bid: 2, ask: 1, quoteTimeMs: now }, null, now, now);
     expect(fixed.displayState).toBe("crossed");
-    expect(fixed.tapable).toBe(false);
-    expect(fixed.bid).toBeUndefined();
-    expect(fixed.ask).toBeUndefined();
+    expect(fixed.tapable).toBe(true);
+    expect(fixed.bidTapable).toBe(true);
+    expect(fixed.askTapable).toBe(true);
+    expect(fixed.bid).toBe(2);
+    expect(fixed.ask).toBe(1);
   });
 
   it("shows prior close dimmed when stream is crossed but REST is valid", () => {
@@ -69,5 +71,6 @@ describe("mergeChainContractWithStream", () => {
     expect(fixed.bid).toBeCloseTo(5.05, 5);
     expect(fixed.asOfLabel).toContain("as of");
     expect(fixed.dimmed).toBe(true);
+    expect(fixed.tapable).toBe(true);
   });
 });

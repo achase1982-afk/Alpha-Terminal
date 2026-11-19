@@ -77,6 +77,7 @@ import {
 } from "@/lib/futuresSchwabUi";
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 import { mergeChainContractWithStream, resolveChainDisplayQuote } from "@/lib/chainContractQuoteMerge";
+import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
 import { isAuthDisabled } from "@/lib/authMode";
 import {
   hasSchwabBrokerageLinked,
@@ -467,7 +468,9 @@ const DataCell = memo(function DataCell({
         ? paired.bid
         : paired.ask
       : getStreamVal(tick, col.topKey) ?? getContractVal(contract, col.topKey);
-  const priceTapable = !isPrice || (paired?.tapable ?? false);
+  const priceTapable =
+    !isPrice ||
+    (isBid ? (paired?.bidTapable ?? false) : (paired?.askTapable ?? false));
   const bottomVal = col.bottomKey
     ? (getStreamVal(tick, col.bottomKey) ?? getContractVal(contract, col.bottomKey))
     : undefined;
@@ -480,10 +483,10 @@ const DataCell = memo(function DataCell({
   const priceLocked = isPrice && paired?.locked;
   const showLockedFlag = isPrice && isBid && priceLocked;
   const topStr =
-    priceReason ??
-    (isPrice && paired?.displayState === "prior_session"
-      ? fmtNum(col.id === "bid" ? paired.bid : paired.ask, col.topDecimals)
-      : fmtNum(topVal, col.topDecimals));
+    isPrice && topVal == null && priceReason
+      ? priceReason
+      : fmtNum(topVal, col.topDecimals);
+  const showPriceReason = isPrice && topVal != null ? priceReason : null;
   const isOI = col.id === "oi";
   const isVol = col.id === "vol";
   const oiVal = isVol ? getContractVal(contract, "openInterest") : undefined;
@@ -536,7 +539,7 @@ const DataCell = memo(function DataCell({
     }
     if (!didLongPress.current && !didSwipe.current && onSelect && priceTapable) onSelect();
     startPos.current = null;
-  }, [onSelect]);
+  }, [onSelect, priceTapable]);
 
   const handlePointerLeave = useCallback(() => {
     if (longPressTimer.current) {
@@ -577,6 +580,9 @@ const DataCell = memo(function DataCell({
       </span>
       {asOfLabel ? (
         <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{asOfLabel}</span>
+      ) : null}
+      {showPriceReason ? (
+        <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{showPriceReason}</span>
       ) : null}
       {showLockedFlag ? (
         <span style={{ fontSize: 7, fontWeight: 600, color: MUTED, opacity: 0.85, letterSpacing: "0.04em" }}>Locked</span>
@@ -1379,6 +1385,8 @@ export function OptionsTab({
   const setAtExpiryChrome = useAtChromeStore((s) => s.setAtExpiryChrome);
   const clearAtExpiryChrome = useAtChromeStore((s) => s.clearAtExpiryChrome);
   const [atExpiration, setAtExpiration] = useState<string | null>(null);
+  const expiryClockMinute = useMinuteClock();
+  const expiryNowMs = expiryClockMinute * 60_000;
   useEffect(() => {
     if (optionsSubView === "at") {
       enterActiveTrader();
@@ -1672,25 +1680,29 @@ export function OptionsTab({
     puts.forEach(c => { c.streamKey = c.schwabSymbol || buildSchwabOptionKey(symbol, c.expiration, c.strike, "P"); });
     return buildAtLadderGroups(calls, puts);
   }, [data, symbol]);
+  const tradableAtGroups = useMemo(
+    () => filterAtExpiryPillGroups(atGroups, expiryNowMs),
+    [atGroups, expiryNowMs],
+  );
 
   const atLadderHasRows = useMemo(() => {
-    if (optionsSubView !== "at" || !atGroups.length) return false;
+    if (optionsSubView !== "at" || !tradableAtGroups.length) return false;
     const ymd = atExpiration?.slice(0, 10) ?? "";
-    return atGroups.some((g) => {
+    return tradableAtGroups.some((g) => {
       if (!g.rows.length) return false;
       if (!ymd) return true;
       return g.expiration === atExpiration || g.expiration.slice(0, 10) === ymd;
     });
-  }, [optionsSubView, atGroups, atExpiration]);
+  }, [optionsSubView, tradableAtGroups, atExpiration]);
 
   useEffect(() => {
     if (!atGroups.length) return;
     setAtExpiration((prev) => {
-      const tradable = filterAtExpiryPillGroups(atGroups);
-      if (prev && tradable.some((g) => g.expiration === prev)) return prev;
-      return nearestTradableExpiration(atGroups)?.expiration ?? null;
+      if (!tradableAtGroups.length) return null;
+      if (prev && tradableAtGroups.some((g) => g.expiration === prev)) return prev;
+      return nearestTradableExpiration(tradableAtGroups, expiryNowMs)?.expiration ?? null;
     });
-  }, [atGroups]);
+  }, [atGroups.length, tradableAtGroups, expiryNowMs]);
 
   useEffect(() => {
     if (optionsSubView === "chain" && atExpiration) {
@@ -1703,20 +1715,19 @@ export function OptionsTab({
   }, [optionsSubView, atExpiration]);
 
   useEffect(() => {
-    if (optionsSubView !== "at" || !atGroups.length || !atExpiration) {
-      if (optionsSubView !== "at") clearAtExpiryChrome();
+    if (optionsSubView !== "at" || !tradableAtGroups.length || !atExpiration) {
+      clearAtExpiryChrome();
       return;
     }
-    const atPillGroups = filterAtExpiryPillGroups(atGroups);
     setAtExpiryChrome({
-      options: atPillGroups.map((g) => ({
+      options: tradableAtGroups.map((g) => ({
         expiration: g.expiration,
         pillLabel: formatAtExpiryPill(g.expiration, g.dte, symbol),
       })),
       selectedExpiration: atExpiration,
       onSelect: setAtExpiration,
     });
-  }, [optionsSubView, atGroups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
+  }, [optionsSubView, tradableAtGroups, atExpiration, symbol, setAtExpiryChrome, clearAtExpiryChrome]);
 
   useChainOptionHold(
     chainHoldSig?.holdSig,
@@ -2173,7 +2184,7 @@ export function OptionsTab({
         <ActiveTraderView
           subViewChrome={atViewChrome}
           symbol={symbol}
-          groups={atGroups}
+          groups={tradableAtGroups}
           activeExpiration={atExpiration ?? undefined}
           underlyingPrice={underlyingPrice}
           stickyOffset={stickyOffset + 36}

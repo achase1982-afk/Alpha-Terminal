@@ -9,10 +9,14 @@ import {
 } from "./OptionsChainOrderSheet";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import type { StrategyLeg } from "./StrategyBuilder";
-import {
-  saveActiveTraderPrefs,
-  type ActiveTraderTemplatePrefs,
-} from "@/lib/active-trader/activeTraderPrefs";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+
+const { sendAllowedMock } = vi.hoisted(() => ({
+  sendAllowedMock: vi.fn(() => true),
+}));
+vi.mock("@/lib/active-trader/atOrderSend", () => ({
+  atOrderSendAllowed: sendAllowedMock,
+}));
 
 vi.mock("@/lib/store", () => ({
   useTerminalStore: (sel: (s: { symbol: string; streamPrices: Record<string, { last: number }> }) => unknown) =>
@@ -56,14 +60,6 @@ const leg: StrategyLeg = {
   schwabSymbol: "SPY   261219C00600000",
 };
 
-async function lockLimitAndGetReview() {
-  await waitFor(() => expect(screen.getByTestId("chain-sheet-limit")).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "Lock limit" }));
-  const review = screen.getByTestId("chain-sheet-review");
-  await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
-  return review;
-}
-
 function renderSheet(overrides?: Partial<OptionsChainOrderSheetProps>) {
   const props: OptionsChainOrderSheetProps = {
     legs: [leg],
@@ -105,6 +101,7 @@ describe("legsFromChainSelection", () => {
 describe("OptionsChainOrderSheet", () => {
   afterEach(() => {
     schwabAccountMock.tradingHash = "hash-1";
+    sendAllowedMock.mockReturnValue(true);
     localStorage.clear();
     cleanup();
   });
@@ -137,74 +134,20 @@ describe("OptionsChainOrderSheet", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/portfolio/place-order");
   });
 
-  it("sendPreviewOnly: Review opens confirm; Send does not POST", async () => {
+  it("uses the centralized send gate without a preview-only prop", async () => {
     const fetchMock = vi.mocked(fetchWithAuth);
     fetchMock.mockClear();
-    renderSheet({ sendPreviewOnly: true });
-    const review = await lockLimitAndGetReview();
-    expect(review.textContent).toMatch(/sending off/i);
+    sendAllowedMock.mockReturnValue(false);
+    renderSheet();
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(review);
     expect(screen.getByTestId("chain-sheet-confirm")).toBeTruthy();
     const send = screen.getByTestId("chain-sheet-send");
     expect((send as HTMLButtonElement).disabled).toBe(true);
+    expect(send.textContent).toMatch(/sending off/i);
     fireEvent.click(send);
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("sendPreviewOnly: Review enabled without trading account hash", async () => {
-    schwabAccountMock.tradingHash = null;
-    renderSheet({ sendPreviewOnly: true });
-    await lockLimitAndGetReview();
-  });
-
-  it("sendPreviewOnly: localStorage bracket overrides stale explicit Single draft", async () => {
-    const trg: ActiveTraderTemplatePrefs = {
-      template: "TRG w/ bracket",
-      qty: 1,
-      orderType: "LIMIT",
-      limitAnchor: "Mid",
-      takeProfit: { enabled: true, mode: "percent", offset: 10 },
-      stopLoss: { enabled: false, mode: "percent", offset: -10 },
-      autoSend: { enabled: false, armed: false },
-      ladderMode: "single",
-      verticalWidth: 5,
-      exitDuration: "GOOD_TILL_CANCEL",
-      stopLossOrderType: "STOP",
-      stopLimitOffset: 0.05,
-    };
-    const single: ActiveTraderTemplatePrefs = { ...trg, template: "Single", takeProfit: { enabled: false, mode: "percent", offset: 10 } };
-    saveActiveTraderPrefs("equity", trg);
-    renderSheet({
-      sendPreviewOnly: true,
-      atBracketDraft: { prefs: single, primaryInstruction: "BUY_TO_OPEN" },
-    });
-    const review = await lockLimitAndGetReview();
-    fireEvent.click(review);
-    expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
-    expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);
-  });
-
-  it("AT bracket draft: chain confirm uses localStorage prefs when prop omitted (preview-only)", async () => {
-    const prefs: ActiveTraderTemplatePrefs = {
-      template: "OCO",
-      qty: 1,
-      orderType: "LIMIT",
-      limitAnchor: "Mid",
-      takeProfit: { enabled: true, mode: "percent", offset: 10 },
-      stopLoss: { enabled: true, mode: "percent", offset: -10 },
-      autoSend: { enabled: false, armed: false },
-      ladderMode: "single",
-      verticalWidth: 5,
-      exitDuration: "GOOD_TILL_CANCEL",
-      stopLossOrderType: "STOP",
-      stopLimitOffset: 0.05,
-    };
-    saveActiveTraderPrefs("equity", prefs);
-    renderSheet({ sendPreviewOnly: true });
-    const review = await lockLimitAndGetReview();
-    fireEvent.click(review);
-    expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
-    expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(3);
   });
 
   it("AT bracket draft: chain confirm shows trigger rows (Sequence)", async () => {
@@ -223,10 +166,10 @@ describe("OptionsChainOrderSheet", () => {
       stopLimitOffset: 0.05,
     };
     renderSheet({
-      sendPreviewOnly: true,
       atBracketDraft: { prefs, primaryInstruction: "SELL_TO_OPEN" },
     });
-    const review = await lockLimitAndGetReview();
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(review);
     expect(screen.getByTestId("at-trigger-confirm")).toBeTruthy();
     expect(screen.getAllByTestId("at-trigger-confirm-row")).toHaveLength(2);

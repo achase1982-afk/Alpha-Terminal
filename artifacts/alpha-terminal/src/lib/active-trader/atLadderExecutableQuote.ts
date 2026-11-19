@@ -9,6 +9,8 @@ export type AtLadderDisplayQuote = {
   displayState: ReturnType<typeof resolveChainDisplayQuote>["displayState"];
   reason: string | null;
   tapable: boolean;
+  bidTapable: boolean;
+  askTapable: boolean;
   dimmed: boolean;
   asOfLabel: string | null;
   locked: boolean;
@@ -27,6 +29,8 @@ export function atLadderDisplayQuote(
       displayState: "incomplete",
       reason: "No quote",
       tapable: false,
+      bidTapable: false,
+      askTapable: false,
       dimmed: false,
       asOfLabel: null,
       locked: false,
@@ -42,6 +46,8 @@ export function atLadderDisplayQuote(
     displayState: state,
     reason,
     tapable: view.tapable,
+    bidTapable: view.bidTapable,
+    askTapable: view.askTapable,
     dimmed: view.dimmed ?? false,
     asOfLabel: view.asOfLabel ?? null,
     locked: view.locked ?? false,

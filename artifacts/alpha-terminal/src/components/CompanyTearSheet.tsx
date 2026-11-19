@@ -30,6 +30,15 @@ interface FundamentalData {
   error?: string;
 }
 
+interface NewsArticle {
+  id: number;
+  source: string;
+  headline: string;
+  summary?: string;
+  url?: string;
+  datetime: number;
+}
+
 interface CompanyTearSheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -41,7 +50,7 @@ function fmtNum(n: number | null, decimals = 2): string {
 }
 
 export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
-  const { symbol, accessToken, aiFeatureSettings } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, accessToken: s.accessToken, aiFeatureSettings: s.aiFeatureSettings })));
+  const { symbol, aiFeatureSettings } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, aiFeatureSettings: s.aiFeatureSettings })));
   const aiModel = aiFeatureSettings.technicals.model;
   const aiTemp = aiFeatureSettings.technicals.temperature;
   const anthropicOpusEffort = aiFeatureSettings.technicals.anthropicOpusEffort;
@@ -51,14 +60,18 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
   const [fundLoading, setFundLoading] = useState(false);
   const [sympathyResult, setSympathyResult] = useState<string | null>(null);
   const [sympathyLoading, setSympathyLoading] = useState(false);
+  const [news, setNews] = useState<NewsArticle[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!accessToken || !symbol) return;
+    if (!symbol) return;
 
     setFundLoading(true);
     setSympathyLoading(true);
+    setNewsLoading(true);
     setFundamentals(null);
     setSympathyResult(null);
+    setNews([]);
 
     try {
       const res = await fetchWithAuth(
@@ -70,6 +83,18 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
       setFundamentals({ symbol, description: null, exchange: null, assetType: null, marketCap: null, sharesOutstanding: null, peRatio: null, pbRatio: null, dividendYield: null, dividendAmount: null, eps: null, beta: null, high52: null, low52: null, sector: null, industry: null, error: "Failed to load" });
     } finally {
       setFundLoading(false);
+    }
+
+    try {
+      const res = await fetchWithAuth(
+        `${API_BASE}/market/news?symbol=${encodeURIComponent(symbol)}`,
+      );
+      const data = (res.ok ? await res.json() : { articles: [] }) as { articles?: NewsArticle[] };
+      setNews(data.articles ?? []);
+    } catch {
+      setNews([]);
+    } finally {
+      setNewsLoading(false);
     }
 
     try {
@@ -91,7 +116,7 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
     } finally {
       setSympathyLoading(false);
     }
-  }, [symbol, accessToken, aiModel]);
+  }, [symbol, aiModel, aiTemp, anthropicOpusEffort, anthropicOpusSpeed]);
 
   useEffect(() => {
     if (isOpen) fetchData();
@@ -196,14 +221,46 @@ export function CompanyTearSheet({ isOpen, onClose }: CompanyTearSheetProps) {
             <Newspaper className="w-4 h-4 text-primary" />
             <span className="font-mono text-xs font-bold text-foreground tracking-wider">RECENT HEADLINES</span>
           </div>
-          <div className="p-4 bg-[#0c0c0c] flex flex-col items-center justify-center py-8 gap-2">
-            <Newspaper className="w-6 h-6 text-muted-foreground/30" />
-            <span className="font-mono text-[10px] text-muted-foreground/50 tracking-wider text-center">
-              NEWS FEED INTEGRATION COMING SOON
-            </span>
-            <span className="font-mono text-[9px] text-muted-foreground/30">
-              Real-time headlines & sentiment analysis
-            </span>
+          <div className="bg-[#0c0c0c] divide-y divide-card-border">
+            {newsLoading ? (
+              <div className="flex items-center justify-center gap-2 py-8">
+                <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                <span className="font-mono text-[10px] text-muted-foreground">LOADING HEADLINES…</span>
+              </div>
+            ) : news.length > 0 ? (
+              news.slice(0, 8).map((article) => {
+                const content = (
+                  <>
+                    <span className="text-sm text-gray-200 leading-snug">{article.headline}</span>
+                    <span className="font-mono text-[9px] text-muted-foreground">
+                      {article.source || "News"} · {new Date(article.datetime * 1000).toLocaleString()}
+                    </span>
+                  </>
+                );
+                return article.url ? (
+                  <a
+                    key={article.id}
+                    href={article.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex flex-col gap-1 px-4 py-3 hover:bg-white/[0.03] transition-colors"
+                  >
+                    {content}
+                  </a>
+                ) : (
+                  <div key={article.id} className="flex flex-col gap-1 px-4 py-3">
+                    {content}
+                  </div>
+                );
+              })
+            ) : (
+              <div className="flex flex-col items-center justify-center py-8 gap-2">
+                <Newspaper className="w-6 h-6 text-muted-foreground/30" />
+                <span className="font-mono text-[10px] text-muted-foreground/50 tracking-wider">
+                  NO RECENT HEADLINES
+                </span>
+              </div>
+            )}
           </div>
         </div>
 

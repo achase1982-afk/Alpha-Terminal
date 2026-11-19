@@ -10,7 +10,6 @@ import { AtBracketControls } from "./AtBracketControls";
 import { TemplateBar } from "./TemplateBar";
 import { AtTemplateLegPlan } from "./AtTemplateLegPlan";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { AT_VERTICAL_LADDER_ENABLED } from "@/lib/active-trader/atOrderSend";
 import {
   Select,
   SelectContent,
@@ -205,17 +204,12 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
           </span>
           <div className="flex gap-1 mt-1">
             {(["single", "vertical"] as AtLadderMode[]).map((mode) => {
-              const verticalDisabled = mode === "vertical" && !AT_VERTICAL_LADDER_ENABLED;
               return (
                 <button
                   key={mode}
                   type="button"
-                  disabled={verticalDisabled}
-                  onClick={() => {
-                    if (verticalDisabled) return;
-                    onPrefsChange({ ...prefs, ladderMode: mode });
-                  }}
-                  className="flex-1 py-1 rounded border disabled:opacity-40"
+                  onClick={() => onPrefsChange({ ...prefs, ladderMode: mode })}
+                  className="flex-1 py-1 rounded border"
                   style={{
                     fontSize: 11,
                     fontFamily: MONO,
@@ -224,7 +218,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
                     color: prefs.ladderMode === mode ? WHITE : GRAY,
                   }}
                 >
-                  {mode === "single" ? "Single" : "Vertical (soon)"}
+                  {mode === "single" ? "Single" : "Vertical"}
                 </button>
               );
             })}

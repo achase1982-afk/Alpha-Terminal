@@ -11,11 +11,7 @@ import { logFailure } from "./telemetry.js";
 //   snapshot path.
 //
 // Behavior & constraints:
-//   * Env-gated by POLYGON_OPTIONS_WS_ENABLED=1. When off, every entry
-//     point is a no-op that reports disabled — so Autoscale deploys do
-//     not open a socket that would be thrashed by idle-shutdown. Flip
-//     the flag only on Reserved VM.
-//   * POLYGON_API_KEY required at runtime; auth happens as first message
+//   * Enabled whenever POLYGON_API_KEY is configured; auth happens as first message
 //     after the socket opens.
 //   * Subscription surface is ref-counted: overlapping callers (e.g.
 //     two concurrent scans) can add/remove the same OCC symbol without
@@ -128,7 +124,7 @@ let connectReadyRejecters: Array<(e: Error) => void> = [];
 // ── Entry gates ──────────────────────────────────────────────────────
 
 export function isEnabled(): boolean {
-  return process.env["POLYGON_OPTIONS_WS_ENABLED"] === "1";
+  return Boolean(process.env["POLYGON_API_KEY"]?.trim());
 }
 
 export function getStatus(): {
@@ -205,7 +201,7 @@ export function onQuote(h: QuoteHandler): () => void {
 
 export async function ensureConnected(): Promise<void> {
   if (!isEnabled()) {
-    throw new Error("POLYGON_OPTIONS_WS_ENABLED is not set — Polygon options WS is disabled");
+    throw new Error("POLYGON_API_KEY is not set — Polygon options WS is unavailable");
   }
   if (!process.env["POLYGON_API_KEY"]) {
     throw new Error("POLYGON_API_KEY is not set — cannot authenticate Polygon options WS");

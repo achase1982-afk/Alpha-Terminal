@@ -435,7 +435,7 @@ function validateInputs(
     return {
       error: true,
       error_code: "UNSUPPORTED_STRATEGY",
-      user_message: `Multi-leg strategy resolution coming soon. Showing abstract parameters for ${criteria.strategyType}.`,
+      user_message: `Exact contract resolution is unavailable for ${criteria.strategyType}; choose a supported vertical spread.`,
       fallback_params: criteria,
     };
   }
