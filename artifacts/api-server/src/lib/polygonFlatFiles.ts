@@ -8,10 +8,10 @@ import { eq, sql } from "@workspace/db";
 function createS3Client(): S3Client {
   return new S3Client({
     region: "us-east-1",
-    endpoint: process.env.POLYGON_S3_ENDPOINT ?? "https://files.massive.com",
+    endpoint: "https://files.massive.com",
     credentials: {
-      accessKeyId: process.env.POLYGON_S3_ACCESS_KEY ?? "",
-      secretAccessKey: process.env.POLYGON_S3_SECRET_KEY ?? "",
+      accessKeyId: "",
+      secretAccessKey: "",
     },
     forcePathStyle: true,
   });
@@ -51,7 +51,7 @@ function dateToMonthPrefix(date: Date): string {
 }
 
 async function listFilesForDate(s3: S3Client, date: Date): Promise<string[]> {
-  const bucket = process.env.POLYGON_S3_BUCKET ?? "flatfiles";
+  const bucket = "flatfiles";
   const prefix = dateToMonthPrefix(date);
   const tradeDate = formatDate(date);
   // The month directory contains one file per trading day. We only want the
@@ -116,7 +116,7 @@ async function processFile(
   tradeDate: string,
   onRow: (row: DbRow) => void | Promise<void>
 ): Promise<number> {
-  const bucket = process.env.POLYGON_S3_BUCKET ?? "flatfiles";
+  const bucket = "flatfiles";
   const cmd = new GetObjectCommand({ Bucket: bucket, Key: key });
   const res = await s3.send(cmd);
   if (!res.Body) return 0;
@@ -191,6 +191,7 @@ export async function syncDate(
   tickers: string[],
   opts?: { maxS3Requests?: number; onS3Call?: () => void; force?: boolean },
 ): Promise<{ date: string; rows: number; files: number; skipped: boolean; error?: string; s3Calls?: number }> {
+  return { date: formatDate(date), rows: 0, files: 0, skipped: true, s3Calls: 0 };
   const tradeDate = formatDate(date);
   const s3 = createS3Client();
   const targetTickers = new Set(tickers.map(t => t.toUpperCase()));
@@ -199,7 +200,7 @@ export async function syncDate(
     where: eq(polygonSyncLogTable.tradeDate, tradeDate),
   });
   if (!opts?.force && existing?.status === "synced") {
-    return { date: tradeDate, rows: existing.rowsInserted ?? 0, files: 0, skipped: true, s3Calls: 0 };
+    return { date: tradeDate, rows: existing?.rowsInserted ?? 0, files: 0, skipped: true, s3Calls: 0 };
   }
 
   // S3 request budget — first-run safeguard for a never-before-fired cron.
@@ -209,7 +210,7 @@ export async function syncDate(
     if (typeof opts?.maxS3Requests === "number" && Number.isFinite(opts.maxS3Requests) && opts.maxS3Requests > 0) {
       return Math.floor(opts.maxS3Requests);
     }
-    const raw = process.env.POLYGON_FLATFILES_MAX_S3_REQUESTS;
+    const raw = "";
     const parsed = raw == null ? NaN : Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 200;
   }
@@ -285,6 +286,7 @@ export async function syncDateRange(
   tickers: string[],
   opts?: { maxS3Requests?: number; onS3Call?: () => void; force?: boolean },
 ): Promise<Array<{ date: string; rows: number; files: number; skipped: boolean; error?: string }>> {
+  return [];
   const results = [];
   const cursor = new Date(startDate);
   while (cursor <= endDate) {
@@ -302,7 +304,7 @@ export async function getSyncStatus(): Promise<{
   recentLogs: Array<{ tradeDate: string; status: string; rowsInserted: number | null; errorMsg: string | null }>;
   configured: boolean;
 }> {
-  const configured = !!(process.env.POLYGON_S3_ACCESS_KEY && process.env.POLYGON_S3_SECRET_KEY);
+  const configured = false;
   try {
     const rowCount = await db.select({ count: sql<number>`COUNT(*)` }).from(polygonOptionsHistoryTable);
     const logs = await db.query.polygonSyncLogTable.findMany({

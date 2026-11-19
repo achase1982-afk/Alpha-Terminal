@@ -3,7 +3,14 @@ import { enqueueClassifiedTrade, parseOcc } from "./optionsFlowPersistence.js";
 import { classifyForFlowPersistence, shouldPersistLiveWatcherRow } from "./optionsTradeClassifier.js";
 import { resolveFreshOptionNbbo } from "./optionQuoteFreshNbbo.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
-import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
+type PolygonParsedContract = {
+  strike: number;
+  expiration: string;
+  dte: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  schwabSymbol: string | null;
+};
 import {
   ensureConnected,
   isEnabled as polygonOptionsWsEnabled,
@@ -159,9 +166,8 @@ export function isWatcherRunning(): boolean {
 }
 
 export async function startOptionsWatcher(): Promise<void> {
+  return;
   if (!isWatcherEnabled()) {
-    logger.info({ op: "watcher.start.skipped" },
-      "Options watcher: POLYGON_API_KEY not set — skipping startup");
     return;
   }
   if (running) return;
@@ -180,7 +186,7 @@ export async function startOptionsWatcher(): Promise<void> {
   }
 
   watcherTimer = setInterval(() => { void watcherTick(); }, WATCHER_TICK_INTERVAL_MS);
-  watcherTimer.unref?.();
+  watcherTimer?.unref?.();
 
   logger.info({
     op: "watcher.start",
@@ -490,9 +496,9 @@ function projectStats(st: PerTickerState): SessionStats {
 // ── Internal: chain resolution & subscription ───────────────────────
 
 async function resolveAndSubscribeBatch(tickers: string[]): Promise<void> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  return;
+  const apiKey = "";
   if (!apiKey) {
-    logger.warn({ op: "watcher.resolve.noKey" }, "POLYGON_API_KEY missing — cannot resolve chains");
     return;
   }
   // Bounded concurrency on chain fetches (Polygon-friendly).
@@ -516,144 +522,8 @@ const resolving = new Set<string>();
 // the projection check before either's contracts hit shared state.
 let pendingReservation = 0;
 
-async function resolveAndSubscribeOne(ticker: string, apiKey: string): Promise<void> {
-  const st = state.get(ticker);
-  if (!st || st.tier === "COLD") return;
-  if (resolving.has(ticker)) {
-    logger.debug({ ticker, op: "watcher.resolve.skipInFlight" }, "watcher.resolve already in-flight");
-    return;
-  }
-  resolving.add(ticker);
-
-  // Reserve budget atomically before going async. We over-reserve by
-  // `perTicker` (worst case) and release on every exit path below.
-  const perTicker = st.tier === "HOT" ? CONTRACTS_PER_HOT : CONTRACTS_PER_WARM;
-  const reservation = Math.max(0, perTicker - st.contracts.length);
-  const projected = countTotalSubscribed() + pendingReservation + reservation;
-  if (projected > TOTAL_SUB_BUDGET) {
-    logger.warn({
-      op: "watcher.resolve.budgetExceeded",
-      ticker, tier: st.tier, projected, cap: TOTAL_SUB_BUDGET,
-      pending: pendingReservation,
-    }, "watcher.resolve budget cap reached");
-    resolving.delete(ticker);
-    return;
-  }
-  pendingReservation += reservation;
-
-  try {
-  const t0 = Date.now();
-  let chain: Awaited<ReturnType<typeof fetchPolygonChain>> = null;
-  try {
-    chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 45, maxPages: 4, log: logger });
-  } catch (err) {
-    logger.warn({ err, ticker, op: "watcher.resolve.fetchChain.failed" }, "watcher.resolve fetchChain");
-    return;
-  }
-  if (!chain || !chain.underlyingPrice) {
-    logger.debug({ ticker, op: "watcher.resolve.noChain" }, "watcher.resolve: no chain");
-    return;
-  }
-
-  // Post-fetch revalidation — setWatchlist could have demoted/removed this
-  // ticker while we were awaiting Polygon. Re-read state and abort cleanly
-  // (without leaking subs or occToTicker mappings) if ownership changed.
-  const stCheck = state.get(ticker);
-  if (!stCheck || stCheck !== st || stCheck.tier === "COLD") {
-    logger.debug({
-      ticker, op: "watcher.resolve.staleAfterFetch",
-      removed: !stCheck, demoted: stCheck?.tier === "COLD",
-    }, "watcher.resolve: ticker no longer eligible after chain fetch");
-    return;
-  }
-
-  const candidates = pickCandidates(ticker, chain, perTicker);
-  if (!candidates.length) return;
-
-  const symsToAdd = candidates.map(c => c.symbol);
-
-  // Diff old → new contracts. Anything we held that the new chain selection
-  // dropped must be unsubscribed (release WS refcount) and dropped from the
-  // OCC→ticker map so trades don't get attributed to stale state.
-  const newSet = new Set(symsToAdd);
-  const toDrop = st.contracts.filter(occ => !newSet.has(occ));
-  const oldSet = new Set(st.contracts);
-  const trulyNew = symsToAdd.filter(occ => !oldSet.has(occ));
-
-  if (toDrop.length) {
-    try { unsubscribeContractsWithQuotes(toDrop); } catch (err) {
-      logger.warn({ err, ticker, op: "watcher.resolve.unsubscribe.failed" }, "watcher.resolve unsubscribe drop");
-    }
-    for (const occ of toDrop) occToTicker.delete(occ);
-  }
-
-  st.lastChainRefreshTs = Date.now();
-  st.contractType.clear();
-  st.chainByOcc.clear();
-  st.contractBaselineAvgVol20d.clear();
-  for (const c of candidates) st.contractType.set(c.symbol, c.type);
-  for (const c of candidates) {
-    const list = c.type === "C" ? chain.calls : chain.puts;
-    const row = list.find(
-      (x) => x.strike === c.strike && x.expiration === c.expiration,
-    );
-    st.chainByOcc.set(c.symbol, {
-      openInterest: row?.openInterest ?? 0,
-      volume: row?.volume ?? 0,
-    });
-  }
-  try {
-    const baselineMap = await getContracts20dBaselineBatch(symsToAdd);
-    const sessionYmd = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-    for (const occ of symsToAdd) {
-      const bl = baselineMap.get(occ);
-      if (bl && bl.avgVolume > 0) {
-        st.contractBaselineAvgVol20d.set(occ, bl.avgVolume);
-        void upsertStrikeVolumeBaselineFromContractBaseline({
-          ticker,
-          baselineDate: sessionYmd,
-          optionSymbol: occ,
-          avgVolume20d: bl.avgVolume,
-          daysObserved: bl.daysObserved,
-        }).catch((err) =>
-          logFlowPipelineWarn("watcher_baseline_table", "optionsWatcher: strike baseline upsert failed", { err, occ, ticker }),
-        );
-      }
-    }
-  } catch (err) {
-    logFlowPipelineWarn(
-      "watcher_baseline_batch",
-      "optionsWatcher: contract baseline batch failed",
-      { err, ticker, occCount: symsToAdd.length },
-    );
-  }
-  st.contracts = symsToAdd;
-  for (const occ of symsToAdd) occToTicker.set(occ, ticker);
-
-  if (trulyNew.length) {
-    try {
-      await subscribeContractsWithQuotes(trulyNew);
-    } catch (err) {
-      logger.warn({ err, ticker, op: "watcher.resolve.subscribeQuotes.failed" }, "watcher.resolve subscribe T+Q");
-      for (const occ of trulyNew) occToTicker.delete(occ);
-      st.contracts = st.contracts.filter(occ => !trulyNew.includes(occ));
-      return;
-    }
-  }
-
-  logger.info({
-    op: "watcher.resolve.subscribed",
-    ticker, tier: st.tier,
-    contracts: symsToAdd.length,
-    added: trulyNew.length,
-    dropped: toDrop.length,
-    durationMs: Date.now() - t0,
-  }, "watcher.resolve.subscribed");
-  void ensureMarketSnapshotForTicker(ticker);
-  } finally {
-    pendingReservation = Math.max(0, pendingReservation - reservation);
-    resolving.delete(ticker);
-  }
+async function resolveAndSubscribeOne(_ticker: string, _apiKey: string): Promise<void> {
+  return;
 }
 
 interface Candidate { symbol: string; strike: number; expiration: string; type: "C" | "P"; openInterest: number; volume: number }
@@ -724,7 +594,7 @@ async function watcherTick(): Promise<void> {
 
   // 2) Refresh stale chains (HOT/WARM only) — skews refreshes across
   // tickers naturally because lastChainRefreshTs is per-ticker.
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (apiKey) {
     const stale: string[] = [];
     for (const st of state.values()) {

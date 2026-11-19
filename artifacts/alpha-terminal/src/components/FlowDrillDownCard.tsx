@@ -14,7 +14,7 @@ import { buildScannerContextFromUnusualCandidate } from "@/lib/scannerStrategist
 //                     strike + expiry) and metrics line (Volume / OI /
 //                     V/OI / Notional / IV / Delta).
 //   • Time & Sales  — live SSE stream of trades for the selected strike,
-//                     tagged with Lee-Ready aggressor side, Polygon
+//                     tagged with Lee-Ready aggressor side,
 //                     condition codes (Block/Sweep), bid in red and ask
 //                     in green inside the NBBO cell, and the actual
 //                     execution venue (ISE, CBOE, NASDAQ, PHLX, …).
@@ -105,7 +105,7 @@ function fmtDate(yyyymmdd: string): string {
 }
 
 /**
- * OPRA / Polygon options exchange IDs. We map the most common venues to
+ * OPRA options exchange IDs. We map the most common venues to
  * recognizable short names that fit a tape column without abbreviation
  * (these ARE the standard market names — CBOE, ISE, PHLX etc are the
  * actual exchange identities, not abbreviations of longer words).

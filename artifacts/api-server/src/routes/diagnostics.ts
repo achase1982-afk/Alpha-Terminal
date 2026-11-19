@@ -158,7 +158,7 @@ async function getSchwabIngestMetricsForChainDate(
 }
 
 export async function buildChainCoverageRows(symbols: string[]): Promise<ChainCoverageRow[]> {
-  const apiKey = process.env.POLYGON_API_KEY ?? "";
+  const apiKey = "";
   const out: ChainCoverageRow[] = [];
 
   for (const symbol of symbols) {

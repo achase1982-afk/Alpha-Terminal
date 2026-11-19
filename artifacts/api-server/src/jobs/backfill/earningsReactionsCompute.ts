@@ -5,7 +5,7 @@ import {
   isNyTradingSessionDate,
   nextNyTradingDayYmd,
   prevNyTradingDayYmd,
-} from "../../lib/polygonMarketCalendar.js";
+} from "../../lib/usEquityMarketCalendar.js";
 
 type EqDay = {
   date: string;

@@ -1,6 +1,8 @@
 import { db, equityDailyTable } from "@workspace/db";
 import { sql } from "@workspace/db";
 import { computeHV20, computeHV30, computeHV60 } from "../../lib/dailySnapshot.js";
+import { getBestAccessToken } from "../../lib/tokenStore.js";
+import { nyCalendarYmd } from "../../lib/usEquityMarketCalendar.js";
 
 const POLYGON_API = "https://api.polygon.io";
 
@@ -102,13 +104,35 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 
 export async function backfillEquityDailyForSymbol(symbol: string): Promise<{ rowsUpserted: number }> {
   const sym = symbol.toUpperCase().trim();
-  const apiKey = (process.env["POLYGON_API_KEY"] ?? "").trim();
-  if (!apiKey) throw new Error("POLYGON_API_KEY is required for tuning equity_daily backfill");
+  const token = getBestAccessToken();
+  if (!token) return { rowsUpserted: 0 };
 
-  const toYmd = new Date().toISOString().slice(0, 10);
-  const fromYmd = addUtcDaysYmd(toYmd, -365 * 5 - 10);
-
-  const bars = await fetchAllPolygonDailyAggs(sym, fromYmd, toYmd, apiKey);
+  const params = new URLSearchParams({
+    symbol: sym,
+    periodType: "year",
+    period: "5",
+    frequencyType: "daily",
+    frequency: "1",
+    needExtendedHoursData: "false",
+  });
+  const res = await fetch(`https://api.schwabapi.com/marketdata/v1/pricehistory?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) return { rowsUpserted: 0 };
+  const json = (await res.json()) as {
+    candles?: Array<{ datetime: number; open: number; high: number; low: number; close: number; volume: number }>;
+  };
+  const bars = (json.candles ?? [])
+    .filter((c) => Number.isFinite(c.close) && Number.isFinite(c.datetime))
+    .map((c) => ({
+      date: nyCalendarYmd(new Date(c.datetime)),
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+      volume: c.volume,
+    }));
   bars.sort((a, b) => a.date.localeCompare(b.date));
   const closes = bars.map((b) => b.close);
 

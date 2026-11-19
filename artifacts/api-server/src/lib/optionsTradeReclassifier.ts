@@ -28,7 +28,7 @@ export async function reclassifyUnclassifiedTrades(
   const started = Date.now();
   const hardEnd = started + deadlineMs;
 
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     const durationMs = Date.now() - started;
     logger.info(

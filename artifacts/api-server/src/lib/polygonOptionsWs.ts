@@ -124,7 +124,7 @@ let connectReadyRejecters: Array<(e: Error) => void> = [];
 // ── Entry gates ──────────────────────────────────────────────────────
 
 export function isEnabled(): boolean {
-  return Boolean(process.env["POLYGON_API_KEY"]?.trim());
+  return false;
 }
 
 export function getStatus(): {
@@ -200,12 +200,10 @@ export function onQuote(h: QuoteHandler): () => void {
 // ── Public API ───────────────────────────────────────────────────────
 
 export async function ensureConnected(): Promise<void> {
-  if (!isEnabled()) {
-    throw new Error("POLYGON_API_KEY is not set — Polygon options WS is unavailable");
-  }
-  if (!process.env["POLYGON_API_KEY"]) {
-    throw new Error("POLYGON_API_KEY is not set — cannot authenticate Polygon options WS");
-  }
+  return;
+}
+
+async function _removedEnsureConnected(): Promise<void> {
   if (connectionState === "connected") return;
 
   return new Promise<void>((resolve, reject) => {
@@ -469,139 +467,10 @@ function rejectWaiters(err: Error): void {
 }
 
 async function connectPolygon(): Promise<void> {
-  if (!isEnabled()) {
-    connectionState = "disabled";
-    return;
-  }
-  const apiKey = process.env["POLYGON_API_KEY"];
-  if (!apiKey) {
-    logger.error("Polygon options WS: POLYGON_API_KEY missing — cannot connect");
-    connectionState = "disconnected";
-    rejectWaiters(new Error("POLYGON_API_KEY missing"));
-    return;
-  }
-
-  if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-
-  if (ws) {
-    if (ws.readyState === WebSocket.OPEN) return;
-    if (ws.readyState === WebSocket.CONNECTING) {
-      const age = connectAttemptStartedAt ? Date.now() - connectAttemptStartedAt : Number.POSITIVE_INFINITY;
-      if (age < CONNECT_TIMEOUT_MS) {
-        logger.debug({ ageMs: age }, "Polygon options WS: connect in progress — deferring");
-        return;
-      }
-      logger.warn({ ageMs: age }, "Polygon options WS: stale CONNECTING — terminating");
-      try { ws.terminate(); } catch {}
-      ws = null;
-    }
-  }
-
-  clearLifecycleTimers();
-  connectAttemptStartedAt = Date.now();
-  connectionState = "connecting";
-
-  let sock: WebSocket;
-  try {
-    sock = new WebSocket(POLYGON_WS_URL);
-    ws = sock;
-  } catch (err) {
-    logger.error({ err }, "Polygon options WS: constructor failed");
-    connectionState = "disconnected";
-    scheduleReconnect();
-    return;
-  }
-
-  const isCurrent = () => ws === sock;
-
-  connectTimeoutTimer = setTimeout(() => {
-    if (!isCurrent()) return;
-    if (sock.readyState === WebSocket.CONNECTING) {
-      logger.warn({ timeoutMs: CONNECT_TIMEOUT_MS }, "Polygon options WS: handshake timeout — terminating");
-      try { sock.terminate(); } catch {}
-    }
-  }, CONNECT_TIMEOUT_MS);
-
-  sock.on("open", () => {
-    if (!isCurrent()) return;
-    logger.info("Polygon options WS: socket open");
-    if (connectTimeoutTimer) { clearTimeout(connectTimeoutTimer); connectTimeoutTimer = null; }
-
-    // Only reset transport backoff if we're not stuck in an auth-fail loop.
-    if (consecutiveAuthFailures === 0) reconnectDelay = 2000;
-
-    pingIntervalTimer = setInterval(() => {
-      if (!isCurrent() || sock.readyState !== WebSocket.OPEN) return;
-      try { sock.ping(); } catch {}
-      if (pongWatchdogTimer) clearTimeout(pongWatchdogTimer);
-      pongWatchdogTimer = setTimeout(() => {
-        if (!isCurrent()) return;
-        logger.warn({ timeoutMs: PONG_TIMEOUT_MS }, "Polygon options WS: pong timeout — terminating");
-        try { sock.terminate(); } catch {}
-      }, PONG_TIMEOUT_MS);
-    }, PING_INTERVAL_MS);
-
-    authTimeoutTimer = setTimeout(() => {
-      if (!isCurrent()) return;
-      if (connectionState !== "connected") {
-        logger.warn({ timeoutMs: AUTH_RESPONSE_TIMEOUT_MS }, "Polygon options WS: auth response timeout — terminating");
-        try { sock.terminate(); } catch {}
-      }
-    }, AUTH_RESPONSE_TIMEOUT_MS);
-
-    connectionState = "authenticating";
-    try { sock.send(JSON.stringify({ action: "auth", params: apiKey })); } catch {}
-  });
-
-  sock.on("pong", () => {
-    if (!isCurrent()) return;
-    if (pongWatchdogTimer) { clearTimeout(pongWatchdogTimer); pongWatchdogTimer = null; }
-  });
-
-  sock.on("message", (data: Buffer | string) => {
-    if (!isCurrent()) return;
-    const raw = typeof data === "string" ? data : data.toString("utf-8");
-    handleMessage(raw);
-  });
-
-  sock.on("close", (code, reason) => {
-    if (!isCurrent()) {
-      logger.debug({ code }, "Polygon options WS: ignoring close from stale socket");
-      return;
-    }
-    const wasAuthed = connectionState === "connected";
-    if (code === 1006 && !wasAuthed) {
-      consecutiveAbnormalCloses++;
-    } else {
-      consecutiveAbnormalCloses = 0;
-    }
-    logger.warn({ code, reason: reason?.toString(), wasAuthed, consecutiveAbnormalCloses, consecutiveAuthFailures },
-      "Polygon options WS: closed");
-    void logFailure("POLYGON_OPTIONS_WS", "WARN", `Polygon options WS disconnected (code ${code})`,
-      { code, reason: reason?.toString(), wasAuthed });
-    clearLifecycleTimers();
-    ws = null;
-    connectionState = "disconnected";
-    liveSubs.clear();
-    liveQuoteSubs.clear();
-    nbboCache.clear();
-    connectAttemptStartedAt = null;
-    rejectWaiters(new Error(`Polygon options WS closed (code ${code})`));
-    // Polygon uses 1008 for both hard auth failures and transient policy
-    // limits such as max_connections during overlapping deploys/restarts.
-    // Auth failures should not reconnect-loop, but max_connections should
-    // back off and retry after the old socket has been released.
-    if (code !== 1008 || (lastStatusEvent === "max_connections" && consecutiveAuthFailures === 0)) {
-      scheduleReconnect();
-    }
-  });
-
-  sock.on("error", (err) => {
-    logger.error({ err }, "Polygon options WS: error");
-    if (!isCurrent()) return;
-    try { sock.terminate(); } catch {}
-  });
+  connectionState = "disabled";
+  return;
 }
+
 
 function handleMessage(raw: string): void {
   let events: unknown;

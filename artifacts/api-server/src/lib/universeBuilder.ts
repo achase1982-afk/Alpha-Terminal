@@ -1,7 +1,7 @@
 import { logger } from "./logger.js";
 import { emitTelemetry } from "./telemetryStore.js";
 
-const POLYGON_API_KEY = process.env.POLYGON_API_KEY ?? "";
+const POLYGON_API_KEY = "";
 
 const MIN_ADDV = 20_000_000;
 const MIN_PRICE = 5;
@@ -238,6 +238,7 @@ export function getUniverseSnapshot(): UniverseSnapshot | null {
 }
 
 async function polygonFetch(url: string, retries = 3): Promise<any> {
+  if (!POLYGON_API_KEY) return { results: [] };
   const sep = url.includes("?") ? "&" : "?";
   const fullUrl = `${url}${sep}apiKey=${POLYGON_API_KEY}`;
 

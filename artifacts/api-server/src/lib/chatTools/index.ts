@@ -5,7 +5,7 @@ import { fetchAnalystCoverage } from "../analystCoverageService.js";
 import { getNextEarningsDate } from "../earningsService.js";
 import { getPolygonFlowHighlights } from "../polygonFlowHighlights.js";
 import { requestFlowCapture } from "../flowCaptureService.js";
-import { fetchPolygonChain } from "../polygonChain.js";
+import { getBestAccessToken } from "../tokenStore.js";
 import { getOrFetchChain } from "../../routes/market.js";
 import { getLatestMarketPulseForChat } from "../marketPulseCache.js";
 import { logger } from "../logger.js";
@@ -114,7 +114,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     get_options_chain: tool({
       description:
-        "Options chain snapshot (Polygon Options Advanced REST). Returns underlying price and top contracts by volume.",
+        "Options chain snapshot. Returns underlying price and top contracts by volume.",
       inputSchema: z.object({
         symbol: z.string(),
         expiration: z.string().optional().describe("YYYY-MM-DD filter"),
@@ -125,26 +125,10 @@ export function createChatTools(ctx: ChatToolContext) {
       }),
       execute: async ({ symbol, expiration, delta_band }) => {
         const sym = symbol.toUpperCase().trim();
-        const apiKey = (process.env.POLYGON_API_KEY ?? "").trim();
-        if (!apiKey) {
-          const tok = (ctx.schwabAccessToken ?? "").trim();
-          if (tok) {
-            const chain = await getOrFetchChain(sym, tok, packLog);
-            if (chain) {
-              return {
-                source: "schwab_chain",
-                symbol: sym,
-                underlyingPrice: chain.underlyingPrice,
-                totalCalls: chain.totalCalls,
-                totalPuts: chain.totalPuts,
-                note: "POLYGON_API_KEY unset — returned Schwab chain summary only.",
-              };
-            }
-          }
-          return { error: "POLYGON_API_KEY not configured and Schwab chain unavailable." };
-        }
-        const chain = await fetchPolygonChain(sym, apiKey, { maxDte: 60, maxPages: 8, log: packLog });
-        if (!chain) return { error: "Polygon chain returned no data", symbol: sym };
+        const tok = (ctx.schwabAccessToken ?? "").trim() || (getBestAccessToken() ?? "");
+        if (!tok) return { symbol: sym, calls: [], puts: [] };
+        const chain = await getOrFetchChain(sym, tok, packLog);
+        if (!chain) return { symbol: sym, calls: [], puts: [] };
         const minDelta = delta_band?.includes("0.08") ? 0.08 : 0;
         const maxDelta = delta_band?.includes("0.25") ? 0.25 : 1;
         const filterContract = (c: { expiration: string; delta?: number; strike: number; volume?: number }) => {
@@ -158,7 +142,7 @@ export function createChatTools(ctx: ChatToolContext) {
         const calls = (chain.calls ?? []).filter(filterContract).slice(0, 40);
         const puts = (chain.puts ?? []).filter(filterContract).slice(0, 40);
         return {
-          source: "polygon_options_advanced",
+          source: "schwab_chain",
           symbol: sym,
           underlyingPrice: chain.underlyingPrice,
           expirationFilter: expiration ?? null,
@@ -170,7 +154,7 @@ export function createChatTools(ctx: ChatToolContext) {
 
     get_flow: tool({
       description:
-        "Options flow highlights and session tape from DB; may run a short Polygon capture when tape is thin.",
+        "Options flow highlights and session tape from stored flow.",
       inputSchema: z.object({
         symbol: z.string(),
         window: z.string().optional().describe("e.g. session, today"),

@@ -302,10 +302,6 @@ async function runBackfillJob(jobId: string, symbol: string): Promise<void> {
   await updateJob(jobId, { status: "running", startedAt: new Date(), errorMsg: null });
 
   try {
-    if (!process.env.POLYGON_API_KEY) {
-      throw new Error("POLYGON_API_KEY missing");
-    }
-
     const equity = await backfillEquityFromPolygon([symbol], POLYGON_CALENDAR_LOOKBACK_DAYS);
     const priceDays = await countPriceHistoryDays(symbol);
     await updateJob(jobId, {

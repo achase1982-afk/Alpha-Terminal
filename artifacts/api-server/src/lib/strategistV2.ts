@@ -17,9 +17,7 @@ import {
   strategistTelemetryPostgresErrorCode,
   strategistTelemetryFlattenErrorMessage,
 } from "./strategistTelemetryErrors.js";
-import { fetchPolygonTickerMarketCapUsd, logMarketCapPolygonFallback } from "./polygonTickerMarketCap.js";
 import { getBestAccessToken } from "./tokenStore.js";
-import { fetchPolygonChain } from "./polygonChain.js";
 import { getPolygonFlowHighlights, type PolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { type TapeBackfillStatus } from "./strategistTapeBackfill.js";
 import { requestFlowCapture } from "./flowCaptureService.js";
@@ -70,7 +68,7 @@ import { getQuoteBySymbol, normalizeEquityKey } from "./schwabStreamer.js";
 import type { NormalizedQuote } from "./quote-normalizer.js";
 import { normalizeQuote } from "./quote-normalizer.js";
 import { rawQuoteFromLiveQuote, rawQuoteFromSchwabQuoteRow } from "./quoteRawBridge.js";
-import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./polygonMarketCalendar.js";
+import { lastCompletedTradingDayNy, nyCalendarYmd, rthBoundsMs } from "./usEquityMarketCalendar.js";
 import { checkEventConflicts, getUpcomingEvents } from "./calendarEventChecker.js";
 import { isEquityOptionsStrategistMacroEvent } from "./strategistMacroSnapshotFilter.js";
 import { getNextEarningsDate, type NextEarnings } from "./earningsService.js";
@@ -5055,15 +5053,8 @@ async function fetchTickerData(ticker: string): Promise<{ data: TickerData | nul
     const avgVol = f.avg10DaysVolume ?? f.avgVol10Days ?? 1;
     const currentVol = q.totalVolume ?? 0;
     const rawCap = f.marketCap;
-    let marketCapUsd =
+    const marketCapUsd =
       typeof rawCap === "number" && Number.isFinite(rawCap) && rawCap > 0 ? rawCap : null;
-    if (marketCapUsd == null) {
-      const fromPoly = await fetchPolygonTickerMarketCapUsd(upper);
-      if (fromPoly != null) {
-        logMarketCapPolygonFallback(upper);
-        marketCapUsd = fromPoly;
-      }
-    }
     const schwabAssetType =
       typeof ref?.assetType === "string"
         ? ref.assetType
@@ -5219,31 +5210,9 @@ export async function fetchOptionsChain(ticker: string, settings: StrategistConf
   if (schwabChain && schwabChain.length > 0) {
     const priced = schwabChain.filter(c => c.bid > 0 || c.ask > 0);
     if (priced.length > 0) return { chain: priced, source: "schwab" };
-    logger.warn({ ticker, total: schwabChain.length }, "StrategistV2: Schwab chain has contracts but all unpriced — trying Polygon fallback");
   }
 
-  // Polygon fallback when Schwab is unavailable/empty/unpriced
-  try {
-    const apiKey = process.env.POLYGON_API_KEY || "";
-    if (!apiKey) {
-      logger.warn({ ticker }, "StrategistV2: no Polygon key for fallback");
-      return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
-    }
-    const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 365 });
-    if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
-      logger.warn({ ticker }, "StrategistV2: Polygon fallback also empty");
-      return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
-    }
-    const taggedCalls = (chain.calls || []).map((c: any) => ({ ...c, type: "call", optionType: "CALL", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
-    const taggedPuts = (chain.puts || []).map((c: any) => ({ ...c, type: "put", optionType: "PUT", mid: c.mid ?? ((c.bid ?? 0) + (c.ask ?? 0)) / 2 }));
-    const allContracts = [...taggedCalls, ...taggedPuts] as ChainContract[];
-    const pricedContracts = allContracts.filter(c => c.bid > 0 || c.ask > 0);
-    logger.info({ ticker, total: allContracts.length, priced: pricedContracts.length, source: "polygon-fallback" }, "StrategistV2: Polygon fallback chain loaded");
-    return { chain: pricedContracts.length > 0 ? pricedContracts : allContracts, source: "polygon-fallback" };
-  } catch (err) {
-    logger.error({ err, ticker }, "StrategistV2: Polygon fallback failed");
-    return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
-  }
+  return { chain: schwabChain ?? [], source: schwabChain && schwabChain.length > 0 ? "schwab-unpriced" : "none" };
 }
 
 function flattenSchwabMaps(callMap: Record<string, any>, putMap: Record<string, any>): ChainContract[] {

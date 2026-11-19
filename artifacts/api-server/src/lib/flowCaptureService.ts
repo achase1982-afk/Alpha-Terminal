@@ -1,7 +1,8 @@
 import { db, optionsFlowRawTradesTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { logFlowPipelineWarn } from "./flowPipelineInstrumentation.js";
-import { fetchPolygonChain } from "./polygonChain.js";
+import { getBestAccessToken } from "./tokenStore.js";
+import { getOrFetchChain } from "../routes/market.js";
 import { fetchSchwabMarketSnapshot } from "./schwabMarketSnapshot.js";
 import { buildMarketContextSnapshot, type MarketCapTier } from "./flowMarketContext.js";
 import {
@@ -26,8 +27,8 @@ import {
   lastCompletedTradingDayNy,
   nyCalendarYmd,
   rthBoundsMs,
-  polygonListedMarketClosure,
-} from "./polygonMarketCalendar.js";
+  isNyseFullDayClosureYmd,
+} from "./usEquityMarketCalendar.js";
 import {
   ensureConnected,
   getCurrentSubscriptionChannelCount,
@@ -264,7 +265,7 @@ export async function resolveFlowSessionDate(opts: FlowCaptureOptions): Promise<
   if (wd === 0 || wd === 6) {
     return lastCompletedTradingDayNy(now);
   }
-  if (await polygonListedMarketClosure(todayYmd)) {
+  if (isNyseFullDayClosureYmd(todayYmd)) {
     return lastCompletedTradingDayNy(now);
   }
   const { openMs, closeMs } = await rthBoundsMs(todayYmd);
@@ -339,9 +340,9 @@ async function resolveChainInputs(
       tier: opts.marketCapTier ?? marketCtx.tier,
     };
   }
-  const apiKey = process.env["POLYGON_API_KEY"];
-  if (!apiKey) return null;
-  const chain = await fetchPolygonChain(ticker, apiKey, { maxDte: 120, maxPages: 6, log: logger });
+  const token = getBestAccessToken();
+  if (!token) return null;
+  const chain = await getOrFetchChain(ticker, token, logger);
   if (!chain?.underlyingPrice) return null;
   const spot = chain.underlyingPrice;
   const calls = chain.calls ?? [];

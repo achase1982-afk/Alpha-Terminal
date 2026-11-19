@@ -185,7 +185,7 @@ async function listContracts(
 }
 
 export async function diagnoseListContracts(symbol: string, daysBack: number): Promise<ListContractsDiagnostic | { error: string }> {
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) return { error: "POLYGON_API_KEY missing" };
   const fromDate = new Date(Date.now() - daysBack * 86_400_000).toISOString().slice(0, 10);
   const diag: { capture: ListContractsDiagnostic } = { capture: {
@@ -383,7 +383,7 @@ export async function backfillHistoricalIV(
     daysBack,
   };
 
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     report.errors.push("POLYGON_API_KEY missing");
     return report;

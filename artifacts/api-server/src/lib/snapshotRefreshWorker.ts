@@ -13,15 +13,27 @@ import {
   tickerSignalSnapshotTable,
 } from "@workspace/db";
 import { getTuningUniverseSymbols } from "./tuningUniverseRegistrar.js";
-import { polygonListedMarketClosure, nyCalendarYmd } from "./polygonMarketCalendar.js";
-import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
+import { isNyseFullDayClosureYmd, nyCalendarYmd } from "./usEquityMarketCalendar.js";
+import { getBestAccessToken } from "./tokenStore.js";
+import { getOrFetchChain } from "../routes/market.js";
+
+type ChainLeg = {
+  strike: number;
+  expiration: string;
+  bid?: number;
+  ask?: number;
+  delta?: number;
+  openInterest?: number;
+  volume?: number;
+  iv?: number;
+  dte?: number;
+};
 import { getNextEarningsDate } from "./earningsService.js";
 import { getPolygonFlowHighlights } from "./polygonFlowHighlights.js";
 import { evaluateRegimeShock } from "./regimeShockDetector.js";
 import { getLiveMarketIndicatorsForPulse } from "./liveMarketIndicators.js";
 import { impliedVolToVolPoints, classifyEdgeType, type ScannerEdgeType } from "./scannerEdgeType.js";
 import { getScannerSector } from "./scannerSectorMap.js";
-import { polygonKey } from "./polygonAnalystData.js";
 import { fetchEarningsHistoryAndForward } from "./polygonEarningsHistory.js";
 import { logger } from "./logger.js";
 import {
@@ -92,7 +104,7 @@ async function planTuningChainRefresh(
   now: Date,
 ): Promise<{ run: boolean; trigger?: ChainRefreshTrigger }> {
   const ymd = nyCalendarYmd(now);
-  if (await polygonListedMarketClosure(ymd)) return { run: false };
+  if (isNyseFullDayClosureYmd(ymd)) return { run: false };
 
   const parts = isNyWeekdaySessionParts(now);
   if (!parts) return { run: false };
@@ -144,7 +156,7 @@ function mid(b?: number, a?: number): number | null {
   return null;
 }
 
-function interpolateIvAtSpot(contracts: PolygonParsedContract[], spot: number): number | null {
+function interpolateIvAtSpot(contracts: ChainLeg[], spot: number): number | null {
   if (!Number.isFinite(spot) || spot <= 0 || contracts.length === 0) return null;
   const rows = contracts
     .filter((c) => c.strike > 0)
@@ -181,7 +193,7 @@ function interpolateIvAtSpot(contracts: PolygonParsedContract[], spot: number): 
 }
 
 function closestDeltaIv(
-  contracts: PolygonParsedContract[],
+  contracts: ChainLeg[],
   targetDelta: number,
 ): { iv: number; delta: number; strike: number } | null {
   let best: { iv: number; delta: number; strike: number } | null = null;
@@ -199,7 +211,7 @@ function closestDeltaIv(
   return best;
 }
 
-function pickFrontNextExpiries(calls: PolygonParsedContract[], puts: PolygonParsedContract[]): {
+function pickFrontNextExpiries(calls: ChainLeg[], puts: ChainLeg[]): {
   front: string | null;
   next: string | null;
 } {
@@ -215,10 +227,10 @@ function pickFrontNextExpiries(calls: PolygonParsedContract[], puts: PolygonPars
 }
 
 function contractsForExpiry(
-  calls: PolygonParsedContract[],
-  puts: PolygonParsedContract[],
+  calls: ChainLeg[],
+  puts: ChainLeg[],
   exp: string,
-): { calls: PolygonParsedContract[]; puts: PolygonParsedContract[] } {
+): { calls: ChainLeg[]; puts: ChainLeg[] } {
   return {
     calls: calls.filter((c) => c.expiration === exp),
     puts: puts.filter((p) => p.expiration === exp),
@@ -226,9 +238,9 @@ function contractsForExpiry(
 }
 
 /** Polygon snapshot rows → strategist ChainContract (IV decimal σ). */
-function polygonToChainContracts(chain: NonNullable<Awaited<ReturnType<typeof fetchPolygonChain>>>): ChainContract[] {
+function polygonToChainContracts(chain: { calls: ChainLeg[]; puts: ChainLeg[] }): ChainContract[] {
   const out: ChainContract[] = [];
-  const push = (c: PolygonParsedContract, side: "call" | "put") => {
+  const push = (c: ChainLeg, side: "call" | "put") => {
     const bid = c.bid ?? 0;
     const ask = c.ask ?? 0;
     const ivDec =
@@ -343,11 +355,11 @@ async function refreshTicker(
   const now = new Date();
   const attemptAt = now;
   const nyToday = nyYmd(now);
-  const apiKey = polygonKey();
+  const token = getBestAccessToken();
   const deskSettings = await getSettings();
 
   const [chain, earn, flowHl, eqRow, earnHist, corpDateRows] = await Promise.all([
-    apiKey ? fetchPolygonChain(upper, apiKey, { maxDte: 45, maxPages: 8, log }) : Promise.resolve(null),
+    token ? getOrFetchChain(upper, token, log) : Promise.resolve(null),
     getNextEarningsDate(upper),
     getPolygonFlowHighlights(upper),
     db
@@ -464,20 +476,20 @@ async function refreshTicker(
         }
       }
 
-      let belowC: PolygonParsedContract | null = null;
-      let aboveC: PolygonParsedContract | null = null;
+      let belowC: ChainLeg | null = null;
+      let aboveC: ChainLeg | null = null;
       for (const c of [...cF].sort((a, b) => a.strike - b.strike)) {
         if (c.strike <= spot) belowC = c;
         if (c.strike >= spot && !aboveC) aboveC = c;
       }
-      let belowP: PolygonParsedContract | null = null;
-      let aboveP: PolygonParsedContract | null = null;
+      let belowP: ChainLeg | null = null;
+      let aboveP: ChainLeg | null = null;
       for (const p of [...pF].sort((a, b) => a.strike - b.strike)) {
         if (p.strike <= spot) belowP = p;
         if (p.strike >= spot && !aboveP) aboveP = p;
       }
 
-      const interpMid = (below: PolygonParsedContract | null, above: PolygonParsedContract | null): number | null => {
+      const interpMid = (below: ChainLeg | null, above: ChainLeg | null): number | null => {
         if (below && above && below.strike !== above.strike) {
           const mb = mid(below.bid, below.ask);
           const ma = mid(above.bid, above.ask);

@@ -8,7 +8,7 @@ import {
   schwabChartEquityBarsTable,
 } from "@workspace/db";
 import { fetchDailyBollinger20Line } from "../bollingerBandsDaily.js";
-import { nyCalendarYmd } from "../polygonMarketCalendar.js";
+import { nyCalendarYmd } from "../usEquityMarketCalendar.js";
 
 function computeWilderRsi14(closes: number[]): number | null {
   if (closes.length < 15) return null;

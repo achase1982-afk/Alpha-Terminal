@@ -22,7 +22,7 @@ import {
   lastCompletedTradingDayNy,
   nyCalendarYmd,
   rthBoundsMs,
-} from "./polygonMarketCalendar.js";
+} from "./usEquityMarketCalendar.js";
 import { fetchPolygonPaged } from "./polygonPagedFetch.js";
 import { type QuotePoint, nbboAtOrBefore, parseQuotes } from "./optionsQuoteNbbo.js";
 import {
@@ -498,7 +498,7 @@ export async function runStrategistTapeBackfill(args: {
     "strategistTapeBackfill: session window (last completed RTH session)",
   );
 
-  const apiKey = process.env["POLYGON_API_KEY"];
+  const apiKey = "";
   if (!apiKey) {
     return {
       status: "skipped",

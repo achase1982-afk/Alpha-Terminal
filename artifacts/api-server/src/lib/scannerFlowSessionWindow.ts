@@ -3,7 +3,7 @@
  * Fixed 09:30–16:00 ET (no early-close adjustment here — follow-up per product spec 2C).
  */
 
-import { isNyTradingSessionDate } from "./polygonMarketCalendar.js";
+import { isNyTradingSessionDate } from "./usEquityMarketCalendar.js";
 import { nyCalendarYmd, nyOffsetForYmd } from "./usEquityMarketCalendar.js";
 
 export type ScannerRthSessionInactiveReason =

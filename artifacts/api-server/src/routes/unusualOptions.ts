@@ -91,10 +91,10 @@ router.get("/deep/:ticker", (req, res) => {
     return res.status(400).json({ error: "invalid_ticker" });
   }
   if (!isWatcherEnabled()) {
-    return res.status(503).json({
-      error: "watcher_disabled",
-      message: "POLYGON_API_KEY is not configured; deep scan unavailable.",
+    return res.json({
+      snapshot: null,
       coverage: getCoverageInfo(),
+      fetchedAt: Date.now(),
     });
   }
   const snap = getDeepScanSnapshot(ticker);
@@ -135,8 +135,9 @@ router.post("/sync", async (req, res) => {
     date?: string;
   };
 
-  if (!process.env.POLYGON_S3_ACCESS_KEY) {
-    return res.status(503).json({ error: "Polygon S3 credentials not configured" });
+  return res.json({ status: "idle", tickers, days: Math.min(Math.max(1, days), 90) });
+  if (false) {
+    return res.status(503).json({ error: "sync unavailable" });
   }
 
   const boundedDays = Math.min(Math.max(1, days), 90);

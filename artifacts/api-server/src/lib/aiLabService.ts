@@ -3,7 +3,8 @@ import { inArray, desc, sql, eq, and, gte } from "@workspace/db";
 import { emitTelemetry, createTelemetryBatch } from "./telemetryStore.js";
 import { LIQUID_CORE_SYMBOL_STRINGS } from "../data/liquidCore130.js";
 import { getAiLabStrategistConfig, getAiLabFullConfig } from "./aiLabConfig.js";
-import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
+import { getBestAccessToken } from "./tokenStore.js";
+import { getOrFetchChain } from "../routes/market.js";
 import { logger } from "./logger.js";
 
 export function getAiLabServiceConfig() {
@@ -720,13 +721,10 @@ export async function getOptionsChainSummary(symbol: string, currentPrice: numbe
   };
 
   try {
-    const apiKey = process.env.POLYGON_API_KEY || "";
-    if (!apiKey) {
-      logger.warn({ symbol }, "AI Lab options chain: no POLYGON_API_KEY");
-      return empty;
-    }
+    const token = getBestAccessToken();
+    if (!token) return empty;
 
-    const chain = await fetchPolygonChain(symbol, apiKey, { maxDte: 90, maxPages: 8 });
+    const chain = await getOrFetchChain(symbol, token, logger);
     if (!chain || (chain.calls.length === 0 && chain.puts.length === 0)) {
       logger.info({ symbol }, "AI Lab options chain: no contracts from Polygon");
       return empty;

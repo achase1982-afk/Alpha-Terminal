@@ -87,10 +87,7 @@ export async function runLiquidCoreEquityBackfillOnce(): Promise<void> {
  * Per-symbol flow gap repair: distinct dates in options_flow_per_strike (≤2d ago) under 20 → 30d REST backfill.
  */
 export async function runFlowBootstrapGapRepairOnce(): Promise<void> {
-  if (!process.env.POLYGON_API_KEY) {
-    logger.warn("Flow bootstrap: POLYGON_API_KEY missing — skipping");
-    return;
-  }
+  return;
 
   const symbols = liquidCoreUnionTuningSymbols();
   const cutoff = new Date(Date.now() - 2 * 86_400_000).toISOString().slice(0, 10);

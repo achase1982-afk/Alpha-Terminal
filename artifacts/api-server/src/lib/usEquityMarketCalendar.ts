@@ -157,6 +157,64 @@ export function isNyTradingSessionDateSync(dateYmd: string): boolean {
   return true;
 }
 
+/** Mon–Fri NY session that is not a full-day closure. */
+export async function isNyTradingSessionDate(dateYmd: string): Promise<boolean> {
+  return isNyTradingSessionDateSync(dateYmd);
+}
+
+export async function nextNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, 1);
+  for (let i = 0; i < 400; i++) {
+    if (isNyTradingSessionDateSync(d)) return d;
+    d = addCalendarDaysNy(d, 1);
+  }
+  return d;
+}
+
+export async function prevNyTradingDayYmd(ymd: string): Promise<string> {
+  let d = addCalendarDaysNy(ymd, -1);
+  for (let i = 0; i < 400; i++) {
+    if (isNyTradingSessionDateSync(d)) return d;
+    d = addCalendarDaysNy(d, -1);
+  }
+  return d;
+}
+
+export async function advanceNyTradingDaysYmd(ymd: string, deltaSessions: number): Promise<string> {
+  let d = ymd;
+  const steps = Math.abs(deltaSessions);
+  const dir = deltaSessions >= 0 ? 1 : -1;
+  for (let s = 0; s < steps; s++) {
+    d = dir > 0 ? await nextNyTradingDayYmd(d) : await prevNyTradingDayYmd(d);
+  }
+  return d;
+}
+
+/** Regular 9:30–16:00 America/New_York session bounds. */
+export async function rthBoundsMs(sessionYmd: string): Promise<{ openMs: number; closeMs: number }> {
+  const off = nyOffsetForYmd(sessionYmd);
+  return {
+    openMs: new Date(`${sessionYmd}T09:30:00${off}`).getTime(),
+    closeMs: new Date(`${sessionYmd}T16:00:00${off}`).getTime(),
+  };
+}
+
+/** Most recently completed regular session, using the 16:00 close. */
+export async function lastCompletedTradingDayNy(now: Date): Promise<string> {
+  let ymd = nyCalendarYmd(now);
+  for (let i = 0; i < 400; i++) {
+    const wd = nyWeekdaySun0(ymd);
+    if (wd === 0 || wd === 6 || isNyseFullDayClosureYmd(ymd)) {
+      ymd = addCalendarDaysNy(ymd, -1);
+      continue;
+    }
+    const { closeMs } = await rthBoundsMs(ymd);
+    if (now.getTime() >= closeMs) return ymd;
+    ymd = addCalendarDaysNy(ymd, -1);
+  }
+  return nyCalendarYmd(now);
+}
+
 /** Last `count` equity trading sessions ending at today's NY calendar date (includes today if session). */
 export function lastNyTradingSessionYmds(count: number): string[] {
   const out: string[] = [];

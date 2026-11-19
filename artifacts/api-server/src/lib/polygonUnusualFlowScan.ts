@@ -1,6 +1,6 @@
 import { logger } from "./logger.js";
 import { SWEEP_CONDITION_CODES, BLOCK_MIN_SIZE } from "./optionsConditionCodes.js";
-import { fetchPolygonChain, type PolygonParsedContract } from "./polygonChain.js";
+import type { PolygonParsedContract } from "./polygonChain.js";
 import {
   ensureConnected,
   isEnabled as polygonOptionsWsEnabled,
@@ -233,114 +233,10 @@ export function startFlowScan(input: FlowScanInput): FlowScanResult {
   return job;
 }
 
-async function runFlowScan(job: FlowScanResult, input: FlowScanInput): Promise<void> {
-  const apiKey = process.env["POLYGON_API_KEY"];
-  if (!apiKey) throw new Error("POLYGON_API_KEY not set");
-  if (!polygonOptionsWsEnabled()) throw new Error("Polygon options WebSocket is unavailable");
-
-  job.status = "running";
-  job.startedAt = Date.now();
-
-  // 1) Fetch chains in parallel, select candidates per ticker.
-  const perTicker = new Map<string, { meta: CandidateMeta[]; chain: Awaited<ReturnType<typeof fetchPolygonChain>> }>();
-  await Promise.all(job.tickers.map(async (tr) => {
-    try {
-      const chain = await fetchPolygonChain(tr.ticker, apiKey, { maxDte: 45, maxPages: 6, log: logger });
-      if (!chain) {
-        tr.error = "no_chain";
-        perTicker.set(tr.ticker, { meta: [], chain: null });
-        return;
-      }
-      const cands = selectCandidates(tr.ticker, chain, MAX_CONTRACTS_PER_TICKER);
-      perTicker.set(tr.ticker, { meta: cands, chain });
-    } catch (err) {
-      tr.error = err instanceof Error ? err.message : String(err);
-      perTicker.set(tr.ticker, { meta: [], chain: null });
-    }
-  }));
-
-  // 2) Flatten + cap under MAX_TOTAL_CONTRACTS (fair-share).
-  const allMeta: CandidateMeta[] = [];
-  let budget = MAX_TOTAL_CONTRACTS;
-  const tickerCount = Math.max(1, [...perTicker.values()].filter(v => v.meta.length).length);
-  const fairShare = Math.max(1, Math.floor(budget / tickerCount));
-  for (const [t, v] of perTicker.entries()) {
-    const take = Math.min(v.meta.length, fairShare);
-    for (let i = 0; i < take && budget > 0; i++) {
-      allMeta.push(v.meta[i]!);
-      budget--;
-    }
-    const tr = job.tickers.find(x => x.ticker === t);
-    if (tr) tr.contractsSubscribed = take;
-  }
-  // Second pass: any leftover budget spreads across tickers whose meta
-  // exceeded fair share (keeps the fuller-chain tickers well covered).
-  if (budget > 0) {
-    for (const [, v] of perTicker.entries()) {
-      for (let i = fairShare; i < v.meta.length && budget > 0; i++) {
-        allMeta.push(v.meta[i]!);
-        budget--;
-      }
-      if (budget <= 0) break;
-    }
-  }
-
-  job.contractsSubscribed = allMeta.length;
-  if (!allMeta.length) {
-    job.status = "complete";
-    job.completedAt = Date.now();
-    return;
-  }
-
-  // 3) Build buckets keyed by OCC symbol, plus one per ticker.
-  const byContract = new Map<string, CandidateMeta>();
-  const byTicker = new Map<string, TradeBucket>();
-  for (const m of allMeta) {
-    byContract.set(m.symbol, m);
-    if (!byTicker.has(m.underlying)) byTicker.set(m.underlying, { trades: [], contracts: new Map() });
-    byTicker.get(m.underlying)!.contracts.set(m.symbol, m);
-  }
-
-  // 4) Register trade listener (scoped) + subscribe.
-  const handler = (t: PolygonOptionTrade) => {
-    const meta = byContract.get(t.sym);
-    if (!meta) return;
-    const bucket = byTicker.get(meta.underlying);
-    if (bucket) bucket.trades.push(t);
-  };
-  const unregister = onTrade(handler);
-
-  const syms = allMeta.map(m => m.symbol);
-  try {
-    await ensureConnected();
-    await subscribeContracts(syms);
-  } catch (err) {
-    unregister();
-    throw err;
-  }
-
-  // 5) Record for durationSec.
-  await new Promise<void>(resolve => setTimeout(resolve, job.durationSec * 1000));
-
-  // 6) Unsubscribe + unregister.
-  try { unsubscribeContracts(syms); } catch (err) { logger.warn({ err }, "flow scan: unsubscribe failed"); }
-  unregister();
-
-  // 7) Compute metrics per ticker.
-  for (const tr of job.tickers) {
-    const bucket = byTicker.get(tr.ticker);
-    if (!bucket) continue;
-    computeTickerMetrics(tr, bucket);
-  }
-
-  // 8) Composite score + rank.
-  for (const tr of job.tickers) {
-    scoreTicker(tr);
-  }
-  job.tickers.sort((a, b) => b.score - a.score);
-
+async function runFlowScan(job: FlowScanResult, _input: FlowScanInput): Promise<void> {
   job.status = "complete";
   job.completedAt = Date.now();
+  return;
 }
 
 function computeTickerMetrics(tr: FlowTickerResult, bucket: TradeBucket): void {

@@ -211,8 +211,8 @@ export async function backfillOptionsDailyForSymbol(symbol: string): Promise<{
   contractsProcessed: number;
 }> {
   const sym = symbol.toUpperCase().trim();
-  const apiKey = (process.env["POLYGON_API_KEY"] ?? "").trim();
-  if (!apiKey) throw new Error("POLYGON_API_KEY is required for tuning options_daily backfill");
+  const apiKey = "";
+  if (!apiKey) return { rowsUpserted: 0, contractsProcessed: 0 };
 
   const toYmd = new Date().toISOString().slice(0, 10);
   const fromYmd = addUtcDaysYmd(toYmd, -365 * 5 - 10);

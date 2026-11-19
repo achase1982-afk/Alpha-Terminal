@@ -7,7 +7,7 @@
 import { polygonKey } from "./polygonAnalystData.js";
 import { logger } from "./logger.js";
 
-const FED_API_BASE = (process.env["POLYGON_FED_API_BASE"] || "https://api.polygon.io").replace(/\/$/, "");
+const FED_API_BASE = "";
 
 export type FedInflationRow = {
   date: string;
@@ -88,22 +88,12 @@ async function fetchFedPaged<T>(path: string, limit: number): Promise<T[]> {
   return rows;
 }
 
-export async function fetchFedInflationRows(limit = 24): Promise<FedInflationRow[]> {
-  try {
-    return await fetchFedPaged<FedInflationRow>("/fed/v1/inflation", limit);
-  } catch (err) {
-    logger.warn({ err }, "Fed inflation fetch failed");
-    return [];
-  }
+export async function fetchFedInflationRows(_limit = 24): Promise<FedInflationRow[]> {
+  return [];
 }
 
-export async function fetchFedLaborMarketRows(limit = 24): Promise<FedLaborMarketRow[]> {
-  try {
-    return await fetchFedPaged<FedLaborMarketRow>("/fed/v1/labor-market", limit);
-  } catch (err) {
-    logger.warn({ err }, "Fed labor-market fetch failed");
-    return [];
-  }
+export async function fetchFedLaborMarketRows(_limit = 24): Promise<FedLaborMarketRow[]> {
+  return [];
 }
 
 export type InflationSeriesLike = Record<string, unknown>;
