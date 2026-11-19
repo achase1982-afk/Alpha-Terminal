@@ -352,6 +352,8 @@ const STRATEGY_ORDER = [
   "Credit spreads (calls)",
   "Iron condors (credit)",
   "Iron condors (debit)",
+  "Iron butterflies (credit)",
+  "Iron butterflies (debit)",
   "Single options",
   "Covered calls",
   "Equities",

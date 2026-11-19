@@ -496,7 +496,10 @@ function classify(position: WorkingPosition): { strategy: string; assetClass: As
   if (options.length === 4 && verticals.put && verticals.call) {
     const credit = verticals.put.credit && verticals.call.credit;
     const debit = !verticals.put.credit && !verticals.call.credit;
-    const strategy = credit ? "Iron condors (credit)" : debit ? "Iron condors (debit)" : "Other";
+    const bodyPut = verticals.put.credit ? verticals.put.short : verticals.put.long;
+    const bodyCall = verticals.call.credit ? verticals.call.short : verticals.call.long;
+    const family = bodyPut === bodyCall ? "Iron butterflies" : "Iron condors";
+    const strategy = credit ? `${family} (credit)` : debit ? `${family} (debit)` : "Other";
     const expiry = shortExpiry(verticals.put.expiration);
     const label = `${underlying} ${expiry} ${strikeText(verticals.put.short)}/${strikeText(verticals.put.long)}P · ${strikeText(verticals.call.short)}/${strikeText(verticals.call.long)}C`;
     return { strategy, assetClass: "option", label };
