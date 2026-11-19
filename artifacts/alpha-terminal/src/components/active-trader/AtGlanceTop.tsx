@@ -20,6 +20,7 @@ import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTrader
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
+import { AtStripTrial, AtStripTrialSelector, useAtStripTrial } from "./AtStripTrial";
 import { AtExpiryPicker } from "./AtExpiryPicker";
 
 export { AT_HEADER_BG };
@@ -108,6 +109,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   stockTemplate = false,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
+  const trial = useAtStripTrial();
+  const showTrial = mode === "index" && !stockTemplate && !skipNetwork;
   const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
@@ -279,7 +282,15 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </div>
       ) : null}
 
-      {!stockTemplate ? <div
+      {showTrial && <AtStripTrialSelector {...trial} />}
+      {showTrial && trial.layout > 0 ? (
+        <AtStripTrial layout={trial.layout} windowSeconds={flowWindowSec} zones={zones}
+          gross={!flowDashShell && !netPremium.stale && !netPremium.closed && netPremium.streamKind === "spx_options" && flow.connection === "live" ? [
+            netPremium.grossCallsBuy, netPremium.grossCallsSell,
+            netPremium.grossPutsBuy, netPremium.grossPutsSell,
+          ] : null}
+        />
+      ) : !stockTemplate ? <div
         data-at-glance-flow-band
         style={{
           padding: "4px 16px 2px",

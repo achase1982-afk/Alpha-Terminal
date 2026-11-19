@@ -1,0 +1,55 @@
+.at-strip-trial-selector,
+.at-strip-trial-tabs,
+.at-strip-trial-flow,
+.at-strip-trial-levels span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.at-strip-trial-selector {
+  touch-action: pan-y;
+  padding: 2px 14px;
+  color: #a4a6aa;
+  font-size: 12px;
+}
+.at-strip-trial-selector select { background: transparent; color: inherit; }
+.at-strip-trial {
+  padding: 0 14px 4px;
+  color: #f4f4f6;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+.at-strip-trial-tabs { height: 22px; border-block: 1px solid #26262c; }
+.at-strip-trial-tabs button { height: 100%; }
+.at-strip-trial-tabs button[aria-pressed="true"] { color: #f5c542; font-weight: 700; }
+.at-strip-trial-body { height: 57px; }
+.at-strip-trial-split {
+  display: grid;
+  grid-template-columns: 1.1fr 1fr;
+  gap: 12px;
+}
+.at-strip-trial-flow, .at-strip-trial-levels span { height: 19px; }
+.at-strip-trial-flow > span:last-child { text-align: right; }
+.at-strip-trial-flow b { min-width: 30px; }
+.at-strip-buy { color: #4ee38a; }
+.at-strip-sell { color: #ff5a5f; }
+.at-strip-trial-bar { flex: 1; height: 6px; background: #26262c; overflow: hidden; }
+.at-strip-trial-bar:has(i) { background: #ff5a5f; }
+.at-strip-trial-bar i { display: block; background: #4ee38a; height: 100%; }
+.at-strip-trial[data-strip-layout="Grok"] { background: #0d0d0f; }
+.at-strip-trial[data-strip-layout="Grok"] .at-strip-trial-bar { border-radius: 3px; }
+.at-strip-trial-source { display: block; font-size: 11px; color: #a4a6aa; }
+.at-strip-trial[data-strip-layout="Grok"] .at-strip-trial-body { touch-action: pan-y; }
+.at-strip-trial[data-strip-layout="Grok"] .at-strip-trial-bar { position: relative; }
+.at-strip-trial[data-strip-layout="Grok"] .at-strip-trial-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 50%;
+  width: 2px;
+  background: #0d0d0f;
+}
+.at-strip-trial[data-strip-layout="Paged"] .at-strip-trial-tabs { border-block: 0; }
+.at-strip-trial[data-strip-layout="Paged"] .at-strip-trial-tabs button[aria-pressed="true"] {
+  border-bottom: 2px solid currentColor;
+}
