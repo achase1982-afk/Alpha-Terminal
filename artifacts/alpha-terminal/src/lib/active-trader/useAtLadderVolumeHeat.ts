@@ -15,6 +15,7 @@ import {
   type AtLadderVolumeHeatFixtureScene,
 } from "./atLadderVolumeHeatFixture";
 import { equityOptionsSessionEnded } from "@workspace/order-ticket-math";
+import { heatSampleLightsBadge, resolveHeatSampleMs } from "./atLadderHeatSample";
 
 /** Single-name chain poll — ~1 Hz (Schwab-safe while AT ladder is open). */
 export const AT_LADDER_HEAT_POLL_MS = 1_000;
@@ -189,10 +190,11 @@ export function useAtLadderVolumeHeat(input: {
       const rx = streamRxRef.current;
       const wsFresh = rx != null && now - rx <= 12_000;
       const usingRest = !wsFresh && restActiveRef.current;
+      const sourceFresh = heatSampleLightsBadge(lastSourceRxMs, now);
       return {
         kind: usingRest ? "poll" : "stream",
-        label: usingRest ? "REST" : "WS",
-        sourceFresh: wsFresh || usingRest || rx == null,
+        label: sourceFresh ? (usingRest ? "REST" : "WS") : "",
+        sourceFresh,
         lastSourceRxMs,
         pollMs: usingRest ? AT_LADDER_HEAT_POLL_MS : undefined,
       };
@@ -340,7 +342,8 @@ export function useAtLadderVolumeHeat(input: {
     let seeded = false;
     for (const c of input.seedContracts) {
       if (!c.key || c.volume == null || !Number.isFinite(c.volume) || c.volume < 0) continue;
-      const rx = c.volumeSampledAt != null && c.volumeSampledAt > 0 ? c.volumeSampledAt : now;
+      const rx = resolveHeatSampleMs(c.volumeSampledAt, now);
+      if (rx == null) continue;
       const sig = `seed|${c.volume}`;
       if (volumeSigRef.current.has(c.key)) continue;
       volumeSigRef.current.set(c.key, sig);
@@ -354,11 +357,6 @@ export function useAtLadderVolumeHeat(input: {
     if (mode !== "stream") return;
     const engine = engineRef.current!;
 
-    const normalizeSampleMs = (rawMs: number | null | undefined, nowMs: number): number => {
-      if (rawMs == null || !Number.isFinite(rawMs) || rawMs <= 0) return nowMs;
-      return Math.min(nowMs, Math.max(rawMs, nowMs - 5_000));
-    };
-
     const ingestVolumeSamples = () => {
       const ticks = useOptionsStreamStore.getState().ticks;
       const keys = streamKeysRef.current;
@@ -369,21 +367,24 @@ export function useAtLadderVolumeHeat(input: {
         if (!t) continue;
         const sample = t.volumeSample;
         if (sample) {
-          const rx = normalizeSampleMs(sample.tradeTimeMs, nowMs);
+          const rx = resolveHeatSampleMs(sample.tradeTimeMs, nowMs);
+          if (rx == null) continue;
           const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
           if (volumeSigRef.current.get(key) === sig) continue;
           volumeSigRef.current.set(key, sig);
           engine.ingestCumulative(key, sample.cumulativeVol, rx);
-          streamVolRxRef.current = nowMs;
+          streamVolRxRef.current = rx;
           ingested = true;
           continue;
         }
         if (t.volume != null && Number.isFinite(t.volume) && t.volume >= 0) {
+          const rx = resolveHeatSampleMs(t.tradeTime ?? t.ts, nowMs);
+          if (rx == null) continue;
           const sig = `vol|${t.volume}`;
           if (volumeSigRef.current.get(key) === sig) continue;
           volumeSigRef.current.set(key, sig);
-          const rx = normalizeSampleMs(t.tradeTime ?? t.ts, nowMs);
           engine.ingestCumulative(key, t.volume, rx);
+          streamVolRxRef.current = rx;
           ingested = true;
         }
       }
@@ -424,10 +425,12 @@ export function useAtLadderVolumeHeat(input: {
           (prevSample?.cumulativeVol !== sample.cumulativeVol ||
             prevSample?.tradeTimeMs !== sample.tradeTimeMs)
         ) {
+          const rx = resolveHeatSampleMs(sample.tradeTimeMs, nowMs);
+          if (rx == null) continue;
           const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, sample.cumulativeVol, normalizeSampleMs(sample.tradeTimeMs, nowMs));
-          streamVolRxRef.current = nowMs;
+          engine.ingestCumulative(key, sample.cumulativeVol, rx);
+          streamVolRxRef.current = rx;
           ingested = true;
           continue;
         }
@@ -437,10 +440,12 @@ export function useAtLadderVolumeHeat(input: {
           curr.volume >= 0 &&
           curr.volume !== prevTick?.volume
         ) {
+          const rx = resolveHeatSampleMs(curr.tradeTime ?? curr.ts, nowMs);
+          if (rx == null) continue;
           const sig = `vol|${curr.volume}`;
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, curr.volume, normalizeSampleMs(curr.tradeTime ?? curr.ts, nowMs));
-          streamVolRxRef.current = nowMs;
+          engine.ingestCumulative(key, curr.volume, rx);
+          streamVolRxRef.current = rx;
           ingested = true;
         }
       }
