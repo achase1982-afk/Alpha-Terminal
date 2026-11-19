@@ -397,8 +397,10 @@ export function OptionsChainOrderSheet({
       if (directionsChanged && limitLocked) setLimitLocked(false);
       return;
     }
-    if (!limitUserEditedRef.current && !limitPrice.trim()) {
-      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
+    // An unlocked working price follows the live spread mid. A typed, nudged, or locked price stays put.
+    if (!limitUserEditedRef.current) {
+      const next = displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid);
+      if (next !== limitPrice) setLimitPrice(next);
     }
   }, [legDirectionKey, legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
