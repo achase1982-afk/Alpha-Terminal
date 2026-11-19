@@ -1417,8 +1417,6 @@ export default function TerminalPage() {
       {!isWide && (
         <BottomNav
           activeTab={activeBottom === "dashboard" ? "markets" : activeBottom}
-          activeTrader={atOptionsChrome}
-          onActiveTraderMarkets={() => setContextTab("news")}
           strategistRunningCount={strategistRunningCount}
           strategistUnviewedCount={strategistUnviewedCount}
           onTabChange={(tab) => {
