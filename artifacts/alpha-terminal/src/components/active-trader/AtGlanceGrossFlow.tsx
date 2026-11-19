@@ -61,6 +61,7 @@ function GrossFlowTrack({
         {sideTag}
       </span>
       <span
+        data-at-flow-gross-label="bought"
         className="num whitespace-nowrap"
         style={{
           ...cell,
@@ -68,12 +69,12 @@ function GrossFlowTrack({
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
-          color: DOWN_TEXT,
+          color: UP,
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
       >
-        Sold {fmtSoldBought(soldUsd, dashAmounts)}
+        Bought {fmtSoldBought(boughtUsd, dashAmounts)}
       </span>
       <div
         className="relative min-w-0 rounded-sm overflow-hidden"
@@ -83,24 +84,26 @@ function GrossFlowTrack({
         {!dashAmounts ? (
           <>
             <div
+              data-at-flow-gross-fill="bought"
               style={{
                 position: "absolute",
                 top: 0,
                 bottom: 0,
                 right: "50%",
-                width: `${sellFill * 50}%`,
-                background: DOWN_TEXT,
+                width: `${buyFill * 50}%`,
+                background: UP,
                 opacity: 0.85,
               }}
             />
             <div
+              data-at-flow-gross-fill="sold"
               style={{
                 position: "absolute",
                 top: 0,
                 bottom: 0,
                 left: "50%",
-                width: `${buyFill * 50}%`,
-                background: UP,
+                width: `${sellFill * 50}%`,
+                background: DOWN_TEXT,
                 opacity: 0.85,
               }}
             />
@@ -109,6 +112,7 @@ function GrossFlowTrack({
         <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: "rgba(255,255,255,0.28)" }} />
       </div>
       <span
+        data-at-flow-gross-label="sold"
         className="num whitespace-nowrap"
         style={{
           ...cell,
@@ -116,13 +120,13 @@ function GrossFlowTrack({
           fontFeatureSettings: '"tnum" 1',
           fontSize: TEXT_PX,
           fontWeight: 600,
-          color: UP,
+          color: DOWN_TEXT,
           textAlign: "left",
           overflow: "hidden",
           textOverflow: "ellipsis",
         }}
       >
-        Bought {fmtSoldBought(boughtUsd, dashAmounts)}
+        Sold {fmtSoldBought(soldUsd, dashAmounts)}
       </span>
       <div aria-hidden style={{ ...cell, gridColumn: 5, width: 1, height: 14, justifySelf: "center", background: `${GOLD}88` }} />
       {wall ? (

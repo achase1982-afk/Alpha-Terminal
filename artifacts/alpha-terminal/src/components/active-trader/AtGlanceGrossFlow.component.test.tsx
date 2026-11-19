@@ -67,4 +67,60 @@ describe("AtGlanceGrossFlow walls", () => {
     expect(container.querySelector('[data-at-flow-wall="puts"]')).toBeTruthy();
     expect(container.querySelector('[data-at-flow-wall="shared"]')).toBeNull();
   });
+
+  it("puts bought premium on the left of the bar and sold premium on the right", () => {
+    const live: DeskNetPremiumGlance = {
+      ...glance,
+      closed: false,
+      calls: {
+        side: "calls",
+        title: "Calls",
+        netUsd: 100_000,
+        buyUsd: 250_000,
+        sellUsd: 150_000,
+        direction: "buy",
+        directionLabel: "Buy",
+        amountLabel: "$100K",
+        barFill: 0.4,
+      },
+      puts: {
+        side: "puts",
+        title: "Puts",
+        netUsd: -50_000,
+        buyUsd: 80_000,
+        sellUsd: 130_000,
+        direction: "sell",
+        directionLabel: "Sell",
+        amountLabel: "$50K",
+        barFill: 0.2,
+      },
+      grossCallsBuy: 250_000,
+      grossCallsSell: 150_000,
+      grossPutsBuy: 80_000,
+      grossPutsSell: 130_000,
+    };
+    const { container } = render(
+      <div style={{ width: 440 }}>
+        <AtGlanceGrossFlow glance={live} zones={zones} />
+      </div>,
+    );
+    const labels = [...container.querySelectorAll("[data-at-flow-gross-label]")].map((el) =>
+      el.getAttribute("data-at-flow-gross-label"),
+    );
+    expect(labels).toEqual(["bought", "sold", "bought", "sold"]);
+    expect(container.textContent).toMatch(/Bought[\s\S]*Sold[\s\S]*Bought[\s\S]*Sold/);
+    const fills = [...container.querySelectorAll("[data-at-flow-gross-fill]")];
+    expect(fills.map((el) => el.getAttribute("data-at-flow-gross-fill"))).toEqual([
+      "bought",
+      "sold",
+      "bought",
+      "sold",
+    ]);
+    const bought = fills[0] as HTMLElement;
+    const sold = fills[1] as HTMLElement;
+    expect(bought.style.right).toBe("50%");
+    expect(sold.style.left).toBe("50%");
+    expect(bought.style.width).not.toBe("0%");
+    expect(sold.style.width).not.toBe("0%");
+  });
 });
