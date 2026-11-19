@@ -154,7 +154,13 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         }}
       >
         <div className="flex items-baseline min-w-0 flex-1 overflow-hidden" style={{ gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 500, color: AT_SECONDARY, letterSpacing: "0.01em" }}>{symLabel}</span>
+          <span
+            data-at-glance-symbol
+            className="shrink-0 font-semibold text-white tracking-tight whitespace-nowrap"
+            style={{ fontSize: 24, lineHeight: 1 }}
+          >
+            {symLabel}
+          </span>
           <span className="inline-flex items-baseline" style={{ gap: 4 }}>
             <span
               className="num"

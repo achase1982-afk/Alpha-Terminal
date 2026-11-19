@@ -341,11 +341,11 @@ describe("LadderBody", () => {
     expect(cell("call-bid-7330").style.fontVariantNumeric).toBe("tabular-nums");
     expect(cell("call-bid-7330").style.fontSize).toBe("16px");
     const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
-    expect(strike.style.fontWeight).toBe("500");
+    expect(strike.style.fontWeight).toBe("400");
     expect(strike.style.fontSize).toBe("18px");
     const spot = view.container.querySelector<HTMLElement>('[data-at-strike="7320"] > div')!;
     expect(spot.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
-    expect(spot.style.fontWeight).toBe("700");
+    expect(spot.style.fontWeight).toBe("500");
   });
 
   it("outlines the call wall in gold and the put wall in teal", () => {

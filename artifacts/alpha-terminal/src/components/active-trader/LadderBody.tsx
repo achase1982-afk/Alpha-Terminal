@@ -634,7 +634,7 @@ const LadderRowView = memo(function LadderRowView({
             borderRadius: spotRow ? AT_LADDER_SELECT_RADIUS : 0,
             border: "none",
             fontSize: AT_LADDER_STRIKE_SIZE,
-            fontWeight: spotRow ? 700 : AT_LADDER_STRIKE_WEIGHT,
+            fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
             lineHeight: 1.05,
             letterSpacing: spotRow ? "-0.02em" : "0.01em",
           }}
