@@ -44,13 +44,8 @@ import {
 } from "@/lib/active-trader/atLadderWindow";
 import type { OptionsSubView } from "@/components/active-trader/OptionsSubViewToggle";
 import {
-  ChainDraftStrip,
-  CHAIN_DRAFT_STRIP_HEIGHT_PX,
-  type ChainDraftStripLeg,
-} from "@/components/options/ChainDraftStrip";
-import { MOBILE_BOTTOM_NAV_RESERVE_PX } from "@/hooks/useVisualViewportKeyboardInset";
-import {
   canAddChainDraftLeg,
+  CHAIN_LEG_LIMIT_MESSAGE,
   CHAIN_MAX_DRAFT_LEGS,
 } from "@/lib/orders/chainDraftLegLimits";
 import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
@@ -1446,7 +1441,23 @@ export function OptionsTab({
   const [longPressTarget, setLongPressTarget] = useState<LongPressTarget | null>(null);
   const [legLimitRejected, setLegLimitRejected] = useState(false);
   const [chainTicketOpen, setChainTicketOpen] = useState(() => hydratedDraft?.chainTicketOpen ?? false);
-  const [sheetCollapsed, setSheetCollapsed] = useState(() => hydratedDraft?.sheetCollapsed ?? true);
+  const [sheetCollapsed, setSheetCollapsed] = useState(() => hydratedDraft?.sheetCollapsed ?? false);
+  const [chainSheetPeek, setChainSheetPeek] = useState(false);
+  const [chainSheetPad, setChainSheetPad] = useState(0);
+  const chainSheetObserverRef = useRef<ResizeObserver | null>(null);
+  const chainSheetRef = useCallback((node: HTMLDivElement | null) => {
+    chainSheetObserverRef.current?.disconnect();
+    chainSheetObserverRef.current = null;
+    if (!node) {
+      setChainSheetPad(0);
+      return;
+    }
+    const sync = () => setChainSheetPad(Math.ceil(node.getBoundingClientRect().height));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(node);
+    chainSheetObserverRef.current = ro;
+  }, []);
   const [legQuantities, setLegQuantities] = useState<Map<string, number>>(() => {
     if (!hydratedDraft) return new Map();
     return new Map(Object.entries(hydratedDraft.legQuantities));
@@ -1875,11 +1886,14 @@ export function OptionsTab({
           next.set(key, { contract, type, expiration: contract.expiration, side });
           setLegLimitRejected(false);
         }
+        if (prev.size === 0 && next.size > 0) {
+          setSheetCollapsed(false);
+          setChainTicketOpen(true);
+        }
+        if (next.size === 0) setChainTicketOpen(false);
         return next;
       });
     });
-    setChainTicketOpen(false);
-    setSheetCollapsed(true);
   }, [withPreservedChainScroll, rejectLegLimit]);
 
   const handleLongPressCell = useCallback((target: LongPressTarget) => {
@@ -2010,12 +2024,6 @@ export function OptionsTab({
     handleBuildStrategy();
   }, [selectedLegs.size, handleBuildStrategy]);
 
-  const handleChainDraftNext = useCallback(() => {
-    if (selectedLegs.size === 0) return;
-    setChainTicketOpen(true);
-    setSheetCollapsed(false);
-  }, [selectedLegs.size]);
-
   const selectionKeyFromLegId = (legId: string) => legId.split("#")[0];
 
   const handleSheetLegQty = useCallback((legId: string, quantity: number) => {
@@ -2046,16 +2054,6 @@ export function OptionsTab({
     if (selectedLegs.size <= 1) setChainTicketOpen(false);
   }, [withPreservedChainScroll, selectedLegs.size]);
 
-  const handleChainDraftQty = useCallback((key: string, quantity: number) => {
-    withPreservedChainScroll(() => {
-      setLegQuantities((prev) => {
-        const next = new Map(prev);
-        next.set(key, Math.max(1, quantity));
-        return next;
-      });
-    });
-  }, [withPreservedChainScroll]);
-
   const handleStrikeModeChange = useCallback((val: string) => {
     if (val === "custom") { setLocalCustomValue(String(strikeCount)); setIsCustomMode(true); return; }
     setIsCustomMode(false);
@@ -2080,7 +2078,12 @@ export function OptionsTab({
     if (![6, 10, 20].includes(strikeCount)) setStrikeCount(10);
   }, [strikeCount, setStrikeCount]);
 
-  useEffect(() => { return () => { if (debounceRef.current) clearTimeout(debounceRef.current); }; }, []);
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      chainSheetObserverRef.current?.disconnect();
+    };
+  }, []);
 
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
@@ -2092,39 +2095,6 @@ export function OptionsTab({
   const futuresSecondary = futuresChainPlaceholderSecondary(symbol);
 
   const selCount = selectedLegs.size;
-
-  const chainDraftStripLegs = useMemo((): ChainDraftStripLeg[] => {
-    return [...selectedLegs.entries()].map(([key, leg]) => ({
-      key,
-      strike: leg.contract.strike,
-      type: leg.type,
-      side: leg.side,
-      quantity: legQuantities.get(key) ?? 1,
-    }));
-  }, [selectedLegs, legQuantities]);
-
-  const handleChainTrayRemove = useCallback((key: string) => {
-    withPreservedChainScroll(() => {
-      setSelectedLegs((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-      setLegQuantities((prev) => {
-        const next = new Map(prev);
-        next.delete(key);
-        return next;
-      });
-    });
-    setLegLimitRejected(false);
-    setChainTicketOpen(false);
-    setSheetCollapsed(true);
-  }, [withPreservedChainScroll]);
-
-  const chainScrollBottomPad =
-    selCount > 0 && !chainTicketOpen
-      ? CHAIN_DRAFT_STRIP_HEIGHT_PX + MOBILE_BOTTOM_NAV_RESERVE_PX + 8
-      : 0;
 
   const atSyncLegsFromChain = useMemo(
     () =>
@@ -2211,7 +2181,7 @@ export function OptionsTab({
       {optionsSubView === "chain" && (
       <>
       {!isFuturesSymbol && (
-      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
+      <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
       <div
         className="flex items-center justify-between w-full pl-3 pr-2 shrink-0 z-40"
         style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
@@ -2270,7 +2240,7 @@ export function OptionsTab({
         ref={chainScrollRef}
         data-options-chain-scroll
         className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain"
-        style={{ background: BG, paddingBottom: chainScrollBottomPad, WebkitOverflowScrolling: "touch" }}
+        style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >
         {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
@@ -2375,6 +2345,42 @@ export function OptionsTab({
           </div>
         )}
       </div>
+      {selCount > 0 && (
+        <div
+          ref={chainSheetRef}
+          data-chain-order-sheet
+          data-at-order-sheet
+          className="absolute left-0 right-0 bottom-0"
+          style={{ zIndex: 80 }}
+        >
+          {legLimitRejected ? (
+            <p data-chain-leg-limit-msg className="px-3 py-1 text-center" style={{ fontSize: 11, color: DOWN, fontWeight: 600, background: "#000" }}>
+              {CHAIN_LEG_LIMIT_MESSAGE}
+            </p>
+          ) : null}
+          <OptionsChainOrderSheet
+            legs={ticketLegs}
+            collapsed={sheetCollapsed}
+            onCollapsedChange={setSheetCollapsed}
+            sheetPeek={chainSheetPeek}
+            onSheetPeekChange={setChainSheetPeek}
+            onClearAll={handleClearSelection}
+            onLegQuantityChange={handleSheetLegQty}
+            onRemoveLeg={handleSheetRemoveLeg}
+            subscribeOptionSymbols={subscribeOptionSymbols}
+            openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
+            demoFixture={!!chainFixtureOverride}
+            draftDistinctLegCount={selectedLegs.size}
+            atDocked
+            restoredSheetSession={
+              useChainDraftSessionStore.getState().symbol === symbol
+                ? useChainDraftSessionStore.getState().sheet
+                : undefined
+            }
+            onSheetSessionPersist={(session) => useChainDraftSessionStore.getState().setSheetSession(session)}
+          />
+        </div>
+      )}
       </div>
       )}
       {isFuturesSymbol && (
@@ -2403,40 +2409,6 @@ export function OptionsTab({
       </div>
       )}
       </>
-      )}
-
-      {selCount > 0 && !chainTicketOpen && optionsSubView === "chain" && (
-        <ChainDraftStrip
-          legs={chainDraftStripLegs}
-          limitRejected={legLimitRejected}
-          onQtyChange={handleChainDraftQty}
-          onRemove={handleChainTrayRemove}
-          onNext={handleChainDraftNext}
-        />
-      )}
-
-      {selCount > 0 && chainTicketOpen && (
-        <OptionsChainOrderSheet
-          legs={ticketLegs}
-          collapsed={sheetCollapsed}
-          onCollapsedChange={(collapsed) => {
-            setSheetCollapsed(collapsed);
-            if (collapsed) setChainTicketOpen(false);
-          }}
-          onClearAll={handleClearSelection}
-          onLegQuantityChange={handleSheetLegQty}
-          onRemoveLeg={handleSheetRemoveLeg}
-          subscribeOptionSymbols={subscribeOptionSymbols}
-          openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
-          demoFixture={!!chainFixtureOverride}
-          draftDistinctLegCount={selectedLegs.size}
-          restoredSheetSession={
-            useChainDraftSessionStore.getState().symbol === symbol
-              ? useChainDraftSessionStore.getState().sheet
-              : undefined
-          }
-          onSheetSessionPersist={(session) => useChainDraftSessionStore.getState().setSheetSession(session)}
-        />
       )}
 
       {longPressTarget && (
