@@ -94,6 +94,19 @@ export function stockSizeByPrice(levels: readonly StockLevel[]): Map<string, num
   return out;
 }
 
+const VOLUME_BLUE_LOW = [10, 25, 47] as const;
+const VOLUME_BLUE_HIGH = [30, 100, 230] as const;
+
+/** Blue volume heat: no volume stays transparent, the heaviest price level gets the strongest blue. */
+export function stockVolumeHeatColor(intensity: number): string | undefined {
+  if (!(intensity > 0) || !Number.isFinite(intensity)) return undefined;
+  const t = Math.min(1, intensity);
+  const r = Math.round(VOLUME_BLUE_LOW[0] + (VOLUME_BLUE_HIGH[0] - VOLUME_BLUE_LOW[0]) * t);
+  const g = Math.round(VOLUME_BLUE_LOW[1] + (VOLUME_BLUE_HIGH[1] - VOLUME_BLUE_LOW[1]) * t);
+  const b = Math.round(VOLUME_BLUE_LOW[2] + (VOLUME_BLUE_HIGH[2] - VOLUME_BLUE_LOW[2]) * t);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
 export function stockBestPrice(levels: readonly StockLevel[], side: "bid" | "ask"): number | null {
   let best: number | null = null;
   for (const level of levels) {

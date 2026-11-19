@@ -7,7 +7,14 @@ import {
   type AtStockDraft,
   type AtStockSide,
 } from "@/lib/active-trader/atStockDraft";
-import { AT_LADDER_ROW_H } from "@/lib/active-trader/atLadderLayout";
+import {
+  AT_LADDER_STRIKE_BG,
+  AT_LADDER_THIN_SEP,
+  AT_STOCK_ASK_BG,
+  AT_STOCK_BID_BG,
+  AT_STOCK_LADDER_GRID,
+  AT_LADDER_ROW_H,
+} from "@/lib/active-trader/atLadderLayout";
 import { useEquityTapeStore } from "@/lib/active-trader/equityTapeStore";
 import {
   reduceStockTop,
@@ -16,6 +23,7 @@ import {
   stockLadderPrices,
   stockPriceKey,
   stockSizeByPrice,
+  stockVolumeHeatColor,
   EMPTY_STOCK_TOP,
   type StockLevel,
   type StockTopBook,
@@ -24,8 +32,6 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 import { useTerminalStore } from "@/lib/store";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
-
-const GRID = "minmax(0,1fr) 96px minmax(0,1fr)";
 
 function fmtPx(price: number): string {
   return price.toFixed(2);
@@ -40,12 +46,7 @@ function fmtNotional(amount: number): string {
 }
 
 const EMPTY_PRINTS: { price: number; size: number; ts: number }[] = [];
-
-function printWash(intensity: number): string | undefined {
-  if (!(intensity > 0)) return undefined;
-  const alpha = 0.18 + 0.6 * Math.min(1, intensity);
-  return `rgba(6, 148, 64, ${alpha.toFixed(3)})`;
-}
+const EMPTY_VOLUME: Record<string, number> = {};
 
 export function StockLadderBody({ symbol }: { symbol: string }) {
   const upper = symbol.toUpperCase();
@@ -55,6 +56,7 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   const streamStatus = useTerminalStore((s) => s.streamStatus);
   const venueBooks = useEquityTapeStore((s) => s.books[upper]);
   const prints = useEquityTapeStore((s) => s.prints[upper] ?? EMPTY_PRINTS);
+  const accumVolumeByPrice = useEquityTapeStore((s) => s.volumeByPrice[upper] ?? EMPTY_VOLUME);
   const [book, setBook] = useState<StockTopBook>(EMPTY_STOCK_TOP);
   const [draft, setDraft] = useState<AtStockDraft>(() => readStockDraft(symbol));
   const [prices, setPrices] = useState<number[]>([]);
@@ -91,11 +93,20 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   const bidSizes = useMemo(() => stockSizeByPrice(depthBids), [depthBids]);
   const askSizes = useMemo(() => stockSizeByPrice(depthAsks), [depthAsks]);
   const printShares = useMemo(() => stockSizeByPrice(prints), [prints]);
-  const printPeak = useMemo(() => {
+  /** Accumulated volume per price: session accumulation, falling back to the recent print window. */
+  const accumShares = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const [key, size] of printShares) out.set(key, size);
+    for (const [key, size] of Object.entries(accumVolumeByPrice)) {
+      if (size > (out.get(key) ?? 0)) out.set(key, size);
+    }
+    return out;
+  }, [printShares, accumVolumeByPrice]);
+  const accumPeak = useMemo(() => {
     let max = 0;
-    for (const size of printShares.values()) if (size > max) max = size;
+    for (const size of accumShares.values()) if (size > max) max = size;
     return max;
-  }, [printShares]);
+  }, [accumShares]);
 
   const anchor = stockLadderAnchor(
     book,
@@ -156,50 +167,80 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
           const depthAsk = askSizes.get(key) ?? 0;
           const bidSize = depthBid > 0 ? depthBid : bidKey === key ? book.bid?.size ?? null : null;
           const askSize = depthAsk > 0 ? depthAsk : askKey === key ? book.ask?.size ?? null : null;
-          const traded = printShares.get(key) ?? 0;
-          const intensity = printPeak > 0 ? traded / printPeak : 0;
-          const wash = printWash(intensity);
+          const traded = accumShares.get(key) ?? 0;
+          const intensity = accumPeak > 0 ? traded / accumPeak : 0;
+          const volumeHeat = stockVolumeHeatColor(intensity);
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
+          const volumeCellStyle = {
+            background: volumeHeat ?? "transparent",
+            color: WHITE,
+            fontSize: 10,
+          } as const;
           return (
             <div
               key={key}
               data-at-stock-price={key}
               data-at-stock-traded={traded > 0 ? String(Math.round(traded)) : undefined}
-              className="grid items-center"
+              data-at-stock-accum-volume={traded > 0 ? String(Math.round(traded)) : undefined}
+              className="grid items-stretch"
               style={{
-                gridTemplateColumns: GRID,
+                gridTemplateColumns: AT_STOCK_LADDER_GRID,
                 height: AT_LADDER_ROW_H,
                 borderBottom: `1px solid ${BORDER}`,
-                background: wash ?? (selected ? "rgba(255,255,255,0.04)" : "transparent"),
+                background: "transparent",
                 boxSizing: "border-box",
               }}
             >
+              {/* Bid side, outermost -> price: accumulated volume | order qty (blank) | orders (blank) | bid size */}
+              <span data-at-stock-bid-volume={key} className="flex items-center justify-center h-full num" style={volumeCellStyle}>
+                {traded > 0 ? fmtSize(traded) : ""}
+              </span>
+              <span data-at-stock-bid-order-qty={key} className="h-full" />
+              <span data-at-stock-bid-order={key} className="h-full" />
               <button
                 type="button"
                 data-at-stock-bid={key}
-                className="h-full text-right num"
-                style={{ color: WHITE, fontSize: 13, background: "transparent", border: "none", paddingRight: 8 }}
+                className="h-full text-center num"
+                style={{ color: WHITE, fontSize: 12, background: AT_STOCK_BID_BG, border: "none", padding: "0 2px" }}
                 onClick={() => bidSize != null && book.bid && tapSide("SELL", book.bid.price)}
               >
                 {bidSize != null ? fmtSize(bidSize) : ""}
               </button>
+              {/* Price bar: same gray as the options / SPX strike column (`AT_LADDER_STRIKE_BG`). */}
               <button
                 type="button"
+                data-at-stock-price-bar={key}
                 className="h-full text-center num"
-                style={{ color: WHITE, fontSize: 16, fontWeight: 600, background: "transparent", border: "none" }}
+                style={{
+                  color: WHITE,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  background: AT_LADDER_STRIKE_BG,
+                  border: "none",
+                  borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
+                  borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+                  boxShadow: selected ? `inset 0 0 0 1px ${WHITE}` : "none",
+                  padding: 0,
+                }}
                 onClick={() => apply({ ...draft, limitPrice: price })}
               >
                 {fmtPx(price)}
               </button>
+              {/* Ask side, price -> outermost: ask size | orders (blank) | order qty (blank) | accumulated volume */}
               <button
                 type="button"
                 data-at-stock-ask={key}
-                className="h-full text-left num"
-                style={{ color: WHITE, fontSize: 13, background: "transparent", border: "none", paddingLeft: 8 }}
+                className="h-full text-center num"
+                style={{ color: WHITE, fontSize: 12, background: AT_STOCK_ASK_BG, border: "none", padding: "0 2px" }}
                 onClick={() => askSize != null && book.ask && tapSide("BUY", book.ask.price)}
               >
                 {askSize != null ? fmtSize(askSize) : ""}
               </button>
+              <span data-at-stock-ask-order={key} className="h-full" />
+              <span data-at-stock-ask-order-qty={key} className="h-full" />
+              <span data-at-stock-ask-volume={key} className="flex items-center justify-center h-full num" style={volumeCellStyle}>
+                {traded > 0 ? fmtSize(traded) : ""}
+              </span>
             </div>
           );
         })}

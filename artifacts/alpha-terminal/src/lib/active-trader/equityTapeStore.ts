@@ -21,6 +21,8 @@ const MAX_PRINTS = 800;
 interface EquityTapeState {
   books: Record<string, VenueBooks>;
   prints: Record<string, EquityTapePrint[]>;
+  /** Accumulated traded shares per price (price key -> shares) since this session started, per symbol. Never trimmed by the 30s print window. */
+  volumeByPrice: Record<string, Record<string, number>>;
   pushBook: (msg: {
     symbol: string;
     venue: EquityTapeVenue;
@@ -64,15 +66,23 @@ export const useEquityTapeStore = create<EquityTapeState>((set) => {
             books[sym] = { ...books[sym], ...incoming };
           }
         }
+        let volumeByPrice = state.volumeByPrice;
         if (printBatch.size > 0) {
           prints = { ...state.prints };
+          volumeByPrice = { ...state.volumeByPrice };
           const now = Date.now();
           for (const [sym, incoming] of printBatch) {
             const kept = (prints[sym] ?? []).concat(incoming).filter((p) => now - p.ts <= PRINT_WINDOW_MS);
             prints[sym] = kept.length > MAX_PRINTS ? kept.slice(-MAX_PRINTS) : kept;
+            const accum = { ...(volumeByPrice[sym] ?? {}) };
+            for (const p of incoming) {
+              const key = p.price.toFixed(2);
+              accum[key] = (accum[key] ?? 0) + p.size;
+            }
+            volumeByPrice[sym] = accum;
           }
         }
-        return { books, prints };
+        return { books, prints, volumeByPrice };
       });
     }, FLUSH_MS);
   };
@@ -80,6 +90,7 @@ export const useEquityTapeStore = create<EquityTapeState>((set) => {
   return {
     books: {},
     prints: {},
+    volumeByPrice: {},
     pushBook: (msg) => {
       const sym = msg.symbol.toUpperCase();
       const prev = pendingBooks.get(sym) ?? {};
