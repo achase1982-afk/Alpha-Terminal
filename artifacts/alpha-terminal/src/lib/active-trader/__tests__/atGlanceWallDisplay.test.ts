@@ -18,11 +18,12 @@ const base: ZoneModel = {
 };
 
 describe("atGlanceWallDisplay", () => {
-  it("stale expiry shows rolls at open on walls and flip", () => {
+  it("stale expiry shows a dash on walls and flip", () => {
     const zones: ZoneModel = { ...base, callWall: null, putWall: null, flip: null, wallsRollLabel: "rolls at open" };
-    expect(resolveCallWallDisplay(zones).value).toBe("\u2014 rolls at open");
-    expect(resolvePutWallDisplay(zones).value).toBe("\u2014 rolls at open");
-    expect(resolveGammaFlipDisplay(zones)).toBe("\u2014 rolls at open");
+    expect(resolveCallWallDisplay(zones).value).toBe("\u2014");
+    expect(resolvePutWallDisplay(zones).value).toBe("\u2014");
+    expect(resolveGammaFlipDisplay(zones)).toBe("\u2014");
+    expect(resolveGammaFlipDisplay(zones)).not.toContain("rolls at open");
     expect(ladderStrikeZoneTag(zones, 7340)).toBeNull();
   });
 
@@ -51,8 +52,8 @@ describe("atGlanceWallDisplay", () => {
     expect(shared.mode).toBe("shared");
     if (shared.mode !== "shared") return;
     expect(shared.label).toBe("Call · Put wall");
-    expect(shared.value).toBe("\u2014 rolls at open");
-    expect(shared.value.match(/rolls at open/g)).toHaveLength(1);
+    expect(shared.value).toBe("\u2014");
+    expect(shared.value).not.toContain("rolls at open");
 
     const live = resolveGlanceWallLayout(base);
     expect(live.mode).toBe("split");
