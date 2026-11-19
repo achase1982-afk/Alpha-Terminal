@@ -23,6 +23,7 @@ import {
   type SchwabAccountRow,
 } from "@/lib/chainOrderLegInstructions";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { toast } from "@/hooks/use-toast";
 import { useTerminalStore } from "@/lib/store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
@@ -150,6 +151,44 @@ function bracketPrefsActive(prefs: ActiveTraderTemplatePrefs): boolean {
   return (
     prefs.template !== "Single" || !!(prefs.takeProfit?.enabled || prefs.stopLoss?.enabled)
   );
+}
+
+/** Broker acceptance is `{ success: true, orderId }`. A missing id is unconfirmed. */
+function confirmedBrokerOrderId(data: unknown): string | null {
+  if (!data || typeof data !== "object") return null;
+  const row = data as Record<string, unknown>;
+  if (row.success !== true) return null;
+  if (typeof row.error === "string" && row.error.trim()) return null;
+  if (typeof row.orderId !== "string") return null;
+  const id = row.orderId.trim();
+  if (!id || id === "—") return null;
+  return id;
+}
+
+function playOrderAcceptedSound(): void {
+  const AudioCtx =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return;
+  try {
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.17);
+    osc.onended = () => {
+      void ctx.close();
+    };
+  } catch {
+    /* The toast still reports the acceptance when audio is unavailable. */
+  }
 }
 
 function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | undefined {
@@ -589,6 +628,39 @@ export function OptionsChainOrderSheet({
         setStage("error");
         return;
       }
+      if (atDocked) {
+        const acceptedId = confirmedBrokerOrderId(data);
+        if (!acceptedId) {
+          placeOrderInFlightRef.current = false;
+          setSendLocked(false);
+          const message =
+            typeof data?.message === "string" && data.message.trim()
+              ? data.message.trim()
+              : "Order was not confirmed.";
+          setErrorMsg(message);
+          setStage("error");
+          return;
+        }
+        setOrderId(acceptedId);
+        toast({
+          title: "Order sent",
+          description: `#${acceptedId}`,
+          duration: 2500,
+        });
+        playOrderAcceptedSound();
+        onSheetSessionPersist?.({ limitPrice: "", limitLocked: false });
+        setLimitPrice("");
+        setLimitLocked(false);
+        setQuantity(1);
+        limitUserEditedRef.current = false;
+        legsHydrateKeyRef.current = "";
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
+        setStage("form");
+        onCollapsedChange(true);
+        onClearAll();
+        return;
+      }
       setOrderId(data.orderId ?? partial?.orderId ?? "—");
       setStage("success");
     } catch (err: unknown) {
@@ -597,7 +669,7 @@ export function OptionsChainOrderSheet({
       setErrorMsg(err instanceof Error ? err.message : "Network error");
       setStage("error");
     }
-  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount, resolvedOrder]);
+  }, [accountHash, buildSchwabOrder, snapLimitForSubmit, demoFixture, stage, sendAllowed, guardDraftLegCount, resolvedOrder, atDocked, onCollapsedChange, onClearAll, onSheetSessionPersist]);
 
   const handleClearAllClick = useCallback(() => {
     limitUserEditedRef.current = false;
@@ -828,7 +900,18 @@ export function OptionsChainOrderSheet({
                   : "Lock limit to send"
         }
         sendDetail={atDocked ? sendUnavailableReason : null}
-        sendDisabled={atDocked ? !dockedValid : !limitLocked || !isValid}
+        sendPhase={
+          stage === "submitting" ? "submitting" : stage === "error" ? "error" : stage === "success" ? "sent" : "idle"
+        }
+        sendError={errorMsg}
+        orderReceipt={orderId}
+        onDismissSendError={() => {
+          placeOrderInFlightRef.current = false;
+          setSendLocked(false);
+          setErrorMsg("");
+          setStage("form");
+        }}
+        sendDisabled={atDocked ? !dockedValid || sendLocked || stage === "submitting" : !limitLocked || !isValid}
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
           if (!atDocked && !limitLocked) return;

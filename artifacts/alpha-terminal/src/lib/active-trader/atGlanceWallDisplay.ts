@@ -57,8 +57,8 @@ export function resolvePutWallDisplay(zones: ZoneModel): WallColumnDisplay {
 }
 
 export function resolveGammaFlipDisplay(zones: ZoneModel): string {
-  if (zones.wallsRollLabel) return "\u2014";
-  return zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "\u2014";
+  if (zones.flip == null || !Number.isFinite(zones.flip)) return "\u2014";
+  return formatStrikeLevel(Math.round(zones.flip));
 }
 
 /** Ladder strike chip under ATM (pin supersedes separate walls). */
