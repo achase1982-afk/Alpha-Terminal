@@ -153,41 +153,85 @@ function bracketPrefsActive(prefs: ActiveTraderTemplatePrefs): boolean {
   );
 }
 
-/** Broker acceptance is `{ success: true, orderId }`. A missing id is unconfirmed. */
-function confirmedBrokerOrderId(data: unknown): string | null {
-  if (!data || typeof data !== "object") return null;
+/**
+ * Broker acceptance is `success: true` with no error. The order id is optional:
+ * a successful upstream response can omit it. Anything else is not an acknowledgment.
+ */
+function brokerAcceptance(data: unknown): { accepted: true; orderId: string | null } | { accepted: false } {
+  if (!data || typeof data !== "object") return { accepted: false };
   const row = data as Record<string, unknown>;
-  if (row.success !== true) return null;
-  if (typeof row.error === "string" && row.error.trim()) return null;
-  if (typeof row.orderId !== "string") return null;
+  if (row.success !== true) return { accepted: false };
+  if (typeof row.error === "string" && row.error.trim()) return { accepted: false };
+  if (typeof row.orderId !== "string") return { accepted: true, orderId: null };
   const id = row.orderId.trim();
-  if (!id || id === "—") return null;
-  return id;
+  if (!id || id === "—") return { accepted: true, orderId: null };
+  return { accepted: true, orderId: id };
 }
 
-function playOrderAcceptedSound(): void {
+/** Identity of the draft that was sent. Quote ticks are not part of it. */
+function chainDraftRevision(input: {
+  legs: StrategyLeg[];
+  quantity: number;
+  limitPrice: string;
+  limitLocked: boolean;
+  orderType: string;
+}): string {
+  const legs = input.legs
+    .map((leg) =>
+      [leg.id, leg.direction, leg.optionType, leg.strike, leg.expiration, leg.quantity, leg.schwabSymbol].join(":"),
+    )
+    .join("|");
+  return `${legs}#${input.quantity}#${input.limitPrice}#${input.limitLocked ? 1 : 0}#${input.orderType}`;
+}
+
+type PreparedAcceptSound = { play: () => void; close: () => void };
+
+const SILENT_ACCEPT_SOUND: PreparedAcceptSound = { play() {}, close() {} };
+
+/**
+ * Create the audio graph on the Send gesture. iOS only allows playback that
+ * was unlocked by that tap, so the context exists before the request returns
+ * and `play` runs only after the broker accepts.
+ */
+function prepareOrderAcceptedSound(): PreparedAcceptSound {
   const AudioCtx =
     window.AudioContext ??
     (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioCtx) return;
+  if (!AudioCtx) return SILENT_ACCEPT_SOUND;
   try {
     const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "sine";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.17);
-    osc.onended = () => {
-      void ctx.close();
+    void ctx.resume();
+    let played = false;
+    return {
+      play() {
+        if (played || ctx.state === "closed") return;
+        played = true;
+        try {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.17);
+          osc.onended = () => {
+            void ctx.close();
+          };
+        } catch {
+          void ctx.close();
+        }
+      },
+      close() {
+        if (played || ctx.state === "closed") return;
+        void ctx.close();
+      },
     };
   } catch {
-    /* The toast still reports the acceptance when audio is unavailable. */
+    return SILENT_ACCEPT_SOUND;
   }
 }
 
@@ -567,6 +611,14 @@ export function OptionsChainOrderSheet({
 
   const openReviewRef = useRef(false);
   const placeOrderInFlightRef = useRef(false);
+  const draftRevisionRef = useRef("");
+  draftRevisionRef.current = chainDraftRevision({
+    legs,
+    quantity,
+    limitPrice,
+    limitLocked,
+    orderType,
+  });
   const [sendLocked, setSendLocked] = useState(false);
   useEffect(() => {
     if (!openReviewOnMount || openReviewRef.current || legs.length === 0) return;
@@ -599,9 +651,12 @@ export function OptionsChainOrderSheet({
     setSendLocked(true);
     setReviewLimitSnapped(px);
     setStage("submitting");
+    const submittedRevision = draftRevisionRef.current;
+    const acceptSound = atDocked ? prepareOrderAcceptedSound() : SILENT_ACCEPT_SOUND;
     try {
       const order = buildSchwabOrder(px ?? 0);
       if (typeof order.error === "string") {
+        acceptSound.close();
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
         setPriceError(order.error);
@@ -616,6 +671,7 @@ export function OptionsChainOrderSheet({
       const data = await res.json();
       const partial = demoFixture ? interpretBracketPlaceOrderResult(data) : null;
       if (!res.ok || data.error) {
+        acceptSound.close();
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
         setErrorMsg(data.message || data.error || "Order rejected");
@@ -623,47 +679,51 @@ export function OptionsChainOrderSheet({
         return;
       }
       if (demoFixture && partial?.entryAccepted && !partial.exitsAccepted && partial.userMessage) {
+        acceptSound.close();
         setOrderId(partial.orderId ?? "—");
         setErrorMsg(`${partial.userMessage} (fixture harness — requires broker exit status fields)`);
         setStage("error");
         return;
       }
       if (atDocked) {
-        const acceptedId = confirmedBrokerOrderId(data);
-        if (!acceptedId) {
+        const acceptance = brokerAcceptance(data);
+        if (!acceptance.accepted) {
+          acceptSound.close();
           placeOrderInFlightRef.current = false;
           setSendLocked(false);
-          const message =
-            typeof data?.message === "string" && data.message.trim()
-              ? data.message.trim()
-              : "Order was not confirmed.";
-          setErrorMsg(message);
+          setErrorMsg("Order was not confirmed.");
           setStage("error");
           return;
         }
-        setOrderId(acceptedId);
+        acceptSound.play();
         toast({
           title: "Order sent",
-          description: `#${acceptedId}`,
+          description: acceptance.orderId ? `#${acceptance.orderId}` : undefined,
           duration: 2500,
         });
-        playOrderAcceptedSound();
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
+        if (draftRevisionRef.current !== submittedRevision) {
+          setStage("form");
+          return;
+        }
+        setOrderId(acceptance.orderId);
         onSheetSessionPersist?.({ limitPrice: "", limitLocked: false });
         setLimitPrice("");
         setLimitLocked(false);
         setQuantity(1);
         limitUserEditedRef.current = false;
         legsHydrateKeyRef.current = "";
-        placeOrderInFlightRef.current = false;
-        setSendLocked(false);
         setStage("form");
         onCollapsedChange(true);
         onClearAll();
         return;
       }
+      acceptSound.close();
       setOrderId(data.orderId ?? partial?.orderId ?? "—");
       setStage("success");
     } catch (err: unknown) {
+      acceptSound.close();
       placeOrderInFlightRef.current = false;
       setSendLocked(false);
       setErrorMsg(err instanceof Error ? err.message : "Network error");
