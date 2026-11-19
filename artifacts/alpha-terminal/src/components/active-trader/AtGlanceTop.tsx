@@ -269,7 +269,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           boxSizing: "border-box",
         }}
       >
-        <div className="flex items-baseline justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 18, lineHeight: 1 }}>
+        <div className="flex items-baseline justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 22, lineHeight: 1 }}>
           <span className="flex items-center min-w-0 overflow-hidden" style={{ flex: "1 1 auto" }}>
             <span
               data-at-flow-now
@@ -282,7 +282,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           <span
             data-at-gamma-flip
             className="num shrink-0 truncate"
-            style={{ ...NUM_FEAT, fontWeight: 600, color: AT_LADDER_GAMMA, fontSize: 13, whiteSpace: "nowrap" }}
+            style={{ ...NUM_FEAT, fontWeight: 700, color: AT_LADDER_GAMMA, fontSize: 16, whiteSpace: "nowrap" }}
           >
             Gamma flip {flipLabel}
           </span>
