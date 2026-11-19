@@ -874,6 +874,8 @@ export function OptionsChainOrderSheet({
         }
         maxLossLabel={atDocked ? maxLossLabel : summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—"}
         midDisplay={mid}
+        spreadQuantity={quantity}
+        onSpreadQuantityChange={setQuantity}
         limitPrice={limitPrice}
         onLimitPriceChange={(v) => {
           limitUserEditedRef.current = true;
