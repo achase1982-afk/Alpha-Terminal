@@ -64,7 +64,7 @@ export function JournalScreen(props: JournalScreenProps) {
   };
 
   return (
-    <div data-journal-root style={{ fontFamily: FONT, color: C.text, background: C.bg, overflowAnchor: "none" }}>
+    <div ref={rootRef} data-journal-root style={{ fontFamily: FONT, color: C.text, background: C.bg, overflowAnchor: "none" }}>
       {props.exampleBanner ? (
         <div style={{ background: C.gold, color: "#1a1400", textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
           EXAMPLE DATA — NOT ACCOUNT FIGURES
