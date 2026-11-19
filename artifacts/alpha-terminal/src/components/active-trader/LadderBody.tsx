@@ -15,9 +15,6 @@ import {
   DOWN,
   GRAY,
   WHITE,
-  GAMMA_SCENARIO,
-  GOLD,
-  PUT_WALL,
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import {
@@ -26,6 +23,8 @@ import {
   AT_HEAT_PUT_RGB,
   AT_HEAT_WASH_ALPHA,
   AT_LADDER_GRID,
+  AT_LADDER_GAMMA,
+  AT_LADDER_GUTTER_X,
   AT_LADDER_LEG_TAG_SIZE,
   AT_LADDER_PANEL_BG,
   AT_LADDER_PRICE_COLOR,
@@ -34,6 +33,7 @@ import {
   AT_LADDER_ROW_H,
   AT_LADDER_SELECT_BUY,
   AT_LADDER_SELECT_INSET,
+  AT_LADDER_SELECT_MAX_W,
   AT_LADDER_SELECT_RADIUS,
   AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
@@ -261,7 +261,7 @@ const QuoteCell = memo(function QuoteCell({
           className="inline-flex flex-col items-center justify-center"
           style={{
             boxSizing: "border-box",
-            width: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+            width: `min(${AT_LADDER_SELECT_MAX_W}px, calc(100% - ${AT_LADDER_SELECT_INSET * 2}px))`,
             height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
             margin: AT_LADDER_SELECT_INSET,
             padding: "0 2px",
@@ -301,7 +301,7 @@ const QuoteCell = memo(function QuoteCell({
             pressed
               ? {
                   boxSizing: "border-box",
-                  width: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
+                  width: `min(${AT_LADDER_SELECT_MAX_W}px, calc(100% - ${AT_LADDER_SELECT_INSET * 2}px))`,
                   height: `calc(100% - ${AT_LADDER_SELECT_INSET * 2}px)`,
                   margin: AT_LADDER_SELECT_INSET,
                   borderRadius: AT_LADDER_SELECT_RADIUS,
@@ -464,11 +464,8 @@ const LadderRowView = memo(function LadderRowView({
   callFar,
   putFar,
   vertical,
-  accentHex,
-  isSelected,
   spotRow,
   gammaFlipRow,
-  zoneTag,
   keepawayForbidden,
   positionQty,
   workChip,
@@ -485,26 +482,14 @@ const LadderRowView = memo(function LadderRowView({
     height: rowHeight,
     borderBottom: `1px solid ${AT_LADDER_THIN_SEP}`,
     position: "relative",
-    borderRadius: gammaFlipRow ? 4 : undefined,
     background: keepawayForbidden ? "rgba(255,255,255,0.03)" : AT_LADDER_PANEL_BG,
-    boxShadow: gammaFlipRow
-      ? `inset 0 0 0 1px ${GAMMA_SCENARIO}`
-      : isSelected && !zoneTag && !spotRow
-        ? `inset 0 0 0 1px ${accentHex}40`
-        : undefined,
+    boxSizing: "border-box",
+    paddingLeft: AT_LADDER_GUTTER_X,
+    paddingRight: AT_LADDER_GUTTER_X,
     zIndex: gammaFlipRow ? 2 : undefined,
   };
 
-  const isCallWall = zoneTag === "CALL WALL";
-  const isPutWall = zoneTag === "PUT WALL";
-  const isWall = isCallWall || isPutWall;
-  const wallColor = isCallWall ? GOLD : isPutWall ? PUT_WALL : null;
-  const strikeBorder = spotRow
-    ? "none"
-    : wallColor
-      ? `1.5px solid ${wallColor}`
-      : "none";
-  const strikePad = spotRow || isWall || gammaFlipRow;
+  const strikePad = spotRow || gammaFlipRow;
 
   return (
     <div
@@ -513,9 +498,14 @@ const LadderRowView = memo(function LadderRowView({
       data-at-ladder-row={row.strike}
       data-at-spot-row={spotRow ? "1" : undefined}
       data-at-gamma-flip-row={gammaFlipRow ? "1" : undefined}
-      data-at-call-wall-row={isCallWall ? "1" : undefined}
-      data-at-put-wall-row={isPutWall ? "1" : undefined}
     >
+      {gammaFlipRow ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute z-[3]"
+          style={{ inset: 3, border: `1px solid ${AT_LADDER_GAMMA}`, borderRadius: 4 }}
+        />
+      ) : null}
       <ContractPair
         pairSide="call"
         type="CALL"
@@ -554,8 +544,8 @@ const LadderRowView = memo(function LadderRowView({
           style={{
             background: spotRow ? AT_SPOT_PILL : "transparent",
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
-            borderRadius: spotRow || isWall ? AT_LADDER_SELECT_RADIUS : 0,
-            border: strikeBorder,
+            borderRadius: spotRow ? AT_LADDER_SELECT_RADIUS : 0,
+            border: "none",
             fontSize: AT_LADDER_STRIKE_SIZE,
             fontWeight: spotRow ? 700 : AT_LADDER_STRIKE_WEIGHT,
             lineHeight: 1.05,
@@ -590,39 +580,11 @@ const LadderRowView = memo(function LadderRowView({
                 fontWeight: 600,
                 lineHeight: 1.05,
                 marginTop: 1,
-                color: spotRow ? AT_SPOT_PILL_TEXT : GAMMA_SCENARIO,
+                color: spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA,
                 whiteSpace: "nowrap",
               }}
             >
               Gamma flip
-            </span>
-          ) : isWall ? (
-            <span
-              data-at-strike-zone-tag
-              data-at-strike-wall={isCallWall ? "call" : "put"}
-              style={{
-                fontSize: AT_LADDER_LEG_TAG_SIZE,
-                fontWeight: 600,
-                lineHeight: 1.05,
-                marginTop: 1,
-                color: spotRow ? AT_SPOT_PILL_TEXT : wallColor!,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {isCallWall ? "Call wall" : "Put wall"}
-            </span>
-          ) : zoneTag ? (
-            <span
-              data-at-strike-zone-tag
-              style={{
-                fontSize: AT_LADDER_LEG_TAG_SIZE,
-                lineHeight: 1.05,
-                marginTop: 1,
-                opacity: 0.75,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {zoneTag}
             </span>
           ) : null}
         </div>

@@ -24,18 +24,19 @@ const SYS_FONT =
 const SHEET_BOTTOM_OFFSET = "calc(76px + max(env(safe-area-inset-bottom, 0px), 12px))";
 
 const PEER_VALUE: CSSProperties = {
-  fontSize: 15,
+  fontSize: 17,
+  fontWeight: 600,
+  fontVariantNumeric: "tabular-nums",
+  color: WHITE,
+  lineHeight: 1,
+};
+const PEER_LABEL: CSSProperties = { fontSize: 11, fontWeight: 500, color: GRAY, lineHeight: 1.15 };
+const META_VALUE: CSSProperties = {
+  fontSize: 14,
   fontWeight: 600,
   fontVariantNumeric: "tabular-nums",
   color: WHITE,
   lineHeight: 1.15,
-};
-const PEER_LABEL: CSSProperties = { fontSize: 11, fontWeight: 500, color: GRAY, lineHeight: 1.15 };
-const META_VALUE: CSSProperties = {
-  fontSize: 13,
-  fontWeight: 600,
-  fontVariantNumeric: "tabular-nums",
-  color: WHITE,
 };
 
 function fmtMoney(n: number | null | undefined, cents = true): string {
@@ -90,10 +91,12 @@ function SheetHandle({
   collapsed,
   onCollapsedChange,
   children,
+  overlay = false,
 }: {
   collapsed: boolean;
   onCollapsedChange: (v: boolean) => void;
   children?: ReactNode;
+  overlay?: boolean;
 }) {
   const startRef = useRef<{ id: number; y: number } | null>(null);
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
@@ -115,11 +118,12 @@ function SheetHandle({
       data-at-order-sheet-handle
       aria-label={collapsed ? "Expand order ticket" : "Collapse order ticket"}
       aria-expanded={!collapsed}
-      className="w-full flex flex-col items-stretch"
+      className={overlay ? "absolute inset-x-0 top-0 z-[3]" : "w-full flex flex-col items-stretch"}
       style={{
         background: "transparent",
         border: "none",
         padding: 0,
+        height: overlay ? 12 : undefined,
         touchAction: "none",
         WebkitTapHighlightColor: "transparent",
       }}
@@ -133,9 +137,11 @@ function SheetHandle({
         if (e.detail === 0) onCollapsedChange(!collapsed);
       }}
     >
-      <span className="flex items-center justify-center" style={{ height: 14 }} aria-hidden>
-        <span style={{ width: 36, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
-      </span>
+      {!overlay ? (
+        <span className="flex items-center justify-center" style={{ height: 14 }} aria-hidden>
+          <span style={{ width: 36, height: 4, borderRadius: 999, background: "rgba(255,255,255,0.22)" }} />
+        </span>
+      ) : null}
       {children}
     </button>
   );
@@ -180,9 +186,10 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
     const sheetStyle: CSSProperties = {
       background: AT_ORDER_PANEL_BG,
       borderTop: `1px solid ${AT_ORDER_PANEL_BORDER}`,
-      borderRadius: "14px 14px 0 0",
-      boxShadow: "0 -10px 28px rgba(0,0,0,0.6)",
+      borderRadius: 0,
+      boxShadow: "none",
       fontFamily: SYS_FONT,
+      boxSizing: "border-box",
     };
     if (collapsed) {
       return (
@@ -226,10 +233,14 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
         data-at-approved-ticket
         data-at-docked-order-panel
       >
-        <SheetHandle collapsed={false} onCollapsedChange={onCollapsedChange} />
-        <div className="flex flex-col" style={{ padding: "0 10px 8px" }}>
+        <SheetHandle collapsed={false} onCollapsedChange={onCollapsedChange} overlay />
+        <div className="flex flex-col" style={{ padding: "5px 12px 4px" }}>
         <div className="flex items-start justify-between gap-2">
-          <div className="grid grid-cols-3 gap-x-2 flex-1 min-w-0" data-at-ticket-summary>
+          <div
+            className="grid grid-cols-3 gap-x-2 min-w-0"
+            style={{ width: "min(340px, calc(100% - 40px))" }}
+            data-at-ticket-summary
+          >
             <MotionStat label={entryLabel} value={fmtMoney(entryAmount)} color={entryColor} />
             <MotionStat label="Target exit" value={fmtMoney(targetExitAmount)} color={DOWN_TEXT} />
             <MotionStat
@@ -243,8 +254,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
               type="button"
               data-at-advanced-order-trigger
               aria-label="Advanced orders"
-              className="shrink-0 p-1.5 rounded-md"
-              style={{ border: `1px solid ${AT_ORDER_PANEL_BORDER}`, color: GRAY }}
+              className="flex h-[33px] w-[33px] shrink-0 items-center justify-center rounded-md p-0"
+              style={{ border: `1px solid ${AT_ORDER_PANEL_BORDER}`, color: GRAY, marginRight: 1 }}
               onClick={onAdvancedOrders}
             >
               <SquareArrowOutUpRight className="w-4 h-4" />
@@ -253,10 +264,11 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
         </div>
 
         <div
-          className="mt-2 gap-1.5"
+          className="gap-1"
           style={{
             display: "grid",
             gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))`,
+            marginTop: 4,
           }}
           data-at-ticket-legs
         >
@@ -267,18 +279,18 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             return (
               <div
                 key={leg.id}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-md min-w-0"
+                className="flex h-[30px] items-center gap-2.5 rounded-md px-2.5 py-0 min-w-0"
                 style={{
                   border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
                   background: "rgba(255,255,255,0.025)",
                 }}
               >
-                <span style={{ fontSize: 10, fontWeight: 700, color: tone, letterSpacing: "0.03em" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: tone, letterSpacing: "0.02em" }}>
                   {isBuy ? "BUY" : "SELL"}
                 </span>
                 <span
                   className="truncate tabular-nums"
-                  style={{ fontSize: 12, fontWeight: 500, color: WHITE }}
+                  style={{ fontSize: 14, fontWeight: 500, color: WHITE }}
                 >
                   {leg.strike} {type} · ×{leg.quantity}
                 </span>
@@ -295,7 +307,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           })}
         </div>
 
-        <div className="flex items-center justify-between mt-2 gap-2">
+        <div className="flex items-center justify-between gap-2" style={{ marginTop: 4, height: 17, lineHeight: 1 }}>
           <div>
             <span style={PEER_LABEL}>Max loss</span>
             <span className="ml-1" style={META_VALUE}>
@@ -310,11 +322,11 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           </div>
         </div>
 
-        <div className="flex items-center gap-2 mt-2">
+        <div className="flex items-center" style={{ marginTop: 4, gap: 4 }}>
           <div
-            className="relative inline-flex items-center rounded-lg px-2.5 shrink-0"
+              className="relative inline-flex w-20 shrink-0 items-center rounded-md px-2.5"
             style={{
-              height: 38,
+              height: 44,
               border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
               background: "rgba(255,255,255,0.03)",
             }}
@@ -323,8 +335,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
               aria-label="Order type"
               value={orderType}
               onChange={(e) => onOrderTypeChange(e.target.value as "LIMIT" | "MARKET")}
-              className="appearance-none bg-transparent outline-none pr-4 cursor-pointer"
-              style={{ fontSize: 13, fontWeight: 500, color: WHITE }}
+              className="w-full appearance-none bg-transparent outline-none pr-4 cursor-pointer"
+              style={{ fontSize: 14, fontWeight: 500, color: WHITE }}
             >
               <option value="LIMIT">Limit</option>
               <option value="MARKET">Market</option>
@@ -340,7 +352,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             <div
               className="flex-1 flex items-center justify-center rounded-lg px-2 text-[11px]"
               style={{
-                height: 38,
+                height: 44,
                 border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
                 color: GRAY,
               }}
@@ -349,9 +361,9 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             </div>
           ) : (
             <div
-              className="flex-1 flex items-center gap-1 rounded-lg px-2 min-w-0"
+              className="flex w-[127px] shrink-0 items-center gap-1 rounded-md px-1 min-w-0"
               style={{
-                height: 38,
+                height: 44,
                 border: `1px solid ${limitLocked ? `${GOLD}66` : AT_ORDER_PANEL_BORDER}`,
                 background: "rgba(0,0,0,0.35)",
               }}
@@ -403,10 +415,10 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             disabled={sendDisabled}
             onClick={onSend}
             data-testid={primaryActionTestId}
-            className="shrink-0 px-3.5 rounded-lg font-semibold disabled:opacity-45 whitespace-nowrap"
+            className="ml-auto mr-px w-[156px] shrink-0 rounded-md px-3.5 font-medium disabled:opacity-45 whitespace-nowrap"
             style={{
-              height: 38,
-              fontSize: 13,
+              height: 44,
+              fontSize: 14,
               background: sendDisabled ? AT_ORDER_BTN_DISABLED : GOLD,
               color: sendDisabled ? GRAY : AT_ORDER_BTN_TEXT_DARK,
             }}

@@ -180,13 +180,30 @@ function getSessionInfo(): SessionInfo {
   };
 }
 
-export function MarketSessionClock() {
+export function MarketSessionClock({ compact = false }: { compact?: boolean }) {
   const [info, setInfo] = useState<SessionInfo>(getSessionInfo);
 
   useEffect(() => {
     const id = setInterval(() => setInfo(getSessionInfo()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  if (compact) {
+    return (
+      <span
+        className="ml-auto whitespace-nowrap"
+        style={{
+          color: info.color,
+          fontFamily: "Inter, system-ui, sans-serif",
+          fontSize: 11,
+          fontWeight: 600,
+          letterSpacing: "0.02em",
+        }}
+      >
+        {info.label}
+      </span>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1 min-w-0 ml-auto">
