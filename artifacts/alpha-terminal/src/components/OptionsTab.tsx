@@ -1506,13 +1506,17 @@ export function OptionsTab({
     const fixtureView = atFixtureOverride?.initialSubView ?? futuresEsFixture?.initialSubView;
     if (fixtureView) return fixtureView;
     const api = useAtChromeStore as unknown as {
-      getState?: () => { requestedSubView?: "at" | "chain" | null; consumeRequestedSubView?: () => void };
+      getState?: () => {
+        requestedSubView?: "at" | "chain" | null;
+        subViewIsAt?: boolean;
+      };
     };
-    const requested = api.getState?.().requestedSubView;
+    const state = api.getState?.();
+    const requested = state?.requestedSubView;
     if (requested === "at" || requested === "chain") {
-      api.getState?.().consumeRequestedSubView?.();
       return requested;
     }
+    if (state?.subViewIsAt) return "at";
     return "chain";
   });
   const enterActiveTrader = useAtChromeStore((s) => s.enterActiveTrader);
@@ -1523,19 +1527,6 @@ export function OptionsTab({
   const consumeRequestedSubView = useAtChromeStore((s) => s.consumeRequestedSubView);
   const expiryClockMinute = useMinuteClock();
   const expiryNowMs = expiryClockMinute * 60_000;
-  useEffect(() => {
-    if (requestedSubView !== "at" && requestedSubView !== "chain") return;
-    setOptionsSubView(requestedSubView);
-    consumeRequestedSubView?.();
-  }, [requestedSubView, consumeRequestedSubView]);
-  useEffect(() => {
-    if (optionsSubView === "at") {
-      enterActiveTrader();
-    } else {
-      leaveActiveTrader();
-    }
-    return () => leaveActiveTrader();
-  }, [optionsSubView, enterActiveTrader, leaveActiveTrader]);
   const { accessToken, traderAccessToken } = useTerminalStore(
     useShallow((s) => ({ accessToken: s.accessToken, traderAccessToken: s.traderAccessToken })),
   );
@@ -1544,8 +1535,21 @@ export function OptionsTab({
   const atEntryViewRef = useRef(optionsSubView);
   atEntryViewRef.current = optionsSubView;
   useEffect(() => {
-    if (requestedSubView === "at") noteAtEntry(symbol, atEntryViewRef.current === "chain");
-  }, [requestedSubView, symbol]);
+    if (requestedSubView !== "at" && requestedSubView !== "chain") return;
+    if (requestedSubView === "at") {
+      noteAtEntry(symbol, atEntryViewRef.current === "chain");
+    }
+    setOptionsSubView(requestedSubView);
+    consumeRequestedSubView?.();
+  }, [requestedSubView, consumeRequestedSubView, symbol]);
+  useEffect(() => {
+    if (optionsSubView === "at") {
+      enterActiveTrader();
+    } else {
+      leaveActiveTrader();
+    }
+    return () => leaveActiveTrader();
+  }, [optionsSubView, enterActiveTrader, leaveActiveTrader]);
   const [atExpiration, setAtExpirationState] = useState<string | null>(() =>
     useOptionsExpiryStore.getState().getSelected(symbol),
   );
