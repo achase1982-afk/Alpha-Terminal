@@ -58,6 +58,7 @@ import {
   type ChainSheetAtBracketConfirm,
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
 import { buildChainSheetBracketEconomics } from "@/lib/active-trader/chainSheetBracketEconomics";
+import { buildChainSheetSchwabOrder } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
@@ -394,33 +395,35 @@ export function OptionsChainOrderSheet({
   );
 
   const buildSchwabOrder = useCallback(
-    (priceOverride?: number) => {
-      const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
-      const complexType = inferSchwabComplexOrderStrategyType(
-        legs.map((leg) => ({
-          strike: leg.strike,
-          optionType: leg.optionType,
-          instruction: leg.direction,
-          quantity: leg.quantity,
-          expiration: leg.expiration,
-          schwabSymbol: leg.schwabSymbol,
-        })),
-      );
-      return {
-        orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
-        session: "NORMAL",
-        duration: timeInForce,
-        complexOrderStrategyType: complexType,
-        orderStrategyType: "SINGLE",
-        orderLegCollection: legs.map((leg) => ({
-          instruction: leg.direction,
-          quantity: leg.quantity * quantity,
-          instrument: { symbol: leg.schwabSymbol, assetType: "OPTION" },
-        })),
-        price: parsed > 0 ? parsed : undefined,
-      };
-    },
-    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx],
+    (priceOverride?: number) =>
+      buildChainSheetSchwabOrder(
+        {
+          symbol,
+          legs,
+          spreadQuantity: quantity,
+          limitPrice,
+          limitTickCtx,
+          timeInForce,
+          isCredit,
+          entryGrossDollars:
+            summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null,
+          atBracketDraft,
+          distinctLegCount: draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs),
+        },
+        priceOverride,
+      ),
+    [
+      symbol,
+      legs,
+      quantity,
+      limitPrice,
+      limitTickCtx,
+      timeInForce,
+      isCredit,
+      summary?.grossNotional,
+      atBracketDraft,
+      draftDistinctLegCount,
+    ],
   );
 
   const guardDraftLegCount = useCallback(() => {
@@ -524,6 +527,13 @@ export function OptionsChainOrderSheet({
     setStage("submitting");
     try {
       const order = buildSchwabOrder(px);
+      if (order.error) {
+        placeOrderInFlightRef.current = false;
+        setSendLocked(false);
+        setErrorMsg(typeof order.error === "string" ? order.error : "Order could not be built.");
+        setStage("error");
+        return;
+      }
       const res = await fetchWithAuth("/api/portfolio/place-order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

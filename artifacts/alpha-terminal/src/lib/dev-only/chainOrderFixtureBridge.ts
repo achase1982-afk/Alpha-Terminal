@@ -1,4 +1,6 @@
 import type { OptionChainResponse } from "@workspace/api-client-react";
+import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 
 export type ChainOrderFixtureScene = "1-leg" | "vertical" | "iron-condor" | "confirm";
 
@@ -19,6 +21,12 @@ export interface ChainOrderFixtureOverride {
   selectedLegs: ChainOrderFixtureLegPick[];
   openReviewOnMount?: boolean;
   sheetCollapsed?: boolean;
+  /** Fixture only: build real Schwab payload and POST to mocked place-order. */
+  mockPlaceOrder?: boolean;
+  atBracketDraft?: {
+    prefs: ActiveTraderTemplatePrefs;
+    primaryInstruction: SchwabInstruction;
+  };
 }
 
 let override: ChainOrderFixtureOverride | null = null;

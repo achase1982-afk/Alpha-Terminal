@@ -2428,7 +2428,8 @@ export function OptionsTab({
           onRemoveLeg={handleSheetRemoveLeg}
           subscribeOptionSymbols={subscribeOptionSymbols}
           openReviewOnMount={chainFixtureOverride?.openReviewOnMount}
-          demoFixture={!!chainFixtureOverride}
+          demoFixture={!!chainFixtureOverride && !chainFixtureOverride.mockPlaceOrder}
+          atBracketDraft={chainFixtureOverride?.atBracketDraft}
           draftDistinctLegCount={selectedLegs.size}
           restoredSheetSession={
             useChainDraftSessionStore.getState().symbol === symbol

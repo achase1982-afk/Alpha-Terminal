@@ -150,6 +150,70 @@ describe("OptionsChainOrderSheet", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("spread bracket Send posts TRIGGER with NET_DEBIT child at calculated TP", async () => {
+    const fetchMock = vi.mocked(fetchWithAuth);
+    fetchMock.mockClear();
+    const prefs: ActiveTraderTemplatePrefs = {
+      template: "TRG w/ bracket",
+      qty: 1,
+      orderType: "LIMIT",
+      limitAnchor: "Mid",
+      takeProfit: { enabled: true, mode: "percent", offset: 25 },
+      stopLoss: { enabled: false, mode: "percent", offset: -10 },
+      autoSend: { enabled: false, armed: false },
+      ladderMode: "single",
+      verticalWidth: 5,
+      exitDuration: "GOOD_TILL_CANCEL",
+      stopLossOrderType: "STOP",
+      stopLimitOffset: 0.05,
+    };
+    const shortLeg: StrategyLeg = {
+      id: "k1",
+      optionType: "CALL",
+      direction: "SELL_TO_OPEN",
+      strike: 600,
+      expiration: "2026-12-19",
+      quantity: 1,
+      bid: 2.85,
+      ask: 2.92,
+      schwabSymbol: "SPY   261219C00600000",
+    };
+    const longLeg: StrategyLeg = {
+      id: "k2",
+      optionType: "CALL",
+      direction: "BUY_TO_OPEN",
+      strike: 605,
+      expiration: "2026-12-19",
+      quantity: 1,
+      bid: 1.1,
+      ask: 1.15,
+      schwabSymbol: "SPY   261219C00605000",
+    };
+    renderSheet({
+      legs: [shortLeg, longLeg],
+      atBracketDraft: { prefs, primaryInstruction: "SELL_TO_OPEN" },
+    });
+    const limit = screen.getByTestId("chain-sheet-limit") as HTMLInputElement;
+    fireEvent.change(limit, { target: { value: "2.00" } });
+    const review = screen.getByTestId("chain-sheet-review");
+    await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(review);
+    const send = screen.getByTestId("chain-sheet-send");
+    fireEvent.click(send);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const order = body.order;
+    expect(order.orderStrategyType).toBe("TRIGGER");
+    expect(order.price).toBe(2);
+    const child = order.childOrderStrategies[0];
+    expect(child.orderType).toBe("NET_DEBIT");
+    expect(child.price).toBe(1.5);
+    expect(child.orderLegCollection.map((l: { instruction: string }) => l.instruction)).toEqual([
+      "BUY_TO_CLOSE",
+      "SELL_TO_CLOSE",
+    ]);
+  });
+
   it("AT bracket draft: chain confirm shows trigger rows (Sequence)", async () => {
     const prefs: ActiveTraderTemplatePrefs = {
       template: "TRG w/ bracket",
