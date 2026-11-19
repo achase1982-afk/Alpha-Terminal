@@ -22,6 +22,7 @@ import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import { workingSpreadRow, type ReportedOrder } from "@/lib/active-trader/atWorkingOrder";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
@@ -208,6 +209,7 @@ const AT_EDGE_LOAD_PX = 96;
 /** The quote subscription follows the viewport once scrolling has paused this long. */
 const AT_VISIBLE_SETTLE_MS = 140;
 const AT_ORDER_SHEET_Z = 120;
+const AT_WORKING_ROW_H = 32;
 /** After a tap, how long the tapped strike is kept clear of a sheet that is still opening or growing. */
 const AT_NUDGE_WINDOW_MS = 1_200;
 /** A programmatic scroll that never emits an event drops this flag. Scroll events extend it. */
@@ -734,6 +736,38 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const accounts = useSchwabAccountStore((s) => s.accounts);
+  const [reportedOrders, setReportedOrders] = useState<ReportedOrder[]>([]);
+  useEffect(() => {
+    if (!tradingHash || stockTemplate) {
+      setReportedOrders([]);
+      return;
+    }
+    let cancelled = false;
+    setReportedOrders([]);
+    const load = async () => {
+      try {
+        const res = await fetchWithAuth(
+          `/api/portfolio/orders?accountHash=${encodeURIComponent(tradingHash)}&days=2`,
+        );
+        if (!res.ok) return;
+        const data: unknown = await res.json();
+        if (!cancelled && Array.isArray(data)) setReportedOrders(data as ReportedOrder[]);
+      } catch {
+        /* Keep the last report Schwab already returned. */
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tradingHash, stockTemplate]);
+  const workingOrder = useMemo(
+    () => workingSpreadRow(reportedOrders, symbol),
+    [reportedOrders, symbol],
+  );
+  const workingRowPad = workingOrder ? AT_WORKING_ROW_H : 0;
   const tradeEpochRef = useRef<string | null>(null);
   useEffect(() => {
     const epoch = `${symbol}|${tradingHash ?? ""}|${activeExpiration ?? ""}`;
@@ -1683,7 +1717,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
                 expiryLabel={expiryLabel}
               />
               {/* Scroll room the height of the sheet, so the last strikes can be pulled above it. */}
-              <div aria-hidden data-at-ladder-sheet-pad style={{ height: sheetPad }} />
+              <div aria-hidden data-at-ladder-sheet-pad style={{ height: sheetPad + workingRowPad }} />
             </>
           ) : (
             <AtLadderSkeleton rowHeight={ladderRowH} message={ladderWaitMessage} />
@@ -1697,7 +1731,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             style={{
               position: "absolute",
               right: 8,
-              bottom: 12 + sheetPad,
+              bottom: 12 + sheetPad + workingRowPad,
               zIndex: 40,
               fontFamily: MONO,
               fontSize: 10,
@@ -1711,6 +1745,29 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           >
             Recenter
           </button>
+        ) : null}
+        {workingOrder ? (
+          <div
+            data-at-working-order
+            className="absolute left-0 right-0 flex items-center justify-between"
+            style={{
+              bottom: sheetPad,
+              zIndex: AT_ORDER_SHEET_Z - 1,
+              height: AT_WORKING_ROW_H,
+              padding: "0 12px",
+              background: "#000",
+              borderTop: `1px solid ${BORDER_ROW}`,
+              fontFamily: MONO,
+              fontSize: 12,
+              fontWeight: 650,
+              color: WHITE,
+            }}
+          >
+            <span>Working</span>
+            <span className="tabular-nums">
+              {workingOrder.remaining} @ {workingOrder.limit.toFixed(2)}
+            </span>
+          </div>
         ) : null}
         {ticketLegs.length > 0 ? (
           <div
