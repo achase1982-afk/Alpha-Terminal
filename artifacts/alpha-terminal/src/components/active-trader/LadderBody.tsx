@@ -141,8 +141,8 @@ const HEAT_DEEP = {
   put: [12, 5, 5],
 } as const;
 const HEAT_BRIGHT = {
-  call: [126, 255, 186],
-  put: [255, 88, 78],
+  call: [6, 148, 64],
+  put: [184, 30, 40],
 } as const;
 
 function heatTone(intensity: number): number {
