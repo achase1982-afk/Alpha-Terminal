@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { CategoryStat, CutStat, InsightSlice, InsightsPayload, JournalPeriod, JournalView, MetricBlock, PositionView } from "./journalModel";
 import { BENCHMARK_UNAVAILABLE, money, signColor, signedPct } from "./journalModel";
 
@@ -31,9 +31,40 @@ export interface JournalScreenProps {
 }
 
 export function JournalScreen(props: JournalScreenProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const overviewScrollRef = useRef<number | null>(null);
   const slice = props.strategy ? props.payload?.byStrategy[props.strategy] ?? null : props.payload?.account ?? null;
+
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const scroller = nearestScrollParent(root);
+    if (!scroller) return;
+    const savedOverview = overviewScrollRef.current;
+    const place = () => {
+      if (props.strategy) {
+        const drill = root.querySelector<HTMLElement>("[data-journal-drill]");
+        if (drill) alignDrillUnderSticky(drill, scroller);
+        return;
+      }
+      if (savedOverview != null) scroller.scrollTop = savedOverview;
+    };
+    place();
+    const frame = requestAnimationFrame(() => {
+      place();
+      if (!props.strategy) overviewScrollRef.current = null;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [props.strategy]);
+
+  const openStrategy = (strategy: string) => {
+    const scroller = nearestScrollParent(rootRef.current);
+    overviewScrollRef.current = scroller?.scrollTop ?? 0;
+    props.onStrategy(strategy);
+  };
+
   return (
-    <div data-journal-root style={{ fontFamily: FONT, color: C.text, background: C.bg }}>
+    <div data-journal-root style={{ fontFamily: FONT, color: C.text, background: C.bg, overflowAnchor: "none" }}>
       {props.exampleBanner ? (
         <div style={{ background: C.gold, color: "#1a1400", textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
           EXAMPLE DATA — NOT ACCOUNT FIGURES
@@ -60,16 +91,18 @@ export function JournalScreen(props: JournalScreenProps) {
       ) : null}
       {props.payload && props.view === "trades" ? <TradesList positions={props.payload.positions} /> : null}
       {props.payload && props.view === "insights" && props.strategy ? (
-        <Drilldown
-          name={props.strategy}
-          period={props.period}
-          onPeriod={props.onPeriod}
-          onBack={() => props.onStrategy(null)}
-          slice={slice}
-        />
+        <div data-journal-drill>
+          <Drilldown
+            name={props.strategy}
+            period={props.period}
+            onPeriod={props.onPeriod}
+            onBack={() => props.onStrategy(null)}
+            slice={slice}
+          />
+        </div>
       ) : null}
       {props.payload && props.view === "insights" && !props.strategy ? (
-        <AccountInsights payload={props.payload} period={props.period} onPeriod={props.onPeriod} onStrategy={props.onStrategy} />
+        <AccountInsights payload={props.payload} period={props.period} onPeriod={props.onPeriod} onStrategy={openStrategy} />
       ) : null}
     </div>
   );
@@ -435,3 +468,21 @@ const textButton: CSSProperties = {
   fontFamily: FONT,
   fontWeight: 700,
 };
+
+function nearestScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null;
+  while (el) {
+    const oy = getComputedStyle(el).overflowY;
+    if (oy === "auto" || oy === "scroll") return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/** Put the strategy detail just under the sticky portfolio head, which stays put. */
+function alignDrillUnderSticky(drill: HTMLElement, scroller: HTMLElement) {
+  const sticky = scroller.querySelector<HTMLElement>("[data-pf-sticky-head]");
+  const coverBottom = sticky ? sticky.getBoundingClientRect().bottom : scroller.getBoundingClientRect().top;
+  const delta = drill.getBoundingClientRect().top - coverBottom;
+  if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+}
