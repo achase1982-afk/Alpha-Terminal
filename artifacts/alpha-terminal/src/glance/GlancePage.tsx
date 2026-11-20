@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuote } from "@/hooks/useQuote";
 import { useSpotQuoteTickColor } from "@/lib/active-trader/atSpotDirection";
+import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 import { FIXTURE, fixtureHistory } from "./fixture";
 import { GlanceLadder } from "./GlanceLadder";
 import {
   assignRailLanes,
   dayMove,
-  formatAge,
   formatGross,
   formatNet,
   formatPct,
@@ -44,6 +44,29 @@ function readMode(): Mode {
 function moneyOr(n: number | null): string {
   return formatGross(n);
 }
+
+function quoteTitle(symbol: string, description: string | null | undefined): string {
+  const text = description?.split(",")[0]?.trim();
+  if (text) return text.toUpperCase();
+  if (symbol.replace(/^\$/, "").toUpperCase() === "SPX") return "S&P 500";
+  return formatDisplaySymbol(symbol);
+}
+
+function signedMoney(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  const sign = n > 0 ? "+" : n < 0 ? "−" : "";
+  return `${sign}$${Math.abs(n).toFixed(2)}`;
+}
+
+function signedPctParen(n: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "(—%)";
+  const sign = n > 0 ? "+" : n < 0 ? "−" : "";
+  return `(${sign}${Math.abs(n).toFixed(2)}%)`;
+}
+
+const PRICE_DOWN = "#f23645";
+const PRICE_UP = "#00d166";
+const PRICE_FLAT = "#9CA3AF";
 
 function signedClass(n: number | null): string {
   if (n == null || n === 0) return "";
@@ -227,6 +250,10 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const day = dayMove(spot, prev);
   const dayPoints = fixture ? (day?.points ?? null) : live.dayPoints;
   const dayPct = fixture ? (day?.percent ?? null) : live.dayPct;
+  const quoteChange = fixture ? dayPoints : (spxQuote.sessionChange.change ?? dayPoints);
+  const quotePct = fixture ? dayPct : (spxQuote.sessionChange.changePct ?? dayPct);
+  const quoteName = quoteTitle("$SPX", fixture ? "S&P 500" : spxQuote.data?.description);
+  const quoteChangeColor = quoteChange == null || quoteChange === 0 ? PRICE_FLAT : quoteChange > 0 ? PRICE_UP : PRICE_DOWN;
   const open = fixture ? FIXTURE.rthOpen : live.open;
   const fromOpen = fromOpenPoints(spot, open);
   const high = fixture ? FIXTURE.high : live.high;
@@ -392,19 +419,27 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <button type="button" onClick={() => setPanel(panel === "details" ? null : "details")}>
           Details
         </button>
+        <div className="cmd-quote" aria-label={formatDisplaySymbol("$SPX")}>
+          <div className="cmd-quote-id">
+            <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
+            <span className="cmd-quote-name">{quoteName}</span>
+          </div>
+          <div className="cmd-quote-px">
+            <span
+              className="cmd-quote-last num"
+              data-at-spot-tick={fixture ? "flat" : spotTick.side}
+              style={{ color: fixture ? "#fff" : spotTick.color }}
+            >
+              {spot == null ? "—" : `$${formatSpot(spot)}`}
+            </span>
+            <span className="cmd-quote-chg num" style={{ color: quoteChangeColor }}>
+              {signedMoney(quoteChange)} {signedPctParen(quotePct)}
+            </span>
+          </div>
+        </div>
       </header>
 
       <section className="headline" aria-label="Market headline">
-        <div>
-          <span className="k">{spotCaption}</span>
-          <div
-            className="spot num"
-            data-at-spot-tick={fixture ? "flat" : spotTick.side}
-            style={{ color: fixture ? "#fff" : spotTick.color }}
-          >
-            {formatSpot(spot)}
-          </div>
-        </div>
         <div className="day-read">
           <span className="k">SPX day</span>
           <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>

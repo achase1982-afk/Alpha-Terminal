@@ -94,7 +94,7 @@
 
 .headline {
   display: grid;
-  grid-template-columns: minmax(210px, 1.7fr) minmax(220px, 1.1fr) minmax(140px, 0.95fr) minmax(230px, 1.45fr) minmax(190px, 1.25fr);
+  grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.9fr) minmax(180px, 1.2fr) minmax(180px, 1.1fr);
   align-items: end;
   gap: 10px;
   border-top: 1px solid #232b38;
@@ -186,7 +186,58 @@
 }
 
 .down {
-  color: #ff6b74;
+  color: #f23645;
+}
+
+.cmd-quote {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 8px;
+  min-width: 0;
+}
+
+.cmd-quote-id,
+.cmd-quote-px {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.cmd-quote-sym {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.cmd-quote-name {
+  margin-top: 2px;
+  color: #ffb800;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+  text-transform: uppercase;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-quote-last {
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.cmd-quote-chg {
+  margin-top: 2px;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.15;
+  white-space: nowrap;
 }
 
 .band,
