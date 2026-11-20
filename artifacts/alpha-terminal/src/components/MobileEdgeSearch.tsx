@@ -252,6 +252,20 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
     onOpenChangeRef.current?.(open);
   }, [open]);
 
+  /** Lighter dock chrome while typing — native keyboard tint is OS-controlled; this bridges the gap. */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    if (open && focused) {
+      root.dataset.edgeSearchInput = "active";
+    } else {
+      delete root.dataset.edgeSearchInput;
+    }
+    return () => {
+      delete root.dataset.edgeSearchInput;
+    };
+  }, [open, focused]);
+
   useEffect(() => {
     const input = inputRef.current;
     return () => {
@@ -361,7 +375,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
     stopFling();
     setJiggling(true);
     setPressed(false);
-    if (haptic && navigator.vibrate) navigator.vibrate(18);
+    if (haptic && navigator.vibrate) navigator.vibrate([16, 42, 22]);
   };
 
   const openSearch = () => {
@@ -507,13 +521,23 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
     <>
       <style>{`
         @keyframes edge-search-jiggle {
-          0% { transform: rotate(-8deg); }
-          50% { transform: rotate(8deg); }
-          100% { transform: rotate(-8deg); }
+          0%   { transform: rotate(-3deg) translate(0, 0) scale(1); }
+          12%  { transform: rotate(14deg) translate(3px, -2px) scale(1.08); }
+          28%  { transform: rotate(-14deg) translate(-4px, 2px) scale(1.06); }
+          44%  { transform: rotate(12deg) translate(4px, -1px) scale(1.08); }
+          60%  { transform: rotate(-11deg) translate(-3px, 2px) scale(1.07); }
+          76%  { transform: rotate(9deg) translate(2px, 0) scale(1.06); }
+          100% { transform: rotate(-3deg) translate(0, 0) scale(1.04); }
         }
         .edge-search-jiggle {
-          animation: edge-search-jiggle 0.28s linear infinite;
+          animation: edge-search-jiggle 0.34s ease-in-out infinite;
           transform-origin: center center;
+        }
+        html[data-edge-search-input="active"] {
+          color-scheme: dark;
+        }
+        [data-edge-search-dock] [data-edge-search-form] {
+          color-scheme: dark;
         }
       `}</style>
       {jiggling && !open && (
@@ -542,11 +566,15 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
             height: BUTTON_PX,
             zIndex: jiggling ? 90 : 70,
             color: "rgba(255,255,255,0.96)",
-            background: jiggling ? "rgba(32, 32, 36, 0.86)" : pressed ? "rgba(22, 22, 24, 0.76)" : "rgba(22, 22, 24, 0.64)",
-            border: jiggling ? "1px solid rgba(255,255,255,0.62)" : "1px solid rgba(255,255,255,0.42)",
-            boxShadow: jiggling ? "0 8px 24px rgba(0,0,0,0.45)" : "0 4px 18px rgba(0,0,0,0.3)",
-            backdropFilter: "blur(14px)",
-            WebkitBackdropFilter: "blur(14px)",
+            background: "transparent",
+            border: jiggling
+              ? "2px solid rgba(255,255,255,0.92)"
+              : pressed
+                ? "1.5px solid rgba(255,255,255,0.78)"
+                : "1.5px solid rgba(255,255,255,0.52)",
+            boxShadow: jiggling
+              ? "0 0 0 5px rgba(255,255,255,0.14), 0 0 18px rgba(255,255,255,0.12)"
+              : "none",
             touchAction: "none",
             WebkitTapHighlightColor: "transparent",
             WebkitTouchCallout: "none",
@@ -594,11 +622,12 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
         }}
       >
         <form
+          data-edge-search-form
           onSubmit={(e) => {
             e.preventDefault();
             commitTyped();
           }}
-          className="overflow-hidden rounded-2xl border border-white/10 bg-[#121214] shadow-[0_10px_40px_rgba(0,0,0,0.55)]"
+          className="overflow-hidden rounded-2xl border border-white/[0.14] bg-[#2a2a2f] shadow-[0_10px_40px_rgba(0,0,0,0.45)]"
         >
           {rows.length > 0 && (
             <ul aria-label="Matching tickers">
@@ -630,8 +659,10 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
             </ul>
           )}
 
-          <div className={`flex items-center gap-2 px-3 ${rows.length > 0 ? "border-t border-white/[0.08]" : ""}`}>
-            <Search className="h-4 w-4 shrink-0 text-zinc-500" />
+          <div
+            className={`flex items-center gap-2 px-3 ${rows.length > 0 ? "border-t border-white/[0.1]" : ""} bg-[#35353c]`}
+          >
+            <Search className="h-4 w-4 shrink-0 text-zinc-400" />
             <input
               ref={inputRef}
               value={inputVal}
@@ -652,7 +683,8 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
               placeholder="Ticker"
               enterKeyHint="go"
               aria-label="Ticker symbol"
-              className="h-12 min-w-0 flex-1 bg-transparent font-mono text-[16px] uppercase text-white outline-none placeholder:text-zinc-500 placeholder:normal-case"
+              className="h-12 min-w-0 flex-1 bg-transparent font-mono text-[16px] uppercase text-white outline-none placeholder:text-zinc-400 placeholder:normal-case caret-[#FFB800]"
+              style={{ colorScheme: "dark" }}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="characters"
