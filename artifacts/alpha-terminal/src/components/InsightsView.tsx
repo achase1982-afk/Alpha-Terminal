@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useQuote } from "@/hooks/useQuote";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
+import { MorningEvents, OvernightLine } from "@/components/insights/MorningGlance";
 import { BG, BORDER, DIM, GOLD, GRAY, PUT_WALL, WHITE } from "@/components/options/optionsTheme";
 import {
   EMPTY_CLOSED,
@@ -203,12 +204,14 @@ export function InsightsView(props: {
           <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.8, color: GOLD }}>
             FUTURES · {sessionLabel}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "6px 0 8px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "6px 0 2px" }}>
             {FUTS.map((fut) => (
               <FuturesQuote key={fut.symbol} symbol={fut.symbol} name={fut.name} />
             ))}
           </div>
+          <OvernightLine session={session} />
         </div>
+        <MorningEvents now={now} positions={payload?.positions ?? []} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderTop: `1px solid ${BORDER}` }}>
           {PERIODS.map((item) => {
             const on = period === item.id;
