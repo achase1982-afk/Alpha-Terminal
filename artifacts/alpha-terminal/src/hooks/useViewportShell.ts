@@ -1,4 +1,12 @@
 import { useLayoutEffect } from "react";
+import {
+  installPwaKeyboardSession,
+  isEditableElement,
+  isUserKeyboardSession,
+  keyboardViewportFollowAllowed,
+  shouldTrackKeyboardViewport,
+  subscribeKeyboardSession,
+} from "@/hooks/pwaKeyboardSession";
 
 /**
  * Phone shell size.
@@ -15,7 +23,9 @@ import { useLayoutEffect } from "react";
  * slides the header under the clock or shoves the footer off the bottom.
  *
  * Safari keeps the visible viewport. After an app switch iOS can freeze that
- * viewport short; keep the last height that actually filled the screen.
+ * viewport short — especially when a text field was focused and the keyboard
+ * inset is never released. Keep the last height that actually filled the screen
+ * unless the member is in a typing session that started on this visit.
  */
 
 const COLLAPSE_PX = 140;
@@ -63,25 +73,46 @@ export function standaloneShellHeight(m: StandaloneShellMeasure): number {
 }
 
 function isEditableFocused(): boolean {
-  const el = document.activeElement;
-  if (!(el instanceof HTMLElement) || el === document.body) return false;
-  if (el.isContentEditable) return true;
-  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true;
-  if (el instanceof HTMLInputElement) {
-    return (
-      el.type !== "button" &&
-      el.type !== "checkbox" &&
-      el.type !== "radio" &&
-      el.type !== "range" &&
-      el.type !== "file" &&
-      el.type !== "submit" &&
-      el.type !== "reset" &&
-      el.type !== "image" &&
-      el.type !== "hidden" &&
-      el.type !== "color"
-    );
-  }
-  return false;
+  return isEditableElement(document.activeElement);
+}
+
+const STUCK_VIEWPORT_GAP_PX = 140;
+
+/**
+ * `screen.height` includes the status bar. A gap that large is the software
+ * keyboard still reserving space after the app was backgrounded, not the
+ * status bar (that one is well under this).
+ */
+export function layoutViewportStuck(screenHeight: number, innerHeight: number, userSession: boolean): boolean {
+  if (userSession) return false;
+  if (!(screenHeight > 0) || !(innerHeight > 0)) return false;
+  return screenHeight - innerHeight > STUCK_VIEWPORT_GAP_PX;
+}
+
+/**
+ * Ask WebKit to recompute a layout viewport that stayed keyboard-short after
+ * the field was blurred. Restores the same viewport meta immediately.
+ */
+export function nudgeStuckLayoutViewport(): boolean {
+  if (typeof document === "undefined") return false;
+  // A short desktop window, or Safari's collapsing toolbar, is not a stuck
+  // keyboard. Only the installed phone app gets the viewport-meta nudge.
+  if (!isPhone() || !isStandalonePwa()) return false;
+  const fitted = standaloneScreenBox();
+  if (!layoutViewportStuck(fitted.h, window.innerHeight, isUserKeyboardSession())) return false;
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (!(meta instanceof HTMLMetaElement)) return false;
+  const content = meta.content;
+  if (!content.includes("interactive-widget=resizes-content")) return false;
+  const stripped = content
+    .replace(/,?\s*interactive-widget=resizes-content/g, "")
+    .replace(/,\s*,/g, ",")
+    .replace(/,\s*$/g, "")
+    .trim();
+  meta.content = stripped;
+  void document.documentElement.offsetHeight;
+  meta.content = content;
+  return true;
 }
 
 function isPhone(): boolean {
@@ -164,7 +195,12 @@ export function useViewportShell() {
     };
 
     const update = () => {
-      if (document.hidden) return;
+      // While backgrounded, pin the shell to the last full height so iOS does
+      // not snapshot the keyboard-shrunk page.
+      if (document.hidden) {
+        if (lastGoodH > 0) writeViewport(lastGoodH, lastGoodW || window.innerWidth, 0, 0);
+        return;
+      }
 
       const innerH = window.innerHeight;
       const innerW = window.innerWidth;
@@ -173,7 +209,15 @@ export function useViewportShell() {
       const vvTop = vv?.offsetTop ?? 0;
       const vvLeft = vv?.offsetLeft ?? 0;
       const reported = Math.max(innerH, vvH);
-      const focused = isEditableFocused();
+      const now = performance.now();
+      if (!keyboardViewportFollowAllowed(now)) followVvUntil = 0;
+      const trackKeyboard = shouldTrackKeyboardViewport({
+        userSession: isUserKeyboardSession(),
+        editableFocused: isEditableFocused(),
+        now,
+        followUntil: followVvUntil,
+        followAllowed: keyboardViewportFollowAllowed(now),
+      });
       const phone = isPhone();
       const standalone = phone && isStandalonePwa();
       if (standalone) document.documentElement.dataset.standalone = "true";
@@ -188,8 +232,10 @@ export function useViewportShell() {
         return;
       }
 
-      if (focused || performance.now() < followVvUntil) {
-        if (focused) followVvUntil = performance.now() + KEYBOARD_FOLLOW_MS;
+      if (trackKeyboard) {
+        if (isUserKeyboardSession() && isEditableFocused()) {
+          followVvUntil = now + KEYBOARD_FOLLOW_MS;
+        }
         writeViewport(vvH, vvW, vvTop, vvLeft);
         armRestore();
         return;
@@ -230,14 +276,17 @@ export function useViewportShell() {
 
     const onForeground = () => {
       if (document.hidden) return;
-      if (!isEditableFocused()) followVvUntil = 0;
+      if (!isUserKeyboardSession()) followVvUntil = 0;
       clearResumeTimers();
       update();
       requestAnimationFrame(update);
       resumeTimers.push(
         window.setTimeout(update, 50),
         window.setTimeout(update, 250),
-        window.setTimeout(update, 700),
+        window.setTimeout(() => {
+          update();
+          if (nudgeStuckLayoutViewport()) update();
+        }, 700),
       );
     };
 
@@ -251,6 +300,19 @@ export function useViewportShell() {
       onForeground();
     };
 
+    installPwaKeyboardSession();
+    const unsubSession = subscribeKeyboardSession(() => {
+      if (!isUserKeyboardSession()) {
+        if (keyboardViewportFollowAllowed()) {
+          followVvUntil = performance.now() + KEYBOARD_FOLLOW_MS;
+          armRestore();
+        } else {
+          followVvUntil = 0;
+        }
+      }
+      update();
+    });
+
     update();
     vv?.addEventListener("resize", update);
     vv?.addEventListener("scroll", update);
@@ -261,6 +323,7 @@ export function useViewportShell() {
     window.addEventListener("focus", onForeground);
 
     return () => {
+      unsubSession();
       clearResumeTimers();
       if (restoreTimer) window.clearTimeout(restoreTimer);
       vv?.removeEventListener("resize", update);
