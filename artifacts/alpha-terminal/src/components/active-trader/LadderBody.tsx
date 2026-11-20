@@ -20,9 +20,6 @@ import {
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import type { AtStrategyBuild } from "@/lib/active-trader/activeTraderPrefs";
-import { useQuoteMoveArrows, type QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
-import { chainLivePriceColor } from "@/lib/options/chainQuoteTickColor";
-import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
   AT_HEAT_MAX_ALPHA,
   AT_HEAT_WASH_ALPHA,
@@ -31,6 +28,7 @@ import {
   AT_LADDER_GUTTER_X,
   AT_LADDER_LEG_TAG_SIZE,
   AT_LADDER_PANEL_BG,
+  AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_ROW_H,
@@ -154,10 +152,6 @@ function fmtPx(n: number | null | undefined): string {
 /** Re-export heat bounds so existing imports keep resolving. */
 export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
-const ARROW_SLOT_PX = 11;
-const ARROW_UP = "#8AF0B0";
-const ARROW_DOWN = "#FFB3AB";
-
 function heatTone(intensity: number): number {
   return Number.isFinite(intensity) ? Math.min(1, Math.max(0, intensity)) : 0;
 }
@@ -227,29 +221,6 @@ function volumeCountLabel(view: LadderHeatCellView, neutral: boolean): string {
   return `${Math.round(view.contracts30s)} contracts / 30s`;
 }
 
-function PriceWithMove({ text, arrow }: { text: string; arrow: QuoteArrow }) {
-  return (
-    <span className="inline-flex items-center justify-center" style={{ pointerEvents: "none" }}>
-      <span
-        data-at-quote-move={arrow ?? undefined}
-        aria-hidden="true"
-        style={{
-          display: "inline-block",
-          width: ARROW_SLOT_PX,
-          flex: "0 0 auto",
-          textAlign: "center",
-          fontSize: 10,
-          lineHeight: 1,
-          color: arrow === "up" ? ARROW_UP : arrow === "down" ? ARROW_DOWN : "transparent",
-        }}
-      >
-        {arrow === "up" ? "▲" : arrow === "down" ? "▼" : "▲"}
-      </span>
-      <span>{text}</span>
-    </span>
-  );
-}
-
 function quoteAriaLabel(input: {
   strike: number;
   type: "CALL" | "PUT";
@@ -280,7 +251,6 @@ type QuoteCellProps = {
   selection: AtLadderSelectionStore;
   dataAttr: string;
   dividerLeft?: boolean;
-  arrow: QuoteArrow;
 };
 
 /**
@@ -305,7 +275,6 @@ const QuoteCell = memo(function QuoteCell({
   selection,
   dataAttr,
   dividerLeft,
-  arrow,
 }: QuoteCellProps) {
   renderProbe("cell");
   const flags = useAtLadderCellFlags(selection, legKey, quoteSide, cellKey);
@@ -334,7 +303,7 @@ const QuoteCell = memo(function QuoteCell({
         fontSize: AT_LADDER_PRICE_SIZE,
         fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
-        color: chainLivePriceColor(quoteSide, arrow, dimmed),
+        color: AT_LADDER_PRICE_COLOR,
         background: "transparent",
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
@@ -370,7 +339,7 @@ const QuoteCell = memo(function QuoteCell({
             pointerEvents: "none",
           }}
         >
-          <PriceWithMove text={unavailableReason ?? fmtPx(price)} arrow={arrow} />
+          <span style={{ pointerEvents: "none" }}>{unavailableReason ?? fmtPx(price)}</span>
           {legSelected ? (
             <span
               style={{
@@ -401,7 +370,7 @@ const QuoteCell = memo(function QuoteCell({
               : { pointerEvents: "none", padding: "0 4px" }
           }
         >
-          <PriceWithMove text={unavailableReason ?? fmtPx(price)} arrow={arrow} />
+          <span style={{ pointerEvents: "none" }}>{unavailableReason ?? fmtPx(price)}</span>
           {statusReason ? (
             <span style={{ fontSize: 7, color: GRAY, letterSpacing: "0.03em", lineHeight: 1 }}>
               {statusReason}
@@ -468,7 +437,6 @@ const ContractPair = memo(function ContractPair({
   const near = useAtLadderQuote(contract, chainQuoteTs, clockMinute);
   const farQuote = useAtLadderQuote(vertical ? far : null, chainQuoteTs, clockMinute);
   const nearHeat = useAtLadderHeatCell(heat, contract?.streamKey);
-  const quoteEpoch = useOptionsStreamStore((s) => s.quoteEpoch);
 
   let bidPx = near.bid;
   let askPx = near.ask;
@@ -492,12 +460,6 @@ const ContractPair = memo(function ContractPair({
     bidPx = spread.bid;
     askPx = spread.ask;
   }
-  const moveIdentity = vertical
-    ? contract?.streamKey && far?.streamKey
-      ? `spread:${contract.streamKey}|${far.streamKey}`
-      : null
-    : contract?.streamKey ?? null;
-  const arrows = useQuoteMoveArrows(moveIdentity, bidPx, askPx, quoteEpoch);
   const volumeText = volumeCountLabel(heatView, vertical);
   const panes = saleHeatPanes(heatView);
 
@@ -559,7 +521,6 @@ const ContractPair = memo(function ContractPair({
         expiryLabel={expiryLabel}
         selection={selection}
         dataAttr={`${pairSide}-bid-${strike}`}
-        arrow={arrows.bid}
       />
       <QuoteCell
         cellKey={contract ? atLadderQuoteCellKey(contract, type, "ask") : null}
@@ -578,7 +539,6 @@ const ContractPair = memo(function ContractPair({
         selection={selection}
         dataAttr={`${pairSide}-ask-${strike}`}
         dividerLeft
-        arrow={arrows.ask}
       />
     </div>
   );
