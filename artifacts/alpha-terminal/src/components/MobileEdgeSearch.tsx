@@ -537,7 +537,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
           className={`fixed flex items-center justify-center rounded-full ${jiggling && !dragging ? "edge-search-jiggle" : ""}`}
           style={{
             left: `calc(var(--vv-left, 0px) + ${anchor.x} * (var(--vvw, 100vw) - ${BUTTON_PX}px))`,
-            top: `calc(var(--vv-top, 0px) + ${anchor.y} * (var(--vvh, 100dvh) - ${BUTTON_PX}px))`,
+            top: `calc(var(--vv-top, 0px) + ${anchor.y} * (var(--vvh, 100lvh) - ${BUTTON_PX}px))`,
             width: BUTTON_PX,
             height: BUTTON_PX,
             zIndex: jiggling ? 90 : 70,

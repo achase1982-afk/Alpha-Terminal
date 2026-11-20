@@ -93,7 +93,7 @@
   }
 
   :root {
-    --vvh: 100%;
+    --vvh: 100lvh;
     --vvw: 100%;
     --vv-top: 0px;
     --vv-left: 0px;
@@ -401,4 +401,10 @@ dialog.telemetry-copy-dialog::backdrop {
   display: inline-block;
   animation: chat-thinking-breath 1.8s ease-in-out infinite;
   transform-origin: left center;
+}
+
+/* Unlayered so this beats Tailwind's h-[100dvh]. dvh freezes short after an iOS app switch. */
+.app-shell {
+  width: var(--vvw, 100%);
+  height: var(--vvh, 100lvh);
 }
