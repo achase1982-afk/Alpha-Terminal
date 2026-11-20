@@ -7,9 +7,7 @@ import { BORDER, FW_LIGHT, GOLD } from "@/components/options/optionsTheme";
 import { AT_HEADER_BG, AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import {
   AT_LADDER_CALLS_HDR,
-  AT_LADDER_COL_HDR_H,
   AT_LADDER_GRID,
-  AT_LADDER_GROUP_HDR_H,
   AT_LADDER_GUTTER_X,
   AT_LADDER_PUTS_HDR,
   AT_LADDER_ROW_H,
@@ -189,11 +187,11 @@ export function GlanceLadder({
         <div
           className="grid items-center at-ladder-num"
           style={{
-            height: AT_LADDER_GROUP_HDR_H,
+            height: 32,
             gridTemplateColumns: AT_LADDER_GRID,
             paddingLeft: AT_LADDER_GUTTER_X,
             paddingRight: AT_LADDER_GUTTER_X,
-            fontSize: 13,
+            fontSize: 20,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.05em",
@@ -202,22 +200,22 @@ export function GlanceLadder({
             boxSizing: "border-box",
           }}
         >
-          <span className="text-center col-span-2 font-bold" style={{ color: AT_LADDER_CALLS_HDR, fontSize: 13 }}>
+          <span className="text-center col-span-2 font-bold" style={{ color: AT_LADDER_CALLS_HDR, fontSize: 20 }}>
             CALLS
           </span>
           <span />
-          <span className="text-center col-span-2 font-bold" style={{ color: AT_LADDER_PUTS_HDR, fontSize: 13 }}>
+          <span className="text-center col-span-2 font-bold" style={{ color: AT_LADDER_PUTS_HDR, fontSize: 20 }}>
             PUTS
           </span>
         </div>
         <div
           className="grid items-center at-ladder-num"
           style={{
-            height: AT_LADDER_COL_HDR_H,
+            height: 28,
             gridTemplateColumns: AT_LADDER_GRID,
             paddingLeft: AT_LADDER_GUTTER_X,
             paddingRight: AT_LADDER_GUTTER_X,
-            fontSize: 13,
+            fontSize: 20,
             color: AT_LABEL,
             fontWeight: FW_LIGHT,
             letterSpacing: "0.02em",
@@ -229,7 +227,7 @@ export function GlanceLadder({
         >
           <span className="text-center">BID</span>
           <span className="text-center">ASK</span>
-          <span className="text-center" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 13 }}>
+          <span className="text-center" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 20 }}>
             STRIKE
           </span>
           <span className="text-center">BID</span>

@@ -23,7 +23,7 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.025em;
   overflow: hidden;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .glance,
@@ -82,7 +82,7 @@
 }
 
 .brand {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.04em;
 }
@@ -91,7 +91,7 @@
   display: inline;
   margin-left: 6px;
   font-style: normal;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.08em;
   color: #ffb800;
@@ -99,13 +99,13 @@
 
 .cmd h1 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
 }
 
 .cmd .sub {
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .cmd button,
@@ -116,7 +116,7 @@
   border-radius: 6px;
   background: var(--glance-chrome);
   color: var(--glance-text);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   text-decoration: none;
   display: inline-flex;
@@ -146,14 +146,14 @@
 .headline .k {
   display: block;
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .spot {
-  font-size: 46px;
+  font-size: 36px;
   line-height: 0.9;
   font-weight: 500;
   color: #fff;
@@ -177,7 +177,7 @@
 
 .day-pts {
   margin-top: 2px;
-  font-size: 22px;
+  font-size: 24px;
   line-height: 1.1;
   font-weight: 500;
   white-space: nowrap;
@@ -191,19 +191,19 @@
 }
 
 .vix-px {
-  font-size: 30px;
+  font-size: 28px;
 }
 
 .support {
   margin-top: 0;
   color: var(--glance-text-soft);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.15;
   white-space: nowrap;
 }
 
 .hl {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
 }
 
@@ -214,7 +214,7 @@
 .hl .when {
   margin-left: 6px;
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .up {
@@ -236,7 +236,7 @@
 
 .cmd-quote-name {
   color: #ffb800;
-  font-size: 25px;
+  font-size: 24px;
   font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1.15;
@@ -248,7 +248,7 @@
 }
 
 .cmd-quote-last {
-  font-size: 32px;
+  font-size: 36px;
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
@@ -313,13 +313,13 @@
 }
 
 .flow-row-compact .flow-words {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 650;
   color: #fff;
 }
 
 .flow-row-compact .flow-dollars {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 500;
 }
 
@@ -439,7 +439,7 @@
   min-height: 40px;
   height: auto;
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .pulse {
@@ -456,11 +456,11 @@
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .pulse-cell b {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -488,7 +488,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -496,7 +496,7 @@
 }
 
 .flow-row {
-  --flow-num: 28px;
+  --flow-num: 24px;
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr) max-content;
   grid-template-rows: auto auto;
@@ -551,7 +551,7 @@
 .amt small {
   display: block;
   margin-top: 4px;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--glance-muted);
 }
 
@@ -615,13 +615,13 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .table th {
   text-align: right;
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
   white-space: nowrap;
   font-weight: 650;
   padding: 0 4px;
@@ -645,7 +645,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
-  font-size: 18px;
+  font-size: 20px;
   color: var(--glance-text-soft);
 }
 
@@ -675,13 +675,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px 14px;
-  font-size: 22px;
+  font-size: 24px;
 }
 
 .windows span {
   color: var(--glance-muted);
   margin-right: 4px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .chips {
@@ -693,14 +693,14 @@
 }
 
 .trend {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 500;
 }
 
 .pnf {
   background: #ffb800;
   color: #111;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
   padding: 6px 8px;
   border-radius: 4px;
@@ -720,7 +720,7 @@
 .levels td {
   text-align: right;
   padding: 1px 4px;
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.1;
   border-bottom: 1px solid var(--glance-border);
   white-space: nowrap;
@@ -728,7 +728,7 @@
 
 .levels th {
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 650;
 }
 
@@ -760,7 +760,7 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 8px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .meta-row > span {
@@ -817,7 +817,7 @@
   height: 20px;
   transform: translate(var(--shift, -50%), var(--lift, -20px));
   font-style: normal;
-  font-size: 16px;
+  font-size: 20px;
   line-height: 20px;
   white-space: nowrap;
   color: var(--glance-text-soft);
@@ -828,7 +828,7 @@
   align-items: center;
   justify-content: space-between;
   color: var(--glance-muted);
-  font-size: 18px;
+  font-size: 20px;
   white-space: nowrap;
   min-height: 22px;
 }
@@ -880,13 +880,13 @@
 
 .sheet h3 {
   margin: 0 0 8px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .sheet p,
 .sheet li {
   color: var(--glance-text-soft);
-  font-size: 18px;
+  font-size: 20px;
   line-height: 1.4;
 }
 
@@ -895,7 +895,7 @@
   justify-content: space-between;
   gap: 8px;
   margin: 8px 0;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .sheet input {
@@ -905,7 +905,7 @@
   border: 1px solid var(--glance-border-mid);
   border-radius: 4px;
   padding: 8px;
-  font-size: 18px;
+  font-size: 20px;
 }
 
 .glance.glance-embedded {
@@ -932,29 +932,8 @@
     padding: 8px 0 10px;
   }
 
-  .spot {
-    font-size: 64px;
-  }
-
-  .day-pct,
-  .open-pts {
-    font-size: 32px;
-  }
-
-  .vix-px {
-    font-size: 34px;
-  }
-
   .support {
     margin-top: 4px;
-  }
-
-  .flow-row {
-    --flow-num: 32px;
-  }
-
-  .flow-words {
-    font-size: 28px;
   }
 
   .flow-row {
@@ -962,16 +941,16 @@
   }
 
   .flow-row-compact {
-    --flow-num: 22px;
+    --flow-num: 20px;
     min-height: 0;
   }
 
   .flow-row-compact .flow-words {
-    font-size: 22px;
+    font-size: 24px;
   }
 
   .flow-row-compact .flow-dollars {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   .flow-row-compact .track {
@@ -1001,10 +980,6 @@
     height: 120px;
   }
 
-  .levels td.wall-now {
-    font-size: 32px;
-  }
-
   .rail {
     height: 200px;
     margin-top: 4px;
@@ -1027,7 +1002,7 @@
 .glance a,
 .glance input,
 .glance small {
-  font-size: 18px;
+  font-size: 20px;
 }
 
 @media (max-width: 760px) {
