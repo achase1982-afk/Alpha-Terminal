@@ -48,6 +48,7 @@ router.get("/capabilities", async (_req, res) => {
     },
     invocation: {
       endpoint: "/api/webull/invoke",
+      pathGate: "Every path under /market-data/ and /trading/ is accepted. Namespace categories are a catalog, not a block list.",
       methods: WEBULL_HTTP_METHODS,
       namespaces: WEBULL_HTTP_NAMESPACES,
       accessTokenAppliedServerSide: true,

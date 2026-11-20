@@ -28,6 +28,17 @@ Credentials and access tokens are never returned.
 }
 ```
 
+The gateway accepts every path under the two prefixes below. The category lists are a catalog, not a block list.
+
+The gateway supports all documented HTTP methods for paths under:
+
+- `/market-data/` — stocks, options, futures, crypto, event contracts, news,
+  screeners, watchlists, fundamentals, funds, calendars, and subscription
+  controls.
+- `/trading/` — accounts, balances, positions, activities, transfers,
+  instruments, order previews, placement, batch placement, replacement,
+  cancellation, open orders, history, and order detail.
+
 ## Live quotes
 
 Connecting Webull used to load accounts, balances, positions, and orders only.
@@ -42,15 +53,6 @@ trading access token is sent because market-data reads require it when the
 app has 2FA enabled. The OpenAPI market-data subscription is separate from a
 Webull app or desktop quote purchase; without that API entitlement the
 snapshot call is rejected and account routes still succeed.
-
-The gateway supports all documented HTTP methods for paths under:
-
-- `/market-data/` — stocks, options, futures, crypto, event contracts, news,
-  screeners, watchlists, fundamentals, funds, calendars, and subscription
-  controls.
-- `/trading/` — accounts, balances, positions, activities, transfers,
-  instruments, order previews, placement, batch placement, replacement,
-  cancellation, open orders, history, and order detail.
 
 For endpoints with a JSON request body:
 
