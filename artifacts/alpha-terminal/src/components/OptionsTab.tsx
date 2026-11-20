@@ -1304,7 +1304,7 @@ function OptionsGrid({
 
         <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
           {sortedRows.map((row) => (
-            <div key={row.strike} data-chain-strike={row.strike} style={{ height: ROW_H }}>
+            <div key={row.strike} data-chain-strike={row.strike} data-chain-strike-rail style={{ height: ROW_H }}>
               <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
             </div>
           ))}
@@ -2178,12 +2178,20 @@ export function OptionsTab({
       setChainSpotOffCenter(false);
       return;
     }
-    setChainSpotOffCenter(viewportNearestStrikeOffCenter(el, underlyingPrice, "data-chain-strike"));
-  }, [underlyingPrice]);
+    setChainSpotOffCenter(
+      viewportNearestStrikeOffCenter(el, underlyingPrice, "data-chain-strike-rail", 56, chainSheetPad),
+    );
+  }, [underlyingPrice, chainSheetPad]);
 
   const scrollChainToSpot = useCallback(() => {
-    scrollViewportToNearestStrike(chainScrollRef.current, underlyingPrice, "data-chain-strike");
-  }, [underlyingPrice]);
+    scrollViewportToNearestStrike(
+      chainScrollRef.current,
+      underlyingPrice,
+      "data-chain-strike-rail",
+      chainSheetPad,
+      "auto",
+    );
+  }, [underlyingPrice, chainSheetPad]);
 
   useEffect(() => {
     if (optionsSubView !== "chain") {
