@@ -255,9 +255,19 @@ const FuturesEsFixtureDevPage = import.meta.env.DEV
 const JournalFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/JournalFixtureDevPage"))
   : null;
+
+const IpadCockpitPage = lazy(() => import("@/ipad-cockpit/IpadCockpitPage"));
+
 function Router() {
   return (
     <Switch>
+      <Route path="/ipad">
+        {() => (
+          <Suspense fallback={<div style={{ height: "100dvh", background: "#090B0E" }} />}>
+            <IpadCockpitPage />
+          </Suspense>
+        )}
+      </Route>
       {ChainOrderFixtureDevPage ? (
         <Route path="/dev/chain-order-sheet">
           {() => (
