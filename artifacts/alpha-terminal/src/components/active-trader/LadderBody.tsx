@@ -20,6 +20,7 @@ import {
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import { useQuoteMoveArrows, type QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
+import { chainLivePriceColor } from "@/lib/options/chainQuoteTickColor";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
   AT_HEAT_MAX_ALPHA,
@@ -297,7 +298,7 @@ const QuoteCell = memo(function QuoteCell({
         fontSize: AT_LADDER_PRICE_SIZE,
         fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
-        color: AT_LADDER_PRICE_COLOR,
+        color: chainLivePriceColor(quoteSide, arrow, dimmed),
         background: "transparent",
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
