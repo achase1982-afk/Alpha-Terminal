@@ -455,7 +455,7 @@ export default function TerminalPage() {
   }, [orderOpen, strategyOpen]);
   const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
   const [strategyExpirations, setStrategyExpirations] = useState<{ label: string; value: string }[]>([]);
-  const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>>(new Map());
+  const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>>(new Map());
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
     const sym = useTerminalStore.getState().symbol;
@@ -654,7 +654,7 @@ export default function TerminalPage() {
 
   const [strategyInitialLegs, setStrategyInitialLegs] = useState<StrategyLeg[]>([]);
 
-  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: OptionsContract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => {
+  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>, preSelectedLegs?: { contract: OptionsContract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => {
     setStrategyStrikes(strikes);
     setStrategyExpirations(expirations);
     setStrategyChainData(chainData);

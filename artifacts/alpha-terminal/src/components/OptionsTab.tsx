@@ -1481,7 +1481,7 @@ interface OptionsTabProps {
   releaseOptionHold?: (holderId: string) => Promise<void>;
   stickyOffset?: number;
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
-  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
+  onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
   onActiveTraderReview?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
 }
 
@@ -2329,7 +2329,7 @@ export function OptionsTab({
     if (!onOpenStrategyBuilder || groups.length === 0) return;
     const allStrikes = new Set<number>();
     const expLabels: { label: string; value: string }[] = [];
-    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>();
+    const cMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>();
     const chainTs = chainFetchedAt;
     const streamTicks = useOptionsStreamStore.getState().ticks;
     for (const g of groups) {
@@ -2365,6 +2365,7 @@ export function OptionsTab({
               theta: q.theta,
               vega: q.vega,
               iv: q.iv,
+              quoteTimeMs: q.quoteTimeMs ?? l.contract.quoteTimeMs,
             };
             return { contract: merged, type: l.type, side: l.side };
           })
@@ -2410,6 +2411,7 @@ export function OptionsTab({
         theta: q.theta,
         vega: q.vega,
         iv: q.iv,
+        quoteTimeMs: q.quoteTimeMs ?? l.contract.quoteTimeMs,
       };
       const qty = legQuantities.get(key) ?? 1;
       return {

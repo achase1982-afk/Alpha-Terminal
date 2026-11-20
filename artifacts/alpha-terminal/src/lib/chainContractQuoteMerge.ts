@@ -58,6 +58,7 @@ export function mergeChainContractWithStream(
       schwabSymbol: key,
       bid: contract.bid,
       ask: contract.ask,
+      quoteTimeMs: contract.quoteTimeMs,
       contractTs: chainFetchedAt,
     },
     tick ?? undefined,
@@ -76,8 +77,8 @@ export function mergeChainContractWithStream(
   });
   const quoteTimeMs =
     paired?.source === "stream"
-      ? tick?.quoteTime ?? tick?.ts ?? null
-      : contract.quoteTimeMs ?? chainFetchedAt;
+      ? (tick?.quoteTime != null && tick.quoteTime > 0 ? tick.quoteTime : tick?.ts ?? null)
+      : (contract.quoteTimeMs != null && contract.quoteTimeMs > 0 ? contract.quoteTimeMs : null);
   return {
     bid: merged.bid != null && merged.bid >= 0 ? merged.bid : undefined,
     ask: merged.ask != null && merged.ask > 0 ? merged.ask : undefined,
