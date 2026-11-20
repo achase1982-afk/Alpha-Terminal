@@ -1213,7 +1213,7 @@ export default function TerminalPage() {
   };
 
   return (
-    <div className="app-shell bg-background h-[100dvh] flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
+    <div className="app-shell bg-background flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
       <header
         id="terminal-header"
