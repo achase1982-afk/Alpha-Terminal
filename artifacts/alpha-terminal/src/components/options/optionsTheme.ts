@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
+import { STRIKE_COL_W } from "@/lib/options/strikeColumnChrome";
 import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 /** Shared options chain / Active Trader palette. */
 
 export const COL_W = 74;
-export const STRIKE_W = 44;
+export const STRIKE_W = STRIKE_COL_W;
 export const ROW_H = 40;
 export const TOOLBAR_H = 32;
 export const HEADER_H = 32;

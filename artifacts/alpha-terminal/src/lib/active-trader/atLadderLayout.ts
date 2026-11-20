@@ -1,19 +1,22 @@
+import {
+  STRIKE_COL_FONT_SIZE,
+  STRIKE_COL_FONT_WEIGHT,
+  STRIKE_COL_W,
+} from "@/lib/options/strikeColumnChrome";
+
 /**
- * Active Trader ladder geometry + type — 1:1 with the AT mockup (visual source of truth).
- * Sampled from the mockup PNG at 3x on a 440 CSS-wide frame.
- * Spot / wall accent hues that already exist in production stay in `optionsTheme`
- * unless the mockup clearly differs (spot yellow below).
+ * Active Trader ladder geometry + type — strike rail aligned with options chain.
  */
 
 /** 5-column pro ladder: call bid | call ask | strike | put bid | put ask */
 export const AT_LADDER_GRID =
-  "minmax(40px,1fr) minmax(40px,1fr) 96px minmax(40px,1fr) minmax(40px,1fr)";
+  `minmax(40px,1fr) minmax(40px,1fr) ${STRIKE_COL_W}px minmax(40px,1fr) minmax(40px,1fr)`;
 
-/** Center strike column in the 440px-wide approved reference. */
-export const AT_LADDER_STRIKE_COL_W = 96;
+/** Center strike column — same width as `STRIKE_W` in the options chain. */
+export const AT_LADDER_STRIKE_COL_W = STRIKE_COL_W;
 
 /**
- * Equity ladder with the same exact centered 96px price rail as options/SPX:
+ * Equity ladder with the same centered strike/price rail width as options/SPX:
  * volume | bid size | price | ask size | (transparent balance rail).
  * The final rail carries no data; it mirrors the volume lane so PRICE remains
  * mathematically centered in every viewport.
@@ -49,9 +52,9 @@ export const AT_LADDER_PRICE_COLOR = "#d4d6d7";
 export const AT_LADDER_PRICE_SIZE = 16;
 export const AT_LADDER_PRICE_WEIGHT = 400;
 
-/** Center strike — same size as the mockup, regular weight so the column does not read heavy. */
-export const AT_LADDER_STRIKE_SIZE = 18;
-export const AT_LADDER_STRIKE_WEIGHT = 400;
+/** Center strike — matched to options chain strike column. */
+export const AT_LADDER_STRIKE_SIZE = STRIKE_COL_FONT_SIZE;
+export const AT_LADDER_STRIKE_WEIGHT = STRIKE_COL_FONT_WEIGHT;
 
 /** BUY / SELL under a selected premium. */
 export const AT_LADDER_LEG_TAG_SIZE = 8;

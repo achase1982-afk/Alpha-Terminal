@@ -23,6 +23,7 @@ import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
+import { STRIKE_COL_FONT_SIZE, STRIKE_COL_FONT_WEIGHT } from "@/lib/options/strikeColumnChrome";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
@@ -1096,7 +1097,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         borderBottom: `1px solid rgba(0,0,0,0.25)`,
       }}
     >
-      <span data-ui-audit="chain-strike-cell" style={{ fontSize: 12, fontWeight: FW_LIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span data-ui-audit="chain-strike-cell" style={{ fontSize: STRIKE_COL_FONT_SIZE, fontWeight: STRIKE_COL_FONT_WEIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (

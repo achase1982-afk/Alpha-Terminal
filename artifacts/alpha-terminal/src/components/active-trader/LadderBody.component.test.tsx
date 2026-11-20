@@ -344,8 +344,8 @@ describe("LadderBody", () => {
     expect(cell("call-bid-7330").style.fontVariantNumeric).toBe("tabular-nums");
     expect(cell("call-bid-7330").style.fontSize).toBe("16px");
     const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
-    expect(strike.style.fontWeight).toBe("400");
-    expect(strike.style.fontSize).toBe("18px");
+    expect(strike.style.fontWeight).toBe("500");
+    expect(strike.style.fontSize).toBe("14px");
     const spotCell = view.container.querySelector<HTMLElement>('[data-at-strike="7320"]')!;
     expect(spotCell.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
     const spot = spotCell.querySelector<HTMLElement>("div")!;
