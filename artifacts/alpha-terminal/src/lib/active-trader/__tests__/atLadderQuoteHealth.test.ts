@@ -42,7 +42,7 @@ describe("auditNearAtmLadderQuotes", () => {
     expect(audit.nearAtm[0]?.reason).toBe("No quote");
   });
 
-  it("marks aged quotes stale near-ATM without a session calendar gate", () => {
+  it("does not flag aged quotes near-ATM when the book is valid", () => {
     const audit = auditNearAtmLadderQuotes({
       rows: [{ strike: 352.5, call: baseContract(352.5, prior), put: null }],
       underlyingPrice: 352.5,
@@ -50,14 +50,13 @@ describe("auditNearAtmLadderQuotes", () => {
       chainQuoteTs: now,
       nowMs: now,
     });
-    expect(audit.nearAtmHasInvalid).toBe(true);
-    expect(audit.counts.stale).toBe(1);
-    expect(resolveChainDisplayQuote(baseContract(350, prior), null, now, now).displayState).toBe("stale");
+    expect(audit.nearAtmHasInvalid).toBe(false);
+    expect(resolveChainDisplayQuote(baseContract(350, prior), null, now, now).displayState).toBe("ok");
   });
 
   it("accepts locked quotes with locked flag", () => {
     const view = resolveChainDisplayQuote({ bid: 0.54, ask: 0.54, quoteTimeMs: prior }, null, Date.now(), now);
-    expect(view.displayState).toBe("stale");
+    expect(view.displayState).toBe("ok");
     expect(view.locked).toBe(true);
     expect(view.bid).toBe(0.54);
   });

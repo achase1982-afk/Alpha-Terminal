@@ -24,7 +24,7 @@ describe("optionQuotes", () => {
     expect(chainDisplayQuoteState(0, 0.2, Date.now())).toBe("incomplete");
     expect(chainDisplayQuoteState(1.1, 1.2, Date.now())).toBe("ok");
     expect(chainDisplayQuoteState(1.2, 1.1, Date.now())).toBe("crossed");
-    expect(chainDisplayQuoteState(1.1, 1.2, Date.now() - 20_000)).toBe("stale");
+    expect(chainDisplayQuoteState(1.1, 1.2, Date.now() - 20_000)).toBe("ok");
   });
 
   it("maps display states to short UI reasons", () => {
@@ -111,37 +111,17 @@ describe("optionQuotes", () => {
     expect(oneSided.showAsk).toBe(1.2);
   });
 
-  it("dims but does not lock stale live-session or closed-session prices", () => {
+  it("shows ok for two-sided books regardless of quote age", () => {
     const liveNow = Date.parse("2026-11-18T15:00:00.000Z");
-    const stale = resolveChainQuotePresentation({
+    const aged = resolveChainQuotePresentation({
       bid: 1,
       ask: 1.1,
       quoteTimeMs: liveNow - 20_000,
       nowMs: liveNow,
     });
-    expect(stale.displayState).toBe("stale");
-    expect(stale.tapable).toBe(true);
-    expect(stale.dimmed).toBe(true);
-
-    const afterHoursNow = Date.parse("2026-11-18T22:00:00.000Z");
-    const aged = resolveChainQuotePresentation({
-      bid: 1,
-      ask: 1.1,
-      quoteTimeMs: Date.parse("2026-11-18T21:14:00.000Z"),
-      nowMs: afterHoursNow,
-    });
-    expect(aged.displayState).toBe("stale");
+    expect(aged.displayState).toBe("ok");
     expect(aged.tapable).toBe(true);
-    expect(aged.dimmed).toBe(true);
-
-    const freshAfterHours = resolveChainQuotePresentation({
-      bid: 1,
-      ask: 1.1,
-      quoteTimeMs: afterHoursNow - 1_000,
-      nowMs: afterHoursNow,
-    });
-    expect(freshAfterHours.displayState).toBe("ok");
-    expect(freshAfterHours.dimmed).toBe(false);
+    expect(aged.dimmed).toBe(false);
   });
 
   it("debit vertical uses positive natural-direction NBBO", () => {

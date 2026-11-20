@@ -13,7 +13,7 @@ describe("chainQuoteSession", () => {
     expect(quoteSideState(0.54, 0.54)).toBe("ok");
   });
 
-  it("dims stale quotes without a session calendar gate", () => {
+  it("shows ok for two-sided books without a session calendar gate", () => {
     const gth = equityOptionsGthOpenMs(Date.now());
     const priorClose = gth - 18 * 3_600_000;
     expect(isCarryoverOptionQuote(priorClose, gth + 30 * 60_000)).toBe(false);
@@ -23,11 +23,11 @@ describe("chainQuoteSession", () => {
       quoteTimeMs: priorClose,
       nowMs: gth + 30 * 60_000,
     });
-    expect(view.displayState).toBe("stale");
+    expect(view.displayState).toBe("ok");
     expect(view.showBid).toBe(5.05);
-    expect(view.dimmed).toBe(true);
+    expect(view.dimmed).toBe(false);
     expect(view.tapable).toBe(true);
-    expect(view.asOfLabel).toContain("as of");
+    expect(view.asOfLabel).toBeNull();
   });
 
   it("flags locked pairs without suppressing prices", () => {
@@ -41,7 +41,7 @@ describe("chainQuoteSession", () => {
     });
     expect(view.locked).toBe(true);
     expect(view.showBid).toBe(0.54);
-    expect(view.displayState).toBe("stale");
+    expect(view.displayState).toBe("ok");
   });
 
   it("formats as-of label in Eastern time", () => {

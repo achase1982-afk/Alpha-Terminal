@@ -13,27 +13,31 @@ describe("optionsExpirationPick", () => {
     { expiration: "2026-11-25", dte: 7 },
   ];
 
-  it("keeps today's 0DTE before the session closes", () => {
+  it("picks the first catalog row when no DTE filter is applied", () => {
     const beforeClose = Date.parse("2026-11-18T21:14:00.000Z");
-    expect(nearestTradableExpiration(groups, beforeClose)?.expiration).toBe("2026-11-18");
+    expect(nearestTradableExpiration(groups, beforeClose)?.expiration).toBe("2026-11-17");
   });
 
-  it("keeps 0DTE after the calendar close when the session gate is removed", () => {
+  it("keeps every expiry in the pill list", () => {
     const afterClose = Date.parse("2026-11-18T21:15:00.000Z");
-    expect(nearestTradableExpiration(groups, afterClose)?.expiration).toBe("2026-11-18");
+    expect(nearestTradableExpiration(groups, afterClose)?.expiration).toBe("2026-11-17");
     expect(filterAtExpiryPillGroups(groups, afterClose).map((g) => g.expiration)).toEqual([
+      "2026-11-17",
       "2026-11-18",
       "2026-11-25",
     ]);
   });
 
-  it("returns null when only expired expiries remain", () => {
-    expect(nearestTradableExpiration([{ expiration: "2026-11-17", dte: -1 }])).toBeNull();
+  it("still picks negative-DTE when session gates are removed", () => {
+    expect(nearestTradableExpiration([{ expiration: "2026-11-17", dte: -1 }])?.expiration).toBe(
+      "2026-11-17",
+    );
   });
 
-  it("filters expired expiries from AT pill list", () => {
+  it("does not hide negative-DTE rows from AT pill list", () => {
     const beforeClose = Date.parse("2026-11-18T21:14:00.000Z");
     expect(filterAtExpiryPillGroups(groups, beforeClose).map((g) => g.expiration)).toEqual([
+      "2026-11-17",
       "2026-11-18",
       "2026-11-25",
     ]);

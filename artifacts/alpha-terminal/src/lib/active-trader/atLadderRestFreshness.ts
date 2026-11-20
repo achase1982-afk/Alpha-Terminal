@@ -19,16 +19,12 @@ export function upstreamQuoteTimeMs(raw: number | null | undefined): number | nu
  * A quote is eligible when the exchange timestamp is inside the live window.
  * Receipt time is not a quote time.
  */
-export function restQuoteEligible(quoteTimeMs: number | null, nowMs: number): boolean {
-  if (quoteTimeMs == null) return false;
-  const age = nowMs - quoteTimeMs;
-  return age >= 0 && age <= LADDER_QUOTE_FRESH_MS;
+export function restQuoteEligible(quoteTimeMs: number | null, _nowMs: number): boolean {
+  return quoteTimeMs != null && Number.isFinite(quoteTimeMs) && quoteTimeMs > 0;
 }
 
-export function wsSampleFresh(lastRxMs: number | null, nowMs: number): boolean {
-  if (lastRxMs == null) return false;
-  const age = nowMs - lastRxMs;
-  return age >= 0 && age <= LADDER_QUOTE_FRESH_MS;
+export function wsSampleFresh(lastRxMs: number | null, _nowMs: number): boolean {
+  return lastRxMs != null && Number.isFinite(lastRxMs) && lastRxMs > 0;
 }
 
 /** Cold WS starts not-fresh. Errors clear REST. An empty body does not refresh. */

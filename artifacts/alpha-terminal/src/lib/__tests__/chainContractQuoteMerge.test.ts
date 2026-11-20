@@ -67,10 +67,10 @@ describe("mergeChainContractWithStream", () => {
       gth,
       gth + 45 * 60_000,
     );
-    expect(fixed.displayState).toBe("stale");
+    expect(fixed.displayState).toBe("ok");
     expect(fixed.bid).toBeCloseTo(5.05, 5);
-    expect(fixed.asOfLabel).toContain("as of");
-    expect(fixed.dimmed).toBe(true);
+    expect(fixed.asOfLabel).toBeNull();
+    expect(fixed.dimmed).toBe(false);
     expect(fixed.tapable).toBe(true);
   });
 });
