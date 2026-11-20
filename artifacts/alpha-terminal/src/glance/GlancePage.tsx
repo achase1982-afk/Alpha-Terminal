@@ -85,18 +85,23 @@ function FlowSide({
   const boughtW = bought != null && scale > 0 ? Math.min(100, (bought / scale) * 100) : 0;
   return (
     <div className="flow-row">
-      <div className="side-name">{name}</div>
-      <div className="amt up num">
-        ▲ {moneyOr(bought)}
-        <History values={boughtHist} color="#00d166" max={histMax} />
-      </div>
+      <span className="flow-read buy">
+        <span className="flow-words">{name} bought</span>
+        <span className="flow-dollars up">{moneyOr(bought)}</span>
+      </span>
       <div className="track" aria-hidden>
         <span className="bought" style={{ width: `${boughtW}%` }} />
         <span className="sold" style={{ width: `${soldW}%` }} />
         <i />
       </div>
-      <div className="amt down num">
-        ▼ {moneyOr(sold)}
+      <span className="flow-read sell">
+        <span className="flow-dollars down">{moneyOr(sold)}</span>
+        <span className="flow-words">{name} sold</span>
+      </span>
+      <div className="flow-hist buy">
+        <History values={boughtHist} color="#00d166" max={histMax} />
+      </div>
+      <div className="flow-hist sell">
         <History values={soldHist} color="#f23645" max={histMax} />
       </div>
     </div>
