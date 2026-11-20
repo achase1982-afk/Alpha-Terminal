@@ -21,6 +21,18 @@ import {
   orderReferencesBlockedFutures,
   prepareSchwabOrderForSend,
 } from "@workspace/order-ticket-math";
+import { fetchMappedWebullAccounts } from "../lib/webull/webullPortfolioAccounts.js";
+import {
+  isWebullAccountHash,
+  parseWebullAccountHash,
+} from "../lib/webull/webullTokenStore.js";
+import {
+  mapWebullOrderRow,
+  webullCancelOrder,
+  webullFetchHistoricalOrders,
+  webullPlaceOrder,
+  webullReplaceOrder,
+} from "../lib/webull/webullOrderBridge.js";
 
 const router: IRouter = Router();
 
@@ -78,21 +90,37 @@ function getTraderToken(): string | null {
 
 router.get("/accounts", async (_req, res) => {
   const token = getTraderToken();
-  if (!token) return res.status(401).json({ error: "no_trader_token" });
+  const cacheFresh = accountsCache && Date.now() - accountsCache.fetchedAt < ACCOUNTS_CACHE_TTL;
 
-  if (accountsCache && (Date.now() - accountsCache.fetchedAt) < ACCOUNTS_CACHE_TTL) {
-    return res.json(accountsCache.data);
+  if (cacheFresh) {
+    return res.json(accountsCache!.data);
+  }
+
+  const merged: unknown[] = [];
+  if (token) {
+    try {
+      const mapped = await fetchMappedSchwabAccounts(token);
+      merged.push(...mapped.map((a) => ({ ...a, broker: "schwab" })));
+    } catch (err) {
+      logger.error({ err }, "Portfolio Schwab accounts fetch failed");
+      if (accountsCache?.data) return res.json(accountsCache.data);
+      if (!merged.length) return res.status(502).json({ error: "schwab_api_error" });
+    }
   }
 
   try {
-    const mapped = await fetchMappedSchwabAccounts(token);
-    accountsCache = { data: mapped, fetchedAt: Date.now() };
-    return res.json(mapped);
+    const webull = await fetchMappedWebullAccounts();
+    merged.push(...webull.map((w) => ({ ...w, broker: "webull" })));
   } catch (err) {
-    logger.error({ err }, "Portfolio accounts fetch failed");
-    if (accountsCache) return res.json(accountsCache.data);
-    return res.status(502).json({ error: "schwab_api_error" });
+    logger.warn({ err }, "Portfolio Webull accounts fetch failed");
   }
+
+  if (!merged.length && !token) {
+    return res.status(401).json({ error: "no_trader_token" });
+  }
+
+  accountsCache = { data: merged, fetchedAt: Date.now() };
+  return res.json(merged);
 });
 
 router.get("/account-numbers", async (_req, res) => {
@@ -146,18 +174,46 @@ router.get("/accounts/raw-balances", async (_req, res) => {
 });
 
 router.get("/orders", async (req, res) => {
+  const userId = portfolioPrefsUserId(req);
+  const prefs = await getPortfolioPrefs(userId);
+  const requested =
+    typeof req.query.accountHash === "string"
+      ? req.query.accountHash
+      : prefs.viewSelection !== "all"
+        ? prefs.viewSelection
+        : prefs.defaultTradingAccountHash;
+
+  if (isWebullAccountHash(requested)) {
+    const accountId = parseWebullAccountHash(requested);
+    if (!accountId) return res.json({ accountHash: null, orders: [] });
+    const days = parseInt(req.query.days as string) || 30;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - Math.min(days, 60));
+    try {
+      const payload = await webullFetchHistoricalOrders(
+        accountId,
+        start.toISOString(),
+        end.toISOString(),
+      );
+      const rows = Array.isArray(payload.data) ? payload.data : [];
+      const orders = rows.map((row) => mapWebullOrderRow(row));
+      orders.sort(
+        (a, b) => new Date(b.enteredTime).getTime() - new Date(a.enteredTime).getTime(),
+      );
+      const verifyIdentity = req.query.accountIdentity === "1";
+      if (verifyIdentity) return res.json({ accountHash: requested, orders });
+      return res.json(orders);
+    } catch (err) {
+      logger.error({ err }, "Webull portfolio orders failed");
+      return res.status(502).json({ error: "webull_api_error" });
+    }
+  }
+
   const token = getTraderToken();
   if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
-    const userId = portfolioPrefsUserId(req);
-    const prefs = await getPortfolioPrefs(userId);
-    const requested =
-      typeof req.query.accountHash === "string"
-        ? req.query.accountHash
-        : prefs.viewSelection !== "all"
-          ? prefs.viewSelection
-          : prefs.defaultTradingAccountHash;
     // The working-order row asks for proof of the account. A successful list is
     // not that proof when an unknown hash would otherwise fall back to the first account.
     const verifyIdentity = req.query.accountIdentity === "1";
@@ -297,9 +353,6 @@ router.get("/account-hash", async (req, res) => {
 });
 
 router.post("/place-order", async (req, res) => {
-  const token = getTraderToken();
-  if (!token) return res.status(401).json({ error: "no_trader_token" });
-
   const { accountHash, order, journalContext } = req.body as {
     accountHash: string;
     order: SchwabPlaceOrderBody;
@@ -309,6 +362,47 @@ router.post("/place-order", async (req, res) => {
   if (!accountHash || !order) {
     return res.status(400).json({ error: "Missing accountHash or order" });
   }
+
+  if (isWebullAccountHash(accountHash)) {
+    const accountId = parseWebullAccountHash(accountHash);
+    if (!accountId) return res.status(400).json({ error: "invalid_webull_account" });
+    try {
+      const result = await webullPlaceOrder(accountId, order);
+      const orderId =
+        String(
+          (result.new_orders as Array<{ client_order_id?: string }> | undefined)?.[0]
+            ?.client_order_id ??
+            (result as { client_order_id?: string }).client_order_id ??
+            "",
+        ) || null;
+      const legs = order.orderLegCollection ?? [];
+      const firstLeg = legs[0] ?? {};
+      const sym = firstLeg?.instrument?.symbol ?? "";
+      const side = firstLeg?.instruction ?? "";
+      const qty = firstLeg?.quantity ?? "";
+      if (orderId) {
+        broadcastToClients("orderAlert", {
+          type: "OrderCreated",
+          symbol: sym,
+          side,
+          quantity: String(qty),
+          orderId,
+          status: "CREATED",
+          timestamp: Date.now(),
+          raw: "",
+        });
+      }
+      res.json({ success: true, orderId });
+      return;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "webull_order_failed";
+      logger.error({ err }, "Webull order placement error");
+      return res.status(502).json({ error: "order_rejected", message });
+    }
+  }
+
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   if (orderReferencesFuturesSymbol(order)) {
     return res.status(403).json({
@@ -414,10 +508,30 @@ router.post("/place-order", async (req, res) => {
   }
 });
 
-router.delete("/cancel-order", async (req, res) => {
-  const token = getTraderToken();
-  if (!token) return res.status(401).json({ error: "no_trader_token" });
+router.post("/replace-order", async (req, res) => {
+  const { accountHash, orderId, patch } = req.body as {
+    accountHash: string;
+    orderId: string;
+    patch: Record<string, unknown>;
+  };
+  if (!accountHash || !orderId || !patch) {
+    return res.status(400).json({ error: "Missing accountHash, orderId, or patch" });
+  }
+  if (!isWebullAccountHash(accountHash)) {
+    return res.status(400).json({ error: "replace_supported_webull_only" });
+  }
+  const accountId = parseWebullAccountHash(accountHash);
+  if (!accountId) return res.status(400).json({ error: "invalid_webull_account" });
+  try {
+    await webullReplaceOrder(accountId, orderId, patch);
+    return res.json({ success: true });
+  } catch (err) {
+    logger.error({ err }, "Webull replace order error");
+    return res.status(502).json({ error: "replace_failed" });
+  }
+});
 
+router.delete("/cancel-order", async (req, res) => {
   const { accountHash, orderId } = req.body as {
     accountHash: string;
     orderId: string;
@@ -426,6 +540,31 @@ router.delete("/cancel-order", async (req, res) => {
   if (!accountHash || !orderId) {
     return res.status(400).json({ error: "Missing accountHash or orderId" });
   }
+
+  if (isWebullAccountHash(accountHash)) {
+    const accountId = parseWebullAccountHash(accountHash);
+    if (!accountId) return res.status(400).json({ error: "invalid_webull_account" });
+    try {
+      await webullCancelOrder(accountId, String(orderId));
+      broadcastToClients("orderAlert", {
+        type: "CancelAccepted",
+        symbol: null,
+        side: null,
+        quantity: null,
+        orderId,
+        status: "CANCELED",
+        timestamp: Date.now(),
+        raw: "",
+      });
+      return res.json({ success: true });
+    } catch (err) {
+      logger.error({ err }, "Webull cancel order error");
+      return res.status(502).json({ error: "cancel_failed" });
+    }
+  }
+
+  const token = getTraderToken();
+  if (!token) return res.status(401).json({ error: "no_trader_token" });
 
   try {
     const schwabRes = await fetch(
