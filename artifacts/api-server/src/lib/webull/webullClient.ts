@@ -59,7 +59,7 @@ export async function webullSignedFetch<T = unknown>(opts: {
     method: opts.method,
     path: opts.path,
     query: opts.query,
-    bodyString: null,
+    bodyString,
     appKey,
     appSecret,
     accessToken: opts.withAccessToken ? accessToken : undefined,
@@ -113,7 +113,10 @@ async function webullSignedFetchRaw<T>(params: {
   });
   const text = await res.text().catch(() => "");
   if (!res.ok) {
-    logger.warn({ path: params.path, status: res.status, body: text.slice(0, 400) }, "Webull API error");
+    logger.warn(
+      { path: params.path, status: res.status, body: text.slice(0, 400) },
+      `Webull API error ${res.status} ${params.path}`,
+    );
     throw new WebullApiError(`webull_${params.path}`, res.status, text);
   }
   if (!text) return {} as T;
