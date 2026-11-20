@@ -60,6 +60,8 @@ export function buildChainSheetBracketEconomics(input: {
   entryGrossDollars: number | null;
   isCredit: boolean;
   assetType?: "OPTION" | "EQUITY";
+  /** Multi-leg package line. Single contracts keep the OCC description. */
+  contractLine?: string;
 }): ChainSheetBracketEconomics {
   const assetType = input.assetType ?? "OPTION";
   const multiplier = assetType === "EQUITY" ? 1 : 100;
@@ -73,7 +75,9 @@ export function buildChainSheetBracketEconomics(input: {
           optionSymbol: input.optionSymbol,
           underlyingSymbol: input.underlyingSymbol,
           assetType,
-          quantityOverride: assetType === "EQUITY" ? input.spreadQuantity : undefined,
+          quantityOverride: input.spreadQuantity,
+          contractLine: input.contractLine,
+          contractCountForFees: input.totalContracts > 0 ? input.totalContracts : undefined,
         })
       : ({
           mode: "unsupported",

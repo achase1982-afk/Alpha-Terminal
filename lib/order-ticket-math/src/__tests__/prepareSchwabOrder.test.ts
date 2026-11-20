@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prepareSchwabOrderForSend } from "../prepareSchwabOrder.js";
+import { prepareSchwabOrderForSend, readableBrokerRejectMessage } from "../prepareSchwabOrder.js";
 
 describe("prepareSchwabOrderForSend", () => {
   it("strips prices Schwab rejects on stop children and keeps limit children", () => {
@@ -33,5 +33,33 @@ describe("prepareSchwabOrderForSend", () => {
     expect(children[2].price).toBeUndefined();
     expect(children[2].stopPriceOffset).toBe(0.1);
     expect(children[3].price).toBeUndefined();
+  });
+
+  it("rewrites IRON_BUTTERFLY to CUSTOM before Schwab sees the order", () => {
+    const prepared = prepareSchwabOrderForSend({
+      orderStrategyType: "TRIGGER",
+      orderType: "NET_CREDIT",
+      price: 4.9,
+      complexOrderStrategyType: "IRON_BUTTERFLY",
+      childOrderStrategies: [
+        {
+          orderStrategyType: "SINGLE",
+          orderType: "NET_DEBIT",
+          price: 3.7,
+          complexOrderStrategyType: "IRON_BUTTERFLY",
+        },
+      ],
+    });
+    expect(prepared.complexOrderStrategyType).toBe("CUSTOM");
+    const child = (prepared.childOrderStrategies as Record<string, unknown>[])[0];
+    expect(child.complexOrderStrategyType).toBe("CUSTOM");
+    expect(child.price).toBe(3.7);
+  });
+
+  it("reads the sentence out of a Schwab reject body", () => {
+    expect(readableBrokerRejectMessage('{"message":"Invalid value \\"IRON_BUTTERFLY\\""}')).toBe(
+      'Invalid value "IRON_BUTTERFLY"',
+    );
+    expect(readableBrokerRejectMessage("Order rejected")).toBe("Order rejected");
   });
 });

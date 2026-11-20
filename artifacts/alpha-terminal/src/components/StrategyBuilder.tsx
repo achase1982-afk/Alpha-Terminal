@@ -12,6 +12,7 @@ import {
   resolveSubmittedLimit,
   schwabPriceFromTicket,
   executableMid,
+  inferSchwabComplexOrderStrategyType,
   midpointFromBidAsk,
 } from "@workspace/order-ticket-math";
 import { fetchWithAuth, humanizeFailedApiBody } from "@/lib/fetchWithAuth";
@@ -807,20 +808,16 @@ export function StrategyBuilder({
 
   const buildSchwabOrder = useCallback((priceOverride?: number) => {
     const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
-    const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
-    let complexType = "CUSTOM";
-    if (legs.length === 1) {
-      complexType = "NONE";
-    } else if (legs.length === 2) {
-      const p0 = getSymParts(legs[0].schwabSymbol);
-      const p1 = getSymParts(legs[1].schwabSymbol);
-      if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
-      else if (p0.date === p1.date && p0.cp !== p1.cp) complexType = "STRANGLE";
-      else complexType = "CUSTOM";
-    } else if (legs.length === 4) {
-      const cps = legs.map(l => getSymParts(l.schwabSymbol).cp);
-      if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
-    }
+    const complexType = inferSchwabComplexOrderStrategyType(
+      legs.map((leg) => ({
+        strike: leg.strike,
+        optionType: leg.optionType,
+        instruction: leg.direction,
+        quantity: leg.quantity,
+        expiration: leg.expiration,
+        schwabSymbol: leg.schwabSymbol,
+      })),
+    );
     const o: Record<string, unknown> = {
       orderType: isCredit ? "NET_CREDIT" : "NET_DEBIT",
       session: extendedHours ? "SEAMLESS" : "NORMAL",
