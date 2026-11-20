@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { GRAY, MONO } from "@/components/options/optionsTheme";
+import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
 
 export const AtExpiryPicker = memo(function AtExpiryPicker({ loading }: { loading?: boolean }) {
   const expiryOptions = useAtChromeStore((s) => s.atExpiryOptions);
@@ -41,10 +42,12 @@ export const AtExpiryPicker = memo(function AtExpiryPicker({ loading }: { loadin
       <SelectTrigger
         data-testid="at-expiry-picker"
         data-at-expiry-selected={selectedExpiration ?? ""}
-        className="h-7 max-w-[7.25rem] rounded-md px-1 text-[10px] font-medium shadow-none border [&>svg]:ml-0.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-80"
+        className="h-7 max-w-[7.25rem] rounded-md px-1 text-[10px] font-medium shadow-none border-0 outline-none ring-0 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 [&>svg]:ml-0.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-80"
         style={{
-          background: "rgba(255,255,255,0.04)",
-          borderColor: "#3f3f46",
+          background: AT_HEADER_BG,
+          border: "none",
+          boxShadow: "none",
+          outline: "none",
           color: GRAY,
           fontFamily: MONO,
         }}
