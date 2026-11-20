@@ -705,12 +705,12 @@ const DataCell = memo(function DataCell({
     startPos.current = null;
   }, []);
 
-  const ladderCellColor = AT_LADDER_PRICE_COLOR;
   let textColor: string;
   if (topStr === "\u2014") textColor = MUTED;
+  else if (isPrice && priceDimmed) textColor = AT_LADDER_PRICE_COLOR;
   else if (priceDimmed) textColor = MUTED;
-  else if (isPrice) textColor = ladderCellColor;
-  else textColor = ladderCellColor;
+  else if (isBid) textColor = DOWN;
+  else textColor = WHITE;
 
   const oiValue = isOI ? topVal : undefined;
 
@@ -732,7 +732,7 @@ const DataCell = memo(function DataCell({
           fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
           fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
-          opacity: priceDimmed ? 0.75 : 1,
+          opacity: isPrice && priceDimmed ? 0.72 : priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
           ...(isPrice
             ? {
@@ -770,43 +770,20 @@ const DataCell = memo(function DataCell({
       ) : null}
 
       {isVol && oiVal != null && (
-        <span
-          className="leading-none mt-0.5"
-          style={{
-            fontSize: 10,
-            color: ladderCellColor,
-            fontVariantNumeric: "tabular-nums",
-            fontWeight: AT_LADDER_PRICE_WEIGHT,
-          }}
-        >
+        <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
           OI: {fmtCompact(oiVal)}
         </span>
       )}
 
       {isPrice && showInlineGreeks && deltaVal != null ? (
-        <div
-          className="flex gap-1 mt-0.5"
-          style={{
-            fontSize: 10,
-            color: ladderCellColor,
-            fontVariantNumeric: "tabular-nums",
-            fontWeight: AT_LADDER_PRICE_WEIGHT,
-            opacity: priceDimmed ? 0.75 : 1,
-          }}
-        >
+        <div className="flex gap-1 mt-0.5" style={{ fontSize: 10, color: isShaded ? "#a0a0a8" : GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: FW_LIGHT }}>
           <span>{"Δ"}{fmtNum(deltaVal, 2)}</span>
           {thetaVal != null && <span>{"Θ"}{fmtNum(thetaVal, 2)}</span>}
         </div>
       ) : isPrice && !showInlineGreeks ? (
         <span
           className="leading-none mt-0.5"
-          style={{
-            fontSize: 9,
-            color: ladderCellColor,
-            fontVariantNumeric: "tabular-nums",
-            fontWeight: AT_LADDER_PRICE_WEIGHT,
-            opacity: priceDimmed ? 0.75 : 1,
-          }}
+          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
         >
           {bottomVal != null ? <>Size: {fmtCompact(bottomVal)}</> : ""}
         </span>
