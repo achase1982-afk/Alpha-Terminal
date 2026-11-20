@@ -8,6 +8,7 @@ import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { formatGexUsd } from "@/lib/active-trader/zonesModel";
 import { isUsEquitiesMarketHoursEt } from "@/lib/usMarketHours";
 import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
+import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import { useFlashOnChange } from "@/hooks/useFlashOnChange";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import {
@@ -141,8 +142,7 @@ export const RegimeStrip = memo(function RegimeStrip({
 
   const cw = zones.callWall != null ? formatStrikeLevel(zones.callWall) : "\u2014";
   const pw = zones.putWall != null ? formatStrikeLevel(zones.putWall) : "\u2014";
-  const flip =
-    zones.flip != null ? formatStrikeLevel(Math.round(zones.flip)) : "none in range";
+  const flip = resolveGammaFlipDisplay(zones);
   const gexVal = formatGexUsd(zones.netGexUsdPer1Pct);
 
   const kLow = keepawayStats

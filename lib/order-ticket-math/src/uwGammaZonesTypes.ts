@@ -4,11 +4,21 @@ export interface UwGammaStrikeRow {
   strike: number;
   callGammaOi: number;
   putGammaOi: number;
+  callGammaVol: number;
+  putGammaVol: number;
+  /** Snapshot time, when the feed row has one. */
+  timeMs: number | null;
 }
 
 export interface UwGammaZoneModel {
+  /** Strike with the largest |call_gamma_oi|. */
   callWall: number | null;
+  /** Strike with the largest |put_gamma_oi|. Put gamma is negative, so this is absolute. */
   putWall: number | null;
+  /** Strike with the largest |call_gamma_vol|. */
+  callWallVol?: number | null;
+  /** Strike with the largest |put_gamma_vol|. */
+  putWallVol?: number | null;
   flip: number | null;
   netGexUsdPer1Pct: number | null;
   env: GammaEnv;

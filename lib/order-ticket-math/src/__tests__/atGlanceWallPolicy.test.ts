@@ -37,15 +37,27 @@ describe("applyGlanceWallPolicy", () => {
     expect(out.flip).toBe(7355);
   });
 
-  it("coincident ATM walls become pin", () => {
-    const pinned = { ...base, callWall: 7340, putWall: 7340 };
+  it("keeps coincident call and put walls on their own fields", () => {
+    const pinned = { ...base, callWall: 7340, putWall: 7340, callWallVol: 7350, putWallVol: 7330 };
     const out = applyGlanceWallPolicy(pinned, {
       expiryYmd: "2026-11-17",
       sessionDateYmd: "2026-11-17",
       spot: 7340.5,
     });
-    expect(out.gammaPinStrike).toBe(7340);
-    expect(out.callWall).toBeNull();
-    expect(out.putWall).toBeNull();
+    expect(out.gammaPinStrike).toBeNull();
+    expect(out.callWall).toBe(7340);
+    expect(out.putWall).toBe(7340);
+    expect(out.callWallVol).toBe(7350);
+    expect(out.putWallVol).toBe(7330);
+  });
+
+  it("stale expiry also clears volume walls", () => {
+    const out = applyGlanceWallPolicy(
+      { ...base, callWallVol: 7350, putWallVol: 7330 },
+      { expiryYmd: "2026-11-17", sessionDateYmd: "2026-11-18", spot: 7340 },
+    );
+    expect(out.callWallVol).toBeNull();
+    expect(out.putWallVol).toBeNull();
+    expect(out.flip).toBeNull();
   });
 });

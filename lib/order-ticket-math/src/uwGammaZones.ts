@@ -1,4 +1,4 @@
-import type { GammaEnv, UwGammaZoneModel } from "./uwGammaZonesTypes.js";
+import type { GammaEnv, UwGammaStrikeRow, UwGammaZoneModel } from "./uwGammaZonesTypes.js";
 
 export type { GammaEnv, UwGammaStrikeRow, UwGammaZoneModel } from "./uwGammaZonesTypes.js";
 export { formatGexUsd } from "./uwGammaZonesTypes.js";
@@ -13,44 +13,95 @@ export function parseUwGammaAmount(raw: unknown): number {
   return 0;
 }
 
-export function parseUwStrikeRow(raw: unknown): { strike: number; callGammaOi: number; putGammaOi: number } | null {
+function parseUwTimeMs(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw;
+  if (typeof raw === "string" && raw.trim()) {
+    const n = Date.parse(raw.trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+export function parseUwStrikeRow(raw: unknown): UwGammaStrikeRow | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
   const strike = Number(o.strike ?? o.price);
   if (!Number.isFinite(strike)) return null;
-  const callGammaOi = parseUwGammaAmount(o.call_gamma_oi);
-  const putGammaOi = parseUwGammaAmount(o.put_gamma_oi);
-  return { strike, callGammaOi, putGammaOi };
+  return {
+    strike,
+    callGammaOi: parseUwGammaAmount(o.call_gamma_oi),
+    putGammaOi: parseUwGammaAmount(o.put_gamma_oi),
+    callGammaVol: parseUwGammaAmount(o.call_gamma_vol),
+    putGammaVol: parseUwGammaAmount(o.put_gamma_vol),
+    timeMs: parseUwTimeMs(o.time ?? o.timestamp ?? o.updated_at ?? o.as_of),
+  };
 }
 
-function splitCoincidentUwWalls(
-  rows: { strike: number; callGammaOi: number; putGammaOi: number }[],
-  wall: number,
-  spot: number | null,
-): { callWall: number | null; putWall: number | null } {
-  const others = rows.filter((r) => r.strike !== wall);
-  if (!others.length) return { callWall: wall, putWall: wall };
+type RankedRow = UwGammaStrikeRow & { seq: number };
 
-  const byPutOi = [...others].sort((a, b) => a.putGammaOi - b.putGammaOi);
-  const putCandidate = byPutOi[0]?.strike ?? wall;
-  if (putCandidate !== wall) return { callWall: wall, putWall: putCandidate };
-
-  if (spot != null && Number.isFinite(spot)) {
-    const below = others
-      .filter((r) => r.strike < spot)
-      .sort((a, b) => a.putGammaOi - b.putGammaOi)[0];
-    const above = others
-      .filter((r) => r.strike > spot)
-      .sort((a, b) => b.callGammaOi - a.callGammaOi)[0];
-    if (below && above) {
-      return { callWall: above.strike, putWall: below.strike };
-    }
-    if (below) return { callWall: wall, putWall: below.strike };
-    if (above) return { callWall: above.strike, putWall: wall };
+function preferNewerGammaRow(row: RankedRow, prev: RankedRow): boolean {
+  if (row.timeMs != null && prev.timeMs != null) {
+    if (row.timeMs !== prev.timeMs) return row.timeMs > prev.timeMs;
+    return row.seq >= prev.seq;
   }
+  if (row.timeMs != null) return true;
+  if (prev.timeMs != null) return false;
+  return row.seq >= prev.seq;
+}
 
-  const altCall = [...others].sort((a, b) => b.callGammaOi - a.callGammaOi)[0]?.strike;
-  return { callWall: altCall ?? wall, putWall: wall };
+/** Desk `live_gamma_0dte` repeats a strike through the session. Keep the newest print. */
+export function newestUwGammaRowPerStrike(rows: UwGammaStrikeRow[]): UwGammaStrikeRow[] {
+  const ranked: RankedRow[] = rows.map((row, seq) => ({ ...row, seq }));
+  const byStrike = new Map<number, RankedRow>();
+  for (const row of ranked) {
+    const prev = byStrike.get(row.strike);
+    if (!prev || preferNewerGammaRow(row, prev)) byStrike.set(row.strike, row);
+  }
+  return [...byStrike.values()].sort((a, b) => a.strike - b.strike);
+}
+
+function wallByAbs(rows: readonly UwGammaStrikeRow[], field: "callGammaOi" | "putGammaOi" | "callGammaVol" | "putGammaVol"): number | null {
+  let bestMag = 0;
+  let strike: number | null = null;
+  for (const row of rows) {
+    const mag = Math.abs(row[field]);
+    if (mag > bestMag) {
+      bestMag = mag;
+      strike = row.strike;
+    }
+  }
+  return strike;
+}
+
+/**
+ * Strikes where cumulative net gamma (call OI + put OI), walking up the chain,
+ * crosses or lands on zero. No per-strike sign change, and no strike outside this list.
+ */
+export function cumulativeNetGammaFlips(rows: readonly UwGammaStrikeRow[]): number[] {
+  const sorted = [...rows].sort((a, b) => a.strike - b.strike);
+  let cumulative = 0;
+  let prevSign: -1 | 1 | null = null;
+  const flips: number[] = [];
+  for (const row of sorted) {
+    cumulative += row.callGammaOi + row.putGammaOi;
+    if (cumulative === 0) {
+      if (prevSign !== null) flips.push(row.strike);
+      prevSign = null;
+      continue;
+    }
+    const sign: -1 | 1 = cumulative > 0 ? 1 : -1;
+    if (prevSign !== null && sign !== prevSign) flips.push(row.strike);
+    prevSign = sign;
+  }
+  return flips;
+}
+
+function pickFlipStrike(flips: number[], spotHint: number | null): number | null {
+  if (!flips.length) return null;
+  if (spotHint == null || !Number.isFinite(spotHint)) return flips[0] ?? null;
+  const atOrBelow = flips.filter((s) => s <= spotHint);
+  if (atOrBelow.length) return atOrBelow[atOrBelow.length - 1]!;
+  return flips.reduce((best, s) => (Math.abs(s - spotHint) < Math.abs(best - spotHint) ? s : best));
 }
 
 function gammaEnv(netGex: number, flip: number | null, spot: number | null): GammaEnv {
@@ -62,7 +113,11 @@ function gammaEnv(netGex: number, flip: number | null, spot: number | null): Gam
 
 /**
  * Derive glance GEX / walls / flip from UW `live_gamma_0dte` expiry-strike rows.
- * Parses string gamma fields; skips zero-filled far strikes for flip; walls from max call / put gamma OI.
+ *
+ * Walls read one field each, ranked by absolute gamma (put gamma is negative):
+ * call OI, put OI, call volume, put volume. The same strike may be both walls.
+ * Flip is the cumulative call+put OI zero cross in strike order. No cross → null
+ * ("none in range" at the label).
  */
 export function computeZonesFromUwGamma0dte(
   rawRows: unknown[],
@@ -70,109 +125,47 @@ export function computeZonesFromUwGamma0dte(
 ): UwGammaZoneModel {
   const asOfLabel = opts?.asOfLabel ?? "—";
   const spot = opts?.spot ?? null;
+  const empty: UwGammaZoneModel = {
+    callWall: null,
+    putWall: null,
+    callWallVol: null,
+    putWallVol: null,
+    flip: null,
+    netGexUsdPer1Pct: null,
+    env: null,
+    asOfLabel,
+  };
 
-  const rows = rawRows.map(parseUwStrikeRow).filter((r): r is NonNullable<typeof r> => r != null);
-  if (!rows.length) {
-    return { callWall: null, putWall: null, flip: null, netGexUsdPer1Pct: null, env: null, asOfLabel };
-  }
+  const parsed = rawRows.map(parseUwStrikeRow).filter((r): r is UwGammaStrikeRow => r != null);
+  const rows = newestUwGammaRowPerStrike(parsed);
+  if (!rows.length) return empty;
 
   let netGex = 0;
-  let maxCall = -Infinity;
-  let maxCallStrike: number | null = null;
-  let minPut = Infinity;
-  let minPutStrike: number | null = null;
-
-  for (const r of rows) {
-    netGex += r.callGammaOi + r.putGammaOi;
-    if (r.callGammaOi > maxCall) {
-      maxCall = r.callGammaOi;
-      maxCallStrike = r.strike;
-    }
-    if (r.putGammaOi < minPut) {
-      minPut = r.putGammaOi;
-      minPutStrike = r.strike;
+  let hasGamma = false;
+  for (const row of rows) {
+    netGex += row.callGammaOi + row.putGammaOi;
+    if (
+      row.callGammaOi !== 0 ||
+      row.putGammaOi !== 0 ||
+      row.callGammaVol !== 0 ||
+      row.putGammaVol !== 0
+    ) {
+      hasGamma = true;
     }
   }
+  if (!hasGamma) return empty;
 
-  const active = rows
-    .filter((r) => r.callGammaOi !== 0 || r.putGammaOi !== 0)
-    .sort((a, b) => a.strike - b.strike);
-
-  const listCumulativeFlips = (rows: typeof active): number[] => {
-    let cumulative = 0;
-    let prevCumSign: -1 | 1 | null = null;
-    const flips: number[] = [];
-    for (const row of rows) {
-      cumulative += row.callGammaOi + row.putGammaOi;
-      if (cumulative === 0) continue;
-      const sign: -1 | 1 = cumulative > 0 ? 1 : -1;
-      if (prevCumSign !== null && sign !== prevCumSign) flips.push(row.strike);
-      prevCumSign = sign;
-    }
-    return flips;
-  };
-
-  const pickFlipStrike = (flips: number[], spotHint: number | null): number | null => {
-    if (!flips.length) return null;
-    if (spotHint == null || !Number.isFinite(spotHint)) return flips[0] ?? null;
-    const atOrBelow = flips.filter((s) => s <= spotHint);
-    if (atOrBelow.length) return atOrBelow[atOrBelow.length - 1]!;
-    return flips.reduce((best, s) => (Math.abs(s - spotHint) < Math.abs(best - spotHint) ? s : best));
-  };
-
-  const flipFromCumulative = (rows: typeof active, spotHint: number | null): number | null => {
-    const flips = listCumulativeFlips(rows);
-    return pickFlipStrike(flips, spotHint);
-  };
-  const flipFromPerStrike = (rows: typeof active): number | null => {
-    let prevSign: -1 | 1 | null = null;
-    for (const row of rows) {
-      const net = row.callGammaOi + row.putGammaOi;
-      if (net === 0) continue;
-      const sign: -1 | 1 = net > 0 ? 1 : -1;
-      if (prevSign !== null && sign !== prevSign) return row.strike;
-      prevSign = sign;
-    }
-    return null;
-  };
-
-  const spotHint =
-    spot ??
-    (maxCallStrike != null && minPutStrike != null
-      ? (maxCallStrike + minPutStrike) / 2
-      : maxCallStrike ?? minPutStrike);
-
-  const flipNearSpotHint = (rows: typeof active, hint: number | null): number | null => {
-    if (hint == null || !Number.isFinite(hint)) return null;
-    const band = rows.filter((r) => r.strike >= hint - 200 && r.strike <= hint + 25);
-    if (band.length < 2) return null;
-    return flipFromPerStrike(band) ?? flipFromCumulative(band, hint);
-  };
-
-  let flip: number | null = null;
-  if (active.length >= 2) {
-    flip =
-      flipNearSpotHint(active, spotHint) ??
-      flipFromCumulative(active, spotHint) ??
-      flipFromPerStrike(active);
-  }
-
-  const hasGamma = active.length > 0 && Number.isFinite(netGex) && netGex !== 0;
-  if (!hasGamma) {
-    return { callWall: null, putWall: null, flip: null, netGexUsdPer1Pct: null, env: null, asOfLabel };
-  }
-
-  let callWall = maxCallStrike;
-  let putWall = minPutStrike;
-  if (callWall != null && putWall != null && callWall === putWall) {
-    const distinct = splitCoincidentUwWalls(active, callWall, spotHint);
-    callWall = distinct.callWall;
-    putWall = distinct.putWall;
-  }
+  const callWall = wallByAbs(rows, "callGammaOi");
+  const putWall = wallByAbs(rows, "putGammaOi");
+  const callWallVol = wallByAbs(rows, "callGammaVol");
+  const putWallVol = wallByAbs(rows, "putGammaVol");
+  const flip = pickFlipStrike(cumulativeNetGammaFlips(rows), spot);
 
   return {
     callWall,
     putWall,
+    callWallVol,
+    putWallVol,
     flip,
     netGexUsdPer1Pct: netGex,
     env: gammaEnv(netGex, flip, spot),

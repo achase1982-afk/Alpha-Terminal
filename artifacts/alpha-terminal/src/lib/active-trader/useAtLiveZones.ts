@@ -155,29 +155,20 @@ export function useAtLiveZones(
       !uwGlance?.unavailable &&
       (uwZones.netGexUsdPer1Pct != null || uwZones.callWall != null || uwZones.putWall != null);
     if (uwLive) {
-      let callWall = uwZones.callWall ?? chainCallWall ?? null;
-      let putWall = uwZones.putWall ?? chainPutWall ?? null;
-      if (
-        callWall != null &&
-        putWall != null &&
-        callWall === putWall &&
-        chainCallWall != null &&
-        chainPutWall != null &&
-        chainCallWall !== chainPutWall
-      ) {
-        callWall = chainCallWall;
-        putWall = chainPutWall;
-      }
+      // Each label stays on the UW field that produced it. A null flip means
+      // cumulative gamma did not cross zero — do not replace it with the chain.
       return {
         ...uwZones,
-        callWall,
-        putWall,
-        flip: uwZones.flip ?? chainFallback?.flip ?? null,
-        netGexUsdPer1Pct: uwZones.netGexUsdPer1Pct ?? chainFallback?.netGexUsdPer1Pct ?? null,
-        env: uwZones.env ?? chainFallback?.env ?? null,
+        callWall: uwZones.callWall ?? null,
+        putWall: uwZones.putWall ?? null,
+        callWallVol: uwZones.callWallVol ?? null,
+        putWallVol: uwZones.putWallVol ?? null,
+        flip: uwZones.flip ?? null,
+        netGexUsdPer1Pct: uwZones.netGexUsdPer1Pct ?? null,
+        env: uwZones.env ?? null,
         asOfLabel: uwZones.asOfLabel ?? "\u2014",
         wallsRollLabel: uwZones.wallsRollLabel ?? null,
-        gammaPinStrike: uwZones.gammaPinStrike ?? null,
+        gammaPinStrike: null,
         glanceCaption: uwGlance?.glanceCaption ?? uwZones.glanceCaption,
       };
     }

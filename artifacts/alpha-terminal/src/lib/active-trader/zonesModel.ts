@@ -17,8 +17,12 @@ export interface ZoneModel {
   levelSource?: "unusual_whales" | "chain";
   /** True only for a glance sample whose own timestamp is still inside the fresh window. */
   levelFresh?: boolean;
-  /** Coincident UW walls at ATM. */
+  /** Coincident UW walls at ATM. Current gamma math leaves both walls set instead. */
   gammaPinStrike?: number | null;
+  /** Strike with the largest |call_gamma_vol|. */
+  callWallVol?: number | null;
+  /** Strike with the largest |put_gamma_vol|. */
+  putWallVol?: number | null;
   staleExpiry?: boolean;
   dataExpiry?: string;
 }
@@ -42,12 +46,9 @@ export function chainHasOpenInterest(rows: ChainRowForZones[]): boolean {
 }
 
 /**
- * Gamma flip from chain rows: the strike nearest spot where net gamma exposure
- * (call gamma x OI minus put gamma x OI) changes sign.
- *
- * It applies the rule the server applies to Unusual Whales' per-strike gamma,
- * to the strikes loaded here, so the header and the ladder still have a flip
- * level when that feed has none.
+ * Gamma flip from chain rows: the strike where cumulative net gamma
+ * (call gamma x OI + put gamma x OI, put signed negative) crosses zero
+ * in strike order. No cross returns null ("none in range").
  */
 export function chainGammaFlip(rows: ChainRowForZones[], spot: number | null): number | null {
   if (spot == null || !Number.isFinite(spot) || spot <= 0) return null;
@@ -79,68 +80,24 @@ export function computeZoneModel(rows: ChainRowForZones[], spot: number | null):
 
   const low = spot * 0.9;
   const high = spot * 1.1;
-  let callWall: number | null = null;
-  let putWall: number | null = null;
-  let maxCallGex = 0;
-  let maxPutAbs = 0;
-  let netGex = 0;
-
-  for (const r of rows) {
-    if (r.strike < low || r.strike > high) continue;
-    const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true);
-    const putG = gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false);
-    netGex += callG + putG;
-    if (callG > maxCallGex) {
-      maxCallGex = callG;
-      callWall = r.strike;
-    }
-    if (Math.abs(putG) > maxPutAbs) {
-      maxPutAbs = Math.abs(putG);
-      putWall = r.strike;
-    }
-  }
-
-  const flip = chainGammaFlip(
-    rows.filter((r) => r.strike >= low && r.strike <= high),
-    spot,
+  const band = rows.filter((r) => r.strike >= low && r.strike <= high);
+  const derived = computeZonesFromUwGamma0dte(
+    band.map((r) => ({
+      strike: r.strike,
+      call_gamma_oi: gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true),
+      put_gamma_oi: gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false),
+    })),
+    { spot, asOfLabel },
   );
 
-  let env: GammaEnv = null;
-  if (netGex !== 0) {
-    const nearFlip = flip != null && Math.abs(spot - flip) <= spot * 0.002;
-    if (nearFlip) env = "near_flip";
-    else env = netGex > 0 ? "damping" : "amplifying";
-  }
-
-  if (callWall != null && putWall != null && callWall === putWall) {
-    let altCall: number | null = null;
-    let altPut: number | null = null;
-    let altCallG = 0;
-    let altPutAbs = 0;
-    for (const r of rows) {
-      if (r.strike < low || r.strike > high) continue;
-      if (r.strike === callWall) continue;
-      const callG = gexPerContract(r.callGamma ?? 0, r.callOi, spot, spot, true);
-      const putG = gexPerContract(r.putGamma ?? 0, r.putOi, spot, spot, false);
-      if (callG > altCallG) {
-        altCallG = callG;
-        altCall = r.strike;
-      }
-      if (Math.abs(putG) > altPutAbs) {
-        altPutAbs = Math.abs(putG);
-        altPut = r.strike;
-      }
-    }
-    if (altCall != null) callWall = altCall;
-    else if (altPut != null) putWall = altPut;
-  }
-
   return {
-    callWall,
-    putWall,
-    flip,
-    netGexUsdPer1Pct: netGex,
-    env,
+    callWall: derived.callWall,
+    putWall: derived.putWall,
+    callWallVol: null,
+    putWallVol: null,
+    flip: derived.flip,
+    netGexUsdPer1Pct: derived.netGexUsdPer1Pct,
+    env: derived.env,
     asOfLabel,
   };
 }

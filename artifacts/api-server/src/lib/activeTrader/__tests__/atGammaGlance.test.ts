@@ -15,8 +15,9 @@ const fixture = JSON.parse(
   ),
 ) as { data: unknown[] };
 
-const refresh = vi.fn();
-const getCached = vi.fn();
+const sessionYmd = vi.hoisted(() => ({ value: "2026-11-17" }));
+const refresh = vi.hoisted(() => vi.fn());
+const getCached = vi.hoisted(() => vi.fn());
 
 vi.mock("../../desk/addons/unusualWhales/deskUwGamma.js", () => ({
   deskUwExtractRows: (raw: unknown) => {
@@ -33,8 +34,6 @@ vi.mock("../../desk/addons/unusualWhales/deskUwGamma.js", () => ({
 vi.mock("../../desk/deskFeedFreshness.js", () => ({
   buildDeskHealthFeeds: () => [{ feed: "live_gamma_0dte", status: "session_closed" }],
 }));
-
-const sessionYmd = { value: "2026-11-17" };
 
 vi.mock("../../desk/deskEt.js", () => ({
   deskSessionDateEt: () => sessionYmd.value,
@@ -68,7 +67,9 @@ describe("buildAtGammaGlancePayload", () => {
     const first = await buildAtGammaGlancePayload("SPX");
     expect(refresh).toHaveBeenCalledWith("2026-11-17", "SPX");
     expect(first.unavailable).toBe(false);
-    expect(first.zones.gammaPinStrike ?? first.zones.callWall).toBe(7340);
+    expect(first.zones.callWall).toBe(7340);
+    expect(first.zones.putWall).toBe(7340);
+    expect(first.zones.flip).toBeNull();
     expect(first.glanceCaption).toMatch(/Closed/);
 
     refresh.mockClear();

@@ -20,24 +20,25 @@ function chain(flipAt: number): ChainRowForZones[] {
 }
 
 describe("chain-derived gamma flip", () => {
-  it("finds the strike where net gamma changes sign", () => {
-    expect(chainGammaFlip(chain(7295), SPOT)).toBe(7295);
-    expect(chainGammaFlip(chain(7310), SPOT)).toBe(7310);
+  it("finds the cumulative zero cross, after per-strike gamma has already changed sign", () => {
+    expect(chainGammaFlip(chain(7295), SPOT)).toBe(7325);
+    expect(chainGammaFlip(chain(7310), SPOT)).toBe(7355);
   });
 
-  it("is part of the chain zone model, with walls and environment", () => {
+  it("is part of the chain zone model, with walls read from their own side", () => {
     const zones = computeZoneModel(chain(7295), SPOT);
-    expect(zones.flip).toBe(7295);
-    expect(zones.callWall).not.toBeNull();
-    expect(zones.putWall).not.toBeNull();
-    expect(zones.env).toBe("damping");
+    expect(zones.flip).toBe(7325);
+    expect(zones.callWall).toBe(7320);
+    expect(zones.putWall).toBe(7290);
+    expect(zones.env).toBe("near_flip");
   });
 
-  it("marks the environment near the flip when spot sits on it", () => {
-    expect(computeZoneModel(chain(7320), SPOT).env).toBe("near_flip");
+  it("marks the environment near the flip when the cumulative cross sits on spot", () => {
+    expect(computeZoneModel(chain(7295), SPOT).env).toBe("near_flip");
   });
 
-  it("is null without a sign change, open interest, gamma or spot", () => {
+  it("is null when cumulative gamma never crosses, or without open interest, gamma, or spot", () => {
+    expect(chainGammaFlip(chain(7320), SPOT)).toBeNull();
     const allCalls = chain(7295).map((r) => ({ ...r, callOi: 2_000, putOi: 100 }));
     expect(chainGammaFlip(allCalls, SPOT)).toBeNull();
     expect(chainGammaFlip(chain(7295).map((r) => ({ ...r, callOi: 0, putOi: 0 })), SPOT)).toBeNull();

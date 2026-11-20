@@ -1,5 +1,6 @@
 import { useRef, useState, type PointerEvent } from "react";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
+import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import "./AtStripTrial.css";
 
 const layouts = ["Paged", "No tap", "Grok"] as const;
@@ -135,7 +136,7 @@ export function AtStripTrial({ layout, windowSeconds, gross, zones }: Props & { 
           <div className="at-strip-trial-levels">
             <span>Call wall <b>{level(zones.callWall)}</b></span>
             <span>Put wall <b>{level(zones.putWall)}</b></span>
-            <span>Gamma flip <b>{level(zones.flip)}</b></span>
+            <span>Gamma flip <b>{resolveGammaFlipDisplay(zones)}</b></span>
           </div>
         )}
       </div>

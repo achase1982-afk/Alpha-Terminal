@@ -95,7 +95,8 @@
 .at-flow-strip-levels span {
   display: flex;
   justify-content: space-between;
-  height: 20px;
+  height: auto;
+  min-height: 14px;
   align-items: center;
 }
 .at-flow-strip-now {

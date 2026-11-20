@@ -24,6 +24,7 @@ describe("atGlanceWallDisplay", () => {
     expect(resolvePutWallDisplay(zones).value).toBe("\u2014");
     expect(resolveGammaFlipDisplay(zones)).toBe("\u2014");
     expect(resolveGammaFlipDisplay(zones)).not.toContain("rolls at open");
+    expect(resolveGammaFlipDisplay(zones)).not.toContain("none in range");
     expect(ladderStrikeZoneTag(zones, 7340)).toBeNull();
   });
 
@@ -38,6 +39,11 @@ describe("atGlanceWallDisplay", () => {
     expect(resolveCallWallDisplay(zones).value).toBe("7,340");
     expect(resolvePutWallDisplay(zones).value).toBe("\u2014");
     expect(ladderStrikeZoneTag(zones, 7340)).toBe("PIN");
+  });
+
+  it("shows none in range when cumulative gamma does not cross zero", () => {
+    const zones: ZoneModel = { ...base, flip: null };
+    expect(resolveGammaFlipDisplay(zones)).toBe("none in range");
   });
 
   it("rolled current session shows distinct walls", () => {
