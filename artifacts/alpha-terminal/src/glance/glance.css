@@ -3,7 +3,7 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: auto auto minmax(168px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(280px, 1fr) auto auto auto;
   align-content: stretch;
   gap: 4px;
   padding: 0 12px;
@@ -197,7 +197,10 @@
 }
 
 .band {
-  height: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: stretch;
 }
@@ -223,6 +226,7 @@
 
 .levels-wrap {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  margin-top: 16px;
 }
 
 .trace {
@@ -295,24 +299,56 @@
 }
 
 .flow-row {
+  --flow-num: 28px;
   display: grid;
-  grid-template-columns: 72px minmax(168px, max-content) minmax(72px, 1fr) minmax(168px, max-content);
-  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-rows: auto auto;
+  column-gap: 4px;
+  row-gap: 4px;
   align-items: center;
-  min-height: 44px;
 }
 
-.side-name {
-  font-size: 18px;
-  font-weight: 650;
-  color: #cbd5e1;
+.flow-read {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  grid-row: 1;
+  white-space: nowrap;
 }
 
-.amt {
-  font-size: 30px;
+.flow-read.buy {
+  grid-column: 1;
+}
+
+.flow-read.sell {
+  grid-column: 3;
+}
+
+.flow-words {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.flow-dollars {
+  font-size: var(--flow-num);
   line-height: 1;
   font-weight: 500;
-  white-space: nowrap;
+}
+
+.flow-hist {
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.flow-hist.buy {
+  grid-column: 1;
+}
+
+.flow-hist.sell {
+  grid-column: 3;
 }
 
 .amt small {
@@ -325,8 +361,11 @@
 .track {
   position: relative;
   display: grid;
+  grid-column: 2;
+  grid-row: 1;
   grid-template-columns: 1fr 1fr;
-  height: 18px;
+  height: var(--flow-num);
+  align-self: center;
   background: #1b222e;
   border-radius: 999px;
   overflow: hidden;
@@ -345,13 +384,13 @@
 .track .bought {
   justify-self: end;
   height: 100%;
-  background: #00d166;
+  background: linear-gradient(to left, #00d166, #d8ffe9);
 }
 
 .track .sold {
   justify-self: start;
   height: 100%;
-  background: #f23645;
+  background: linear-gradient(to right, #f23645, #ffd5d8);
 }
 
 .hist {
@@ -437,7 +476,7 @@
 
 .windows {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px 14px;
   font-size: 22px;
 }
@@ -597,18 +636,49 @@
   min-height: 22px;
 }
 
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+}
+
 .sheet {
-  position: fixed;
-  top: 52px;
-  right: 24px;
-  width: min(420px, calc(100vw - 48px));
-  max-height: calc(100vh - 80px);
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 16px);
   overflow: auto;
   background: #12161d;
   border: 1px solid #2a3342;
   border-radius: 8px;
   padding: 14px;
-  z-index: 40;
+  z-index: 41;
+}
+
+.sheet-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -14px -14px 8px;
+  padding: 8px 14px;
+  background: #12161d;
+}
+
+.sheet-head button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #2a3342;
+  border-radius: 6px;
+  background: #151a22;
+}
+
+.sheet-head h3 {
+  margin: 0;
 }
 
 .sheet h3 {
@@ -682,8 +752,12 @@
     margin-top: 4px;
   }
 
-  .amt {
-    font-size: 34px;
+  .flow-row {
+    --flow-num: 32px;
+  }
+
+  .flow-words {
+    font-size: 28px;
   }
 
   .flow-row {
