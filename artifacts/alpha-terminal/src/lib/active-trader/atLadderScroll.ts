@@ -88,6 +88,46 @@ export function viewportNearestStrikeOffCenter(
   return rowOffViewportCenter(container, best, tolerancePx, bottomInsetPx);
 }
 
+/** ATM / spot row in the options chain (gold strike rail when present). */
+export function resolveChainAtmRow(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+): HTMLElement | null {
+  if (!container) return null;
+  const spotEl = container.querySelector<HTMLElement>('[data-chain-spot-strike="1"]');
+  if (spotEl) {
+    return (
+      spotEl.closest<HTMLElement>("[data-chain-strike-rail]") ??
+      spotEl.closest<HTMLElement>("[data-chain-strike]")
+    );
+  }
+  if (underlyingPrice == null || !Number.isFinite(underlyingPrice)) return null;
+  return nearestStrikeRow(container, underlyingPrice, "data-chain-strike");
+}
+
+/** Scroll the options chain so the ATM / spot strike row is vertically centered. */
+export function scrollChainViewportToAtm(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+  bottomInsetPx = 0,
+  behavior: ScrollBehavior = "auto",
+): void {
+  const row = resolveChainAtmRow(container, underlyingPrice);
+  scrollRowToViewportCenter(container, row, { bottomInsetPx, behavior });
+}
+
+/** True when the chain ATM row is outside the centered band (show Recenter). */
+export function chainAtmRowOffCenter(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+  tolerancePx = 56,
+  bottomInsetPx = 0,
+): boolean {
+  const row = resolveChainAtmRow(container, underlyingPrice);
+  if (!row) return false;
+  return rowOffViewportCenter(container, row, tolerancePx, bottomInsetPx);
+}
+
 /** Scroll the ladder body so the spot line (or nearest strike) is vertically centered. */
 export function scrollAtLadderToSpot(
   container: HTMLElement | null,

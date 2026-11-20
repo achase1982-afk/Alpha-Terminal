@@ -20,6 +20,7 @@ import {
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
 import { useQuoteMoveArrows, type QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
+import { chainLivePriceColor } from "@/lib/options/chainQuoteTickColor";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
 import {
   AT_HEAT_MAX_ALPHA,
@@ -39,15 +40,17 @@ import {
   AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_COL_W,
-  AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
+  AT_SPOT_PILL,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import {
   STRIKE_COL_PAD_X,
   STRIKE_RAIL_LETTER_SPACING,
   STRIKE_RAIL_LINE_HEIGHT,
+  STRIKE_COL_SPOT_FONT_EXTRA_PX,
   strikeRailFontSize,
+  strikeRailFontWeight,
 } from "@/lib/options/strikeColumnChrome";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
 import { useAtLadderHeatCell, type AtLadderHeatStore } from "@/lib/active-trader/atLadderHeatStore";
@@ -296,7 +299,7 @@ const QuoteCell = memo(function QuoteCell({
         fontSize: AT_LADDER_PRICE_SIZE,
         fontWeight: AT_LADDER_PRICE_WEIGHT,
         fontVariantNumeric: "tabular-nums",
-        color: AT_LADDER_PRICE_COLOR,
+        color: chainLivePriceColor(quoteSide, arrow, dimmed),
         background: "transparent",
         borderLeft: dividerLeft ? `1px solid ${AT_LADDER_THIN_SEP}` : "none",
         borderTop: "none",
@@ -531,6 +534,7 @@ const ContractPair = memo(function ContractPair({
   );
 });
 
+/** Zone copy sits on the call wing, flush to the left edge of the strike-column outline (not on the strike rail). */
 function StrikeSideTag({
   marker,
   color,
@@ -548,7 +552,8 @@ function StrikeSideTag({
       data-at-strike-put-wall={marker === "put-wall" ? "" : undefined}
       className="pointer-events-none absolute z-[4]"
       style={{
-        left: 0,
+        right: "100%",
+        marginRight: 2,
         top: "50%",
         transform: "translateY(-50%)",
         color,
@@ -556,7 +561,7 @@ function StrikeSideTag({
         fontWeight: 700,
         lineHeight: 1.05,
         letterSpacing: "0.03em",
-        textAlign: "left",
+        textAlign: "right",
       }}
     >
       {lines[0]}
@@ -564,6 +569,40 @@ function StrikeSideTag({
       {lines[1]}
     </div>
   );
+}
+
+function strikeColumnBackground(
+  spotRow: boolean,
+  gammaFlipRow: boolean,
+  callWallRow: boolean,
+  putWallRow: boolean,
+): string {
+  if (spotRow) return AT_SPOT_PILL;
+  if (callWallRow) return GOLD;
+  if (putWallRow) return PUT_WALL;
+  if (gammaFlipRow) return AT_LADDER_GAMMA;
+  return AT_LADDER_STRIKE_BG;
+}
+
+function strikeRailTypography(
+  strike: number,
+  spotRow: boolean,
+  callWallRow: boolean,
+  putWallRow: boolean,
+): { fontSize: number; fontWeight: number; color: string; letterSpacing: string } {
+  const wallEmphasis = !spotRow && (callWallRow || putWallRow);
+  const emphasized = spotRow || wallEmphasis;
+  const fontSize = spotRow
+    ? strikeRailFontSize(strike, true)
+    : wallEmphasis
+      ? strikeRailFontSize(strike, false) + STRIKE_COL_SPOT_FONT_EXTRA_PX
+      : strikeRailFontSize(strike, false);
+  return {
+    fontSize,
+    fontWeight: emphasized ? strikeRailFontWeight(true) : strikeRailFontWeight(false),
+    color: emphasized ? AT_SPOT_PILL_TEXT : WHITE,
+    letterSpacing: emphasized ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
+  };
 }
 
 function signedContractQty(
@@ -659,8 +698,10 @@ const LadderRowView = memo(function LadderRowView({
     boxSizing: "border-box",
     paddingLeft: AT_LADDER_GUTTER_X,
     paddingRight: AT_LADDER_GUTTER_X,
-    zIndex: gammaFlipRow || callWallRow || putWallRow ? 2 : undefined,
   };
+
+  const strikeBg = strikeColumnBackground(spotRow, gammaFlipRow, callWallRow, putWallRow);
+  const strikeType = strikeRailTypography(row.strike, spotRow, callWallRow, putWallRow);
 
   return (
     <div
@@ -672,30 +713,6 @@ const LadderRowView = memo(function LadderRowView({
       data-at-call-wall-row={callWallRow ? "1" : undefined}
       data-at-put-wall-row={putWallRow ? "1" : undefined}
     >
-      {gammaFlipRow ? (
-        <span
-          aria-hidden
-          data-at-gamma-flip-outline=""
-          className="pointer-events-none absolute z-[3]"
-          style={{ inset: 3, border: `1px solid ${AT_LADDER_GAMMA}`, borderRadius: 4 }}
-        />
-      ) : null}
-      {callWallRow && !spotRow ? (
-        <span
-          aria-hidden
-          data-at-call-wall-outline=""
-          className="pointer-events-none absolute z-[3]"
-          style={{ inset: 3, border: `1px solid ${GOLD}`, borderRadius: 4 }}
-        />
-      ) : null}
-      {putWallRow ? (
-        <span
-          aria-hidden
-          data-at-put-wall-outline=""
-          className="pointer-events-none absolute z-[3]"
-          style={{ inset: 3, border: `1px solid ${PUT_WALL}`, borderRadius: 4 }}
-        />
-      ) : null}
       <ContractPair
         pairSide="call"
         type="CALL"
@@ -718,37 +735,89 @@ const LadderRowView = memo(function LadderRowView({
           padding: `0 ${STRIKE_COL_PAD_X}px`,
           boxSizing: "border-box",
           fontVariantNumeric: "tabular-nums",
-          background: spotRow ? GOLD : AT_LADDER_STRIKE_BG,
+          background: strikeBg,
         }}
         data-at-strike={row.strike}
+        data-at-strike-wall-fill={callWallRow || putWallRow ? "1" : undefined}
       >
+        {gammaFlipRow ? (
+          <span
+            aria-hidden
+            data-at-gamma-flip-outline=""
+            className="pointer-events-none absolute z-[1]"
+            style={{
+              inset: 0,
+              boxSizing: "border-box",
+              border: `1px solid ${AT_LADDER_GAMMA}`,
+              borderRadius: 0,
+            }}
+          />
+        ) : null}
+        {callWallRow && !spotRow ? (
+          <span
+            aria-hidden
+            data-at-call-wall-outline=""
+            className="pointer-events-none absolute z-[1]"
+            style={{
+              inset: 0,
+              boxSizing: "border-box",
+              border: `1px solid ${GOLD}`,
+              borderRadius: 0,
+            }}
+          />
+        ) : null}
+        {putWallRow ? (
+          <span
+            aria-hidden
+            data-at-put-wall-outline=""
+            className="pointer-events-none absolute z-[1]"
+            style={{
+              inset: 0,
+              boxSizing: "border-box",
+              border: `1px solid ${PUT_WALL}`,
+              borderRadius: 0,
+            }}
+          />
+        ) : null}
         {workChip ? (
-          <div className="absolute top-0.5 right-0.5 flex gap-px">
+          <div className="absolute top-0.5 right-0.5 flex gap-px z-[3]">
             <span className="px-0.5 rounded border" style={{ fontSize: 7, color: GRAY, borderColor: BORDER }}>
               {workChip}
             </span>
           </div>
         ) : null}
         {gammaFlipRow ? (
-          <StrikeSideTag marker="gamma-flip" color={spotRow ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA} lines={["GAMMA", "FLIP"]} />
+          <StrikeSideTag
+            marker="gamma-flip"
+            color={AT_LADDER_GAMMA}
+            lines={["GAMMA", "FLIP"]}
+          />
         ) : null}
         {callWallRow && !gammaFlipRow ? (
-          <StrikeSideTag marker="call-wall" color={spotRow ? AT_SPOT_PILL_TEXT : GOLD} lines={["CALL", "WALL"]} />
+          <StrikeSideTag
+            marker="call-wall"
+            color={GOLD}
+            lines={["CALL", "WALL"]}
+          />
         ) : null}
         {putWallRow && !gammaFlipRow && !callWallRow ? (
-          <StrikeSideTag marker="put-wall" color={spotRow ? AT_SPOT_PILL_TEXT : PUT_WALL} lines={["PUT", "WALL"]} />
+          <StrikeSideTag
+            marker="put-wall"
+            color={PUT_WALL}
+            lines={["PUT", "WALL"]}
+          />
         ) : null}
         <div
-          className="w-full h-full flex flex-col items-center justify-center"
+          className="relative z-[2] w-full h-full flex flex-col items-center justify-center"
           style={{
             background: "transparent",
-            color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
+            color: strikeType.color,
             borderRadius: 0,
             border: "none",
-            fontSize: strikeRailFontSize(row.strike),
-            fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
+            fontSize: strikeType.fontSize,
+            fontWeight: strikeType.fontWeight,
             lineHeight: STRIKE_RAIL_LINE_HEIGHT,
-            letterSpacing: spotRow ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
+            letterSpacing: strikeType.letterSpacing,
           }}
         >
           <span style={{ whiteSpace: "nowrap" }}>

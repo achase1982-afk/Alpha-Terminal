@@ -17,7 +17,7 @@ const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.
   search:       { label: "SEARCH",    icon: (c) => <Search className={c} /> },
   portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
-  activeTrader: { label: "ACTIVE TRADER", icon: (c) => <ChartCandlestick className={c} /> },
+  activeTrader: { label: "TRADER", icon: (c) => <ChartCandlestick className={c} /> },
 };
 
 const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "search"];
@@ -258,11 +258,15 @@ export function BottomNav({
     <nav
       ref={containerRef}
       data-bottom-nav
-      className="relative z-50 flex shrink-0 items-center gap-0.5 border-t border-zinc-800/60 bg-card px-1.5"
-      style={{ paddingTop: 6, paddingBottom: 18, touchAction: dragging ? "none" : "manipulation" }}
+      className="relative z-50 shrink-0 border-t border-zinc-800/60 bg-card px-2 pt-2"
+      style={{
+        paddingBottom: "max(14px, env(safe-area-inset-bottom, 0px))",
+        touchAction: dragging ? "none" : "manipulation",
+      }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
+      <div className="flex w-full items-stretch gap-1 rounded-xl bg-zinc-950/80 p-1 ring-1 ring-inset ring-zinc-800/80">
       <style>{`
         @keyframes bnav-jiggle {
           0%   { transform: rotate(0deg) translate(0, 0); }
@@ -303,21 +307,6 @@ export function BottomNav({
           style.animationDelay = `${i * 70}ms`;
         }
 
-        const dominant = tabId === "activeTrader" && !isBeingDragged;
-        if (dominant) {
-          style.marginTop = -3;
-          style.minHeight = 50;
-          style.borderRadius = 12;
-          style.background = isActive
-            ? "linear-gradient(180deg, #232326 0%, #141416 100%)"
-            : "linear-gradient(180deg, #1a1a1d 0%, #101012 100%)";
-          style.border = isActive
-            ? "1px solid rgba(255,255,255,0.26)"
-            : "1px solid rgba(255,255,255,0.14)";
-          style.boxShadow =
-            "inset 0 1px 0 rgba(255,255,255,0.16), 0 3px 8px rgba(0,0,0,0.55)";
-        }
-
         const showStrategistBadge =
           tabId === "ai" &&
           activeTab !== "ai" &&
@@ -329,11 +318,7 @@ export function BottomNav({
         return (
           <div
             key={tabId}
-            className={
-              tabId === "activeTrader"
-                ? "relative z-20 flex min-w-0 flex-[1.15] items-center justify-center px-0.5"
-                : "relative z-0 flex min-w-0 flex-1 items-center justify-center"
-            }
+            className="relative z-0 flex min-w-0 flex-1 basis-0 items-stretch"
           >
           <button
             ref={(el) => { tabRefs.current[i] = el; }}
@@ -341,9 +326,10 @@ export function BottomNav({
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
-              "relative flex w-full flex-col items-center justify-center gap-1 min-w-0 select-none transition-colors",
-              tabId === "activeTrader" ? "px-2 py-1.5" : "px-1 py-1.5",
-              isActive ? "text-white" : dominant ? "text-zinc-200" : "text-muted-foreground",
+              "relative flex min-h-[50px] w-full flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 min-w-0 select-none transition-[color,background-color,box-shadow] duration-150",
+              isActive
+                ? "bg-zinc-800/90 text-primary shadow-[inset_0_0_0_1px_rgba(255,184,0,0.22)]"
+                : "text-muted-foreground hover:text-zinc-300",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
@@ -357,7 +343,7 @@ export function BottomNav({
             }
             aria-current={isActive ? "page" : undefined}
           >
-            {def.icon("w-[24px] h-[24px]")}
+            {def.icon("h-5 w-5 shrink-0")}
             {showStrategistBadge && (
               <span
                 className={badgeIsRunning ? "animate-pulse" : ""}
@@ -384,21 +370,14 @@ export function BottomNav({
                 {showBadgeNumber ? badgeNumber : ""}
               </span>
             )}
-            <span className="whitespace-nowrap text-center text-[9px] font-mono font-bold tracking-tight leading-[1.08]">
-              {tabId === "activeTrader" ? (
-                <>
-                  ACTIVE
-                  <br />
-                  TRADER
-                </>
-              ) : (
-                def.label
-              )}
+            <span className="max-w-full truncate text-center text-[8.5px] font-mono font-bold uppercase tracking-wide leading-none">
+              {def.label}
             </span>
           </button>
           </div>
         );
       })}
+      </div>
     </nav>
   );
 }

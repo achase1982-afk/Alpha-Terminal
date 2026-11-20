@@ -193,30 +193,36 @@ export interface ChatComposerDockMetrics {
   remeasure: () => void;
 }
 
+export interface BottomInputDockMetrics {
+  /** `bottom` offset (px) for a `position: fixed` input dock. */
+  dockBottomPx: number;
+  /** Padding-bottom so scrollable content clears the docked input. */
+  scrollPaddingBottomPx: number;
+  remeasure: () => void;
+}
+
+const KEYBOARD_OPEN_OVERLAP_PX = 48;
+
 /**
- * Docks the chat composer to the **visual viewport** bottom when focused (sits on top of the
- * keyboard), or above the bottom nav when blurred. Uses `top` from `visualViewport` rather than
- * layout `bottom` so iOS `interactive-widget=overlays-content` cannot cover the textarea.
+ * Tracks `visualViewport` for a thumb-zone input dock: flush on the keyboard when focused /
+ * keyboard open, otherwise `idleBottomPx` above the layout bottom (0 for full-screen sheets).
  */
-export function useChatComposerDock(
+export function useBottomInputDock(
   enabled: boolean,
-  composerFocused: boolean,
-  composerHeightPx: number,
-): ChatComposerDockMetrics {
-  const [dock, setDock] = useState<ComposerDockStyle>({
-    position: "fixed",
-    left: 0,
-    right: 0,
-    zIndex: 10050,
-    bottom: MOBILE_BOTTOM_NAV_RESERVE_PX,
-  });
-  const [scrollPad, setScrollPad] = useState(
-    composerHeightPx + MOBILE_BOTTOM_NAV_RESERVE_PX,
+  inputFocused: boolean,
+  dockHeightPx: number,
+  idleBottomPx: number,
+): BottomInputDockMetrics {
+  const [dockBottomPx, setDockBottomPx] = useState(idleBottomPx);
+  const [scrollPaddingBottomPx, setScrollPaddingBottomPx] = useState(
+    Math.max(56, dockHeightPx) + idleBottomPx + 8,
   );
-  const focusedRef = useRef(composerFocused);
-  const heightRef = useRef(composerHeightPx);
-  focusedRef.current = composerFocused;
-  heightRef.current = composerHeightPx;
+  const focusedRef = useRef(inputFocused);
+  const heightRef = useRef(dockHeightPx);
+  focusedRef.current = inputFocused;
+  heightRef.current = dockHeightPx;
+  const idleRef = useRef(idleBottomPx);
+  idleRef.current = idleBottomPx;
   const updateRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -229,30 +235,16 @@ export function useChatComposerDock(
       const gap = KEYBOARD_GAP_PX;
       const focused = focusedRef.current;
       const overlap = measureKeyboardOverlapPx();
-      const keyboardOpen = overlap >= 48;
+      const keyboardOpen = overlap >= KEYBOARD_OPEN_OVERLAP_PX;
 
       if (focused || keyboardOpen) {
-        // `bottom` from layout viewport tracks the keyboard band more tightly than `top`
-        // (avoids a visible seam above the keyboard / accessory bar on iOS).
         const bottomInset = Math.max(0, overlap) + gap;
-        setDock({
-          position: "fixed",
-          left: 0,
-          right: 0,
-          zIndex: 10050,
-          bottom: bottomInset,
-        });
-        setScrollPad(h + bottomInset + 12);
+        setDockBottomPx(bottomInset);
+        setScrollPaddingBottomPx(h + bottomInset + 12);
       } else {
-        const bottom = MOBILE_BOTTOM_NAV_RESERVE_PX;
-        setDock({
-          position: "fixed",
-          left: 0,
-          right: 0,
-          zIndex: 10050,
-          bottom,
-        });
-        setScrollPad(h + bottom + 8);
+        const bottom = idleRef.current;
+        setDockBottomPx(bottom);
+        setScrollPaddingBottomPx(h + bottom + 8);
       }
     };
 
@@ -274,11 +266,48 @@ export function useChatComposerDock(
 
   useEffect(() => {
     updateRef.current();
-  }, [composerHeightPx, composerFocused]);
+  }, [dockHeightPx, inputFocused, idleBottomPx]);
 
   const remeasure = useCallback(() => {
     updateRef.current();
   }, []);
 
-  return { dockStyle: dock, scrollPaddingBottomPx: scrollPad, remeasure };
+  return { dockBottomPx, scrollPaddingBottomPx, remeasure };
+}
+
+/** Full-screen mobile search: dock sits on the keyboard or the sheet bottom (nav hidden). */
+export function useSearchInputDock(
+  enabled: boolean,
+  inputFocused: boolean,
+  dockHeightPx: number,
+): BottomInputDockMetrics {
+  return useBottomInputDock(enabled, inputFocused, dockHeightPx, 0);
+}
+
+/**
+ * Docks the chat composer to the **visual viewport** bottom when focused (sits on top of the
+ * keyboard), or above the bottom nav when blurred. Uses `top` from `visualViewport` rather than
+ * layout `bottom` so iOS `interactive-widget=overlays-content` cannot cover the textarea.
+ */
+export function useChatComposerDock(
+  enabled: boolean,
+  composerFocused: boolean,
+  composerHeightPx: number,
+): ChatComposerDockMetrics {
+  const { dockBottomPx, scrollPaddingBottomPx, remeasure } = useBottomInputDock(
+    enabled,
+    composerFocused,
+    composerHeightPx,
+    MOBILE_BOTTOM_NAV_RESERVE_PX,
+  );
+
+  const dockStyle: ComposerDockStyle = {
+    position: "fixed",
+    left: 0,
+    right: 0,
+    zIndex: 10050,
+    bottom: dockBottomPx,
+  };
+
+  return { dockStyle, scrollPaddingBottomPx, remeasure };
 }

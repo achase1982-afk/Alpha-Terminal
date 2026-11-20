@@ -35,6 +35,8 @@ const LABEL_PX = 13;
 const VALUE_PX = 13;
 const SECTION_RULE = "#2b3033";
 const SPOT_COLOR = WHITE;
+/** Match `.at-flow-strip` height so stock/options template toggle does not resize glance chrome. */
+const EQUITY_FLOW_BAND_MIN_H = 120;
 
 const cellLine: CSSProperties = {
   display: "flex",
@@ -68,7 +70,7 @@ export type AtGlanceTopProps = {
   };
   ladderHeatSource?: AtLadderHeatSourceMeta;
   expiryPickerLoading?: boolean;
-  /** Equity or ETF share ladder. Hides option expiry, walls, and option flow. */
+  /** Equity or ETF share ladder. Hides option expiry picker and SPX zone refs (flow band shell stays mounted). */
   stockTemplate?: boolean;
 };
 
@@ -216,8 +218,12 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             </span>
           ) : null}
         </div>
-        {mode !== "futures" && !stockTemplate ? (
-          <div className="shrink-0 ml-2 flex items-center justify-end" style={{ maxWidth: "42%" }}>
+        {mode !== "futures" ? (
+          <div
+            className="shrink-0 ml-2 flex items-center justify-end"
+            style={{ maxWidth: "42%", visibility: stockTemplate ? "hidden" : "visible" }}
+            aria-hidden={stockTemplate}
+          >
             <AtExpiryPicker loading={expiryPickerLoading} />
           </div>
         ) : null}
@@ -254,7 +260,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden data-at-day-levels-divider />
-            <div style={{ minWidth: 0 }} hidden={stockTemplate}>
+            <div style={{ minWidth: 0, visibility: stockTemplate ? "hidden" : "visible" }} aria-hidden={stockTemplate}>
               <LevelsCell
                 label="High zone bottom"
                 value={highZoneVal}
@@ -282,7 +288,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               }}
             />
             <span style={{ width: 1, height: 14, background: "#3a4044" }} aria-hidden />
-            <div style={{ minWidth: 0 }} hidden={stockTemplate}>
+            <div style={{ minWidth: 0, visibility: stockTemplate ? "hidden" : "visible" }} aria-hidden={stockTemplate}>
               <LevelsCell
                 label="Low zone top"
                 value={lowZoneVal}
@@ -302,8 +308,18 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           netPremium={netPremium}
           zones={zones}
         />
-      ) : !stockTemplate ? (
-        <div data-at-glance-flow-band style={{ padding: "4px 16px", fontSize: 12, color: AT_SECONDARY }}>
+      ) : mode !== "futures" ? (
+        <div
+          data-at-glance-flow-band
+          data-at-equity-flow-shell={stockTemplate ? "stock" : "options"}
+          style={{
+            padding: "4px 16px",
+            fontSize: 12,
+            color: AT_SECONDARY,
+            minHeight: EQUITY_FLOW_BAND_MIN_H,
+            boxSizing: "border-box",
+          }}
+        >
           Flow strip unavailable for this symbol
           {ladderHeatSource?.label ? (
             <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>

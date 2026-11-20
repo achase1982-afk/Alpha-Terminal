@@ -170,7 +170,8 @@ describe("LadderBody", () => {
     expect(flipTag.textContent).toBe("GAMMAFLIP");
     expect(flipTag.style.fontSize).toBe("7px");
     expect(flipTag.style.border).toBe("");
-    expect(flipTag.style.left).toBe("0px");
+    expect(flipTag.style.right).toBe("100%");
+    expect(flipTag.style.textAlign).toBe("right");
   });
 
   it("a quote re-renders its own contract and nothing else", () => {
@@ -347,10 +348,11 @@ describe("LadderBody", () => {
     expect(strike.style.fontWeight).toBe("500");
     expect(strike.style.fontSize).toBe("16px");
     const spotCell = view.container.querySelector<HTMLElement>('[data-at-strike="7320"]')!;
-    expect(spotCell.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    expect(spotCell.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
     const spot = spotCell.querySelector<HTMLElement>("div")!;
     expect(spot.style.background).toBe("transparent");
-    expect(spot.style.fontWeight).toBe("500");
+    expect(spot.style.fontWeight).toBe("550");
+    expect(spot.style.fontSize).toBe("17px");
   });
 
   it("skips the call-wall outline on the spot row so yellow does not stack", () => {
@@ -394,11 +396,33 @@ describe("LadderBody", () => {
     const putRow = view.container.querySelector<HTMLElement>('[data-at-put-wall-row="1"]')!;
     expect(callRow.getAttribute("data-at-ladder-row")).toBe("7350");
     expect(putRow.getAttribute("data-at-ladder-row")).toBe("7300");
-    expect(callRow.querySelector("[data-at-call-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(251,\s*191,\s*36\)/);
-    expect(putRow.querySelector("[data-at-put-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(20,\s*184,\s*166\)/);
+    const callStrike = callRow.querySelector<HTMLElement>('[data-at-strike="7350"]')!;
+    const putStrike = putRow.querySelector<HTMLElement>('[data-at-strike="7300"]')!;
+    expect(callStrike.contains(callRow.querySelector("[data-at-call-wall-outline]"))).toBe(true);
+    expect(putStrike.contains(putRow.querySelector("[data-at-put-wall-outline]"))).toBe(true);
+    expect(callStrike.querySelector("[data-at-call-wall-outline]")?.getAttribute("style")).toMatch(/inset:\s*0(;|$)/);
+    expect(putStrike.querySelector("[data-at-put-wall-outline]")?.getAttribute("style")).toMatch(/inset:\s*0(;|$)/);
+    expect(callStrike.querySelector("[data-at-call-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(251,\s*191,\s*36\)/);
+    expect(putStrike.querySelector("[data-at-put-wall-outline]")?.getAttribute("style")).toMatch(/rgb\(20,\s*184,\s*166\)/);
+    expect(callStrike.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    expect(putStrike.style.background).toMatch(/rgb\(20,\s*184,\s*166\)|#14b8a6/i);
     expect(callRow.querySelector("[data-at-strike-call-wall]")?.textContent).toBe("CALLWALL");
     expect(putRow.querySelector("[data-at-strike-put-wall]")?.textContent).toBe("PUTWALL");
     expect(callRow.querySelector("[data-at-strike-call-wall]")?.getAttribute("style")).not.toMatch(/border/);
+    const strikeTypography = (strikeEl: HTMLElement) =>
+      Array.from(strikeEl.children).find(
+        (el): el is HTMLElement =>
+          el instanceof HTMLElement &&
+          el.tagName === "DIV" &&
+          !el.hasAttribute("data-at-strike-zone-tag") &&
+          !el.querySelector("[data-at-strike-zone-tag]"),
+      )!;
+    const callType = strikeTypography(callStrike);
+    const putType = strikeTypography(putStrike);
+    expect(putType.style.fontSize).toBe("17px");
+    expect(putType.style.fontWeight).toBe("550");
+    expect(callType.style.fontSize).toBe("17px");
+    expect(callType.style.fontWeight).toBe("550");
   });
 
   it("draws a thin outline + BUY/SELL tag on a selected cell with no fill wash", () => {

@@ -56,6 +56,13 @@ export function stockPriceKey(price: number): string {
 }
 
 /** Descending share prices around the inside market. Unlisted prices are simply absent. */
+/** Ladder row key for live spot — same tick snap as `stockLadderPrices`. */
+export function stockLadderSpotKey(anchor: number | null | undefined): string | null {
+  if (anchor == null || !(anchor > 0)) return null;
+  const snapped = Math.round(anchor / STOCK_LADDER_TICK) * STOCK_LADDER_TICK;
+  return stockPriceKey(snapped);
+}
+
 export function stockLadderPrices(anchor: number | null): number[] {
   const centerRaw = anchor != null && anchor > 0 ? anchor : null;
   if (centerRaw == null) return [];
