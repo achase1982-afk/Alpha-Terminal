@@ -37,10 +37,7 @@ import {
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import {
-  atChainDateWindow,
-  optionsExpiryDiscoveryWindow,
-} from "@/lib/active-trader/atLadderStrikeCount";
+import { atChainDateWindow } from "@/lib/active-trader/atLadderStrikeCount";
 import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
   atLadderRestQuery,
@@ -62,7 +59,13 @@ import type { AtLadderLegPick } from "@/lib/active-trader/atLadderLegKeys";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { formatAtExpiryPill } from "@/lib/active-trader/atExpiryPill";
-import { expirationSeriesKey, occRoot, seriesRootFromExpiration, settlementFromExpiration } from "@/lib/active-trader/optionSeries";
+import {
+  expirationSeriesKey,
+  occRoot,
+  seriesRootFromExpiration,
+  settlementForRoot,
+  settlementFromExpiration,
+} from "@/lib/active-trader/optionSeries";
 import {
   filterAtExpiryPillGroups,
   nearestTradableExpiration,
@@ -138,6 +141,28 @@ interface ExpirationGroup {
   ivSkew: number | null;
 }
 
+interface OptionExpirationCatalogItem {
+  expirationDate: string;
+  daysToExpiration: number;
+  expirationType?: string;
+  standard?: boolean;
+  settlementType?: string;
+  optionRoots?: string;
+}
+
+interface OptionExpirationCatalogResponse {
+  symbol: string;
+  expirations: OptionExpirationCatalogItem[];
+  fetchedAt?: number;
+  error?: string;
+}
+
+interface ExpirationCatalogRow {
+  expiration: string;
+  dte: number;
+  dateLabel: string;
+}
+
 interface SelectedLeg {
   contract: Contract;
   type: "CALL" | "PUT";
@@ -195,6 +220,51 @@ function getExpType(expStr: string): "Weekly" | "EOM" | "Quarterly" | null {
   return "Weekly";
 }
 
+function buildExpirationCatalog(items: OptionExpirationCatalogItem[]): ExpirationCatalogRow[] {
+  const rows = new Map<string, ExpirationCatalogRow>();
+  for (const item of items) {
+    const ymd = item.expirationDate.slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) continue;
+    const roots = (item.optionRoots ?? "")
+      .split(",")
+      .map((root) => root.trim().replace(/^\./, "").toUpperCase())
+      .filter(Boolean);
+    const settlementRoots = [...new Set(roots.filter((root) => settlementForRoot(root) != null))];
+    const keys = settlementRoots.length > 0
+      ? settlementRoots.map((root) => `${ymd}~${root}`)
+      : [ymd];
+    for (const expiration of keys) {
+      const dte = Math.max(0, Math.round(item.daysToExpiration));
+      rows.set(expiration, {
+        expiration,
+        dte,
+        dateLabel: formatExpDate(expiration),
+      });
+    }
+  }
+  return [...rows.values()].sort(
+    (a, b) => a.dte - b.dte || a.expiration.localeCompare(b.expiration),
+  );
+}
+
+function emptyExpirationGroup(row: ExpirationCatalogRow): ExpirationGroup {
+  return {
+    ...row,
+    rows: [],
+    totalStrikes: 0,
+    expType: getExpType(row.expiration),
+    atmIV: null,
+    expectedMove: null,
+    maxOI: 0,
+    maxVol: 0,
+    totalCallOI: 0,
+    totalPutOI: 0,
+    totalCallVol: 0,
+    totalPutVol: 0,
+    ivSkew: null,
+  };
+}
+
 function putCallRatio(callVol: number, putVol: number, callOI: number, putOI: number): number | null {
   if (callVol > 0) return putVol / callVol;
   if (callOI > 0) return putOI / callOI;
@@ -225,21 +295,15 @@ function placeSeriesContract(c: Contract): Contract {
   return key === c.expiration ? c : { ...c, expiration: key };
 }
 
-function isSpxUnderlying(symbol: string): boolean {
-  const bare = symbol.toUpperCase().trim().replace(/^\$/, "").replace(/\.X$/, "");
-  return bare === "SPX";
-}
-
-/** Date plus OCC root from an expanded series key such as 2026-11-20~SPXW. */
-function expandedSeriesWindow(expiration: string): { ymd: string; series: string } | null {
-  const series = seriesRootFromExpiration(expiration);
-  if (!series) return null;
+/** Date plus optional OCC root from an expanded key such as 2026-11-20~SPXW. */
+function expandedSeriesWindow(expiration: string): { ymd: string; series?: string } | null {
   const ymd = expiration.slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return null;
-  return { ymd, series };
+  const series = seriesRootFromExpiration(expiration);
+  return { ymd, ...(series ? { series } : {}) };
 }
 
-type SpxExpiryChainParams = GetOptionChainParams & { series: string };
+type ExpiryChainParams = GetOptionChainParams & { series?: string };
 
 type SeriesStrikeBook = { calls: Contract[]; puts: Contract[] };
 
@@ -329,14 +393,15 @@ function overlayExpandedSeriesGroups(
   lastPrice: number | null,
 ): ExpirationGroup[] {
   if (books.size === 0) return groups;
-  return groups.map((group) => {
-    const book = books.get(group.expiration);
-    if (!book) return group;
+  const merged = new Map(groups.map((group) => [group.expiration, group]));
+  for (const [expiration, book] of books) {
     const rebuilt = buildExpirationGroups(book.calls, book.puts, lastPrice);
-    const match = rebuilt.find((g) => g.expiration === group.expiration);
-    if (!match || match.rows.length === 0) return group;
-    return match;
-  });
+    const match = rebuilt.find((group) => group.expiration === expiration);
+    if (match?.rows.length) merged.set(expiration, match);
+  }
+  return [...merged.values()].sort(
+    (a, b) => a.dte - b.dte || a.expiration.localeCompare(b.expiration),
+  );
 }
 
 /**
@@ -1667,10 +1732,10 @@ export function OptionsTab({
     [atDepth.above, atDepth.below],
   );
   const atDates = useMemo(
-    () => (optionsSubView === "at" ? atChainDateWindow(atExpiration) : null),
-    [optionsSubView, atExpiration],
+    () => (atExpiration ? atChainDateWindow(atExpiration) : null),
+    [atExpiration],
   );
-  const atSeriesRoot = optionsSubView === "at" ? seriesRootFromExpiration(atExpiration ?? "") : null;
+  const atSeriesRoot = seriesRootFromExpiration(atExpiration ?? "");
 
   const schwabLinked =
     hasSchwabBrokerageLinked(accessToken, traderAccessToken) ||
@@ -1678,27 +1743,26 @@ export function OptionsTab({
   /** Fetch whenever a symbol is set — API uses query token or server-stored Schwab session. */
   const chainApiEnabled = !!symbol && !fixtureChain;
 
-  const discoveryWindow = useMemo(() => optionsExpiryDiscoveryWindow(), [expiryClockMinute]);
-
-  const discoveryChainParams = useMemo(
-    () => ({
-      symbol,
-      contractType: "ALL" as const,
-      strikeCount: 1,
-      ...discoveryWindow,
-      ...(schwabAccessTokenForRequest(accessToken)
-        ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
-        : {}),
-    }),
-    [symbol, accessToken, discoveryWindow],
-  );
-
-  const { data: discoveryRaw } = useGetOptionChain<OptionChainResponse>(discoveryChainParams, {
-    query: {
-      enabled: chainApiEnabled,
-      staleTime: 120_000,
-      gcTime: 10 * 60_000,
+  const {
+    data: expirationCatalogRaw,
+    isLoading: expirationCatalogLoading,
+  } = useQuery<OptionExpirationCatalogResponse>({
+    queryKey: ["option-expiration-catalog", symbol],
+    queryFn: async ({ signal }) => {
+      const params = new URLSearchParams({ symbol });
+      const schwabToken = schwabAccessTokenForRequest(accessToken);
+      if (schwabToken) params.set("accessToken", schwabToken);
+      const response = await fetchWithAuth(
+        `/api/market/options/expirations?${params.toString()}`,
+        { signal },
+      );
+      if (!response.ok) throw new Error(`Expiration catalog failed (${response.status})`);
+      return response.json() as Promise<OptionExpirationCatalogResponse>;
     },
+    enabled: chainApiEnabled && !isFuturesSymbol,
+    staleTime: 15 * 60_000,
+    gcTime: 60 * 60_000,
+    retry: 2,
   });
 
   const optionChainParams = useMemo(
@@ -1719,7 +1783,7 @@ export function OptionsTab({
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
     useGetOptionChain<OptionChainResponse>(optionChainParams, {
       query: {
-        enabled: chainApiEnabled,
+        enabled: chainApiEnabled && atDates != null,
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
@@ -1728,10 +1792,18 @@ export function OptionsTab({
           previousQuery?: { queryKey: readonly unknown[] },
         ) => {
           if (!previous) return undefined;
+          const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
+          if (!atDates) return undefined;
           if (optionsSubView === "at") {
             // The ladder shows its own strike window or a loading state, never the Chain view's list.
-            const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
-            if (!atDates || !atLadderPlaceholderOk(previousParams, { symbol, ...atDates, series: atSeriesRoot })) return undefined;
+            if (!atLadderPlaceholderOk(previousParams, { symbol, ...atDates, series: atSeriesRoot })) return undefined;
+          } else if (
+            previousParams?.symbol !== symbol ||
+            previousParams.fromDate !== atDates.fromDate ||
+            previousParams.toDate !== atDates.toDate ||
+            (previousParams.series ?? "") !== (atSeriesRoot ?? "")
+          ) {
+            return undefined;
           }
           return previous;
         },
@@ -1797,7 +1869,7 @@ export function OptionsTab({
     return { ...rawData, calls, puts };
   }, [rawData, contractType, fixtureChain, futuresEsFixture, symbol, optionsSubView, atExpiration, atDepth.above, atDepth.below]);
 
-  const isLoadingEffective = fixtureChain ? false : isLoading;
+  const isLoadingEffective = fixtureChain ? false : isLoading || expirationCatalogLoading;
 
   const streamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
@@ -1841,10 +1913,10 @@ export function OptionsTab({
 
   const chainAnchorPx = rawData?.underlyingPrice ?? null;
   const queryClient = useQueryClient();
-  const expandedSpxWindows = useMemo(() => {
-    if (optionsSubView !== "chain" || fixtureChain || !isSpxUnderlying(symbol)) return [];
+  const expandedChainWindows = useMemo(() => {
+    if (optionsSubView !== "chain" || fixtureChain) return [];
     const token = schwabAccessTokenForRequest(accessToken);
-    const windows: { expiration: string; params: SpxExpiryChainParams }[] = [];
+    const windows: { expiration: string; params: ExpiryChainParams }[] = [];
     for (const expiration of [...expandedExps].sort()) {
       const parsed = expandedSeriesWindow(expiration);
       if (!parsed) continue;
@@ -1856,15 +1928,15 @@ export function OptionsTab({
           strikeCount,
           fromDate: parsed.ymd,
           toDate: parsed.ymd,
-          series: parsed.series,
+          ...(parsed.series ? { series: parsed.series } : {}),
           ...(token ? { accessToken: token } : {}),
         },
       });
     }
     return windows;
   }, [optionsSubView, fixtureChain, symbol, accessToken, expandedExps, strikeCount]);
-  const expandedSpxQueries = useQueries({
-    queries: expandedSpxWindows.map((window) =>
+  const expandedChainQueries = useQueries({
+    queries: expandedChainWindows.map((window) =>
       getGetOptionChainQueryOptions(window.params, {
         query: {
           enabled: chainApiEnabled,
@@ -1875,18 +1947,18 @@ export function OptionsTab({
       }),
     ),
   });
-  const expandedSpxWindowsRef = useRef(expandedSpxWindows);
-  expandedSpxWindowsRef.current = expandedSpxWindows;
-  const expandedSpxStamp = expandedSpxWindows
-    .map((window, i) => `${window.expiration}:${expandedSpxQueries[i]?.dataUpdatedAt ?? 0}`)
+  const expandedChainWindowsRef = useRef(expandedChainWindows);
+  expandedChainWindowsRef.current = expandedChainWindows;
+  const expandedChainStamp = expandedChainWindows
+    .map((window, i) => `${window.expiration}:${expandedChainQueries[i]?.dataUpdatedAt ?? 0}`)
     .join("|");
-  const expandedSpxBooks = useMemo(
+  const expandedChainBooks = useMemo(
     () => seriesStrikeBooks(
-      expandedSpxWindows,
-      expandedSpxQueries.map((query) => query.data),
+      expandedChainWindows,
+      expandedChainQueries.map((query) => query.data),
       symbol,
     ),
-    [expandedSpxStamp, expandedSpxWindows, symbol],
+    [expandedChainStamp, expandedChainWindows, symbol],
   );
   const lastReanchorAtRef = useRef(0);
   useEffect(() => {
@@ -1898,19 +1970,19 @@ export function OptionsTab({
     if (now - lastReanchorAtRef.current < CHAIN_REANCHOR_MIN_MS) return;
     lastReanchorAtRef.current = now;
     void refetchOptionChain({ cancelRefetch: false });
-    const windows = expandedSpxWindowsRef.current;
+    const windows = expandedChainWindowsRef.current;
     if (windows.length === 0) return;
     void queryClient.refetchQueries({
       type: "active",
       predicate: (query) => {
         if (query.queryKey[0] !== "/api/market/options") return false;
-        const params = query.queryKey[1] as SpxExpiryChainParams | undefined;
-        if (!params?.series || params.fromDate !== params.toDate) return false;
+        const params = query.queryKey[1] as ExpiryChainParams | undefined;
+        if (!params || params.fromDate !== params.toDate) return false;
         return windows.some((window) =>
           window.params.symbol === params.symbol
           && window.params.fromDate === params.fromDate
           && window.params.toDate === params.toDate
-          && window.params.series === params.series
+          && (window.params.series ?? "") === (params.series ?? "")
           && window.params.strikeCount === params.strikeCount
         );
       },
@@ -1921,16 +1993,15 @@ export function OptionsTab({
     // Active Trader owns a viewport hold. Subscribing the loaded book here
     // would put every scrolled-in strike on the stream.
     if (optionsSubView === "at") return null;
-    if (!data) return null;
     const calls: Contract[] = [];
     const puts: Contract[] = [];
-    for (const c of (data.calls ?? []) as Contract[]) {
-      if (!expandedSpxBooks.has(seriesBucketKey(c))) calls.push(c);
+    for (const c of (data?.calls ?? []) as Contract[]) {
+      if (!expandedChainBooks.has(seriesBucketKey(c))) calls.push(c);
     }
-    for (const p of (data.puts ?? []) as Contract[]) {
-      if (!expandedSpxBooks.has(seriesBucketKey(p))) puts.push(p);
+    for (const p of (data?.puts ?? []) as Contract[]) {
+      if (!expandedChainBooks.has(seriesBucketKey(p))) puts.push(p);
     }
-    for (const book of expandedSpxBooks.values()) {
+    for (const book of expandedChainBooks.values()) {
       calls.push(...book.calls);
       puts.push(...book.puts);
     }
@@ -1956,18 +2027,17 @@ export function OptionsTab({
     for (const p of puts) push(p, "P");
     if (streamKeys.length === 0) return null;
     return buildChainHoldSignature(symbol, expirations, streamKeys);
-  }, [data, symbol, optionsSubView, atExpiration, expandedExps, expandedSpxBooks]);
+  }, [data, symbol, optionsSubView, atExpiration, expandedExps, expandedChainBooks]);
 
-  const discoveryGroups = useMemo(() => {
-    if (!discoveryRaw || !optionChainMatchesActiveSymbol(discoveryRaw.symbol, symbol)) return [];
-    const calls = (discoveryRaw.calls ?? []) as Contract[];
-    const puts = (discoveryRaw.puts ?? []) as Contract[];
-    return buildExpirationGroups(calls, puts, underlyingPrice).map((g) => ({
-      expiration: g.expiration,
-      dte: g.dte,
-      dateLabel: g.dateLabel,
-    }));
-  }, [discoveryRaw, symbol, underlyingPrice]);
+  const brokerExpiryCatalog = useMemo(() => {
+    if (
+      !expirationCatalogRaw ||
+      !optionChainMatchesActiveSymbol(expirationCatalogRaw.symbol, symbol)
+    ) {
+      return [];
+    }
+    return buildExpirationCatalog(expirationCatalogRaw.expirations ?? []);
+  }, [expirationCatalogRaw, symbol]);
 
   const fixtureExpiryCatalog = useMemo(() => {
     if (!fixtureChain) return [];
@@ -1980,18 +2050,33 @@ export function OptionsTab({
     }));
   }, [fixtureChain, underlyingPrice]);
 
-  const groups = useMemo(() => {
+  const loadedGroups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
     const puts = (data.puts ?? []) as Contract[];
     calls.forEach(c => assignStreamKey(c, "C", symbol));
     puts.forEach(c => assignStreamKey(c, "P", symbol));
-    return overlayExpandedSeriesGroups(
-      buildExpirationGroups(calls, puts, underlyingPrice),
-      expandedSpxBooks,
-      underlyingPrice,
+    return buildExpirationGroups(calls, puts, underlyingPrice);
+  }, [data, underlyingPrice, symbol]);
+
+  const expiryCatalog = useMemo(() => {
+    const catalog = brokerExpiryCatalog.length
+      ? brokerExpiryCatalog
+      : fixtureExpiryCatalog.length
+        ? fixtureExpiryCatalog
+        : loadedGroups;
+    return filterAtExpiryPillGroups(catalog, expiryNowMs);
+  }, [brokerExpiryCatalog, fixtureExpiryCatalog, loadedGroups, expiryNowMs]);
+
+  const groups = useMemo(() => {
+    const merged = new Map<string, ExpirationGroup>();
+    for (const row of expiryCatalog) merged.set(row.expiration, emptyExpirationGroup(row));
+    for (const group of loadedGroups) merged.set(group.expiration, group);
+    const base = [...merged.values()].sort(
+      (a, b) => a.dte - b.dte || a.expiration.localeCompare(b.expiration),
     );
-  }, [data, underlyingPrice, symbol, expandedSpxBooks]);
+    return overlayExpandedSeriesGroups(base, expandedChainBooks, underlyingPrice);
+  }, [expiryCatalog, loadedGroups, expandedChainBooks, underlyingPrice]);
 
   const atGroups = useMemo(() => {
     if (!data) return [];
@@ -2017,15 +2102,6 @@ export function OptionsTab({
     });
   }, [optionsSubView, tradableAtGroups, atExpiration]);
 
-  const expiryCatalog = useMemo(() => {
-    const catalog = discoveryGroups.length
-      ? discoveryGroups
-      : fixtureExpiryCatalog.length
-        ? fixtureExpiryCatalog
-        : groups;
-    return filterAtExpiryPillGroups(catalog, expiryNowMs);
-  }, [discoveryGroups, fixtureExpiryCatalog, groups, expiryNowMs]);
-
   useEffect(() => {
     const stored = useOptionsExpiryStore.getState().getSelected(symbol);
     if (stored) setAtExpirationState(stored);
@@ -2046,9 +2122,8 @@ export function OptionsTab({
   useEffect(() => {
     if (optionsSubView === "chain" && atExpiration) {
       setExpandedExps((prev) => {
-        const next = new Set(prev);
-        next.add(atExpiration);
-        return next;
+        if (prev.size === 1 && prev.has(atExpiration)) return prev;
+        return new Set([atExpiration]);
       });
     }
   }, [optionsSubView, atExpiration]);
@@ -2073,11 +2148,7 @@ export function OptionsTab({
       }
       setAtExpiration(exp);
       useOptionsExpiryStore.getState().setExplicit(symbol, exp);
-      setExpandedExps((prev) => {
-        const next = new Set(prev);
-        next.add(exp);
-        return next;
-      });
+      setExpandedExps(new Set([exp]));
     },
     [atExpiration, selectedLegs, setAtExpiration, symbol],
   );
@@ -2226,12 +2297,7 @@ export function OptionsTab({
 
   const toggleExp = (exp: string) => {
     const opening = !expandedExps.has(exp);
-    setExpandedExps((prev) => {
-      const next = new Set(prev);
-      if (next.has(exp)) next.delete(exp);
-      else next.add(exp);
-      return next;
-    });
+    setExpandedExps(opening ? new Set([exp]) : new Set());
     if (opening) {
       setAtExpiration(exp);
       useOptionsExpiryStore.getState().setExplicit(symbol, exp);
@@ -2530,8 +2596,10 @@ export function OptionsTab({
 
   const showCalls = contractType !== "PUT";
   const showPuts = contractType !== "CALL";
-  const hasData = data && groups.length > 0;
-  const apiError = (rawData as Record<string, unknown> | undefined)?.error as string | undefined;
+  const hasData = groups.length > 0;
+  const apiError =
+    ((rawData as Record<string, unknown> | undefined)?.error as string | undefined) ??
+    expirationCatalogRaw?.error;
   const futuresChainUnsupported =
     apiError === "futures_chain_unsupported" ||
     (data as Record<string, unknown> | undefined)?.error === "futures_chain_unsupported";
@@ -2552,7 +2620,9 @@ export function OptionsTab({
 
   const chainStickyHeader = HEADER_H + SUB_HEADER_H;
   const atChainLoading = !atLadderHasRows && (isLoadingEffective || isFetching);
-  const atChainError = error ? "Option chain request failed" : rawData?.error ?? null;
+  const atChainError = error
+    ? "Option chain request failed"
+    : rawData?.error ?? expirationCatalogRaw?.error ?? null;
   const atBrokerLinked = schwabLinked || isAuthDisabled();
   const atLadderPlug = useMemo(
     () => ({ chainLoading: atChainLoading, chainError: atChainError, brokerLinked: atBrokerLinked }),
@@ -2680,7 +2750,7 @@ export function OptionsTab({
               periodYear: earningsData?.periodYear,
             }}
             isFetching={isFetching}
-            hasData={!!data}
+            hasData={hasData}
           />
         </div>
       </div>
@@ -2788,7 +2858,7 @@ export function OptionsTab({
           </div>
         )}
 
-        {data && groups.length === 0 && !isFuturesSymbol && (
+        {!hasData && !isLoadingEffective && !error && !apiError && !isFuturesSymbol && (
           <div className="p-16 flex flex-col items-center justify-center font-mono">
             <Table2 className="w-7 h-7 mb-2" style={{ color: MUTED }} />
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>NO OPTIONS DATA FOR THIS RANGE</span>
