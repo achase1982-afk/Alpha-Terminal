@@ -88,11 +88,12 @@ function getTraderToken(): string | null {
   return trader?.accessToken ?? null;
 }
 
-router.get("/accounts", async (_req, res) => {
+router.get("/accounts", async (req, res) => {
   const token = getTraderToken();
   const cacheFresh = accountsCache && Date.now() - accountsCache.fetchedAt < ACCOUNTS_CACHE_TTL;
+  const forceRefresh = req.query.refresh === "1";
 
-  if (cacheFresh) {
+  if (cacheFresh && !forceRefresh) {
     return res.json(accountsCache!.data);
   }
 

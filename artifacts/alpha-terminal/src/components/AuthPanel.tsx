@@ -2,7 +2,7 @@ import { useState, useCallback, type MouseEvent } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { queryClient } from "@/App";
-import { ExternalLink, CheckCircle2, Loader2, XCircle, AlertTriangle } from "lucide-react";
+import { ExternalLink, Loader2, XCircle, AlertTriangle } from "lucide-react";
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useBrokerConnect } from "@/hooks/useBrokerConnect";
 import { useWebullConnect } from "@/hooks/useWebullConnect";
@@ -13,19 +13,40 @@ export function AuthPanel() {
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
   const { oauthUrl, isNavigating, onClick } = useBrokerConnect();
-  const { connect: connectWebull, isConnecting: webullConnecting } = useWebullConnect();
+  const {
+    connect: connectWebull,
+    isConnecting: webullConnecting,
+    isConnected: webullConnected,
+  } = useWebullConnect();
 
   const isConnected = !!(accessToken || traderAccessToken);
   const serverTokenExpired = portfolioStatus.status === "no_token";
 
   const handleDisconnect = useCallback(async () => {
+    if (isDisconnecting) return;
     setIsDisconnecting(true);
-    clearTokens();
-    clearTraderTokens();
-    queryClient.clear();
-    try { await fetchWithAuth("/api/auth/disconnect", { method: "POST" }); } catch {}
-    setIsDisconnecting(false);
-  }, [clearTokens, clearTraderTokens]);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), 15_000);
+    try {
+      // Clear the canonical server/DB token first. Clearing local state first
+      // starts PendingSessionLoader, which can immediately restore the token
+      // and make Disconnect appear inert.
+      const res = await fetchWithAuth("/api/auth/disconnect", {
+        method: "POST",
+        signal: controller.signal,
+        clerkTokenTimeoutMs: 3_000,
+      });
+      if (!res.ok) return;
+      clearTokens();
+      clearTraderTokens();
+      queryClient.clear();
+    } catch {
+      /* Keep the connected state when the server could not be reached. */
+    } finally {
+      window.clearTimeout(timer);
+      setIsDisconnecting(false);
+    }
+  }, [clearTokens, clearTraderTokens, isDisconnecting]);
 
   const isLoading = isNavigating;
   const loginDisabled = !oauthUrl || isLoading;
@@ -65,21 +86,23 @@ export function AuthPanel() {
             <>RECONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
           )}
         </a>
-        <button
-          type="button"
-          onClick={() => void connectWebull()}
-          disabled={webullConnecting}
-          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-        >
-          {webullConnecting ? (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" />
-              CONNECTING WEBULL…
-            </>
-          ) : (
-            "CONNECT WEBULL"
-          )}
-        </button>
+        {!webullConnected && (
+          <button
+            type="button"
+            onClick={() => void connectWebull()}
+            disabled={webullConnecting}
+            className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+          >
+            {webullConnecting ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                CONNECTING WEBULL…
+              </>
+            ) : (
+              "CONNECT WEBULL"
+            )}
+          </button>
+        )}
       </div>
     );
   }
@@ -97,6 +120,7 @@ export function AuthPanel() {
             <span className="font-mono text-[10px] text-[#00d166] tracking-wider">CONNECTED</span>
           </div>
           <button
+            type="button"
             onClick={handleDisconnect}
             disabled={isDisconnecting}
             className="font-mono text-[10px] text-zinc-500 hover:text-red-400 transition-colors tracking-wider"
@@ -108,21 +132,23 @@ export function AuthPanel() {
             )}
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void connectWebull()}
-          disabled={webullConnecting}
-          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-        >
-          {webullConnecting ? (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" />
-              CONNECTING WEBULL…
-            </>
-          ) : (
-            "CONNECT WEBULL"
-          )}
-        </button>
+        {!webullConnected && (
+          <button
+            type="button"
+            onClick={() => void connectWebull()}
+            disabled={webullConnecting}
+            className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+          >
+            {webullConnecting ? (
+              <>
+                <Loader2 className="w-3 h-3 animate-spin" />
+                CONNECTING WEBULL…
+              </>
+            ) : (
+              "CONNECT WEBULL"
+            )}
+          </button>
+        )}
       </div>
     );
   }
@@ -154,21 +180,23 @@ export function AuthPanel() {
           <>CONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
         )}
       </a>
-      <button
-        type="button"
-        onClick={() => void connectWebull()}
-        disabled={webullConnecting}
-        className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-      >
-        {webullConnecting ? (
-          <>
-            <Loader2 className="w-3 h-3 animate-spin" />
-            CONNECTING WEBULL…
-          </>
-        ) : (
-          "CONNECT WEBULL"
-        )}
-      </button>
+      {!webullConnected && (
+        <button
+          type="button"
+          onClick={() => void connectWebull()}
+          disabled={webullConnecting}
+          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+        >
+          {webullConnecting ? (
+            <>
+              <Loader2 className="w-3 h-3 animate-spin" />
+              CONNECTING WEBULL…
+            </>
+          ) : (
+            "CONNECT WEBULL"
+          )}
+        </button>
+      )}
     </div>
   );
 }

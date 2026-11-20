@@ -13,7 +13,7 @@ import {
   hasValidTokens,
   getTokens,
   getRefreshToken,
-  clearTokens as clearServerTokens,
+  clearTokensAndWait,
   forceRefresh,
 } from "../lib/tokenStore.js";
 import { stopStreamer } from "../lib/schwabStreamer.js";
@@ -644,10 +644,12 @@ router.post("/trader-refresh", async (req, res) => {
   return res.json(result.payload);
 });
 
-router.post("/disconnect", (_req, res) => {
+router.post("/disconnect", async (_req, res) => {
   if (refuseAuthDisabledClientOp(res)) return;
-  clearServerTokens("market");
-  clearServerTokens("trader");
+  await Promise.all([
+    clearTokensAndWait("market"),
+    clearTokensAndWait("trader"),
+  ]);
   stopStreamer();
   res.json({ ok: true });
 });
