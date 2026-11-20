@@ -16,7 +16,7 @@ interface PortfolioAccount {
   accountNumberRaw?: string;
 }
 
-interface PortfolioOrder {
+export interface PortfolioOrder {
   orderId: number;
   orderType: string;
   session: string;
