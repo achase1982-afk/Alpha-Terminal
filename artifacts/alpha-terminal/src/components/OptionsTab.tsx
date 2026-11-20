@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback, memo } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef, useCallback, memo } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useActiveSymbol } from "@/components/dashboard/widgetSymbolContext";
 import { ConnectBrokerPrompt } from "./ConnectBrokerPrompt";
@@ -1828,6 +1828,8 @@ export function OptionsTab({
   });
   const legLimitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const chainScrollRef = useRef<HTMLDivElement>(null);
+  const chainStrikeCountRef = useRef(strikeCount);
+  const chainRecenterOnStrikeCountRef = useRef(false);
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const tradingAccountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const MAX_OPTION_LEGS = CHAIN_MAX_DRAFT_LEGS;
@@ -1930,7 +1932,7 @@ export function OptionsTab({
     [symbol, strikeCount, accessToken, atDates, atSeriesRoot, atRest.range, atRest.strikeCount, optionsSubView, atExpiration],
   );
 
-  const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
+  const { data: rawData, isLoading, error, isFetching, isPlaceholderData, dataUpdatedAt, refetch: refetchOptionChain } =
     useGetOptionChain<OptionChainResponse>(optionChainParams, {
       query: {
         enabled: chainApiEnabled,
@@ -2262,6 +2264,44 @@ export function OptionsTab({
       cancelAnimationFrame(raf);
     };
   }, [optionsSubView, measureChainSpot, data, groups.length]);
+
+  const chainStrikeSignature = useMemo(
+    () =>
+      groups
+        .map((group) => {
+          const first = group.rows[0]?.strike ?? "";
+          const last = group.rows[group.rows.length - 1]?.strike ?? "";
+          return `${group.expiration}:${group.rows.length}:${first}:${last}`;
+        })
+        .join("|"),
+    [groups],
+  );
+  const chainHasStrikeRows = groups.some((group) => group.rows.length > 0);
+  const expandedStrikeFetchPending = expandedChainQueries.some(
+    (query) => query.isFetching || query.isLoading || query.isPlaceholderData,
+  );
+  const chainStrikeFetchPending =
+    isPlaceholderData || (isFetching && !error) || expandedStrikeFetchPending;
+  const scrollChainToSpotRef = useRef(scrollChainToSpot);
+  scrollChainToSpotRef.current = scrollChainToSpot;
+
+  useLayoutEffect(() => {
+    if (optionsSubView !== "chain") return;
+    if (chainStrikeCountRef.current !== strikeCount) {
+      chainStrikeCountRef.current = strikeCount;
+      chainRecenterOnStrikeCountRef.current = true;
+    }
+    if (!chainRecenterOnStrikeCountRef.current) return;
+    if (chainStrikeFetchPending || !chainHasStrikeRows) return;
+    chainRecenterOnStrikeCountRef.current = false;
+    scrollChainToSpotRef.current();
+  }, [
+    optionsSubView,
+    strikeCount,
+    chainStrikeFetchPending,
+    chainHasStrikeRows,
+    chainStrikeSignature,
+  ]);
 
   const atGroups = useMemo(() => {
     if (!data) return [];
