@@ -795,9 +795,6 @@ export function OptionsChainOrderSheet({
         setLimitPrice(displaySubmittedLimit(limitTickCtx, initialLimitPrice));
         return;
       }
-      if (!limitUserEditedRef.current && !allLegsQuoted) {
-        setLimitPrice("");
-      }
     }
     if (!allLegsQuoted || spreadPrices?.spreadMid == null) {
       if (directionsChanged && limitLocked) setLimitLocked(false);

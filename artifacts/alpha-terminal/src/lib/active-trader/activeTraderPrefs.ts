@@ -6,7 +6,30 @@ export type AtOrderType = "LIMIT" | "MKT";
 export type AtLimitAnchor = "Mid" | "Bid" | "Ask";
 export type BracketOffsetMode = "percent" | "points" | "dollars" | "stdev";
 export type AtLadderMode = "single" | "vertical";
-export type AtVerticalWidth = 5 | 10 | 25;
+export type AtVerticalWidth = 1 | 5 | 10 | 25;
+/**
+ * How a ladder tap builds legs.
+ * `off` picks the cell you tapped. Anything else fills that structure from the
+ * tapped strike and moves it when you tap a different strike.
+ */
+export type AtStrategyBuild = "off" | "credit-spread" | "debit-spread" | "iron-condor";
+
+export const AT_STRATEGY_BUILDS: { value: AtStrategyBuild; label: string }[] = [
+  { value: "off", label: "Off" },
+  { value: "credit-spread", label: "Credit spread" },
+  { value: "debit-spread", label: "Debit spread" },
+  { value: "iron-condor", label: "Iron condor" },
+];
+
+export const AT_STRATEGY_WIDTHS: AtVerticalWidth[] = [1, 5, 10, 25];
+
+export function strategyBuildLabel(value: AtStrategyBuild | undefined): string {
+  return AT_STRATEGY_BUILDS.find((opt) => opt.value === (value ?? "off"))?.label ?? "Off";
+}
+
+export function ladderModeForStrategy(strategy: AtStrategyBuild | undefined): AtLadderMode {
+  return strategy === "credit-spread" || strategy === "debit-spread" ? "vertical" : "single";
+}
 export type AtExitDuration = "DAY" | "GOOD_TILL_CANCEL";
 export type AtEntryDuration = "DAY" | "GOOD_TILL_CANCEL" | "FILL_OR_KILL";
 export type AtStopLossOrderType = "STOP" | "STOP_LIMIT";
@@ -45,6 +68,11 @@ export interface ActiveTraderTemplatePrefs {
   autoSend: AtAutoSendPrefs;
   ladderMode: AtLadderMode;
   verticalWidth: AtVerticalWidth;
+  /**
+   * Structure a ladder tap builds. Missing or `off` means free leg selection.
+   * A saved vertical ladder mode does not turn this on.
+   */
+  strategyBuild?: AtStrategyBuild;
   /** TIF for OCO / trigger children (Schwab 1st-trigger sample uses GTC). */
   exitDuration: AtExitDuration;
   stopLossOrderType: AtStopLossOrderType;
@@ -76,6 +104,7 @@ const DEFAULTS: ActiveTraderTemplatePrefs = {
   autoSend: { enabled: false, armed: false },
   ladderMode: "single",
   verticalWidth: 5,
+  strategyBuild: "off",
   exitDuration: "GOOD_TILL_CANCEL",
   stopLossOrderType: "STOP",
   stopLimitOffset: 0.05,
@@ -97,12 +126,31 @@ function sanitizeAutoSend(prefs: ActiveTraderTemplatePrefs): ActiveTraderTemplat
   };
 }
 
+const STRATEGY_VALUES = new Set<string>(AT_STRATEGY_BUILDS.map((opt) => opt.value));
+const WIDTH_VALUES = new Set<number>(AT_STRATEGY_WIDTHS);
+
+/**
+ * Free leg selection unless a strategy was saved on purpose.
+ * An older vertical ladder mode is not that setting, so it does not keep pairing taps.
+ */
+export function withStrategyDefaults(prefs: ActiveTraderTemplatePrefs): ActiveTraderTemplatePrefs {
+  const rawStrategy = prefs.strategyBuild;
+  const strategyBuild = rawStrategy && STRATEGY_VALUES.has(rawStrategy) ? rawStrategy : "off";
+  const verticalWidth = WIDTH_VALUES.has(prefs.verticalWidth) ? prefs.verticalWidth : 5;
+  return {
+    ...prefs,
+    strategyBuild,
+    verticalWidth,
+    ladderMode: ladderModeForStrategy(strategyBuild),
+  };
+}
+
 export function loadActiveTraderPrefs(symbolClass: "index" | "equity"): ActiveTraderTemplatePrefs {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { ...DEFAULTS };
     const parsed = JSON.parse(raw) as Record<string, ActiveTraderTemplatePrefs>;
-    return sanitizeAutoSend({ ...DEFAULTS, ...(parsed[symbolClass] ?? {}) });
+    return sanitizeAutoSend(withStrategyDefaults({ ...DEFAULTS, ...(parsed[symbolClass] ?? {}) }));
   } catch {
     return { ...DEFAULTS };
   }
@@ -119,7 +167,7 @@ export function applyOrderDefaults(prefs: ActiveTraderTemplatePrefs): ActiveTrad
   else template = "TRG w/ bracket";
 
   const entry = prefs.schwabEntryType ?? (prefs.orderType === "MKT" ? "MARKET" : "LIMIT");
-  return {
+  return withStrategyDefaults({
     ...DEFAULTS,
     ...prefs,
     template,
@@ -133,7 +181,7 @@ export function applyOrderDefaults(prefs: ActiveTraderTemplatePrefs): ActiveTrad
     submission: prefs.submission ?? "review",
     trailOffset: prefs.trailOffset ?? 0.1,
     trailLinkType: prefs.trailLinkType ?? "VALUE",
-  };
+  });
 }
 
 export function saveActiveTraderPrefs(symbolClass: "index" | "equity", prefs: ActiveTraderTemplatePrefs): void {

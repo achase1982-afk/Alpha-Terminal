@@ -319,6 +319,10 @@ export function registerAtFixtureFromLocation(): void {
       sceneParam === "vertical" || sceneParam === "strip-vertical"
         ? ("vertical" as const)
         : ("single" as const),
+    strategyBuild:
+      sceneParam === "vertical" || sceneParam === "strip-vertical"
+        ? ("credit-spread" as const)
+        : ("off" as const),
     verticalWidth: 5 as const,
   };
   saveActiveTraderPrefs(isAapl ? "equity" : "index", atPrefs);

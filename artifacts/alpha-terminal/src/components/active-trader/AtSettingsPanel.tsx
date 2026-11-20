@@ -208,7 +208,13 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
                 <button
                   key={mode}
                   type="button"
-                  onClick={() => onPrefsChange({ ...prefs, ladderMode: mode })}
+                  onClick={() =>
+                    onPrefsChange({
+                      ...prefs,
+                      ladderMode: mode,
+                      strategyBuild: mode === "vertical" ? "credit-spread" : "off",
+                    })
+                  }
                   className="flex-1 py-1 rounded border"
                   style={{
                     fontSize: 11,
@@ -229,7 +235,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
             Spread width
           </span>
           <Select
-            disabled={prefs.ladderMode !== "vertical"}
+            disabled={(prefs.strategyBuild ?? "off") === "off"}
             value={String(prefs.verticalWidth)}
             onValueChange={(v) => onPrefsChange({ ...prefs, verticalWidth: Number(v) as AtVerticalWidth })}
           >
@@ -240,6 +246,7 @@ export const AtSettingsExpanded = memo(function AtSettingsExpanded({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="1">1 pt</SelectItem>
               <SelectItem value="5">5 pts</SelectItem>
               <SelectItem value="10">10 pts</SelectItem>
               <SelectItem value="25">25 pts</SelectItem>
