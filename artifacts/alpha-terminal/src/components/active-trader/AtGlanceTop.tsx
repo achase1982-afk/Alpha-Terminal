@@ -3,10 +3,10 @@ import { BORDER, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
-import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { useQuote } from "@/hooks/useQuote";
 import { useGlanceSpotPrice } from "@/hooks/useGlanceSpotPrice";
+import { useSpotQuoteTickColor } from "@/lib/active-trader/atSpotDirection";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
 import { AT_HEADER_BG, AT_LABEL, AT_SECONDARY } from "@/lib/active-trader/atChromeContrast";
 import { useAtGlanceSessionLevels } from "@/hooks/useAtGlanceSessionLevels";
@@ -29,12 +29,9 @@ const NUM_FEAT: CSSProperties = {
   fontVariantNumeric: "tabular-nums",
 };
 
-const SPOT_PAINT_MS = 250;
-
 const LABEL_PX = 13;
 const VALUE_PX = 13;
 const SECTION_RULE = "#2b3033";
-const SPOT_COLOR = WHITE;
 /** Match `.at-flow-strip` height so stock/options template toggle does not resize glance chrome. */
 const EQUITY_FLOW_BAND_MIN_H = 120;
 
@@ -117,8 +114,9 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const vixLevel = useAtVixQuote(showVix);
+  const spotTick = useSpotQuoteTickColor(symbol, quote, flow.livePx);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
-  const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
+  const spotShown = spotTick.price ?? liveSpot;
 
   const sessionChange = useMemo(
     () => resolveAtHeaderSessionChange(quote, restQuote, spotShown),
@@ -191,7 +189,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             <span
               className="num"
               data-ui-audit="at-glance-spot"
-              style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: SPOT_COLOR, letterSpacing: "-0.03em" }}
+              data-at-spot-tick={spotTick.side}
+              style={{ ...NUM_FEAT, fontSize: 28, fontWeight: 600, color: spotTick.color, letterSpacing: "-0.03em" }}
             >
               {spotLabel}
             </span>
