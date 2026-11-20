@@ -252,9 +252,9 @@ function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketData
             onClick={() => setActiveTab(tab.id)}
             className="flex-1 min-w-[76px] py-2.5 font-mono text-xs font-bold tracking-wider transition-colors border-b-2"
             style={{
-              color: isActive ? "#FFB800" : "#71717a",
-              borderColor: isActive ? "#FFB800" : "transparent",
-              background: isActive ? "rgba(255,184,0,0.04)" : "transparent",
+              color: isActive ? "#f4f4f5" : "#71717a",
+              borderColor: isActive ? "#71717a" : "transparent",
+              background: isActive ? "rgba(255,255,255,0.06)" : "transparent",
             }}
           >
             {tab.label}

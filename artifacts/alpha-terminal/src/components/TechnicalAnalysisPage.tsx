@@ -415,8 +415,9 @@ export function TechnicalAnalysisPage({ candles }: Props) {
                 onClick={() => { setActiveDeepTab(tab); setDeepPage(i); }}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 font-mono text-[11px] tracking-wider transition-all border-b-2"
                 style={{
-                  borderColor: activeDeepTab === tab ? "#FFB800" : "transparent",
-                  color: activeDeepTab === tab ? "#FFB800" : "#71717a",
+                  borderColor: activeDeepTab === tab ? "#71717a" : "transparent",
+                  color: activeDeepTab === tab ? "#f4f4f5" : "#71717a",
+                  background: activeDeepTab === tab ? "rgba(255,255,255,0.06)" : "transparent",
                 }}
               >
                 {icons[i]}

@@ -899,7 +899,7 @@ function StrategistCancelConfirmDialog(props: {
             type="button"
             ref={yesRef}
             onClick={onConfirmCancel}
-            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b]"
+            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b]"
             style={{ background: "#f23645", color: "#fff" }}
           >
             Yes, cancel
@@ -907,7 +907,7 @@ function StrategistCancelConfirmDialog(props: {
           <button
             type="button"
             onClick={onKeepRunning}
-            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b] border border-zinc-600 text-zinc-200"
+            className="min-h-[44px] min-w-[44px] px-4 rounded-lg font-mono text-xs font-bold uppercase tracking-wider focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#18181b] border border-zinc-600 text-zinc-200"
             style={{ background: "transparent" }}
           >
             Keep running
@@ -1169,7 +1169,7 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
               onClick={onCancelClick}
               aria-label="Cancel analysis"
               className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg font-mono text-[13px] font-bold tracking-widest uppercase px-3
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
               style={{
                 background: "#18181b",
                 color: "#FFB800",
@@ -1185,7 +1185,7 @@ function StrategistCommandBar({ onRun, disabled, blockedTicker, lastRunSymbol, l
               title={blocksThisSymbol ? `Analysis already in progress for ${blockedTicker}` : undefined}
               className="min-h-[44px] min-w-[44px] p-[10px] rounded-lg font-mono text-[13px] font-bold tracking-widest shrink-0 transition-all duration-200 uppercase
                 disabled:opacity-30 disabled:cursor-not-allowed
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFB800] focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-[#111113]"
               style={{
                 background: "#18181b",
                 color: disabled ? "#52525b" : "#FFB800",
@@ -2315,7 +2315,7 @@ function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onCha
       onClick={() => !disabled && onChange(!checked)}
       className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
       style={{
-        background: checked ? "#FFB800" : "#2A2A2C",
+        background: checked ? "#52525b" : "#2A2A2C",
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? "not-allowed" : "pointer",
       }}
@@ -2340,8 +2340,9 @@ function SegmentControl({ value, options, onChange, disabled }: {
           onClick={() => !disabled && onChange(o.value)}
           className="flex-1 font-mono text-[11px] py-1.5 px-2 transition-colors"
           style={{
-            background: value === o.value ? "#FFB800" : "transparent",
-            color: value === o.value ? "#0c0c0c" : "#9ca3af",
+            background: value === o.value ? "rgba(255,255,255,0.08)" : "transparent",
+            color: value === o.value ? "#f4f4f5" : "#9ca3af",
+            boxShadow: value === o.value ? "inset 0 0 0 1px #71717a" : "none",
             cursor: disabled ? "not-allowed" : "pointer",
           }}
         >
@@ -3258,7 +3259,7 @@ function AiIntelligenceTabInner({
                   onClick={() => setStrategistMode(key)}
                   className={`flex-1 py-3 text-sm font-bold uppercase tracking-widest transition-all border-b-2 ${
                     strategistMode === key
-                      ? "bg-[#18181B] text-white border-b-[#FFB800]"
+                      ? "bg-[#18181B] text-white border-b-zinc-500"
                       : "bg-transparent text-muted-foreground border-b-transparent hover:text-foreground hover:bg-secondary/20"
                   }`}
                 >
