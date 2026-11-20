@@ -96,9 +96,10 @@ import {
 import {
   atLadderNudgeToClearSheet,
   atLadderRowFullyVisible,
-  atLadderRowOffsetFromBand,
   atLadderScrollShiftForRows,
   atLadderScrollTopForRow,
+  scrollRowToViewportCenter,
+  rowOffViewportCenter,
   atLadderVisibleRowRange,
   scrollAtLadderToStrikeAboveSheet,
 } from "@/lib/active-trader/atLadderScroll";
@@ -1411,11 +1412,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     const el = ladderScrollRef.current;
     const cur = scrollInputRef.current;
     if (!el || cur.spotStrike == null) return;
-    const idx = cur.ladderStrikes.indexOf(cur.spotStrike);
-    if (idx < 0) return;
+    const row = el.querySelector<HTMLElement>(`[data-at-strike="${cur.spotStrike}"]`);
+    if (!row) return;
     armProgrammaticScroll();
-    el.scrollTo({ top: atLadderScrollTopForRow(idx, readViewport(el)), behavior: "smooth" });
-  }, [readViewport, armProgrammaticScroll]);
+    scrollRowToViewportCenter(el, row, { bottomInsetPx: cur.sheetPad, behavior: "auto" });
+    requestAnimationFrame(() => measureLadderRef.current?.());
+  }, [armProgrammaticScroll]);
 
   const upArmedRef = useRef(true);
   const downArmedRef = useRef(true);
@@ -1456,9 +1458,12 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       const direction = viewport.scrollTop - lastScrollTop;
       lastScrollTop = viewport.scrollTop;
 
-      const spotIdx = cur.spotStrike != null ? strikes.indexOf(cur.spotStrike) : -1;
+      const spotRow =
+        cur.spotStrike != null
+          ? el.querySelector<HTMLElement>(`[data-at-strike="${cur.spotStrike}"]`)
+          : null;
       setSpotOutOfView(
-        spotIdx >= 0 && Math.abs(atLadderRowOffsetFromBand(spotIdx, viewport)) > 56,
+        spotRow != null && rowOffViewportCenter(el, spotRow, 56, cur.sheetPad),
       );
 
       const range = atLadderVisibleRowRange({ ...viewport, viewportPx: el.clientHeight });
