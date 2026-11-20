@@ -20,44 +20,92 @@ function nearestStrikeRow(
   return best;
 }
 
+/** Center of the open band between sticky top chrome and a bottom sheet. */
+export function viewportBandCenter(viewportH: number, topInsetPx = 0, bottomInsetPx = 0): number {
+  const top = Math.min(Math.max(0, topInsetPx), Math.max(0, viewportH - 1));
+  const bottom = Math.min(viewportH, Math.max(top + 1, viewportH - Math.max(0, bottomInsetPx)));
+  return (top + bottom) / 2;
+}
+
+/** Height of the chain's sticky calls / strike header stack. */
+export function chainStickyTopInset(container: HTMLElement): number {
+  let height = 0;
+  for (const el of container.querySelectorAll<HTMLElement>("[data-chain-sticky-bar]")) {
+    height += el.offsetHeight;
+  }
+  return height;
+}
+
 /**
- * Scroll so `rowEl` is vertically centered in the scrollport above `bottomInsetPx`
- * (e.g. order sheet). Uses instant scroll by default — accurate recenter, not smooth drift.
+ * Scroll so `rowEl` is vertically centered in the open band between `topInsetPx`
+ * (sticky headers) and `bottomInsetPx` (order sheet).
+ *
+ * A short book cannot scroll spot down onto that line. The optional spacers add
+ * room above or below the strikes so spot can still land on center.
+ * Instant by default — accurate recenter, not smooth drift.
  */
 export function scrollRowToViewportCenter(
   container: HTMLElement | null,
   rowEl: HTMLElement | null,
-  opts?: { bottomInsetPx?: number; behavior?: ScrollBehavior },
+  opts?: {
+    bottomInsetPx?: number;
+    topInsetPx?: number;
+    behavior?: ScrollBehavior;
+    topSpacer?: HTMLElement | null;
+    bottomSpacer?: HTMLElement | null;
+  },
 ): void {
   if (!container || !rowEl) return;
   const bottomInsetPx = opts?.bottomInsetPx ?? 0;
+  const topInsetPx = opts?.topInsetPx ?? 0;
   const behavior = opts?.behavior ?? "auto";
   const viewportH = container.clientHeight;
-  const effectiveH = Math.max(1, viewportH - bottomInsetPx);
-  const cRect = container.getBoundingClientRect();
-  const tRect = rowEl.getBoundingClientRect();
-  const rowCenterInViewport = tRect.top + tRect.height / 2 - cRect.top;
-  const targetCenter = effectiveH / 2;
-  const delta = rowCenterInViewport - targetCenter;
+  if (viewportH <= 0) return;
+  const targetCenter = viewportBandCenter(viewportH, topInsetPx, bottomInsetPx);
+  const centerInView = () => {
+    const cRect = container.getBoundingClientRect();
+    const tRect = rowEl.getBoundingClientRect();
+    return tRect.top + tRect.height / 2 - cRect.top;
+  };
+  if (Math.abs(centerInView() - targetCenter) <= 1) return;
+
+  const topSpacer = opts?.topSpacer ?? null;
+  const bottomSpacer = opts?.bottomSpacer ?? null;
+  if (topSpacer) topSpacer.style.height = "0px";
+  if (bottomSpacer) bottomSpacer.style.height = "0px";
+
+  const desired = centerInView() + container.scrollTop - targetCenter;
+  if (desired < -1 && topSpacer) {
+    topSpacer.style.height = `${Math.ceil(-desired)}px`;
+    container.scrollTop = 0;
+    return;
+  }
   const maxScroll = Math.max(0, container.scrollHeight - viewportH);
-  const next = Math.min(maxScroll, Math.max(0, container.scrollTop + delta));
+  if (desired > maxScroll + 1 && bottomSpacer) {
+    bottomSpacer.style.height = `${Math.ceil(desired - maxScroll)}px`;
+    void container.scrollHeight;
+    container.scrollTop = desired;
+    return;
+  }
+  const next = Math.min(maxScroll, Math.max(0, desired));
   if (behavior === "smooth") container.scrollTo({ top: next, behavior: "smooth" });
   else container.scrollTop = next;
 }
 
-/** True when `rowEl` is not centered in the visible band above `bottomInsetPx`. */
+/** True when `rowEl` is not centered in the open band. */
 export function rowOffViewportCenter(
   container: HTMLElement | null,
   rowEl: HTMLElement | null,
   tolerancePx = 56,
   bottomInsetPx = 0,
+  topInsetPx = 0,
 ): boolean {
   if (!container || !rowEl) return false;
-  const effectiveH = Math.max(1, container.clientHeight - bottomInsetPx);
+  const targetCenter = viewportBandCenter(container.clientHeight, topInsetPx, bottomInsetPx);
   const cRect = container.getBoundingClientRect();
   const tRect = rowEl.getBoundingClientRect();
   const rowCenterInViewport = tRect.top + tRect.height / 2 - cRect.top;
-  return Math.abs(rowCenterInViewport - effectiveH / 2) > tolerancePx;
+  return Math.abs(rowCenterInViewport - targetCenter) > tolerancePx;
 }
 
 /** Scroll a strike-keyed viewport so the row nearest underlying is centered on spot. */
@@ -105,15 +153,23 @@ export function resolveChainAtmRow(
   return nearestStrikeRow(container, underlyingPrice, "data-chain-strike");
 }
 
-/** Scroll the options chain so the ATM / spot strike row is vertically centered. */
+/** Scroll the options chain so the ATM / spot strike row is centered in the chain body. */
 export function scrollChainViewportToAtm(
   container: HTMLElement | null,
   underlyingPrice: number | null,
   bottomInsetPx = 0,
   behavior: ScrollBehavior = "auto",
 ): void {
+  if (!container) return;
   const row = resolveChainAtmRow(container, underlyingPrice);
-  scrollRowToViewportCenter(container, row, { bottomInsetPx, behavior });
+  if (!row) return;
+  scrollRowToViewportCenter(container, row, {
+    bottomInsetPx,
+    topInsetPx: chainStickyTopInset(container),
+    behavior,
+    topSpacer: container.querySelector<HTMLElement>('[data-chain-center-spacer="top"]'),
+    bottomSpacer: container.querySelector<HTMLElement>('[data-chain-center-spacer="bottom"]'),
+  });
 }
 
 /** True when the chain ATM row is outside the centered band (show Recenter). */
@@ -123,9 +179,16 @@ export function chainAtmRowOffCenter(
   tolerancePx = 56,
   bottomInsetPx = 0,
 ): boolean {
+  if (!container) return false;
   const row = resolveChainAtmRow(container, underlyingPrice);
   if (!row) return false;
-  return rowOffViewportCenter(container, row, tolerancePx, bottomInsetPx);
+  return rowOffViewportCenter(
+    container,
+    row,
+    tolerancePx,
+    bottomInsetPx,
+    chainStickyTopInset(container),
+  );
 }
 
 /** Scroll the ladder body so the spot line (or nearest strike) is vertically centered. */

@@ -1356,7 +1356,7 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    marketsMobileShellLock || contextTab === "newsChat"
+                    marketsMobileShellLock || contextTab === "newsChat" || contextTab === "options"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }
@@ -1440,7 +1440,7 @@ export default function TerminalPage() {
                   </div>
                   <div
                     className={
-                      contextTab === "newsChat" || (contextTab === "options" && atSubViewActive)
+                      contextTab === "newsChat" || contextTab === "options"
                         ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                         : "flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-visible"
                     }
@@ -1491,7 +1491,7 @@ export default function TerminalPage() {
             } ${
               activeBottom === "dashboard" ||
               mobileTabUsesInnerScroll ||
-              (activeBottom === "markets" && contextTab === "newsChat")
+              (activeBottom === "markets" && (contextTab === "newsChat" || contextTab === "options"))
                 ? "overflow-hidden"
                 : "overflow-y-auto"
             }`}
@@ -1517,7 +1517,7 @@ export default function TerminalPage() {
                 </div>
                 <div
                   className={
-                    marketsMobileShellLock || contextTab === "newsChat"
+                    marketsMobileShellLock || contextTab === "newsChat" || contextTab === "options"
                       ? "flex min-h-0 flex-1 flex-col overflow-hidden"
                       : "flex min-h-0 flex-1 flex-col overflow-visible"
                   }

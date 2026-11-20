@@ -7,6 +7,7 @@ import {
   atLadderScrollShiftForRows,
   atLadderScrollTopForRow,
   atLadderVisibleRowRange,
+  chainAtmRowOffCenter,
   resolveChainAtmRow,
   scrollChainViewportToAtm,
 } from "@/lib/active-trader/atLadderScroll";
@@ -117,6 +118,73 @@ describe("options chain ATM recenter", () => {
     atm.appendChild(spot);
     container.appendChild(atm);
     scrollChainViewportToAtm(container, 5000, 0, "auto");
-    expect(scrollTop).toBeGreaterThan(0);
+    // Row center is 819px; the 400px pane centers it at 200, so scroll by 619.
+    expect(scrollTop).toBe(619);
+  });
+
+  it("pads above a short book so spot can sit on the center line", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientHeight", { value: 400, configurable: true });
+    let scrollTop = 0;
+    Object.defineProperty(container, "scrollTop", {
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(container, "scrollHeight", { value: 280, configurable: true });
+    container.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, width: 320, height: 400, bottom: 400, right: 320, x: 0, y: 0, toJSON: () => ({}) });
+    const topSpacer = document.createElement("div");
+    topSpacer.setAttribute("data-chain-center-spacer", "top");
+    const bottomSpacer = document.createElement("div");
+    bottomSpacer.setAttribute("data-chain-center-spacer", "bottom");
+    const atm = document.createElement("div");
+    atm.setAttribute("data-chain-strike", "100");
+    atm.setAttribute("data-chain-strike-rail", "");
+    atm.getBoundingClientRect = () =>
+      ({ top: 40, left: 0, width: 80, height: 38, bottom: 78, right: 80, x: 0, y: 40, toJSON: () => ({}) });
+    const spot = document.createElement("span");
+    spot.setAttribute("data-chain-spot-strike", "1");
+    atm.appendChild(spot);
+    container.append(topSpacer, atm, bottomSpacer);
+    scrollChainViewportToAtm(container, 100, 0, "auto");
+    expect(scrollTop).toBe(0);
+    expect(topSpacer.style.height).toBe("141px");
+    expect(bottomSpacer.style.height).toBe("0px");
+  });
+
+  it("centers the spot row in the body under the sticky chain header", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientHeight", { value: 400, configurable: true });
+    let scrollTop = 0;
+    Object.defineProperty(container, "scrollTop", {
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(container, "scrollHeight", { value: 4000, configurable: true });
+    container.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, width: 320, height: 400, bottom: 400, right: 320, x: 0, y: 0, toJSON: () => ({}) });
+    const header = document.createElement("div");
+    header.setAttribute("data-chain-sticky-bar", "");
+    Object.defineProperty(header, "offsetHeight", { value: 80 });
+    const atm = document.createElement("div");
+    atm.setAttribute("data-chain-strike", "5000");
+    atm.setAttribute("data-chain-strike-rail", "");
+    atm.getBoundingClientRect = () =>
+      ({ top: 284, left: 0, width: 80, height: 32, bottom: 316, right: 80, x: 0, y: 284, toJSON: () => ({}) });
+    const spot = document.createElement("span");
+    spot.setAttribute("data-chain-spot-strike", "1");
+    atm.appendChild(spot);
+    container.append(header, atm);
+    // Row center is 300. Under an 80px header the body center is 240 (60px away).
+    // The full pane center is 200 (100px away), which would still count as off.
+    expect(chainAtmRowOffCenter(container, 5000, 70, 0)).toBe(false);
+    scrollChainViewportToAtm(container, 5000, 0, "auto");
+    expect(scrollTop).toBe(60);
   });
 });

@@ -1460,6 +1460,7 @@ function OptionsChainHeader({
   return (
     <>
       <div
+        data-chain-sticky-bar=""
         style={{
           display: "flex",
           height: HEADER_H,
@@ -1542,6 +1543,7 @@ function OptionsChainHeader({
 
       {showColumnHeader && (
         <div
+          data-chain-sticky-bar=""
           className="at-ladder-num"
           style={{
             display: "flex",
@@ -2165,7 +2167,7 @@ export function OptionsTab({
 
   const [chainSpotOffCenter, setChainSpotOffCenter] = useState(false);
 
-  // Recenter on a new ticker, a new strike count, or a fresh visit to the chain.
+  // Open a ticker or strike count with spot in the center of the chain body.
   // Once the user scrolls or picks a strike on that view, leave their place alone.
   const chainViewKey = `${symbol}|${strikeCount}`;
   const chainViewKeyRef = useRef(chainViewKey);
@@ -2214,6 +2216,8 @@ export function OptionsTab({
 
   useLayoutEffect(() => {
     if (optionsSubView !== "chain") return;
+    const root = chainScrollRef.current;
+    if (!root) return;
     let cancelled = false;
     let frames = 0;
     let raf = 0;
@@ -2233,24 +2237,34 @@ export function OptionsTab({
         }
         return;
       }
-      if (!chainAtmRowOffCenter(el, underlyingPrice, 56, chainSheetPad)) return;
+      // Always land on the center line. A 56px "close enough" skip left spot
+      // sitting in the middle of the pane instead of on the center.
       scrollChainViewportToAtm(el, underlyingPrice, chainSheetPad, "auto");
       raf = requestAnimationFrame(() => {
         if (cancelled || chainUserOwnedKeyRef.current === chainViewKey) return;
         const node = chainScrollRef.current;
-        if (!node || underlyingPrice == null) return;
-        if (chainAtmRowOffCenter(node, underlyingPrice, 56, chainSheetPad)) {
-          scrollChainViewportToAtm(node, underlyingPrice, chainSheetPad, "auto");
-        }
+        if (!node || underlyingPrice == null || node.clientHeight <= 0) return;
+        scrollChainViewportToAtm(node, underlyingPrice, chainSheetPad, "auto");
         measureChainSpot();
       });
     };
     attempt();
+    // jsdom and a few embedded webviews have no ResizeObserver. The frame
+    // retries above still center once the pane has a height.
+    const ro = typeof ResizeObserver !== "undefined"
+      ? new ResizeObserver(() => {
+          frames = 0;
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(attempt);
+        })
+      : null;
+    ro?.observe(root);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
+      ro?.disconnect();
     };
-  }, [chainCenterSignal]);
+  }, [chainCenterSignal, chainSheetPad]);
 
   useEffect(() => {
     if (optionsSubView !== "chain") {
@@ -2922,7 +2936,7 @@ export function OptionsTab({
   return (
     <div
       style={{ background: BG }}
-      className="relative flex flex-1 min-h-0 flex-col overflow-hidden"
+      className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden"
     >
       {optionsSubView === "at" && (
         <ActiveTraderView
@@ -2955,13 +2969,13 @@ export function OptionsTab({
       {optionsSubView === "chain" && (
       <>
       {!isFuturesSymbol && (
-      <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
-      <div className="relative flex-1 min-h-0 min-w-0">
+      <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="relative min-h-0 min-w-0 flex-1">
       <div
         ref={chainScrollRef}
         data-options-chain-scroll
         data-options-chain-selected-expiration={atExpiration ?? undefined}
-        className="relative h-full min-h-0 overflow-y-auto overscroll-y-none"
+        className="absolute inset-0 overflow-y-auto overscroll-y-none"
         style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >
         <OptionsChainHeader
@@ -3007,6 +3021,7 @@ export function OptionsTab({
             </Select>
           )}
         />
+        <div data-chain-center-spacer="top" aria-hidden="true" />
         {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -3099,6 +3114,7 @@ export function OptionsTab({
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>NO OPTIONS DATA FOR THIS RANGE</span>
           </div>
         )}
+        <div data-chain-center-spacer="bottom" aria-hidden="true" />
       </div>
       <SpotRecenterPill
         visible={!!hasData && chainSpotOffCenter}
