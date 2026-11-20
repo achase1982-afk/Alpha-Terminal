@@ -1,8 +1,8 @@
 /** Minimal shape for pickers — matches OptionsTab `ExpirationGroup` / AT chrome rows. */
 export type ExpirationDteRow = { expiration: string; dte: number };
 
-function isTradableDte(dte: number, _nowMs: number): boolean {
-  return dte >= 0;
+function isTradableDte(_dte: number, _nowMs: number): boolean {
+  return true;
 }
 
 /** Nearest unexpired session (groups must be sorted by dte ascending). */

@@ -1,4 +1,3 @@
-import { formatQuoteAsOfEt } from "./chainQuoteSession.js";
 
 export type QuoteSideState = "ok" | "crossed" | "incomplete";
 
@@ -41,12 +40,10 @@ export function chainQuoteReasonLabel(state: ChainQuoteUiState): string {
 export function chainDisplayQuoteState(
   bid: number | null | undefined,
   ask: number | null | undefined,
-  rxMs: number | null | undefined,
-  nowMs = Date.now(),
-  staleAfterMs = CHAIN_QUOTE_FRESH_MS,
+  _rxMs?: number | null,
+  _nowMs?: number,
+  _staleAfterMs?: number,
 ): QuoteSideState | "stale" {
-  if (rxMs == null || !Number.isFinite(rxMs) || rxMs <= 0) return "stale";
-  if (nowMs - rxMs > staleAfterMs) return "stale";
   if (bid == null || ask == null || !Number.isFinite(bid) || !Number.isFinite(ask)) return "incomplete";
   if (bid <= 0 || ask <= 0) return "incomplete";
   if (bid > ask) return "crossed";
@@ -72,8 +69,6 @@ export function resolveChainQuotePresentation(input: {
   dimmed: boolean;
   locked: boolean;
 } {
-  const nowMs = input.nowMs ?? Date.now();
-  const liveFreshMs = input.liveFreshMs ?? CHAIN_QUOTE_FRESH_MS;
   const side = quoteSideState(input.bid, input.ask);
   const showBid =
     input.bid != null && Number.isFinite(input.bid) && input.bid >= 0
@@ -101,22 +96,6 @@ export function resolveChainQuotePresentation(input: {
   const bid = input.bid!;
   const ask = input.ask!;
   const locked = isLockedTwoSidedQuote(bid, ask);
-  const qt = input.quoteTimeMs;
-  const staleLive = qt != null && Number.isFinite(qt) && qt > 0 && nowMs - qt > liveFreshMs;
-
-  if (staleLive) {
-    return {
-      displayState: "stale",
-      tapable: true,
-      bidTapable: true,
-      askTapable: true,
-      showBid: bid,
-      showAsk: ask,
-      asOfLabel: qt != null && qt > 0 ? formatQuoteAsOfEt(qt) : null,
-      dimmed: true,
-      locked,
-    };
-  }
   return {
     displayState: "ok",
     tapable: true,

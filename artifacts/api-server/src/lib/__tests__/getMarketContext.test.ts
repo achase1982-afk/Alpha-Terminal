@@ -16,10 +16,10 @@ function etInstant(
 }
 
 describe("getMarketContext", () => {
-  it("resolves PREMARKET at 7:54 AM ET with optionsLive false", () => {
+  it("resolves PREMARKET at 7:54 AM ET with optionsLive always true", () => {
     const ctx = getMarketContext(etInstant(2026, 5, 21, 7, 54));
     expect(ctx.session).toBe("PREMARKET");
-    expect(ctx.optionsLive).toBe(false);
+    expect(ctx.optionsLive).toBe(true);
     expect(ctx.tradingDate).toBe("2026-05-21");
     expect(ctx.localLabel).toMatch(/May 21, 2026/i);
     expect(ctx.localLabel).toMatch(/7:54/);
@@ -34,13 +34,13 @@ describe("getMarketContext", () => {
   it("resolves AFTERHOURS", () => {
     const ctx = getMarketContext(etInstant(2026, 5, 21, 17, 0));
     expect(ctx.session).toBe("AFTERHOURS");
-    expect(ctx.optionsLive).toBe(false);
+    expect(ctx.optionsLive).toBe(true);
   });
 
   it("resolves CLOSED overnight", () => {
     const ctx = getMarketContext(etInstant(2026, 5, 21, 22, 0));
     expect(ctx.session).toBe("CLOSED");
-    expect(ctx.optionsLive).toBe(false);
+    expect(ctx.optionsLive).toBe(true);
   });
 
   it("resolves CLOSED on weekend", () => {
@@ -62,10 +62,10 @@ describe("getMarketContext", () => {
     expect(edt.localLabel).toMatch(/Jul 15, 2026/i);
   });
 
-  it("early-close day: OPEN ends 13:00 ET, optionsLive false while cash OPEN", () => {
+  it("early-close day: OPEN ends 13:00 ET, optionsLive true while cash OPEN", () => {
     const open = getMarketContext(etInstant(2026, 11, 27, 12, 0));
     expect(open.session).toBe("OPEN");
-    expect(open.optionsLive).toBe(false);
+    expect(open.optionsLive).toBe(true);
     const after = getMarketContext(etInstant(2026, 11, 27, 14, 0));
     expect(after.session).toBe("AFTERHOURS");
   });

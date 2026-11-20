@@ -1,9 +1,5 @@
 import { deskAsofEtIso, deskInEtTimeWindow, deskIsNyWeekday, deskSessionDateEt } from "./deskEt.js";
-import {
-  isEquityQuoteRestSessionActive,
-  isEquityQuoteRthStaleWindow,
-  isSpxDeskProductSessionActive,
-} from "./deskFeedSessions.js";
+import { isEquityQuoteRthStaleWindow } from "./deskFeedSessions.js";
 import { deskReadStreamerConnected, deskReadStreamerStatus } from "./deskSchwabStreamerBridge.js";
 import { deskCoercePollReceiptTs } from "./deskFeedTimestamp.js";
 import {
@@ -145,20 +141,9 @@ export function deskStaleAfterMs(feed: DeskFeedId, now = Date.now()): number {
   }
 }
 
-function feedInSession(feed: DeskFeedId, now = new Date()): boolean {
-  switch (feed) {
-    case "schwab_streamer":
-    case "schwab_chains":
-      return isSpxDeskProductSessionActive(now);
-    case "schwab_quotes_rest":
-      return isEquityQuoteRestSessionActive(now);
-    default:
-      break;
-  }
-  const win = FEED_SESSION[feed];
-  if (!win) return true;
-  if (!deskIsNyWeekday(now)) return false;
-  return deskInEtTimeWindow(win.start, win.end, now);
+/** Desk feeds are never blocked by an ET session calendar (health timestamps only). */
+function feedInSession(_feed: DeskFeedId, _now = new Date()): boolean {
+  return true;
 }
 
 export function deskSetStreamerDisabled(disabled: boolean): void {

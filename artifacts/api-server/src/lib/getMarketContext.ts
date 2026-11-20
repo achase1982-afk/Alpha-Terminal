@@ -15,7 +15,7 @@ export interface MarketContext {
   localLabel: string;
   tradingDate: string;
   session: MarketSessionLabel;
-  /** Single-name equity options: regular session 9:30–16:00 ET only (not early-close 13:00 window). */
+  /** Always true — chain/stream paths are not calendar-gated. */
   optionsLive: boolean;
 }
 
@@ -68,7 +68,7 @@ export function getMarketContext(now = new Date(), clientTimeZone = "America/New
     else if (mins >= closeMin && mins < 1200) session = "AFTERHOURS";
   }
 
-  const optionsLive = session === "OPEN" && !earlyClose;
+  const optionsLive = true;
 
   return {
     now: now.toISOString(),

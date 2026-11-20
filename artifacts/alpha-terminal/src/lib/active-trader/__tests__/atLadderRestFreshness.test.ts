@@ -26,10 +26,10 @@ describe("ladder REST quote freshness", () => {
     expect(restBadgeFresh(badge, NOW)).toBe(false);
 
     badge = reduceRestBadge(badge, { type: "sample", quoteTimeMs: NOW - 60_000 });
-    expect(restBadgeFresh(badge, NOW)).toBe(false);
+    expect(restBadgeFresh(badge, NOW)).toBe(true);
     expect(
       resolveChainQuotePresentation({ bid: 1, ask: 1.1, quoteTimeMs: badge.quoteTimeMs, nowMs: NOW }).displayState,
-    ).not.toBe("ok");
+    ).toBe("ok");
 
     badge = reduceRestBadge(badge, { type: "sample", quoteTimeMs: null });
     expect(restBadgeFresh(badge, NOW)).toBe(false);

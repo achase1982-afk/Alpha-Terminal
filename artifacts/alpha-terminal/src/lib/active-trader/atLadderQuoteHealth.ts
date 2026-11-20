@@ -39,12 +39,10 @@ export function auditNearAtmLadderQuotes(input: {
       const tick = contract.streamKey ? input.ticks[contract.streamKey] : undefined;
       const view = resolveChainDisplayQuote(contract, tick ?? null, input.chainQuoteTs, input.nowMs ?? Date.now());
       const state = view.displayState ?? "incomplete";
-      if (state === "ok") counts.ok += 1;
-      else if (state === "prior_session") counts.ok += 1;
+      if (state === "ok" || state === "prior_session" || state === "stale") counts.ok += 1;
       else if (state === "crossed") counts.crossed += 1;
-      else if (state === "stale") counts.stale += 1;
       else counts.incomplete += 1;
-      if (state !== "ok" && state !== "prior_session") {
+      if (state !== "ok" && state !== "prior_session" && state !== "stale") {
         nearAtm.push({
           strike: row.strike,
           leg,

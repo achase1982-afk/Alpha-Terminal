@@ -67,19 +67,18 @@ describe("deskFeedFreshness", () => {
     expect(row?.stale).toBe(false);
   });
 
-  it("uses session_closed outside gamma feed window", () => {
+  it("does not report session_closed outside historical gamma window", () => {
     vi.spyOn(marketCtx, "getMarketContext").mockReturnValue({
       now: "",
       timeZone: "America/New_York",
       localLabel: "",
       tradingDate: "2026-11-17",
       session: "CLOSED",
-      optionsLive: false,
+      optionsLive: true,
     });
     const feeds = buildDeskHealthFeeds(new Date("2026-11-17T08:00:00-05:00").getTime());
     const row = feeds.find((f) => f.feed === "live_gamma");
-    expect(row?.status).toBe("session_closed");
-    expect(row?.stale).toBe(false);
+    expect(row?.status).not.toBe("session_closed");
   });
 
   it("SPX streamer active during GTH morning", () => {
@@ -88,11 +87,10 @@ describe("deskFeedFreshness", () => {
     expect(row?.status).not.toBe("session_closed");
   });
 
-  it("equity quotes session_closed overnight", () => {
+  it("does not report session_closed on schwab_quotes_rest overnight", () => {
     const feeds = buildDeskHealthFeeds(new Date("2026-11-17T22:00:00-05:00").getTime());
     const row = feeds.find((f) => f.feed === "schwab_quotes_rest");
-    expect(row?.status).toBe("session_closed");
-    expect(row?.stale).toBe(false);
+    expect(row?.status).not.toBe("session_closed");
   });
 
   it("carries error status on failed feed", () => {
