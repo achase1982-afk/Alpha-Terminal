@@ -409,17 +409,17 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   return (
     <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
       <header className="cmd">
-        <div className="cmd-lead">
+        <div className="cmd-id">
           {embedded ? null : (
             <div className="brand">
               ALPHA
               <em>TERMINAL</em>
             </div>
           )}
-        </div>
-        <div className="cmd-quote cmd-quote-center" aria-label={formatDisplaySymbol("$SPX")}>
           <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
           <span className="cmd-quote-name">{quoteName}</span>
+        </div>
+        <div className="cmd-spot" aria-label={formatDisplaySymbol("$SPX")}>
           <span
             className="cmd-quote-last num"
             data-at-spot-tick={fixture ? "flat" : spotTick.side}
@@ -456,7 +456,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               scale={scale}
               histMax={histMax}
             />
-            <div className="glance-flow-sep" aria-hidden />
             <FlowSide
               compact
               name="Puts"

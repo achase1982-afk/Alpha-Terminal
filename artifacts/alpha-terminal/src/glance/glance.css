@@ -47,18 +47,29 @@
 
 .cmd {
   display: grid;
-  grid-template-columns: 1fr minmax(0, max-content) 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   min-width: 0;
+  position: relative;
 }
 
-.cmd-lead {
+.cmd-id {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: baseline;
+  gap: 12px;
   min-width: 0;
   justify-self: start;
+  grid-column: 1;
+}
+
+.cmd-spot {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 12px;
+  grid-column: 2;
+  justify-self: center;
 }
 
 .cmd-trail {
@@ -66,6 +77,7 @@
   align-items: center;
   gap: 10px;
   justify-self: end;
+  grid-column: 3;
   flex-wrap: wrap;
 }
 
@@ -213,31 +225,13 @@
   color: #f23645;
 }
 
-.cmd-quote {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px 14px;
-  min-width: 0;
-  padding: 6px 14px;
-  border: 1px solid var(--glance-border);
-  border-radius: 6px;
-  background: var(--glance-bg);
-}
-
-.cmd-quote-center {
-  grid-column: 2;
-  justify-self: center;
-  max-width: min(92vw, 1200px);
-}
-
 .cmd-quote-sym {
   color: #fff;
   font-size: 28px;
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .cmd-quote-name {
@@ -248,6 +242,9 @@
   line-height: 1.15;
   text-transform: uppercase;
   white-space: nowrap;
+  overflow: visible;
+  text-overflow: unset;
+  max-width: none;
 }
 
 .cmd-quote-last {
@@ -273,65 +270,59 @@
   min-height: 0;
   max-height: 100%;
   overflow: hidden;
-  align-items: stretch;
+  align-items: start;
 }
 
 .glance-at-col {
-  width: 100%;
-  max-width: 440px;
+  width: 440px;
+  max-width: 100%;
   min-width: 0;
-  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
+  justify-self: start;
 }
 
 .glance-at-col > .glance-ladder {
-  flex: 1 1 auto;
-  min-height: 0;
-  width: 100%;
+  flex: none;
+  height: auto;
+  width: 440px;
+  max-width: 100%;
 }
 
 .glance-flow-under {
-  flex: 0 0 auto;
+  flex: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 4px 6px 8px;
-  border-top: 1px solid var(--glance-border);
-}
-
-.glance-flow-sep {
-  height: 1px;
-  margin: 2px 12px;
-  background: var(--glance-border-mid);
+  gap: 8px;
+  width: 440px;
+  max-width: 100%;
+  padding: 6px 0 2px;
 }
 
 .flow-row-compact {
   --flow-num: 22px;
-  --flow-word: 18px;
   grid-template-rows: auto;
-  column-gap: 6px;
+  column-gap: 8px;
 }
 
-.flow-row-compact .flow-words {
-  font-size: var(--flow-word);
-}
-
+.flow-row-compact .flow-words,
 .flow-row-compact .flow-dollars {
-  font-size: var(--flow-num);
+  font-size: 22px;
 }
 
 .flow-row-compact .track {
-  height: 14px;
-  max-width: 120px;
+  height: 18px;
+  width: 72%;
   justify-self: center;
 }
 
 .glance-desk {
+  align-self: stretch;
   min-width: 0;
   min-height: 0;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -355,12 +346,15 @@
 
 .glance-ladder-scroll {
   flex: 1 1 auto;
-  min-height: 136px;
+  min-height: 0;
   overflow: auto;
 }
 
+/* 16 strike rows: the old 12-row window plus four cells. */
 .glance-at-col > .glance-ladder .glance-ladder-scroll {
-  min-height: 272px;
+  flex: none;
+  height: 544px;
+  min-height: 544px;
 }
 
 .desk-trace {
@@ -905,6 +899,20 @@
 
   .flow-row {
     min-height: 68px;
+  }
+
+  .flow-row-compact {
+    --flow-num: 22px;
+    min-height: 0;
+  }
+
+  .flow-row-compact .flow-words,
+  .flow-row-compact .flow-dollars {
+    font-size: 22px;
+  }
+
+  .flow-row-compact .track {
+    height: 18px;
   }
 
   .hist {
