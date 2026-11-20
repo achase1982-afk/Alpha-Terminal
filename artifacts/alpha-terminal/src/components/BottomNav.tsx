@@ -11,13 +11,13 @@ import {
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
-  scanner:      { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
-  markets:      { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
-  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} /> },
-  portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
-  watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
-  activeTrader: { label: "TRADER", icon: (c) => <ChartCandlestick className={c} /> },
-  insights:     { label: "INSIGHTS",  icon: (c) => <LineChart className={c} /> },
+  scanner:      { label: "Scanner",   icon: (c) => <BrainCircuit className={c} strokeWidth={2.25} /> },
+  markets:      { label: "Markets",   icon: (c) => <Activity className={c} strokeWidth={2.25} /> },
+  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} strokeWidth={2.25} /> },
+  portfolio:    { label: "Portfolio", icon: (c) => <Briefcase className={c} strokeWidth={2.25} /> },
+  watchlist:    { label: "Watchlist", icon: (c) => <ListOrdered className={c} strokeWidth={2.25} /> },
+  activeTrader: { label: "Trader",    icon: (c) => <ChartCandlestick className={c} strokeWidth={2.25} /> },
+  insights:     { label: "Insights",  icon: (c) => <LineChart className={c} strokeWidth={2.25} /> },
 };
 
 const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "insights"];
@@ -265,7 +265,7 @@ export function BottomNav({
     <nav
       ref={containerRef}
       data-bottom-nav
-      className="relative z-50 shrink-0 border-t border-zinc-800/60 bg-card px-2 pt-2"
+      className="relative z-50 shrink-0 border-t border-zinc-800/60 bg-card px-1 pt-3"
       style={{
         paddingBottom: "max(14px, env(safe-area-inset-bottom, 0px))",
         touchAction: dragging ? "none" : "manipulation",
@@ -273,7 +273,7 @@ export function BottomNav({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <div className="flex w-full items-stretch gap-1 rounded-xl bg-card p-1 ring-1 ring-inset ring-zinc-800/60">
+      <div className="flex w-full items-stretch gap-0.5 rounded-xl bg-card px-0.5 py-1.5 ring-1 ring-inset ring-zinc-800/60">
       <style>{`
         @keyframes bnav-jiggle {
           0%   { transform: rotate(0deg) translate(0, 0); }
@@ -298,6 +298,31 @@ export function BottomNav({
           background: rgba(30,30,30,0.95);
           box-shadow: 0 10px 30px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.2);
           animation: none !important;
+        }
+        .bnav-tab {
+          color: #ffffff;
+          -webkit-tap-highlight-color: transparent;
+        }
+        .bnav-tab-active {
+          color: #ffffff;
+          background: linear-gradient(180deg, #5a5a61 0%, #3c3c42 46%, #2a2a2e 100%);
+          box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.42),
+            inset 0 -2px 0 rgba(0, 0, 0, 0.45),
+            0 2px 0 #101012,
+            0 4px 8px rgba(0, 0, 0, 0.5);
+        }
+        .bnav-label {
+          display: block;
+          max-width: 100%;
+          overflow: hidden;
+          font-size: 16px;
+          font-weight: 600;
+          line-height: 1;
+          letter-spacing: -0.03em;
+          color: #ffffff;
+          text-align: center;
+          white-space: nowrap;
         }
       `}</style>
       {displayOrder.map((tabId, i) => {
@@ -333,10 +358,8 @@ export function BottomNav({
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
-              "relative flex min-h-[50px] w-full flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 min-w-0 select-none transition-[color,background-color,box-shadow] duration-150",
-              isActive
-                ? "bg-zinc-800/90 text-primary shadow-[inset_0_0_0_1px_rgba(255,184,0,0.22)]"
-                : "text-muted-foreground hover:text-zinc-300",
+              "bnav-tab relative flex min-h-[60px] w-full flex-col items-center justify-center gap-1 rounded-[10px] px-0 py-1.5 min-w-0 select-none",
+              isActive ? "bnav-tab-active" : "",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
@@ -350,7 +373,7 @@ export function BottomNav({
             }
             aria-current={isActive ? "page" : undefined}
           >
-            {def.icon("h-5 w-5 shrink-0")}
+            {def.icon("h-7 w-7 shrink-0 text-white")}
             {showStrategistBadge && (
               <span
                 className={badgeIsRunning ? "animate-pulse" : ""}
@@ -377,9 +400,7 @@ export function BottomNav({
                 {showBadgeNumber ? badgeNumber : ""}
               </span>
             )}
-            <span className="max-w-full truncate text-center text-[8.5px] font-mono font-bold uppercase tracking-wide leading-none">
-              {def.label}
-            </span>
+            <span className="bnav-label">{def.label}</span>
           </button>
           </div>
         );
