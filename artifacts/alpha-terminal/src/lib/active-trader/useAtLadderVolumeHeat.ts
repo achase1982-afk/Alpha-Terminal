@@ -14,7 +14,6 @@ import {
   ladderVolumeHeatFixtureSamples,
   type AtLadderVolumeHeatFixtureScene,
 } from "./atLadderVolumeHeatFixture";
-import { equityOptionsSessionEnded, equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { heatSampleLightsBadge, resolveHeatSampleMs } from "./atLadderHeatSample";
 import {
   reduceRestBadge,
@@ -310,9 +309,8 @@ export function useAtLadderVolumeHeat(input: {
 
     if (mode === "stream") {
       const rx = streamRxRef.current;
-      const sessionOpen = equityOptionsSessionOpen(now);
-      const wsFresh = wsSampleFresh(rx, now) && sessionOpen;
-      const restFresh = restBadgeFresh(restBadgeRef.current, now, sessionOpen);
+      const wsFresh = wsSampleFresh(rx, now);
+      const restFresh = restBadgeFresh(restBadgeRef.current, now);
       const usingRest = !wsFresh && restFresh;
       const quoteFresh = wsFresh || restFresh;
       const sourceFresh = quoteFresh && heatSampleLightsBadge(lastSourceRxMs, now);
@@ -396,7 +394,7 @@ export function useAtLadderVolumeHeat(input: {
       const engine = engineRef.current!;
       const now = Date.now();
       engine.setNowMs(now);
-      engine.setVolumeMode(equityOptionsSessionEnded(now) ? "session" : "rolling");
+      engine.setVolumeMode("rolling");
       publishAtLadderHeat(heatStore, engine.snapshot(keys));
       syncSource();
     };

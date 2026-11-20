@@ -1,5 +1,3 @@
-import { equityOptionsSessionOpen } from "@workspace/order-ticket-math";
-
 /** Same window the ladder uses for a live quote. */
 export const LADDER_QUOTE_FRESH_MS = 12_000;
 
@@ -18,15 +16,11 @@ export function upstreamQuoteTimeMs(raw: number | null | undefined): number | nu
 }
 
 /**
- * A quote is eligible only when the session is open and the exchange timestamp
- * is inside the live window. Receipt time is not a quote time.
+ * A quote is eligible when the exchange timestamp is inside the live window.
+ * Receipt time is not a quote time.
  */
-export function restQuoteEligible(
-  quoteTimeMs: number | null,
-  nowMs: number,
-  sessionOpen = equityOptionsSessionOpen(nowMs),
-): boolean {
-  if (!sessionOpen || quoteTimeMs == null) return false;
+export function restQuoteEligible(quoteTimeMs: number | null, nowMs: number): boolean {
+  if (quoteTimeMs == null) return false;
   const age = nowMs - quoteTimeMs;
   return age >= 0 && age <= LADDER_QUOTE_FRESH_MS;
 }
@@ -44,6 +38,6 @@ export function reduceRestBadge(prev: RestBadge, poll: RestPollResult): RestBadg
   return { quoteTimeMs: poll.quoteTimeMs };
 }
 
-export function restBadgeFresh(badge: RestBadge, nowMs: number, sessionOpen = equityOptionsSessionOpen(nowMs)): boolean {
-  return restQuoteEligible(badge.quoteTimeMs, nowMs, sessionOpen);
+export function restBadgeFresh(badge: RestBadge, nowMs: number): boolean {
+  return restQuoteEligible(badge.quoteTimeMs, nowMs);
 }

@@ -15,18 +15,14 @@ const OPEN = [
 
 describe("flow session meta", () => {
   const beforeOpen = Date.parse("2026-11-18T12:00:00.000Z");
-  const duringGap = Date.parse("2026-11-18T14:27:00.000Z");
 
-  it("follows the options session and ignores a cash-window session_closed row", () => {
+  it("does not latch sessionClosed from the equity-options calendar", () => {
+    expect(flowSessionClosed(OPEN, beforeOpen)).toBe(false);
+    expect(flowSessionClosed(CLOSED, beforeOpen)).toBe(false);
+
     const state: FlowMetaState = { sessionClosed: null };
     const first = takeFlowMetaUpdate(state, "SPX", OPEN, beforeOpen);
-    expect(first).toContain('"sessionClosed":true');
-    expect(flowSessionClosed(OPEN, beforeOpen)).toBe(true);
+    expect(first).toContain('"sessionClosed":false');
     expect(takeFlowMetaUpdate(state, "SPX", OPEN, beforeOpen)).toBeNull();
-
-    const reopened = takeFlowMetaUpdate(state, "SPX", CLOSED, duringGap);
-    expect(reopened).toContain('"sessionClosed":false');
-    expect(flowSessionClosed(CLOSED, duringGap)).toBe(false);
-    expect(takeFlowMetaUpdate(state, "SPX", CLOSED, duringGap)).toBeNull();
   });
 });

@@ -114,11 +114,10 @@ export function equityOptionsClosedPill(nowMs: number): string {
   return "Options closed";
 }
 
-/** Schwab quoteTimeInLong is from a prior options session (carryover close). */
-export function isCarryoverOptionQuote(quoteTimeMs: number | null | undefined, nowMs: number): boolean {
+/** @deprecated Session calendar no longer gates live quotes; retained for callers/tests. */
+export function isCarryoverOptionQuote(quoteTimeMs: number | null | undefined, _nowMs: number): boolean {
   if (quoteTimeMs == null || !Number.isFinite(quoteTimeMs) || quoteTimeMs <= 0) return false;
-  if (!equityOptionsSessionOpen(nowMs)) return true;
-  return quoteTimeMs < equityOptionsGthOpenMs(nowMs);
+  return false;
 }
 
 export function formatQuoteAsOfEt(quoteTimeMs: number): string {

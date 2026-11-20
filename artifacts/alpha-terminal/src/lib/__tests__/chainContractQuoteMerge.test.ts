@@ -58,7 +58,7 @@ describe("mergeChainContractWithStream", () => {
     expect(fixed.ask).toBe(1);
   });
 
-  it("shows prior close dimmed when stream is crossed but REST is valid", () => {
+  it("prefers REST when stream is crossed even with an old quote time", () => {
     const gth = Date.now();
     const prior = gth - 20 * 3_600_000;
     const fixed = resolveChainDisplayQuote(
@@ -67,7 +67,7 @@ describe("mergeChainContractWithStream", () => {
       gth,
       gth + 45 * 60_000,
     );
-    expect(fixed.displayState).toBe("prior_session");
+    expect(fixed.displayState).toBe("stale");
     expect(fixed.bid).toBeCloseTo(5.05, 5);
     expect(fixed.asOfLabel).toContain("as of");
     expect(fixed.dimmed).toBe(true);

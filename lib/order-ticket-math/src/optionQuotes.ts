@@ -1,4 +1,4 @@
-import { formatQuoteAsOfEt, isCarryoverOptionQuote, equityOptionsSessionOpen } from "./chainQuoteSession.js";
+import { formatQuoteAsOfEt } from "./chainQuoteSession.js";
 
 export type QuoteSideState = "ok" | "crossed" | "incomplete";
 
@@ -102,14 +102,11 @@ export function resolveChainQuotePresentation(input: {
   const ask = input.ask!;
   const locked = isLockedTwoSidedQuote(bid, ask);
   const qt = input.quoteTimeMs;
-  const carryover = isCarryoverOptionQuote(qt, nowMs);
-  const sessionOpen = equityOptionsSessionOpen(nowMs);
-  const staleLive =
-    sessionOpen && qt != null && Number.isFinite(qt) && qt > 0 && nowMs - qt > liveFreshMs;
+  const staleLive = qt != null && Number.isFinite(qt) && qt > 0 && nowMs - qt > liveFreshMs;
 
-  if (carryover || staleLive || !sessionOpen) {
+  if (staleLive) {
     return {
-      displayState: staleLive && !carryover ? "stale" : "prior_session",
+      displayState: "stale",
       tapable: true,
       bidTapable: true,
       askTapable: true,

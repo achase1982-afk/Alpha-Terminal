@@ -18,10 +18,11 @@ describe("optionsExpirationPick", () => {
     expect(nearestTradableExpiration(groups, beforeClose)?.expiration).toBe("2026-11-18");
   });
 
-  it("rolls 0DTE to the next expiry at 4:15 PM ET", () => {
+  it("keeps 0DTE after the calendar close when the session gate is removed", () => {
     const afterClose = Date.parse("2026-11-18T21:15:00.000Z");
-    expect(nearestTradableExpiration(groups, afterClose)?.expiration).toBe("2026-11-25");
+    expect(nearestTradableExpiration(groups, afterClose)?.expiration).toBe("2026-11-18");
     expect(filterAtExpiryPillGroups(groups, afterClose).map((g) => g.expiration)).toEqual([
+      "2026-11-18",
       "2026-11-25",
     ]);
   });

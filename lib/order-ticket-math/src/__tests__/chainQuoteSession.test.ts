@@ -13,17 +13,17 @@ describe("chainQuoteSession", () => {
     expect(quoteSideState(0.54, 0.54)).toBe("ok");
   });
 
-  it("shows prior-session carryover with dimmed prices", () => {
+  it("dims stale quotes without a session calendar gate", () => {
     const gth = equityOptionsGthOpenMs(Date.now());
     const priorClose = gth - 18 * 3_600_000;
-    expect(isCarryoverOptionQuote(priorClose, gth + 30 * 60_000)).toBe(true);
+    expect(isCarryoverOptionQuote(priorClose, gth + 30 * 60_000)).toBe(false);
     const view = resolveChainQuotePresentation({
       bid: 5.05,
       ask: 5.45,
       quoteTimeMs: priorClose,
       nowMs: gth + 30 * 60_000,
     });
-    expect(view.displayState).toBe("prior_session");
+    expect(view.displayState).toBe("stale");
     expect(view.showBid).toBe(5.05);
     expect(view.dimmed).toBe(true);
     expect(view.tapable).toBe(true);
@@ -41,7 +41,7 @@ describe("chainQuoteSession", () => {
     });
     expect(view.locked).toBe(true);
     expect(view.showBid).toBe(0.54);
-    expect(view.displayState).toBe("prior_session");
+    expect(view.displayState).toBe("stale");
   });
 
   it("formats as-of label in Eastern time", () => {

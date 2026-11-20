@@ -49,7 +49,6 @@ describe("ladder REST quote freshness", () => {
     expect(
       resolveChainQuotePresentation({ bid: 1, ask: 1.1, quoteTimeMs: badge.quoteTimeMs, nowMs: NOW }).displayState,
     ).toBe("ok");
-    expect(restBadgeFresh(badge, NOW, false)).toBe(false);
   });
 
   it("keeps the exchange quote time off the HTTP receipt clock", () => {
