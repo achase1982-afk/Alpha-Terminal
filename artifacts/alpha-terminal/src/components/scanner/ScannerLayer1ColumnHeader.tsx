@@ -8,7 +8,7 @@ export function ScannerLayer1ColumnHeader({ id }: { id?: string }) {
       id={id}
       className={cn(
         SCANNER_LAYER1_CARD_GRID_CLASS,
-        "border-b border-zinc-900 bg-black text-[10px] font-semibold uppercase tracking-widest text-zinc-500",
+        "border-b border-zinc-900 bg-background text-[10px] font-semibold uppercase tracking-widest text-zinc-500",
       )}
       style={{ ...scannerSansFontStyle, ...scannerNumericFontStyle }}
     >

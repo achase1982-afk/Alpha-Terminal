@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 /** Scanner reference cells — true black canvas to match UAI mockup. */
 const PANEL_SURFACE =
-  "overflow-hidden rounded-lg border border-zinc-800 bg-black shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
+  "overflow-hidden rounded-lg border border-zinc-800 bg-background shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]";
 
 export function ScannerCardPanel({
   title,

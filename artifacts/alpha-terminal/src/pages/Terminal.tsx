@@ -243,7 +243,7 @@ function useDebouncedStreamLight(status: "offline" | "connecting" | "live") {
 
 function DesktopContextTabs({ activeTab, setActiveTab }: { activeTab: MarketDataTab; setActiveTab: (t: MarketDataTab) => void }) {
   return (
-    <div className="flex items-stretch border-b border-zinc-800/60 overflow-x-auto" style={{ background: "#111" }}>
+    <div className="flex items-stretch border-b border-zinc-800/60 overflow-x-auto bg-card">
       {DESKTOP_CONTEXT_TABS.map((tab) => {
         const isActive = activeTab === tab.id;
         return (
@@ -1161,7 +1161,7 @@ export default function TerminalPage() {
 
         {/* Dashboard brings its own watchlist widget — skip the fixed rail there. */}
         {isWide && activeBottom !== "dashboard" && (
-          <aside className="hidden md:flex w-[280px] xl:w-[320px] min-[1920px]:w-[360px] flex-col border-r border-card-border shrink-0 overflow-y-auto" style={{ background: "#000000" }}>
+          <aside className="hidden md:flex w-[280px] xl:w-[320px] min-[1920px]:w-[360px] flex-col border-r border-card-border bg-background shrink-0 overflow-y-auto">
             <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
           </aside>
         )}
@@ -1247,7 +1247,7 @@ export default function TerminalPage() {
             )}
 
             {activeBottom === "watchlist" && (
-              <div className="flex flex-col" style={{ minHeight: "calc(100vh - 60px)", background: "#000000" }}>
+              <div className="flex flex-col bg-background" style={{ minHeight: "calc(100vh - 60px)" }}>
                 <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
               </div>
             )}
@@ -1257,18 +1257,18 @@ export default function TerminalPage() {
             {activeBottom === "markets" ? (
               <>
                 <div className="flex flex-col flex-1 min-w-0">
-                  <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
+                  <div className="shrink-0 border-b border-zinc-800/60 bg-background">
                     <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
                   </div>
-                  <div className="shrink-0 border-b border-zinc-800/40" style={{ background: "#111" }}>
+                  <div className="shrink-0 border-b border-zinc-800/40 bg-card">
                     <ChartControls />
                   </div>
-                  <div className="flex-1 min-h-0 relative" style={{ background: "#0c0c0c" }}>
+                  <div className="flex-1 min-h-0 relative bg-background">
                     <TradingChart symbol={symbol} data={historyData?.candles || []} isLoading={chartLoading} error={historyData?.error} timedOut={historyTimedOut} tokenExpired={historyData?.error === "unauthorized"} intraday={isIntradayInterval(chartInterval)} timeframe={`${chartPeriod}/${chartInterval}`} />
                   </div>
                 </div>
 
-                <div className="flex min-h-0 w-[360px] xl:w-[420px] 2xl:w-[480px] min-[1920px]:w-[560px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60" style={{ background: "#0c0c0c" }}>
+                <div className="flex min-h-0 w-[360px] xl:w-[420px] 2xl:w-[480px] min-[1920px]:w-[560px] shrink-0 flex-col overflow-hidden border-l border-zinc-800/60 bg-background">
                   <div className="shrink-0">
                     <DesktopContextTabs activeTab={contextTab} setActiveTab={setContextTab} />
                     {contextTab === "company" && (
@@ -1329,7 +1329,7 @@ export default function TerminalPage() {
             {activeBottom === "dashboard" && <DashboardWorkspace handlers={dashboardHandlers} />}
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
-                <div className="shrink-0 border-b border-zinc-800/60" style={{ background: "#0a0a0a" }}>
+                <div className="shrink-0 border-b border-zinc-800/60 bg-background">
                   {atOptionsChrome && !atGlanceChrome ? (
                     <AtSymbolHeader compact={false} />
                   ) : atOptionsChrome ? null : (

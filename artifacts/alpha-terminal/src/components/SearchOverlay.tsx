@@ -42,7 +42,7 @@ function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash
           position: "absolute",
           bottom: 0,
           right: -4,
-          background: "#0c0c0c",
+          background: "hsl(var(--card))",
           borderRadius: "50%",
         }}
         strokeWidth={2}
@@ -270,19 +270,17 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
       />
 
       <div
-        className="fixed left-0 right-0 bottom-0 z-[901] flex flex-col transition-transform duration-300 ease-out"
+        className="fixed left-0 right-0 bottom-0 z-[901] flex flex-col bg-card transition-transform duration-300 ease-out"
         style={{
           top: 0,
           transform: isOpen ? "translateY(0)" : "translateY(100%)",
-          background: "#0c0c0c",
           // Belt and braces: while closed (or mid-close animation) the sheet
           // must never intercept taps meant for the app underneath.
           pointerEvents: isOpen ? "auto" : "none",
         }}
       >
         <div
-          className="flex items-center justify-between px-4 py-3 border-b shrink-0"
-          style={{ borderColor: "#2A2A2C", background: "#111113" }}
+          className="flex items-center justify-between px-4 py-3 border-b border-card-border bg-card shrink-0"
         >
           <span className="font-mono text-sm font-bold tracking-wider text-[#FFB800]">
             SEARCH

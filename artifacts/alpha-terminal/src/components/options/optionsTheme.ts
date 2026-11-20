@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
-/** Shared options chain / Active Trader palette (values unchanged from OptionsTab). */
+/** Shared options chain / Active Trader palette. */
 
 export const COL_W = 74;
 export const STRIKE_W = 44;
@@ -9,9 +10,9 @@ export const TOOLBAR_H = 32;
 export const HEADER_H = 32;
 export const SUB_HEADER_H = 20;
 
-export const BG = "#000000";
-export const BG_HEADER = "#060606";
-export const BG_EXP_BAR = "#070707";
+export const BG = APP_SURFACE;
+export const BG_HEADER = APP_SURFACE;
+export const BG_EXP_BAR = APP_SURFACE;
 export const BORDER = "#1a1a1a";
 export const BORDER_ROW = "#0c0c0c";
 export const GOLD = "#fbbf24";

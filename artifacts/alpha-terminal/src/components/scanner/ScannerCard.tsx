@@ -6,7 +6,7 @@ export function ScannerCard({ data, expanded, onToggle, onAction }: ScannerCardP
   const sym = data.symbol;
 
   return (
-    <article className="overflow-hidden bg-black">
+    <article className="overflow-hidden bg-background">
       <div
         role="button"
         tabIndex={0}
