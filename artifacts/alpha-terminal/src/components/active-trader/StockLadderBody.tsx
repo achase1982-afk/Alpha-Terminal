@@ -20,6 +20,7 @@ import { useEquityTapeStore } from "@/lib/active-trader/equityTapeStore";
 import {
   reduceStockTop,
   stockBestPrice,
+  stockBookSizeIntensity,
   stockBookSizeHeatColor,
   stockLadderAnchor,
   stockLadderPrices,
@@ -33,7 +34,7 @@ import {
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 import { useTerminalStore } from "@/lib/store";
-import { usePortfolioStreamStore, type PortfolioOrder } from "@/lib/portfolio-stream-store";
+import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { SchwabAccountSummary, SchwabPosition } from "@/lib/schwab-account-types";
 import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
@@ -68,7 +69,10 @@ type EquityTapeSeedResponse = {
 
 type StockInstruction = "BUY" | "SELL_SHORT" | "SELL" | "BUY_TO_COVER";
 
-type StockReportedOrder = PortfolioOrder;
+type StockReportedOrder = {
+  orderId: number;
+  status?: string;
+};
 
 const ACTIVE_ORDER_STATUSES = new Set([
   "ACCEPTED",
@@ -137,8 +141,6 @@ export function StockLadderBody({
     (s.viewSelection !== "all" ? s.viewSelection : s.defaultTradingAccountHash),
   );
   const accounts = usePortfolioStreamStore((s) => s.accounts);
-  const reportedOrders = usePortfolioStreamStore((s) => s.orders as StockReportedOrder[]);
-  const setReportedOrders = usePortfolioStreamStore((s) => s.setOrders);
 
   useEffect(() => {
     setDraft(readStockDraft(symbol));
@@ -210,28 +212,6 @@ export function StockLadderBody({
     return max;
   }, [accumShares, prices]);
 
-  const orderQtyByPrice = useMemo(() => {
-    const buy = new Map<string, number>();
-    const sell = new Map<string, number>();
-    for (const order of reportedOrders) {
-      if (!ACTIVE_ORDER_STATUSES.has((order.status ?? "").toUpperCase())) continue;
-      if (order.price == null || !(order.price > 0)) continue;
-      const leg = order.legs?.find(
-        (item) =>
-          item.symbol?.trim().toUpperCase() === upper &&
-          (item.assetType ?? "").toUpperCase() === "EQUITY",
-      );
-      if (!leg) continue;
-      const qty = order.remainingQuantity ?? 0;
-      if (!(qty > 0)) continue;
-      const key = stockPriceKey(order.price);
-      const instruction = (leg.instruction ?? "").toUpperCase();
-      const target = instruction.startsWith("BUY") ? buy : sell;
-      target.set(key, (target.get(key) ?? 0) + qty);
-    }
-    return { buy, sell };
-  }, [reportedOrders, upper]);
-
   const anchor = stockLadderAnchor(
     book,
     quote?.last ?? null,
@@ -285,14 +265,8 @@ export function StockLadderBody({
     );
     if (!res.ok) throw new Error(await responseMessage(res));
     const data = (await res.json()) as { orders?: StockReportedOrder[] };
-    const next = Array.isArray(data.orders) ? data.orders : [];
-    setReportedOrders(next);
-    return next;
-  }, [setReportedOrders, tradingAccountHash]);
-
-  useEffect(() => {
-    void fetchCurrentOrders().catch(() => {});
-  }, [fetchCurrentOrders]);
+    return Array.isArray(data.orders) ? data.orders : [];
+  }, [tradingAccountHash]);
 
   const placeStockOrder = useCallback(async (
     instruction: StockInstruction,
@@ -317,7 +291,6 @@ export function StockLadderBody({
         title: `${instruction.replaceAll("_", " ")} sent`,
         description: `${shares} ${upper}${price != null ? ` @ ${price.toFixed(2)}` : " at market"}`,
       });
-      window.setTimeout(() => void fetchCurrentOrders().catch(() => {}), 500);
     } catch (error) {
       toast({
         title: "Order rejected",
@@ -327,7 +300,7 @@ export function StockLadderBody({
     } finally {
       setActionBusy(null);
     }
-  }, [actionBusy, draft.shares, fetchCurrentOrders, tradingAccountHash, upper]);
+  }, [actionBusy, draft.shares, tradingAccountHash, upper]);
 
   const tapLimit = useCallback((side: AtStockSide, price: number) => {
     apply({ ...draft, side, limitPrice: price });
@@ -352,7 +325,6 @@ export function StockLadderBody({
       });
       if (res.ok) canceled += 1;
     }
-    await fetchCurrentOrders();
     return canceled;
   }, [fetchCurrentOrders, tradingAccountHash]);
 
@@ -514,7 +486,6 @@ export function StockLadderBody({
       >
         <span />
         <span />
-        <span />
         <span className="flex items-center justify-center">
           <AtInstrumentModePill template="stock" onToggle={onToggleTemplate} />
         </span>
@@ -535,11 +506,10 @@ export function StockLadderBody({
         }}
       >
         <span className="text-center">VOL</span>
-        <span className="text-center">ORDERS</span>
         <span className="text-center">BID SIZE</span>
         <span className="text-center" style={{ fontSize: 11 }}>PRICE</span>
         <span className="text-center">ASK SIZE</span>
-        <span className="text-center">ORDERS</span>
+        <span aria-hidden />
       </div>
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" data-at-stock-scroll>
         {prices.map((price) => {
@@ -552,8 +522,8 @@ export function StockLadderBody({
           const intensity = accumPeak > 0 ? traded / accumPeak : 0;
           const volumeHeat = stockVolumeHeatColor(intensity);
           const volumeFill = `${Math.round(intensity * 100)}%`;
-          const buyOrderQty = orderQtyByPrice.buy.get(key) ?? 0;
-          const sellOrderQty = orderQtyByPrice.sell.get(key) ?? 0;
+          const bidIntensity = stockBookSizeIntensity(bidSize, bidPeak);
+          const askIntensity = stockBookSizeIntensity(askSize, askPeak);
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
           return (
             <div
@@ -596,35 +566,34 @@ export function StockLadderBody({
                 ) : null}
                 <span className="relative z-[1]">{traded > 0 ? fmtVolume(traded) : ""}</span>
               </span>
-              <span
-                data-at-stock-buy-orders={key}
-                className="flex items-center justify-center h-full num"
-                style={{
-                  color: buyOrderQty > 0 ? "#8af0b0" : WHITE,
-                  fontSize: 11,
-                  background: "#090b0c",
-                  borderRight: `1px solid ${BORDER}`,
-                }}
-              >
-                {buyOrderQty > 0 ? fmtSize(buyOrderQty) : ""}
-              </span>
               <button
                 type="button"
                 data-at-stock-bid={key}
                 aria-label={`Buy ${draft.shares} ${upper} limit at ${key}${bidSize != null ? `; bid size ${fmtSize(bidSize)}` : ""}`}
                 disabled={!tradingAccountHash || !!actionBusy}
-                className="h-full text-center num"
+                className="relative h-full text-center num overflow-hidden"
                 style={{
                   color: WHITE,
                   fontSize: 12,
-                  background: stockBookSizeHeatColor("bid", bidSize, bidPeak),
+                  background: "#0b1711",
                   border: "none",
                   padding: "0 2px",
-                  transition: "background-color 140ms ease-out",
+                  boxShadow: bidIntensity >= 0.75 ? "inset 0 0 0 1px rgba(130,242,182,.52)" : "none",
                 }}
                 onClick={() => tapLimit("BUY", price)}
               >
-                {bidSize != null ? fmtSize(bidSize) : ""}
+                {bidIntensity > 0 ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 right-0"
+                    style={{
+                      width: `${Math.round(bidIntensity * 100)}%`,
+                      background: `linear-gradient(90deg, rgba(0,209,102,.12), ${stockBookSizeHeatColor("bid", bidSize, bidPeak)})`,
+                      transition: "width 160ms cubic-bezier(.16,1,.3,1), background-color 160ms ease-out",
+                    }}
+                  />
+                ) : null}
+                <span className="relative z-[1]">{bidSize != null ? fmtSize(bidSize) : ""}</span>
               </button>
               {/* Price bar: same gray as the options / SPX strike column (`AT_LADDER_STRIKE_BG`). */}
               <button
@@ -651,31 +620,31 @@ export function StockLadderBody({
                 data-at-stock-ask={key}
                 aria-label={`Sell short ${draft.shares} ${upper} limit at ${key}${askSize != null ? `; ask size ${fmtSize(askSize)}` : ""}`}
                 disabled={!tradingAccountHash || !!actionBusy}
-                className="h-full text-center num"
+                className="relative h-full text-center num overflow-hidden"
                 style={{
                   color: WHITE,
                   fontSize: 12,
-                  background: stockBookSizeHeatColor("ask", askSize, askPeak),
+                  background: "#1a0f12",
                   border: "none",
                   padding: "0 2px",
-                  transition: "background-color 140ms ease-out",
+                  boxShadow: askIntensity >= 0.75 ? "inset 0 0 0 1px rgba(255,146,155,.52)" : "none",
                 }}
                 onClick={() => tapLimit("SELL", price)}
               >
-                {askSize != null ? fmtSize(askSize) : ""}
+                {askIntensity > 0 ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0"
+                    style={{
+                      width: `${Math.round(askIntensity * 100)}%`,
+                      background: `linear-gradient(90deg, ${stockBookSizeHeatColor("ask", askSize, askPeak)}, rgba(242,54,69,.12))`,
+                      transition: "width 160ms cubic-bezier(.16,1,.3,1), background-color 160ms ease-out",
+                    }}
+                  />
+                ) : null}
+                <span className="relative z-[1]">{askSize != null ? fmtSize(askSize) : ""}</span>
               </button>
-              <span
-                data-at-stock-sell-orders={key}
-                className="flex items-center justify-center h-full num"
-                style={{
-                  color: sellOrderQty > 0 ? "#ff9a93" : WHITE,
-                  fontSize: 11,
-                  background: "#090b0c",
-                  borderLeft: `1px solid ${BORDER}`,
-                }}
-              >
-                {sellOrderQty > 0 ? fmtSize(sellOrderQty) : ""}
-              </span>
+              <span aria-hidden data-at-stock-balance-rail={key} style={{ background: "#050607" }} />
             </div>
           );
         })}
