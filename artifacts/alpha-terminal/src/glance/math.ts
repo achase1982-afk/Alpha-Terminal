@@ -250,15 +250,16 @@ export function formatEtMinute(ms: number | null): string | null {
 }
 
 export function formatAge(sec: number | null): string {
-  if (sec == null || !Number.isFinite(sec) || sec < 0) return "Age —";
-  if (sec < 90) return `Age ${Math.floor(sec)}s`;
+  if (sec == null || !Number.isFinite(sec) || sec < 0) return "Age unavailable";
+  const whole = Math.floor(sec);
+  if (whole < 90) return whole === 1 ? "Age 1 second" : `Age ${whole} seconds`;
   const min = Math.floor(sec / 60);
-  return `Age ${min}m`;
+  return min === 1 ? "Age 1 minute" : `Age ${min} minutes`;
 }
 
 export const SIDE_LABEL: Record<GrossSide, string> = {
-  cb: "CB",
-  cs: "CS",
-  pb: "PB",
-  ps: "PS",
+  cb: "Calls bought",
+  cs: "Calls sold",
+  pb: "Puts bought",
+  ps: "Puts sold",
 };
