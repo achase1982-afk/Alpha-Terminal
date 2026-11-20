@@ -3,15 +3,15 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: auto auto auto auto auto auto;
-  align-content: start;
-  gap: 12px;
-  padding: 0 24px;
+  grid-template-rows: auto auto minmax(168px, 1fr) auto auto auto;
+  align-content: stretch;
+  gap: 4px;
+  padding: 0 12px;
   background: #0b0d11;
   color: #f8fafc;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
-  overflow: auto;
+  overflow: hidden;
   font-size: 18px;
 }
 
@@ -74,8 +74,8 @@
 
 .cmd button,
 .cmd a {
-  min-height: 44px;
-  padding: 0 12px;
+  min-height: 36px;
+  padding: 0 10px;
   border: 1px solid #2a3342;
   border-radius: 6px;
   background: #151a22;
@@ -96,10 +96,10 @@
   display: grid;
   grid-template-columns: minmax(210px, 1.7fr) minmax(220px, 1.1fr) minmax(140px, 0.95fr) minmax(230px, 1.45fr) minmax(190px, 1.25fr);
   align-items: end;
-  gap: 12px;
+  gap: 10px;
   border-top: 1px solid #232b38;
   border-bottom: 1px solid #232b38;
-  padding: 8px 0 10px;
+  padding: 2px 0;
   min-width: 0;
 }
 
@@ -117,7 +117,7 @@
 }
 
 .spot {
-  font-size: 64px;
+  font-size: 46px;
   line-height: 0.9;
   font-weight: 500;
   color: #fff;
@@ -134,26 +134,27 @@
 }
 
 .day-pct {
-  font-size: 32px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 500;
 }
 
 .open-pts,
 .vix-px {
-  font-size: 32px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 500;
 }
 
 .vix-px {
-  font-size: 34px;
+  font-size: 30px;
 }
 
 .support {
-  margin-top: 4px;
+  margin-top: 0;
   color: #cbd5e1;
   font-size: 18px;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
@@ -183,13 +184,33 @@
 .band,
 .levels-wrap {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .band {
-  grid-template-columns: minmax(280px, 0.9fr) minmax(560px, 1.2fr);
-  align-items: start;
+  height: 100%;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.glance-ladder {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #060709;
+}
+
+.glance-ladder-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.desk-trace {
+  display: none;
 }
 
 .levels-wrap {
@@ -198,12 +219,16 @@
 
 .trace {
   width: 100%;
-  height: 112px;
+  flex: 1 1 40px;
+  height: auto;
+  min-height: 40px;
   display: block;
 }
 
 .trace-empty {
-  height: 112px;
+  flex: 1 1 40px;
+  min-height: 40px;
+  height: auto;
   color: #9aa6b8;
   font-size: 18px;
 }
@@ -214,7 +239,7 @@
   gap: 16px;
   align-items: center;
   border-top: 1px solid #232b38;
-  padding: 8px 0;
+  padding: 2px 0;
 }
 
 .pulse-cell {
@@ -235,7 +260,18 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
+}
+
+.block.move {
+  height: 100%;
+  min-height: 0;
+}
+
+.band > .block:not(.glance-ladder) {
+  align-self: stretch;
+  min-height: 0;
+  overflow: auto;
 }
 
 .block h2 {
@@ -255,7 +291,7 @@
   grid-template-columns: 72px minmax(168px, max-content) minmax(72px, 1fr) minmax(168px, max-content);
   gap: 8px;
   align-items: center;
-  min-height: 78px;
+  min-height: 44px;
 }
 
 .side-name {
@@ -265,7 +301,7 @@
 }
 
 .amt {
-  font-size: 32px;
+  font-size: 30px;
   line-height: 1;
   font-weight: 500;
   white-space: nowrap;
@@ -315,7 +351,8 @@
   grid-template-columns: repeat(15, 1fr);
   gap: 2px;
   align-items: end;
-  height: 22px;
+  height: 12px;
+  overflow: hidden;
 }
 
 .hist b {
@@ -343,7 +380,7 @@
   font-size: 18px;
   white-space: nowrap;
   font-weight: 650;
-  padding: 2px 6px;
+  padding: 0 4px;
 }
 
 .table th:first-child,
@@ -354,8 +391,9 @@
 
 .table td {
   text-align: right;
-  padding: 2px 6px;
+  padding: 0 4px;
   font-weight: 500;
+  line-height: 1.15;
   white-space: nowrap;
 }
 
@@ -391,7 +429,7 @@
 
 .windows {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 8px 14px;
   font-size: 22px;
 }
@@ -403,7 +441,7 @@
 }
 
 .chips {
-  display: flex;
+  display: none;
   flex-wrap: wrap;
   gap: 8px;
   align-items: flex-start;
@@ -437,8 +475,9 @@
 .levels th,
 .levels td {
   text-align: right;
-  padding: 4px 6px;
+  padding: 1px 4px;
   font-size: 18px;
+  line-height: 1.1;
   border-bottom: 1px solid #1c2330;
   white-space: nowrap;
 }
@@ -455,7 +494,7 @@
 }
 
 .levels td.wall-now {
-  font-size: 32px;
+  font-size: 28px;
   font-weight: 500;
   line-height: 1;
 }
@@ -502,8 +541,8 @@
 
 .rail {
   position: relative;
-  height: 200px;
-  margin-top: 4px;
+  height: 112px;
+  margin-top: 2px;
   overflow: hidden;
   border-top: 1px solid #2a3342;
   border-bottom: 1px solid #2a3342;
@@ -513,14 +552,14 @@
   position: absolute;
   left: 12px;
   right: 12px;
-  top: 100px;
+  top: 50px;
   height: 1px;
   background: #2a3342;
 }
 
 .mark {
   position: absolute;
-  top: 96px;
+  top: 46px;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -547,7 +586,7 @@
   color: #9aa6b8;
   font-size: 18px;
   white-space: nowrap;
-  min-height: 32px;
+  min-height: 22px;
 }
 
 .sheet {
@@ -600,12 +639,91 @@
   z-index: 1;
   height: auto;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
-@media (max-height: 760px) {
+@media (min-height: 960px) {
   .glance {
-    gap: 8px;
+    gap: 10px;
+    padding: 0 24px;
+  }
+
+  .cmd button,
+  .cmd a {
+    min-height: 44px;
+  }
+
+  .headline {
+    padding: 8px 0 10px;
+  }
+
+  .spot {
+    font-size: 64px;
+  }
+
+  .day-pct,
+  .open-pts {
+    font-size: 32px;
+  }
+
+  .vix-px {
+    font-size: 34px;
+  }
+
+  .support {
+    margin-top: 4px;
+  }
+
+  .amt {
+    font-size: 34px;
+  }
+
+  .flow-row {
+    min-height: 68px;
+  }
+
+  .hist {
+    height: 20px;
+  }
+
+  .desk-trace {
+    display: block;
+  }
+
+  .chips {
+    display: flex;
+  }
+
+  .trace,
+  .trace-empty {
+    min-height: 96px;
+  }
+
+  .desk-trace .trace,
+  .desk-trace .trace-empty {
+    flex: none;
+    height: 120px;
+  }
+
+  .levels td.wall-now {
+    font-size: 32px;
+  }
+
+  .rail {
+    height: 200px;
+    margin-top: 4px;
+  }
+
+  .rail .axis {
+    top: 100px;
+  }
+
+  .mark {
+    top: 96px;
+  }
+
+  .footer {
+    min-height: 28px;
   }
 }
 

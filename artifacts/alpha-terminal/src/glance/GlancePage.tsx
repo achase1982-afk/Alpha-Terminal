@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuote } from "@/hooks/useQuote";
 import { FIXTURE, fixtureHistory } from "./fixture";
+import { GlanceLadder } from "./GlanceLadder";
 import {
   assignRailLanes,
   dayMove,
@@ -56,7 +57,7 @@ function History({ values, color, max }: { values: readonly (number | null)[]; c
         v == null ? (
           <b key={i} className="gap" />
         ) : (
-          <b key={i} style={{ height: `${max > 0 ? Math.max(2, (v / max) * 22) : 2}px`, background: color }} />
+          <b key={i} style={{ height: `${max > 0 ? Math.max(2, (v / max) * 12) : 2}px`, background: color }} />
         ),
       )}
     </div>
@@ -435,17 +436,15 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute} ET</span> : null}
           </div>
           {spot != null && high != null && low != null ? (
-            <>
-              <div className="support num">{formatSignedPts(high - spot, 1)} below high</div>
-              <div className="support num">{formatSignedPts(spot - low, 1)} above low</div>
-            </>
+            <div className="support num">
+              {formatSignedPts(high - spot, 1)} high · {formatSignedPts(spot - low, 1)} low
+            </div>
           ) : null}
         </div>
         <div>
           <span className="k">VIX {fixture || live.vixAgeSec != null ? formatAge(fixture ? 12 : live.vixAgeSec) : ""}</span>
           <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
-          <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)}</div>
-          <div className="support">from open</div>
+          <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open</div>
           <div className="support num">
             L {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · H{" "}
             {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
@@ -454,51 +453,48 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </section>
 
       <div className="band">
-        <section className="block move" aria-label="SPX movement">
-          <h2>
-            <span>SPX movement</span>
-            <span>{tracePoints.length > 1 ? "Recent minutes" : "Waiting for minutes"}</span>
-          </h2>
-          <div className="windows num">
-            {(
-              [
-                ["1m", windows.m1],
-                ["5m", windows.m5],
-                ["10m", windows.m10],
-                ["15m", windows.m15],
-                ["20m", windows.m20],
-              ] as const
-            ).map(([label, pts]) => (
-              <div key={label}>
-                <span>{label}</span>
-                <b className={signedClass(pts)}>{formatSignedPts(pts, 1)}</b>
-              </div>
-            ))}
-          </div>
-          <PriceTrace points={tracePoints} />
-          <div className="chips">
-            {trendOn && trend ? (
-              <div className={`trend num ${trend.direction < 0 ? "down" : "up"}`}>
-                {trend.horizon}m {trend.direction < 0 ? "▼" : "▲"} {formatSignedPts(trend.move, 1)} pts · E {trend.efficiency.toFixed(2)}
-              </div>
-            ) : (
-              <div className="trend" style={{ color: "#9aa6b8" }}>
-                {trendOn ? "Trend —" : "Trend off"}
-              </div>
-            )}
-            <div className="pnf" style={{ visibility: pnf?.status === "tag" ? "visible" : "hidden" }}>
-              PRICE NOT FOLLOWING
-              <small className="num">
-                {pnf?.side ? `5m · ${SIDE_LABEL[pnf.side]} ${formatGross(pnf.sideUsd)} · SPX ${formatSignedPts(pnf.delta5, 1)} pts` : "5m"}
-              </small>
-            </div>
-          </div>
-        </section>
+        <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
         <section className="block" aria-label="Flow">
             <h2>
               <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : ""}</span>
               <span>{fixture ? "Age 30s · fixture" : formatAge(live.flowAgeSec)}</span>
             </h2>
+            <div className="windows num">
+              {(
+                [
+                  ["1m", windows.m1],
+                  ["5m", windows.m5],
+                  ["10m", windows.m10],
+                  ["15m", windows.m15],
+                  ["20m", windows.m20],
+                ] as const
+              ).map(([label, pts]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <b className={signedClass(pts)}>{formatSignedPts(pts, 1)}</b>
+                </div>
+              ))}
+            </div>
+            <div className="desk-trace">
+              <PriceTrace points={tracePoints} />
+            </div>
+            <div className="chips">
+              {trendOn && trend ? (
+                <div className={`trend num ${trend.direction < 0 ? "down" : "up"}`}>
+                  {trend.horizon}m {trend.direction < 0 ? "▼" : "▲"} {formatSignedPts(trend.move, 1)} pts · E {trend.efficiency.toFixed(2)}
+                </div>
+              ) : (
+                <div className="trend" style={{ color: "#9aa6b8" }}>
+                  {trendOn ? "Trend —" : "Trend off"}
+                </div>
+              )}
+              <div className="pnf" style={{ visibility: pnf?.status === "tag" ? "visible" : "hidden" }}>
+                PRICE NOT FOLLOWING
+                <small className="num">
+                  {pnf?.side ? `5m · ${SIDE_LABEL[pnf.side]} ${formatGross(pnf.sideUsd)} · SPX ${formatSignedPts(pnf.delta5, 1)} pts` : "5m"}
+                </small>
+              </div>
+            </div>
             <FlowSide name="Calls" sold={flow1.cs} bought={flow1.cb} soldHist={hist.cs} boughtHist={hist.cb} scale={scale} histMax={histMax} />
             <FlowSide name="Puts" sold={flow1.ps} bought={flow1.pb} soldHist={hist.ps} boughtHist={hist.pb} scale={scale} histMax={histMax} />
             <table className="table">
