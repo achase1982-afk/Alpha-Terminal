@@ -170,7 +170,8 @@ describe("LadderBody", () => {
     expect(flipTag.textContent).toBe("GAMMAFLIP");
     expect(flipTag.style.fontSize).toBe("7px");
     expect(flipTag.style.border).toBe("");
-    expect(flipTag.style.left).toBe("2px");
+    expect(flipTag.style.right).toBe("100%");
+    expect(flipTag.style.textAlign).toBe("right");
   });
 
   it("a quote re-renders its own contract and nothing else", () => {

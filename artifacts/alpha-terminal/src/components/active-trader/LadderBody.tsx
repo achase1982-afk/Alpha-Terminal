@@ -534,6 +534,7 @@ const ContractPair = memo(function ContractPair({
   );
 });
 
+/** Zone copy sits on the call wing, flush to the left edge of the strike-column outline (not on the strike rail). */
 function StrikeSideTag({
   marker,
   color,
@@ -551,7 +552,8 @@ function StrikeSideTag({
       data-at-strike-put-wall={marker === "put-wall" ? "" : undefined}
       className="pointer-events-none absolute z-[4]"
       style={{
-        left: 2,
+        right: "100%",
+        marginRight: 2,
         top: "50%",
         transform: "translateY(-50%)",
         color,
@@ -559,7 +561,7 @@ function StrikeSideTag({
         fontWeight: 700,
         lineHeight: 1.05,
         letterSpacing: "0.03em",
-        textAlign: "left",
+        textAlign: "right",
       }}
     >
       {lines[0]}
@@ -700,7 +702,6 @@ const LadderRowView = memo(function LadderRowView({
 
   const strikeBg = strikeColumnBackground(spotRow, gammaFlipRow, callWallRow, putWallRow);
   const strikeType = strikeRailTypography(row.strike, spotRow, callWallRow, putWallRow);
-  const tagOnFill = spotRow || callWallRow || putWallRow || gammaFlipRow;
 
   return (
     <div
@@ -788,21 +789,21 @@ const LadderRowView = memo(function LadderRowView({
         {gammaFlipRow ? (
           <StrikeSideTag
             marker="gamma-flip"
-            color={tagOnFill ? AT_SPOT_PILL_TEXT : AT_LADDER_GAMMA}
+            color={AT_LADDER_GAMMA}
             lines={["GAMMA", "FLIP"]}
           />
         ) : null}
         {callWallRow && !gammaFlipRow ? (
           <StrikeSideTag
             marker="call-wall"
-            color={tagOnFill ? AT_SPOT_PILL_TEXT : GOLD}
+            color={GOLD}
             lines={["CALL", "WALL"]}
           />
         ) : null}
         {putWallRow && !gammaFlipRow && !callWallRow ? (
           <StrikeSideTag
             marker="put-wall"
-            color={tagOnFill ? AT_SPOT_PILL_TEXT : PUT_WALL}
+            color={PUT_WALL}
             lines={["PUT", "WALL"]}
           />
         ) : null}
