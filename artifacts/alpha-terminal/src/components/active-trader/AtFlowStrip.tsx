@@ -74,10 +74,10 @@ export const AtFlowStrip = memo(function AtFlowStrip({
   const nowPs = netPremium.grossPutsSell;
   const nowNet = flowPremiumNet(nowCb, nowCs, nowPb, nowPs);
 
-  const sessCb = idx?.callBuyHr ?? 0;
-  const sessCs = idx?.callSellHr ?? 0;
-  const sessPb = idx?.putBuyHr ?? 0;
-  const sessPs = idx?.putSellHr ?? 0;
+  const sessCb = idx?.callBuyDay ?? 0;
+  const sessCs = idx?.callSellDay ?? 0;
+  const sessPb = idx?.putBuyDay ?? 0;
+  const sessPs = idx?.putSellDay ?? 0;
   const sessionNet = flowPremiumNet(sessCb, sessCs, sessPb, sessPs);
 
   const net5m = idx
@@ -103,7 +103,7 @@ export const AtFlowStrip = memo(function AtFlowStrip({
         {(
           [
             ["now", "Now"],
-            ["session", "Session"],
+            ["session", "Day"],
             ["levels", "Levels"],
           ] as const
         ).map(([id, label]) => (
@@ -129,11 +129,18 @@ export const AtFlowStrip = memo(function AtFlowStrip({
                     sessionSign === "bearish" ? "#ff7164" : sessionSign === "bullish" ? "#5df1a0" : "#a4a6aa",
                 }}
               >
-                Sess net {fmtUsd(sessionNet, dash)}
+                Day net {fmtUsd(sessionNet, dash)}
               </span>
             </div>
             <FlowSideRow side="CALL" buy={nowCb} sell={nowCs} dash={dash} />
             <FlowSideRow side="PUT" buy={nowPb} sell={nowPs} dash={dash} />
+            <div className="at-flow-strip-day" data-at-flow-day="">
+              <span>Day</span>
+              <span className="at-flow-buy">CB {fmtUsd(sessCb, dash)}</span>
+              <span className="at-flow-sell">CS {fmtUsd(sessCs, dash)}</span>
+              <span className="at-flow-buy">PB {fmtUsd(sessPb, dash)}</span>
+              <span className="at-flow-sell">PS {fmtUsd(sessPs, dash)}</span>
+            </div>
             <span className="sr-only">Window net {fmtUsd(nowNet, dash)}</span>
           </div>
         ) : null}
@@ -153,7 +160,7 @@ export const AtFlowStrip = memo(function AtFlowStrip({
               PS <b className="at-flow-sell">{fmtUsd(sessPs, dash)}</b>
             </span>
             <span style={{ gridColumn: "1 / -1", fontWeight: 600, color: WHITE }}>
-              Since open net {fmtUsd(sessionNet, dash)} · {sessionSignLabel}
+              Day net {fmtUsd(sessionNet, dash)} · {sessionSignLabel}
             </span>
             <span style={{ gridColumn: "1 / -1" }}>
               5m {fmtUsd(net5m, dash)} · 15m {fmtUsd(net15m, dash)}

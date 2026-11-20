@@ -75,6 +75,76 @@ const contractState = new Map<string, ContractFlowState>();
 const openBySym = new Map<string, OpenFlow>();
 let lastIdleFlowHeartbeatBucketMs: number | null = null;
 
+type DayBook = {
+  sessionDate: string;
+  call_buy: number;
+  call_sell: number;
+  put_buy: number;
+  put_sell: number;
+};
+
+/** Running option premium for the ET calendar day. Survives streamer reconnects. */
+const dayBook = new Map<string, DayBook>();
+
+function dayBookFor(sym: string, rxMs: number): DayBook {
+  const sessionDate = deskSessionDateEt(new Date(rxMs));
+  let book = dayBook.get(sym);
+  if (!book || book.sessionDate !== sessionDate) {
+    book = { sessionDate, call_buy: 0, call_sell: 0, put_buy: 0, put_sell: 0 };
+    dayBook.set(sym, book);
+  }
+  return book;
+}
+
+function addDayDollars(
+  sym: string,
+  field: "call_buy" | "call_sell" | "put_buy" | "put_sell",
+  dollars: number,
+  rxMs: number,
+): void {
+  if (!dollars) return;
+  dayBookFor(sym, rxMs)[field] += dollars;
+}
+
+function dayFields(sym: string, rxMs: number): {
+  day_session_date: string;
+  day_call_buy: number;
+  day_call_sell: number;
+  day_put_buy: number;
+  day_put_sell: number;
+} {
+  const book = dayBookFor(sym, rxMs);
+  return {
+    day_session_date: book.sessionDate,
+    day_call_buy: book.call_buy,
+    day_call_sell: book.call_sell,
+    day_put_buy: book.put_buy,
+    day_put_sell: book.put_sell,
+  };
+}
+
+/** Absolute day total for a subscriber that connects after prints have already accumulated. */
+export function deskLiveFlowPublishDaySnapshot(sym: string, rxMs = Date.now()): void {
+  const key = sym.trim().toUpperCase().replace(/^\$/, "") || "SPX";
+  const book = dayBook.get(key);
+  const sessionDate = book?.sessionDate ?? deskSessionDateEt(new Date(rxMs));
+  recordFrame(
+    wrapDeskLiveFlowFrame(
+      {
+        type: "flow_day",
+        sym: key,
+        session_date: sessionDate,
+        call_buy: book?.call_buy ?? 0,
+        call_sell: book?.call_sell ?? 0,
+        put_buy: book?.put_buy ?? 0,
+        put_sell: book?.put_sell ?? 0,
+      },
+      rxMs,
+      rxMs,
+    ),
+  );
+}
+
 function openFlow(sym: string): OpenFlow {
   let slot = openBySym.get(sym);
   if (!slot) {
@@ -189,6 +259,9 @@ function applyIncrementToBuckets(inc: FlowIncrement, hadL1oFrame: boolean, sym: 
   };
   const field = map[sideKey];
   if (field) slot.b1[field] += inc.dollars;
+  if (field === "call_buy" || field === "call_sell" || field === "put_buy" || field === "put_sell") {
+    addDayDollars(sym, field, inc.dollars, inc.rxMs);
+  }
   if (hadL1oFrame) slot.b1.n_l1o_updates += 1;
   slot.b1.n_increments += 1;
   slot.b1.n_contracts.add(inc.key);
@@ -227,6 +300,7 @@ function emitFlow1s(sym: string, b: Bucket1s, rxMs: number): void {
     n_contracts: b.n_contracts.size,
     src: "schwab_l1o",
     label: "Schwab L1 est.",
+    ...dayFields(sym, rxMs),
   };
   recordFrame(wrapDeskLiveFlowFrame(payload, b.bucket_ms + 999, rxMs));
 }
@@ -372,6 +446,7 @@ export function deskLiveFlowOnL1oRows(
 ): void {
   if (!deskLiveFlowL1oEnabled()) return;
   if (deskLiveFlowSessionMarkSessionDate(new Date(rxMs))) {
+    dayBook.clear();
     deskLiveFlowOnStreamerSessionReset("session_date_change");
   }
   for (const item of content) {
@@ -506,6 +581,7 @@ export function deskLiveFlowReplayL1o(
 export function deskLiveFlowResetEngineForTests(): void {
   contractState.clear();
   openBySym.clear();
+  dayBook.clear();
   lastPx = { last: null, bid: null, ask: null };
   pxWindowStartMs = 0;
   pxEmitsInWindow = 0;

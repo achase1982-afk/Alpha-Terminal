@@ -17,6 +17,22 @@ export type DeskFlow1s = DeskFlowFrameBase & {
   put_buy?: number;
   put_sell?: number;
   put_mid?: number;
+  /** Absolute running totals for the ET session date. Present when the desk is accumulating the day. */
+  day_session_date?: string;
+  day_call_buy?: number;
+  day_call_sell?: number;
+  day_put_buy?: number;
+  day_put_sell?: number;
+};
+
+/** Absolute call/put premium accumulated for the ET session date, including premarket. */
+export type DeskFlowDay = DeskFlowFrameBase & {
+  type: "flow_day";
+  session_date?: string;
+  call_buy?: number;
+  call_sell?: number;
+  put_buy?: number;
+  put_sell?: number;
 };
 
 export type DeskFlow60s = DeskFlowFrameBase & {
@@ -74,6 +90,7 @@ export type DeskPxFrame = DeskFlowFrameBase & {
 export type DeskFlowFrame =
   | DeskFlow1s
   | DeskFlow60s
+  | DeskFlowDay
   | DeskFlowHeartbeat
   | DeskTape1s
   | DeskTape60s

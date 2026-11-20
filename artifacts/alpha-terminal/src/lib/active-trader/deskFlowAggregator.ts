@@ -2,6 +2,7 @@ import type { AtGlanceMode } from "./atGlanceMode";
 import type {
   DeskFlow60s,
   DeskFlow1s,
+  DeskFlowDay,
   DeskFlowFrame,
   DeskPxFrame,
   DeskTape1s,
@@ -29,6 +30,11 @@ export type DeskIndexFlowTotals = {
   callSellHr: number;
   putBuyHr: number;
   putSellHr: number;
+  /** Running premium since the ET calendar day started, including premarket. */
+  callBuyDay: number;
+  callSellDay: number;
+  putBuyDay: number;
+  putSellDay: number;
 };
 
 export type DeskTapeTotals = {
@@ -69,6 +75,20 @@ type Flow60sBar = Pick<DeskFlow60s, "bar_start_ms" | "call_buy" | "call_sell" | 
 type Tape1sBucket = Pick<DeskTape1s, "bucket_ms" | "buy_$" | "sell_$" | "n_prints">;
 type Tape60sBar = Pick<DeskTape60s, "bar_start_ms" | "buy_$" | "sell_$" | "n_prints">;
 
+type DaySide = {
+  callBuy: number;
+  callSell: number;
+  putBuy: number;
+  putSell: number;
+};
+
+type DayBook = DaySide & {
+  sessionDate: string;
+  /** Server sent an absolute day total. Later 1s buckets must not be added on top. */
+  authoritative: boolean;
+  buckets: Map<number, DaySide>;
+};
+
 type Internal = {
   mode: AtGlanceMode;
   nowMs: number;
@@ -78,9 +98,93 @@ type Internal = {
   flow60s: Flow60sBar[];
   tape1s: Tape1sBucket[];
   tape60s: Tape60sBar[];
+  day: DayBook | null;
   livePx: DeskFlowLivePx | null;
   lastRxMs: number | null;
 };
+
+const ET_YMD = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/New_York",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/** America/New_York calendar date. Premarket prints stay on this cash-session day. */
+export function flowSessionDateEt(ms: number): string {
+  return ET_YMD.format(new Date(ms));
+}
+
+function finiteFlow(n: number | null | undefined): number {
+  return typeof n === "number" && Number.isFinite(n) ? n : 0;
+}
+
+function absoluteDay(sessionDate: string, side: DaySide): DayBook {
+  return { sessionDate, authoritative: true, buckets: new Map(), ...side };
+}
+
+function accumulateDay(prev: DayBook | null, bucketMs: number, side: DaySide): DayBook {
+  const sessionDate = flowSessionDateEt(bucketMs);
+  const base =
+    prev && !prev.authoritative && prev.sessionDate === sessionDate
+      ? prev
+      : { sessionDate, authoritative: false, buckets: new Map<number, DaySide>(), callBuy: 0, callSell: 0, putBuy: 0, putSell: 0 };
+  const prior = base.buckets.get(bucketMs);
+  const buckets = new Map(base.buckets);
+  buckets.set(bucketMs, side);
+  return {
+    sessionDate,
+    authoritative: false,
+    buckets,
+    callBuy: base.callBuy + side.callBuy - (prior?.callBuy ?? 0),
+    callSell: base.callSell + side.callSell - (prior?.callSell ?? 0),
+    putBuy: base.putBuy + side.putBuy - (prior?.putBuy ?? 0),
+    putSell: base.putSell + side.putSell - (prior?.putSell ?? 0),
+  };
+}
+
+function dayFromFlow1s(prev: DayBook | null, frame: DeskFlow1s): DayBook | null {
+  const hasAbsolute =
+    typeof frame.day_call_buy === "number" ||
+    typeof frame.day_call_sell === "number" ||
+    typeof frame.day_put_buy === "number" ||
+    typeof frame.day_put_sell === "number";
+  if (hasAbsolute) {
+    const sessionDate =
+      typeof frame.day_session_date === "string" && frame.day_session_date
+        ? frame.day_session_date
+        : flowSessionDateEt(frame.bucket_ms);
+    return absoluteDay(sessionDate, {
+      callBuy: finiteFlow(frame.day_call_buy),
+      callSell: finiteFlow(frame.day_call_sell),
+      putBuy: finiteFlow(frame.day_put_buy),
+      putSell: finiteFlow(frame.day_put_sell),
+    });
+  }
+  const sessionDate = flowSessionDateEt(frame.bucket_ms);
+  if (prev?.authoritative && prev.sessionDate === sessionDate) return prev;
+  return accumulateDay(prev, frame.bucket_ms, {
+    callBuy: finiteFlow(frame.call_buy),
+    callSell: finiteFlow(frame.call_sell),
+    putBuy: finiteFlow(frame.put_buy),
+    putSell: finiteFlow(frame.put_sell),
+  });
+}
+
+function dayFromSnapshot(frame: DeskFlowDay, rxMs: number): DayBook {
+  const sessionDate =
+    typeof frame.session_date === "string" && frame.session_date ? frame.session_date : flowSessionDateEt(rxMs);
+  return absoluteDay(sessionDate, {
+    callBuy: finiteFlow(frame.call_buy),
+    callSell: finiteFlow(frame.call_sell),
+    putBuy: finiteFlow(frame.put_buy),
+    putSell: finiteFlow(frame.put_sell),
+  });
+}
+
+function dayHasPremium(day: DayBook | null): boolean {
+  return !!day && (day.callBuy !== 0 || day.callSell !== 0 || day.putBuy !== 0 || day.putSell !== 0);
+}
 
 function sumIndexBars(bars: Flow60sBar[], field: keyof Flow60sBar): number {
   let n = 0;
@@ -196,7 +300,14 @@ export function reduceDeskFlowFrame(state: Internal, frame: DeskFlowFrame): Inte
       put_sell: f.put_sell,
     };
     next.flow1s = trimBuckets1s([...next.flow1s.filter((x) => x.bucket_ms !== f.bucket_ms), row], rx, MS_5M + MS_1M);
-    if (bucketHasFlow(row)) next.hadNonEmptyPrint = true;
+    next.day = dayFromFlow1s(state.day, f);
+    if (bucketHasFlow(row) || dayHasPremium(next.day)) next.hadNonEmptyPrint = true;
+    return next;
+  }
+
+  if (frame.type === "flow_day") {
+    next.day = dayFromSnapshot(frame as DeskFlowDay, rx);
+    if (dayHasPremium(next.day)) next.hadNonEmptyPrint = true;
     return next;
   }
 
@@ -265,32 +376,8 @@ function project(state: Internal): DeskFlowAggregate {
   else if (!hadNonEmptyPrint) connection = "no_prints";
   else connection = "live";
 
-  const m1 = sumFlow1sWindow(state.flow1s, nowMs, MS_1M);
-  const recent5 = flow60sInRange(state.flow60s, nowMs - MS_5M, nowMs + 1);
-  const recent15 = flow60sInRange(state.flow60s, nowMs - MS_15M, nowMs + 1);
-  const hrBars = flow60sInRange(state.flow60s, hourStartMs(nowMs), nowMs + MS_1M);
-
   const index: DeskIndexFlowTotals | null =
-    mode === "index"
-      ? {
-          callBuy1m: m1.call_buy ?? 0,
-          callSell1m: m1.call_sell ?? 0,
-          putBuy1m: m1.put_buy ?? 0,
-          putSell1m: m1.put_sell ?? 0,
-          callBuy5m: sumIndexBars(recent5, "call_buy"),
-          callSell5m: sumIndexBars(recent5, "call_sell"),
-          putBuy5m: sumIndexBars(recent5, "put_buy"),
-          putSell5m: sumIndexBars(recent5, "put_sell"),
-          callBuy15m: sumIndexBars(recent15, "call_buy"),
-          callSell15m: sumIndexBars(recent15, "call_sell"),
-          putBuy15m: sumIndexBars(recent15, "put_buy"),
-          putSell15m: sumIndexBars(recent15, "put_sell"),
-          callBuyHr: sumIndexBars(hrBars, "call_buy"),
-          callSellHr: sumIndexBars(hrBars, "call_sell"),
-          putBuyHr: sumIndexBars(hrBars, "put_buy"),
-          putSellHr: sumIndexBars(hrBars, "put_sell"),
-        }
-      : null;
+    mode === "index" || mode === "stock" ? buildIndexTotals(state) : null;
 
   const tape1m = sumTape1sWindow(state.tape1s, nowMs, MS_1M);
   const tape5 = tape60sInRange(state.tape60s, nowMs - MS_5M, nowMs + 1);
@@ -320,6 +407,37 @@ function project(state: Internal): DeskFlowAggregate {
   };
 }
 
+function buildIndexTotals(state: Internal): DeskIndexFlowTotals {
+  const { nowMs } = state;
+  const m1 = sumFlow1sWindow(state.flow1s, nowMs, MS_1M);
+  const recent5 = flow60sInRange(state.flow60s, nowMs - MS_5M, nowMs + 1);
+  const recent15 = flow60sInRange(state.flow60s, nowMs - MS_15M, nowMs + 1);
+  const hrBars = flow60sInRange(state.flow60s, hourStartMs(nowMs), nowMs + MS_1M);
+  const day = state.day;
+  return {
+    callBuy1m: m1.call_buy ?? 0,
+    callSell1m: m1.call_sell ?? 0,
+    putBuy1m: m1.put_buy ?? 0,
+    putSell1m: m1.put_sell ?? 0,
+    callBuy5m: sumIndexBars(recent5, "call_buy"),
+    callSell5m: sumIndexBars(recent5, "call_sell"),
+    putBuy5m: sumIndexBars(recent5, "put_buy"),
+    putSell5m: sumIndexBars(recent5, "put_sell"),
+    callBuy15m: sumIndexBars(recent15, "call_buy"),
+    callSell15m: sumIndexBars(recent15, "call_sell"),
+    putBuy15m: sumIndexBars(recent15, "put_buy"),
+    putSell15m: sumIndexBars(recent15, "put_sell"),
+    callBuyHr: sumIndexBars(hrBars, "call_buy"),
+    callSellHr: sumIndexBars(hrBars, "call_sell"),
+    putBuyHr: sumIndexBars(hrBars, "put_buy"),
+    putSellHr: sumIndexBars(hrBars, "put_sell"),
+    callBuyDay: day?.callBuy ?? 0,
+    callSellDay: day?.callSell ?? 0,
+    putBuyDay: day?.putBuy ?? 0,
+    putSellDay: day?.putSell ?? 0,
+  };
+}
+
 export function deskFlowAggregatorProject(state: Internal): DeskFlowAggregate {
   return project(state);
 }
@@ -334,6 +452,7 @@ export function createDeskFlowAggregatorInternal(mode: AtGlanceMode, nowMs = Dat
     flow60s: [],
     tape1s: [],
     tape60s: [],
+    day: null,
     livePx: null,
     lastRxMs: null,
   };

@@ -15,7 +15,7 @@ function indexSlice(i: DeskIndexFlowTotals, window: "1m" | "5m" | "hr"): string 
   if (window === "5m") {
     return indexPlain(i.callBuy5m, i.callSell5m, i.putBuy5m, i.putSell5m);
   }
-  return indexPlain(i.callBuyHr, i.callSellHr, i.putBuyHr, i.putSellHr);
+  return indexPlain(i.callBuyDay, i.callSellDay, i.putBuyDay, i.putSellDay);
 }
 
 function tapePlain(lift: number, hit: number): string {
