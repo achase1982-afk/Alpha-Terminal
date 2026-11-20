@@ -95,6 +95,7 @@ function FlowSide({
   boughtHist,
   scale,
   histMax,
+  compact = false,
 }: {
   name: string;
   sold: number | null;
@@ -103,11 +104,12 @@ function FlowSide({
   boughtHist: readonly (number | null)[];
   scale: number;
   histMax: number;
+  compact?: boolean;
 }) {
   const soldW = sold != null && scale > 0 ? Math.min(100, (sold / scale) * 100) : 0;
   const boughtW = bought != null && scale > 0 ? Math.min(100, (bought / scale) * 100) : 0;
   return (
-    <div className="flow-row">
+    <div className={compact ? "flow-row flow-row-compact" : "flow-row"}>
       <span className="flow-read buy">
         <span className="flow-words">{name} bought</span>
         <span className="flow-dollars up">{moneyOr(bought)}</span>
@@ -121,12 +123,16 @@ function FlowSide({
         <span className="flow-dollars down">{moneyOr(sold)}</span>
         <span className="flow-words">{name} sold</span>
       </span>
-      <div className="flow-hist buy">
-        <History values={boughtHist} color="#00d166" max={histMax} />
-      </div>
-      <div className="flow-hist sell">
-        <History values={soldHist} color="#f23645" max={histMax} />
-      </div>
+      {compact ? null : (
+        <>
+          <div className="flow-hist buy">
+            <History values={boughtHist} color="#00d166" max={histMax} />
+          </div>
+          <div className="flow-hist sell">
+            <History values={soldHist} color="#f23645" max={histMax} />
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -403,42 +409,66 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   return (
     <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
       <header className="cmd">
-        <div className="cmd-quote" aria-label={formatDisplaySymbol("$SPX")}>
-          <div className="cmd-quote-id">
-            <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
-            <span className="cmd-quote-name">{quoteName}</span>
-          </div>
-          <div className="cmd-quote-px">
-            <span
-              className="cmd-quote-last num"
-              data-at-spot-tick={fixture ? "flat" : spotTick.side}
-              style={{ color: fixture ? "#fff" : spotTick.color }}
-            >
-              {spot == null ? "—" : `$${formatSpot(spot)}`}
-            </span>
-            <span className="cmd-quote-chg num" style={{ color: quoteChangeColor }}>
-              {signedMoney(quoteChange)} {signedPctParen(quotePct)}
-            </span>
-          </div>
+        <div className="cmd-lead">
+          {embedded ? null : (
+            <div className="brand">
+              ALPHA
+              <em>TERMINAL</em>
+            </div>
+          )}
         </div>
-        {embedded ? null : (
-          <div className="brand">
-            ALPHA
-            <em>TERMINAL</em>
-          </div>
-        )}
-        <span className="spacer" />
-        {embedded ? null : <Link href="/">Mobile</Link>}
-        <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
-          Settings
-        </button>
-        <button type="button" onClick={() => setPanel(panel === "details" ? null : "details")}>
-          Details
-        </button>
+        <div className="cmd-quote cmd-quote-center" aria-label={formatDisplaySymbol("$SPX")}>
+          <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
+          <span className="cmd-quote-name">{quoteName}</span>
+          <span
+            className="cmd-quote-last num"
+            data-at-spot-tick={fixture ? "flat" : spotTick.side}
+            style={{ color: fixture ? "#fff" : spotTick.color }}
+          >
+            {spot == null ? "—" : `$${formatSpot(spot)}`}
+          </span>
+          <span className="cmd-quote-chg num" style={{ color: quoteChangeColor }}>
+            {signedMoney(quoteChange)} {signedPctParen(quotePct)}
+          </span>
+        </div>
+        <div className="cmd-trail">
+          {embedded ? null : <Link href="/">Mobile</Link>}
+          <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+            Settings
+          </button>
+          <button type="button" onClick={() => setPanel(panel === "details" ? null : "details")}>
+            Details
+          </button>
+        </div>
       </header>
 
       <div className="glance-body">
-        <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
+        <div className="glance-at-col">
+          <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
+          <section className="glance-flow-under" aria-label="1 minute flow">
+            <FlowSide
+              compact
+              name="Calls"
+              sold={flow1.cs}
+              bought={flow1.cb}
+              soldHist={hist.cs}
+              boughtHist={hist.cb}
+              scale={scale}
+              histMax={histMax}
+            />
+            <div className="glance-flow-sep" aria-hidden />
+            <FlowSide
+              compact
+              name="Puts"
+              sold={flow1.ps}
+              bought={flow1.pb}
+              soldHist={hist.ps}
+              boughtHist={hist.pb}
+              scale={scale}
+              histMax={histMax}
+            />
+          </section>
+        </div>
         <div className="glance-desk">
           <section className="headline" aria-label="Market headline">
             <div>
@@ -511,8 +541,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 </small>
               </div>
             </div>
-            <FlowSide name="Calls" sold={flow1.cs} bought={flow1.cb} soldHist={hist.cs} boughtHist={hist.cb} scale={scale} histMax={histMax} />
-            <FlowSide name="Puts" sold={flow1.ps} bought={flow1.pb} soldHist={hist.ps} boughtHist={hist.pb} scale={scale} histMax={histMax} />
             <table className="table">
               <thead>
                 <tr>

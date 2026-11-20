@@ -73,7 +73,7 @@ export function GlanceLadder({
   const chainParams = {
     symbol: "$SPX",
     contractType: "ALL",
-    strikeCount: 12,
+    strikeCount: 16,
     fromDate: today,
     toDate: today,
     range: "NTM",
