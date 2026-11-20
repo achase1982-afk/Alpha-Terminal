@@ -24,7 +24,7 @@ import {
 } from "@/lib/chainOrderLegInstructions";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { toast } from "@/hooks/use-toast";
-import { useTerminalStore } from "@/lib/store";
+import { useTerminalStore, type LiveQuote } from "@/lib/store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useOptionTicksForKeys } from "@/lib/useOptionTicksForKeys";
 import {
@@ -104,6 +104,36 @@ const TICKET_TICK_MS = 120;
 function fmt(n: number | null | undefined, decimals = 2): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return n.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+/** Every key a Schwab equity quote may be stored under. No session filter. */
+function equityStreamLookupKeys(symbol: string): string[] {
+  const u = symbol.trim().toUpperCase();
+  if (!u) return [];
+  const keys = new Set<string>([u]);
+  if (u.startsWith("$")) keys.add(u.slice(1));
+  else keys.add(`$${u}`);
+  if (u.includes(".")) keys.add(u.split(".").join("/"));
+  if (u.includes("/")) keys.add(u.split("/").join("."));
+  return [...keys];
+}
+
+function freshestEquityStreamQuote(
+  prices: Record<string, LiveQuote>,
+  symbol: string,
+): LiveQuote | null {
+  let best: LiveQuote | null = null;
+  let bestTs = -1;
+  for (const key of equityStreamLookupKeys(symbol)) {
+    const row = prices[key];
+    if (!row) continue;
+    const ts = typeof row.ts === "number" && Number.isFinite(row.ts) ? row.ts : 0;
+    if (!best || ts >= bestTs) {
+      best = row;
+      bestTs = ts;
+    }
+  }
+  return best;
 }
 
 function fmtCurrency(n: number): string {
@@ -384,13 +414,9 @@ export function OptionsChainOrderSheet({
   const hasDraft = legs.length > 0 || isEquityDraft;
   const symbol = isEquityDraft ? equityDraft.symbol : storeSymbol;
   const sendAllowed = atOrderSendAllowed();
-  const liveStreamQuote = useTerminalStore((s) => {
-    const u = symbol.toUpperCase();
-    const alt = u.startsWith("$") ? u.slice(1) : `$${u}`;
-    return s.streamPrices[u] ?? s.streamPrices[alt] ?? null;
-  });
+  const liveStreamQuote = useTerminalStore((s) => freshestEquityStreamQuote(s.streamPrices, symbol));
   const underlyingSpot =
-    liveStreamQuote?.last ?? liveStreamQuote?.regularLast ?? liveStreamQuote?.extendedLast ?? null;
+    liveStreamQuote?.last ?? liveStreamQuote?.extendedLast ?? liveStreamQuote?.regularLast ?? null;
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   /**
@@ -488,6 +514,17 @@ export function OptionsChainOrderSheet({
   }, [legs, subscribeOptionSymbols]);
 
   useEffect(() => {
+    if (!isEquityDraft) return;
+    const sym = symbol.replace(/^\$/, "").trim().toUpperCase();
+    if (!sym || sym.startsWith("/")) return;
+    void fetchWithAuth("/api/stream/symbols", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: [sym] }),
+    }).catch(() => {});
+  }, [isEquityDraft, symbol]);
+
+  useEffect(() => {
     if (!hasDraft) {
       setStage("form");
       setLimitPrice("");
@@ -542,13 +579,22 @@ export function OptionsChainOrderSheet({
       : null;
   const eqMid = useMemo(() => {
     if (!isEquityDraft) return null;
-    const rawMid =
+    const frameTs = liveStreamQuote?.ts ?? 0;
+    const bookTs = Math.max(liveStreamQuote?.bidQuoteTs ?? 0, liveStreamQuote?.askQuoteTs ?? 0);
+    const bookOnLatestFrame = bookTs > 0 && frameTs > 0 && bookTs + 500 >= frameTs;
+    const bookMid =
       eqBid != null && eqBid > 0 && eqAsk != null && eqAsk > 0
         ? midpointFromBidAsk(eqBid, eqAsk)
-        : underlyingSpot;
+        : null;
+    const rawMid =
+      bookOnLatestFrame && bookMid != null && bookMid > 0
+        ? bookMid
+        : underlyingSpot != null && underlyingSpot > 0
+          ? underlyingSpot
+          : bookMid;
     if (rawMid == null || !(rawMid > 0)) return null;
     return parseCanonicalLimit(rawMid, limitTickCtx);
-  }, [isEquityDraft, eqBid, eqAsk, underlyingSpot, limitTickCtx]);
+  }, [isEquityDraft, liveStreamQuote, eqBid, eqAsk, underlyingSpot, limitTickCtx]);
 
   const spreadPrices = useMemo(() => {
     if (isEquityDraft) {
@@ -716,16 +762,12 @@ export function OptionsChainOrderSheet({
     if (keyChanged) {
       equityHydrateKeyRef.current = equityHydrateKey;
       setQuantity(Math.max(1, Math.floor(equityDraft?.quantity ?? 1) || 1));
-      if (equityDraft?.initialLimitPrice != null && equityDraft.initialLimitPrice > 0) {
-        limitUserEditedRef.current = true;
-        setLimitLocked(false);
-        setLimitPrice(displaySubmittedLimit(limitTickCtx, equityDraft.initialLimitPrice));
-        return;
-      }
       limitUserEditedRef.current = false;
       if (limitLocked) setLimitLocked(false);
       if (eqMid != null) {
         setLimitPrice(displaySubmittedLimit(limitTickCtx, eqMid));
+      } else if (equityDraft?.initialLimitPrice != null && equityDraft.initialLimitPrice > 0) {
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, equityDraft.initialLimitPrice));
       } else {
         setLimitPrice("");
       }
@@ -1331,12 +1373,16 @@ export function OptionsChainOrderSheet({
       SELL_SHORT: "SHORT",
       BUY_TO_COVER: "COVER",
     };
-    const quoteSummary =
+    const lastLabel =
+      underlyingSpot != null && underlyingSpot > 0 ? fmt(underlyingSpot) : null;
+    const bookLabel =
       eqBid != null && eqBid > 0 && eqAsk != null && eqAsk > 0
         ? `${fmt(eqBid)}/${fmt(eqAsk)}`
-        : underlyingSpot != null && underlyingSpot > 0
-          ? `$${fmt(underlyingSpot)}`
-          : null;
+        : null;
+    const quoteSummary =
+      lastLabel && bookLabel
+        ? `${lastLabel}  ${bookLabel}`
+        : bookLabel ?? (lastLabel ? `$${lastLabel}` : null);
     return {
       symbol: equityResolved.cleanSymbol,
       badgeLabel: badgeMap[equityResolved.instruction],
