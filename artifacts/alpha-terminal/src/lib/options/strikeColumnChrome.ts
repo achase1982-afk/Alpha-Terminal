@@ -20,9 +20,7 @@ export const CHAIN_LADDER_CELL_COLOR = "#d4d6d7";
 export const STRIKE_RAIL_LETTER_SPACING = "0.01em";
 export const STRIKE_RAIL_LINE_HEIGHT = 1.05;
 
-/**
- * OTM wing rows — same dark blue-charcoal as AT bid/ask at zero flow (`volumeHeatColor(0)` → rgb 16,21,26).
- */
+/** OTM wing rows — dark blue-charcoal behind the chain quote cells. */
 export const CHAIN_OTM_ROW_BG = "#10151a";
 
 /** Horizontal inset so multi-digit strikes (e.g. /YM, /ES) sit comfortably in the rail. */

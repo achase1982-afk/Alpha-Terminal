@@ -1,6 +1,16 @@
+import { classifyQuoteRule } from "./flowClassifier";
+
 export const AT_LADDER_HEAT_WINDOW_MS = 30_000;
 
 /**
+ * Rolling sale heat for the options ladder (index stream and single-name poll
+ * share this engine; a futures book can feed the same `ingestCumulative`).
+ *
+ * Gross size says where contracts printed in the last 30 seconds. The quote
+ * rule — the same one the flow strip uses — splits that size into buyers
+ * lifting the offer and sellers hitting the bid. The split is the moment,
+ * not the day. Unclassified size stays a location wash and does not invent a side.
+ *
  * Heat is relative: the busiest contract on the ladder is full intensity and
  * the rest are placed against it on a log curve, so a 50-contract strike is
  * still clearly lit next to a 2,000-contract one.
@@ -13,8 +23,15 @@ export const AT_HEAT_FLOOR_CONTRACTS = 50;
 export const AT_HEAT_CURVE_KNEE_CONTRACTS = 8;
 /** When the busiest contract cools off, the reference follows it down with this half-life. */
 export const AT_HEAT_REFERENCE_HALF_LIFE_MS = 20_000;
-/** Time constant of the display smoothing. Each contract is smoothed against its own past only. */
+/**
+ * Display smoothing. A print blooms quickly and then holds, so the ladder
+ * stays a picture of the last few seconds instead of flickering per lot.
+ * `AT_HEAT_SMOOTHING_MS` remains the symmetric time constant tests and
+ * explicit callers can force.
+ */
 export const AT_HEAT_SMOOTHING_MS = 450;
+export const AT_HEAT_ATTACK_MS = 220;
+export const AT_HEAT_DECAY_MS = 1_600;
 
 /** 0-1 intensity of `contracts` traded in the window against the ladder's reference. */
 export function ladderHeatIntensity(
@@ -68,11 +85,26 @@ export type LadderHeatCellView = {
   availability: LadderHeatAvailability;
   /** Gross contracts in the active heat window (30 seconds live; session volume after close). */
   contracts30s: number;
-  /** 0–1 display intensity, relative to the busiest contract and smoothed over time (not across strikes). */
+  /** 0–1 gross intensity, relative to the busiest contract and smoothed over time (not across strikes). */
   intensity: number;
+  /** 0–1 buyers lifting the offer. Painted behind the ask. */
+  buyIntensity: number;
+  /** 0–1 sellers hitting the bid. Painted behind the bid. */
+  sellIntensity: number;
+  /** 0–1 size whose side the quote rule could not call. Painted as location only. */
+  neutralIntensity: number;
 };
 
-type VolumeIncident = { ms: number; qty: number };
+/** Quote sitting on the contract when a volume delta arrives. */
+export type LadderHeatQuote = {
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+};
+
+type PrintSide = "buy" | "sell" | "neutral";
+
+type VolumeIncident = { ms: number; qty: number; side: PrintSide };
 
 type ContractState = {
   baselineSet: boolean;
@@ -80,8 +112,13 @@ type ContractState = {
   incidents: VolumeIncident[];
   lastRxMs: number | null;
   gapStaleUntilMs: number;
+  prevBid: number | null;
+  prevAsk: number | null;
   displayIntensity: number;
-  /** When `displayIntensity` was last advanced; null until the contract is first painted. */
+  displayBuy: number;
+  displaySell: number;
+  displayNeutral: number;
+  /** When the display channels were last advanced; null until the contract is first painted. */
   lastPaintMs: number | null;
   lastIngestSig: string | null;
 };
@@ -93,8 +130,12 @@ export type AtLadderVolumeHeatEngineOptions = {
   scaleFloorContracts?: number;
   /** Cumulative jump above this is treated as reconnect/day gap (no burst). */
   reconnectJumpContracts?: number;
-  /** Display smoothing time constant; 0 shows the true value at once. */
+  /** Symmetric display smoothing. Set this to force attack and decay to the same time constant. */
   smoothingMs?: number;
+  /** How fast a new print reaches its true shade. Ignored when `smoothingMs` is set. */
+  attackMs?: number;
+  /** How long a shade holds after the print rolls out of the window. Ignored when `smoothingMs` is set. */
+  decayMs?: number;
   referenceHalfLifeMs?: number;
 };
 
@@ -110,7 +151,8 @@ export class AtLadderVolumeHeatEngine {
   private readonly windowMs: number;
   private readonly staleAfterMs: number;
   private readonly reconnectJump: number;
-  private readonly smoothingMs: number;
+  private readonly attackMs: number;
+  private readonly decayMs: number;
   private readonly floor: number;
   private readonly reference: AtLadderRelativeHeatReference;
   private readonly byContract = new Map<string, ContractState>();
@@ -133,8 +175,54 @@ export class AtLadderVolumeHeatEngine {
       this.floor,
       opts?.referenceHalfLifeMs ?? AT_HEAT_REFERENCE_HALF_LIFE_MS,
     );
-    this.smoothingMs = opts?.smoothingMs ?? AT_HEAT_SMOOTHING_MS;
+    if (opts?.smoothingMs != null) {
+      this.attackMs = opts.smoothingMs;
+      this.decayMs = opts.smoothingMs;
+    } else {
+      this.attackMs = opts?.attackMs ?? AT_HEAT_ATTACK_MS;
+      this.decayMs = opts?.decayMs ?? AT_HEAT_DECAY_MS;
+    }
     this.nowMs = Date.now();
+  }
+
+  private blankState(): ContractState {
+    return {
+      baselineSet: false,
+      lastCumulative: 0,
+      incidents: [],
+      lastRxMs: null,
+      gapStaleUntilMs: 0,
+      prevBid: null,
+      prevAsk: null,
+      displayIntensity: 0,
+      displayBuy: 0,
+      displaySell: 0,
+      displayNeutral: 0,
+      lastPaintMs: null,
+      lastIngestSig: null,
+    };
+  }
+
+  /**
+   * Remember the quote in front of the next print. Index and equity-option
+   * books both call this; a futures book can call the same method.
+   */
+  noteQuote(contract: string, quote: LadderHeatQuote | null | undefined): void {
+    if (!quote) return;
+    let st = this.byContract.get(contract);
+    if (!st) {
+      st = this.blankState();
+      this.byContract.set(contract, st);
+    }
+    if (quote.bid != null && quote.bid > 0) st.prevBid = quote.bid;
+    if (quote.ask != null && quote.ask > 0) st.prevAsk = quote.ask;
+  }
+
+  private classifyDelta(st: ContractState, quote: LadderHeatQuote | undefined): PrintSide {
+    if (!quote || quote.last == null || !(quote.last > 0)) return "neutral";
+    const side = classifyQuoteRule(st.prevBid ?? quote.bid, st.prevAsk ?? quote.ask, quote.last);
+    if (side === "buy" || side === "sell") return side;
+    return "neutral";
   }
 
   setSourceLive(live: boolean): void {
@@ -178,31 +266,31 @@ export class AtLadderVolumeHeatEngine {
     for (const st of this.byContract.values()) this.pruneContract(st);
   }
 
-  ingestCumulative(contract: string, cumulativeVol: number, rxMs: number): void {
+  ingestCumulative(
+    contract: string,
+    cumulativeVol: number,
+    rxMs: number,
+    quote?: LadderHeatQuote,
+  ): void {
     if (!Number.isFinite(cumulativeVol) || cumulativeVol < 0) return;
     if (!Number.isFinite(rxMs) || rxMs <= 0) return;
     const sig = `${cumulativeVol}|${rxMs}`;
     let st = this.byContract.get(contract);
     if (!st) {
-      st = {
-        baselineSet: false,
-        lastCumulative: cumulativeVol,
-        incidents: [],
-        lastRxMs: null,
-        gapStaleUntilMs: 0,
-        displayIntensity: 0,
-        lastPaintMs: null,
-        lastIngestSig: null,
-      };
+      st = this.blankState();
       this.byContract.set(contract, st);
     }
-    if (st.lastIngestSig === sig) return;
+    if (st.lastIngestSig === sig) {
+      this.applyQuote(st, quote);
+      return;
+    }
     st.lastIngestSig = sig;
 
     if (!st.baselineSet) {
       st.baselineSet = true;
       st.lastCumulative = cumulativeVol;
       st.lastRxMs = rxMs;
+      this.applyQuote(st, quote);
       return;
     }
 
@@ -212,6 +300,7 @@ export class AtLadderVolumeHeatEngine {
       st.lastRxMs = rxMs;
       st.incidents = [];
       st.gapStaleUntilMs = 0;
+      this.applyQuote(st, quote);
       return;
     }
 
@@ -219,7 +308,10 @@ export class AtLadderVolumeHeatEngine {
     st.lastCumulative = cumulativeVol;
     st.lastRxMs = rxMs;
 
-    if (delta <= 0) return;
+    if (delta <= 0) {
+      this.applyQuote(st, quote);
+      return;
+    }
 
     this.noteSourceRx(rxMs);
 
@@ -229,11 +321,20 @@ export class AtLadderVolumeHeatEngine {
       st.lastCumulative = cumulativeVol;
       st.lastRxMs = rxMs;
       this.noteSourceRx(rxMs);
+      this.applyQuote(st, quote);
       return;
     }
 
-    st.incidents.push({ ms: rxMs, qty: delta });
+    // Side is taken against the quote that was already on the book, then the book moves.
+    st.incidents.push({ ms: rxMs, qty: delta, side: this.classifyDelta(st, quote) });
+    this.applyQuote(st, quote);
     this.pruneContract(st);
+  }
+
+  private applyQuote(st: ContractState, quote: LadderHeatQuote | undefined): void {
+    if (!quote) return;
+    if (quote.bid != null && quote.bid > 0) st.prevBid = quote.bid;
+    if (quote.ask != null && quote.ask > 0) st.prevAsk = quote.ask;
   }
 
   private pruneContract(st: ContractState): void {
@@ -244,14 +345,27 @@ export class AtLadderVolumeHeatEngine {
     if (i > 0) st.incidents = st.incidents.slice(i);
   }
 
-  contractsFor(contract: string): number {
+  private breakdown(contract: string): { total: number; buy: number; sell: number; neutral: number } {
     const st = this.byContract.get(contract);
-    if (!st) return 0;
-    if (this.volumeMode === "session") return st.lastCumulative;
+    if (!st) return { total: 0, buy: 0, sell: 0, neutral: 0 };
+    if (this.volumeMode === "session") {
+      const total = st.baselineSet ? st.lastCumulative : 0;
+      return { total, buy: 0, sell: 0, neutral: total };
+    }
     this.pruneContract(st);
-    let sum = 0;
-    for (const e of st.incidents) sum += e.qty;
-    return sum;
+    let buy = 0;
+    let sell = 0;
+    let neutral = 0;
+    for (const e of st.incidents) {
+      if (e.side === "buy") buy += e.qty;
+      else if (e.side === "sell") sell += e.qty;
+      else neutral += e.qty;
+    }
+    return { total: buy + sell + neutral, buy, sell, neutral };
+  }
+
+  contractsFor(contract: string): number {
+    return this.breakdown(contract).total;
   }
 
   /** Contracts traded in the window by the busiest contract the engine is tracking. */
@@ -270,35 +384,57 @@ export class AtLadderVolumeHeatEngine {
     return this.reference.current();
   }
 
+  private ease(current: number, target: number, dt: number): number {
+    const tau = target >= current ? this.attackMs : this.decayMs;
+    if (!(tau > 0)) return target;
+    const k = 1 - Math.exp(-dt / tau);
+    const next = current + k * (target - current);
+    return Math.abs(target - next) < 0.002 ? target : next;
+  }
+
   snapshot(contracts: string[]): Record<string, LadderHeatCellView> {
     const globalStale = this.volumeMode === "session" ? false : this.resolveGlobalStale();
     const reference = this.reference.update(this.busiestContracts(globalStale), this.nowMs);
-    const instant = this.smoothingMs <= 0 || prefersReducedMotion();
+    const instant = (this.attackMs <= 0 && this.decayMs <= 0) || prefersReducedMotion();
     const out: Record<string, LadderHeatCellView> = {};
 
     for (const c of contracts) {
       const st = this.byContract.get(c);
-      const contracts30s = this.contractsFor(c);
+      const parts = this.breakdown(c);
+      const contracts30s = parts.total;
       const availability = this.resolveCellAvailability(st, contracts30s, globalStale);
-      const target =
-        availability === "live" && contracts30s > 0
-          ? ladderHeatIntensity(contracts30s, reference, this.floor)
-          : 0;
+      const live = availability === "live";
+      const shade = (qty: number) =>
+        live && qty > 0 ? ladderHeatIntensity(qty, reference, this.floor) : 0;
+      const target = shade(contracts30s);
+      const targetBuy = shade(parts.buy);
+      const targetSell = shade(parts.sell);
+      const targetNeutral = shade(parts.neutral);
       let intensity = target;
+      let buyIntensity = targetBuy;
+      let sellIntensity = targetSell;
+      let neutralIntensity = targetNeutral;
       if (st) {
         // A contract seen for the first time shows its true value; after that it eases toward it.
         if (instant || st.lastPaintMs == null) {
           st.displayIntensity = target;
+          st.displayBuy = targetBuy;
+          st.displaySell = targetSell;
+          st.displayNeutral = targetNeutral;
         } else {
           const dt = Math.max(0, this.nowMs - st.lastPaintMs);
-          const k = 1 - Math.exp(-dt / this.smoothingMs);
-          st.displayIntensity += k * (target - st.displayIntensity);
-          if (Math.abs(target - st.displayIntensity) < 0.002) st.displayIntensity = target;
+          st.displayIntensity = this.ease(st.displayIntensity, target, dt);
+          st.displayBuy = this.ease(st.displayBuy, targetBuy, dt);
+          st.displaySell = this.ease(st.displaySell, targetSell, dt);
+          st.displayNeutral = this.ease(st.displayNeutral, targetNeutral, dt);
         }
         st.lastPaintMs = this.nowMs;
         intensity = st.displayIntensity;
+        buyIntensity = st.displayBuy;
+        sellIntensity = st.displaySell;
+        neutralIntensity = st.displayNeutral;
       }
-      out[c] = { availability, contracts30s, intensity };
+      out[c] = { availability, contracts30s, intensity, buyIntensity, sellIntensity, neutralIntensity };
     }
     return out;
   }

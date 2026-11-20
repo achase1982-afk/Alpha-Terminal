@@ -145,9 +145,6 @@ function fmtPx(n: number | null | undefined): string {
 /** Re-export heat bounds so existing imports keep resolving. */
 export { AT_HEAT_WASH_ALPHA, AT_HEAT_MAX_ALPHA };
 
-const VOLUME_ZERO = [0x10, 0x15, 0x1a] as const;
-const VOLUME_MID = [0x17, 0x39, 0x4f] as const;
-const VOLUME_HIGH = [0x24, 0x58, 0x75] as const;
 const ARROW_SLOT_PX = 11;
 const ARROW_UP = "#8AF0B0";
 const ARROW_DOWN = "#FFB3AB";
@@ -160,31 +157,61 @@ function mixChannel(from: number, to: number, t: number): number {
   return Math.round(from + (to - from) * t);
 }
 
-/** Charcoal at zero, dark blue at medium, brighter blue at high. Same scale both sides. */
-export function volumeHeatColor(intensity: number): string {
+/** Below this, a side is quiet and the cell stays the black of the book. */
+const SALE_HEAT_MIN = 0.04;
+const SALE_PANEL = [6, 7, 9] as const;
+/** Deep green. Full heat stays behind the price, readable, not a neon slab. */
+const SALE_BUY = [16, 92, 56] as const;
+/** Deep red, the sell color of the flow strip, held back so the premium still reads. */
+const SALE_SELL = [122, 36, 40] as const;
+/** Size is here, but the quote rule could not call the side. */
+const SALE_NEUTRAL = [48, 64, 78] as const;
+
+export type SaleHeatKind = "buy" | "sell" | "neutral";
+
+/**
+ * Background behind one sale. `t` is 0–1 against the busiest contract on the
+ * ladder. Quiet stays transparent. The curve opens early so a real print is
+ * visible, and full brightness stays with the heaviest sale.
+ */
+export function saleHeatColor(kind: SaleHeatKind, intensity: number): string {
   const t = heatTone(intensity);
-  const [from, to, u] = t <= 0.5
-    ? [VOLUME_ZERO, VOLUME_MID, t / 0.5]
-    : [VOLUME_MID, VOLUME_HIGH, (t - 0.5) / 0.5];
-  return `rgb(${mixChannel(from[0], to[0], u)}, ${mixChannel(from[1], to[1], u)}, ${mixChannel(from[2], to[2], u)})`;
+  if (t < SALE_HEAT_MIN) return "transparent";
+  const u = Math.pow(t, 0.65);
+  const ink = kind === "buy" ? SALE_BUY : kind === "sell" ? SALE_SELL : SALE_NEUTRAL;
+  return `rgb(${mixChannel(SALE_PANEL[0], ink[0], u)}, ${mixChannel(SALE_PANEL[1], ink[1], u)}, ${mixChannel(SALE_PANEL[2], ink[2], u)})`;
 }
 
-function heatPairStyle(view: LadderHeatCellView, neutral: boolean): CSSProperties {
-  if (neutral || view.availability === "unavailable") {
-    return {
-      backgroundColor: "transparent",
-      backgroundImage: "none",
-      boxShadow: "none",
-      animation: "none",
-    };
+export type SaleHeatPane = { kind: SaleHeatKind | "off"; color: string };
+
+/**
+ * Ask lights when buyers lift. Bid lights when sellers hit. Size with no side
+ * lights both sales in steel so the location still reads, without inventing a direction.
+ */
+export function saleHeatPanes(view: LadderHeatCellView): { bid: SaleHeatPane; ask: SaleHeatPane } {
+  const off = (color: string, kind: SaleHeatPane["kind"]): SaleHeatPane => ({ kind, color });
+  if (view.availability === "unavailable") {
+    return { bid: off("transparent", "off"), ask: off("transparent", "off") };
   }
-  return {
-    backgroundColor: volumeHeatColor(view.intensity),
-    backgroundImage: "none",
-    boxShadow: "none",
-    animation: "none",
-  };
+  const buy = view.buyIntensity ?? 0;
+  const sell = view.sellIntensity ?? 0;
+  const neutral = view.neutralIntensity ?? 0;
+  const location = buy + sell + neutral > 0.001 ? neutral : view.intensity;
+  const bid = sell >= SALE_HEAT_MIN
+    ? off(saleHeatColor("sell", sell), "sell")
+    : off(saleHeatColor("neutral", location), location >= SALE_HEAT_MIN ? "neutral" : "off");
+  const ask = buy >= SALE_HEAT_MIN
+    ? off(saleHeatColor("buy", buy), "buy")
+    : off(saleHeatColor("neutral", location), location >= SALE_HEAT_MIN ? "neutral" : "off");
+  return { bid, ask };
 }
+
+const HEAT_PAIR_STYLE: CSSProperties = {
+  backgroundColor: "transparent",
+  backgroundImage: "none",
+  boxShadow: "none",
+  animation: "none",
+};
 
 function volumeCountLabel(view: LadderHeatCellView, neutral: boolean): string {
   if (neutral || view.availability === "unavailable") return "—";
@@ -305,7 +332,8 @@ const QuoteCell = memo(function QuoteCell({
         borderRight: "none",
         borderBottom: "none",
         boxSizing: "border-box",
-        padding: "0 0 9px",
+        zIndex: 1,
+        padding: 0,
         overflow: "hidden",
         touchAction: "manipulation",
         WebkitTapHighlightColor: "transparent",
@@ -410,9 +438,9 @@ type ContractPairProps = {
 };
 
 /**
- * Bid + ask cells of one contract over their shared heat shade. Subscribes to
- * that contract's quote and heat only, so a tick here never touches another
- * strike, the row, or the ladder.
+ * Bid and ask of one contract. Buyers light the ask, sellers light the bid.
+ * Subscribes to that contract's quote and heat only, so a tick here never
+ * touches another strike, the row, or the ladder.
  */
 const ContractPair = memo(function ContractPair({
   pairSide,
@@ -438,7 +466,14 @@ const ContractPair = memo(function ContractPair({
   // Leg prints are not executions of the spread. The spread stays neutral
   // until a feed reports volume for that exact spread.
   const heatView = vertical
-    ? { availability: "unavailable" as const, contracts30s: 0, intensity: 0 }
+    ? {
+        availability: "unavailable" as const,
+        contracts30s: 0,
+        intensity: 0,
+        buyIntensity: 0,
+        sellIntensity: 0,
+        neutralIntensity: 0,
+      }
     : nearHeat;
   if (vertical) {
     const spread = aggregateSpreadNBBO(
@@ -455,6 +490,7 @@ const ContractPair = memo(function ContractPair({
     : contract?.streamKey ?? null;
   const arrows = useQuoteMoveArrows(moveIdentity, bidPx, askPx, quoteEpoch);
   const volumeText = volumeCountLabel(heatView, vertical);
+  const panes = saleHeatPanes(heatView);
 
   const legKey = contract ? atLadderLegKey(contract, type) : null;
   const bidTapable = vertical ? bidPx != null : near.bidTapable;
@@ -466,32 +502,38 @@ const ContractPair = memo(function ContractPair({
       style={{
         gridColumn: "span 2",
         gridTemplateColumns: "1fr 1fr",
-        ...heatPairStyle(heatView, vertical),
+        ...HEAT_PAIR_STYLE,
       }}
       data-at-quote-heat={pairSide}
       data-at-quote-heat-state={vertical ? "neutral" : heatView.availability}
       data-at-quote-heat-intensity={vertical ? "0.000" : heatView.intensity.toFixed(3)}
       data-at-quote-heat-contracts={vertical ? undefined : heatView.contracts30s}
+      data-at-quote-heat-buy={vertical ? undefined : (heatView.buyIntensity ?? 0).toFixed(3)}
+      data-at-quote-heat-sell={vertical ? undefined : (heatView.sellIntensity ?? 0).toFixed(3)}
       data-at-quote-volume={volumeText}
     >
-      <span
+      <div
+        aria-hidden
         style={{
           position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 2,
-          height: 9,
-          lineHeight: "9px",
-          textAlign: "center",
-          fontSize: 8,
-          fontVariantNumeric: "tabular-nums",
-          color: "#c5ced4",
+          inset: 0,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
           pointerEvents: "none",
+          zIndex: 0,
         }}
       >
-        {volumeText}
-      </span>
+        <div
+          data-at-sale-heat-pane="bid"
+          data-at-sale-heat={panes.bid.kind}
+          style={{ backgroundColor: panes.bid.color, height: "100%" }}
+        />
+        <div
+          data-at-sale-heat-pane="ask"
+          data-at-sale-heat={panes.ask.kind}
+          style={{ backgroundColor: panes.ask.color, height: "100%" }}
+        />
+      </div>
       <QuoteCell
         cellKey={contract ? atLadderQuoteCellKey(contract, type, "bid") : null}
         legKey={legKey}

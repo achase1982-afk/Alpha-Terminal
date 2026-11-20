@@ -80,8 +80,9 @@ export const AT_LADDER_CALLS_HDR = "#5df1a0";
 export const AT_LADDER_PUTS_HDR = "#ff7164";
 
 /**
- * Volume heat. No socket volume stays transparent (the cell stays black).
- * Live volume lifts a call from black to bright green, a put from black to bright red.
+ * Sale heat sits behind the bid and the ask. Buyers lifting the offer go green,
+ * sellers hitting the bid go red, and size with no side stays a steel location wash.
+ * Zero size stays transparent so a quiet book stays black.
  */
 export const AT_HEAT_CALL_RGB = "4, 8, 6";
 export const AT_HEAT_PUT_RGB = "12, 5, 5";
