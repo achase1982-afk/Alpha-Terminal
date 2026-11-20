@@ -30,10 +30,12 @@ async function webullRequest(path: string, init?: RequestInit): Promise<Response
 
 export function useWebullConnect() {
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
   const [status, setStatus] = useState<WebullStatus | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const refreshAccounts = useSchwabAccountStore((s) => s.refreshAccounts);
+  const removeBrokerAccounts = useSchwabAccountStore((s) => s.removeBrokerAccounts);
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current != null) {
@@ -142,10 +144,32 @@ export function useWebullConnect() {
     }
   }, [isConnecting, refreshAccounts, startPolling]);
 
+  const disconnect = useCallback(async () => {
+    if (isDisconnecting) return false;
+    setIsDisconnecting(true);
+    stopPolling();
+    try {
+      const res = await webullRequest("/api/auth/webull/disconnect", { method: "POST" });
+      if (!res.ok) return false;
+      removeBrokerAccounts("webull");
+      if (mountedRef.current) {
+        setStatus({ configured: true, connected: false, status: "NONE" });
+      }
+      await refreshAccounts(true);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (mountedRef.current) setIsDisconnecting(false);
+    }
+  }, [isDisconnecting, refreshAccounts, removeBrokerAccounts, stopPolling]);
+
   return {
     connect,
+    disconnect,
     fetchStatus,
     isConnecting,
+    isDisconnecting,
     isConnected: status?.connected === true,
     status: status?.status ?? "NONE",
   };

@@ -5,6 +5,7 @@ import type {
   SchwabAccountSummary,
   SchwabPortfolioPrefs,
   SchwabViewSelection,
+  TradingBroker,
 } from "./schwab-account-types";
 import { schwabAccountsFingerprint } from "./schwabAccountFingerprint";
 
@@ -28,6 +29,8 @@ interface SchwabAccountState {
   setOrderTicketAccountHash: (hash: string | null) => void;
   /** Apply accounts from the portfolio poll without redundant store updates. */
   syncAccountsFromStream: (accounts: SchwabAccountSummary[]) => void;
+  /** Remove only one broker's accounts after that broker disconnects. */
+  removeBrokerAccounts: (broker: TradingBroker) => void;
   /** One-shot REST load (picker fallback before first portfolio poll). */
   refreshAccounts: (force?: boolean) => Promise<void>;
   loadPreferencesFromServer: () => Promise<void>;
@@ -40,6 +43,11 @@ interface SchwabAccountState {
 function pickDefaultHash(accounts: SchwabAccountSummary[], current: string | null): string | null {
   if (current && accounts.some((a) => a.hashValue === current)) return current;
   return accounts.find((a) => a.hashValue)?.hashValue ?? null;
+}
+
+function accountBroker(account: SchwabAccountSummary): TradingBroker {
+  if (account.broker) return account.broker;
+  return account.hashValue?.startsWith("webull:") ? "webull" : "schwab";
 }
 
 function applyAccountsList(
@@ -92,6 +100,20 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
       syncAccountsFromStream: (accounts) => {
         if (!Array.isArray(accounts) || !accounts.length) return;
         set((s) => applyAccountsList(accounts, s) ?? {});
+      },
+
+      removeBrokerAccounts: (broker) => {
+        set((s) => {
+          const accounts = s.accounts.filter((account) => accountBroker(account) !== broker);
+          const next = applyAccountsList(accounts, s) ?? {};
+          const orderTicketAccountHash =
+            s.orderTicketAccountHash &&
+            accounts.some((account) => account.hashValue === s.orderTicketAccountHash)
+              ? s.orderTicketAccountHash
+              : null;
+          return { ...next, orderTicketAccountHash };
+        });
+        void get().persistPreferences();
       },
 
       refreshAccounts: async (force = false) => {
