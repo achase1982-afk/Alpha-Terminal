@@ -361,6 +361,7 @@ export interface OrderLeg {
   ask?: number;
   delta?: number;
   contractTs?: number;
+  quoteTimeMs?: number;
 }
 
 interface OrderTicketProps {
@@ -531,6 +532,8 @@ export function OrderTicket({
   const [showOrderType, setShowOrderType] = useState(false);
   const [showTifDropdown, setShowTifDropdown] = useState(false);
   const [priceLocked, setPriceLocked] = useState(false);
+  /** Lock, a typed price, Bid, or Ask stops the live follow. Unlock and Mid resume it. */
+  const limitUserEditedRef = useRef(false);
   const [posEffect, setPosEffect] = useState<PositionEffect>("AUTO");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [riskCollapsed, setRiskCollapsed] = useState(true);
@@ -704,6 +707,7 @@ export function OrderTicket({
 
   useEffect(() => {
     if (!isOpen) return;
+    limitUserEditedRef.current = false;
     setSide(initialSide ?? "BUY");
     setOrderType("LIMIT");
     setQuantity(1);
@@ -779,26 +783,32 @@ export function OrderTicket({
     return null;
   }, [balances, portfolioStreamAccounts, accountHash]);
 
-  useEffect(() => {
-    if (!isOpen || priceLocked || limitPrice) return;
-    if (isMultiLeg) return;
-    if (isCloseOrder && strategyNetPrice != null && strategyNetPrice > 0) {
-      setLimitPrice(strategyNetPrice.toFixed(2));
-      return;
+  const liveLimitText = useMemo(() => {
+    if (isMultiLeg) {
+      if (spreadPrices?.spreadMid == null) return null;
+      return displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid);
     }
     if (isSingleOption && execPriceQuote) {
       const mid = executableMid(execPriceQuote);
-      if (mid != null) {
-        const rounded = parseCanonicalLimit(mid, limitTickCtx);
-        if (rounded != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
-      }
+      if (mid == null) return null;
+      const rounded = parseCanonicalLimit(mid, limitTickCtx);
+      return rounded == null ? null : displaySubmittedLimit(limitTickCtx, rounded);
+    }
+    if (isStockTicket) return stockMidLimit(quote?.bid, quote?.ask);
+    return null;
+  }, [isMultiLeg, spreadPrices?.spreadMid, isSingleOption, execPriceQuote, limitTickCtx, isStockTicket, quote?.bid, quote?.ask]);
+
+  useEffect(() => {
+    if (!isOpen || stage !== "form" || priceLocked || limitUserEditedRef.current) return;
+    if (liveLimitText) {
+      setLimitPrice((prev) => (prev === liveLimitText ? prev : liveLimitText));
       return;
     }
-    if (isStockTicket && quote?.ask != null) {
-      const midStr = stockMidLimit(quote.bid, quote.ask);
-      if (midStr) setLimitPrice(midStr);
+    if ((isCloseOrder || isMultiLeg) && strategyNetPrice != null && strategyNetPrice > 0) {
+      const seeded = strategyNetPrice.toFixed(2);
+      setLimitPrice((prev) => (prev === seeded ? prev : seeded));
     }
-  }, [isOpen, quote?.ask, quote?.bid, isMultiLeg, isCloseOrder, strategyNetPrice, isSingleOption, isStockTicket, execPriceQuote, limitTickCtx, priceLocked, limitPrice]);
+  }, [isOpen, stage, priceLocked, liveLimitText, isCloseOrder, isMultiLeg, strategyNetPrice]);
 
   // ── Options chain for mixed equity+option legs ───────────────────────────
   const { data: extraChainData, isLoading: extraChainLoading } = useGetOptionChain(
@@ -1617,7 +1627,21 @@ export function OrderTicket({
     ticketEconomics,
   ]);
 
+  const noteLimitEdited = useCallback((raw: string) => {
+    limitUserEditedRef.current = true;
+    setLimitPrice(raw);
+  }, []);
+
+  const togglePriceLock = useCallback(() => {
+    setPriceLocked((locked) => {
+      const next = !locked;
+      limitUserEditedRef.current = next;
+      return next;
+    });
+  }, []);
+
   const setMidPrice = useCallback(() => {
+    limitUserEditedRef.current = false;
     if (isMultiLeg && spreadPrices?.spreadMid != null) {
       setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
       return;
@@ -1640,6 +1664,7 @@ export function OrderTicket({
   }, [limitPrice, limitTickCtx]);
 
   const setNatPrice = useCallback(() => {
+    limitUserEditedRef.current = true;
     if (isMultiLeg && spreadPrices) {
       const raw = strategyIsCredit ? spreadPrices.spreadBid : spreadPrices.spreadAsk;
       const px = parseCanonicalLimit(raw, limitTickCtx);
@@ -1950,7 +1975,7 @@ export function OrderTicket({
             quantity={quantity}
             onQuantityChange={setQuantity}
             limitDisplay={limitPrice || submittedLimitDisplay || ""}
-            onLimitChange={setLimitPrice}
+            onLimitChange={noteLimitEdited}
             takeProfitEnabled={mobileTpEnabled}
             onTakeProfitEnabled={setMobileTpEnabled}
             takeProfitPrice={
@@ -2282,13 +2307,13 @@ export function OrderTicket({
                   <div className="mt-1.5 flex flex-col gap-px">
                     <div className="flex items-center justify-between">
                       <span className="text-[11px]" style={{ color: MUTED }}>Net {strategyIsCredit ? "credit" : "debit"} price</span>
-                      <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM, background: "none", border: "none", cursor: "pointer" }} aria-label={priceLocked ? "Unlock price" : "Lock price"}>
+                      <button onClick={togglePriceLock} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM, background: "none", border: "none", cursor: "pointer" }} aria-label={priceLocked ? "Unlock price" : "Lock price"}>
                         {priceLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
                       </button>
                     </div>
                     <div className="flex items-center gap-1" style={{ height: 28, borderRadius: 7, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, background: "rgba(0,0,0,0.4)", padding: "0 8px" }}>
                       <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
+                        onChange={(e) => { if (!priceLocked) { limitUserEditedRef.current = true; setLimitPrice(e.target.value); } }}
                         onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
                         placeholder="0.00"
                         className="flex-1 text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
@@ -2300,6 +2325,7 @@ export function OrderTicket({
                     <div className="mt-0.5 flex items-center justify-between text-[11px]" style={{ color: TEXT }}>
                       <button onClick={() => {
                         if (!priceLocked && effectiveBid != null) {
+                          limitUserEditedRef.current = true;
                           const px = parseCanonicalLimit(effectiveBid, limitTickCtx);
                           if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
                         }
@@ -2439,13 +2465,13 @@ export function OrderTicket({
                   <div className="mt-2 flex flex-col gap-0.5" style={{ fontSize: S.body }}>
                     <div className="flex items-center justify-between">
                       <span style={{ fontSize: S.label, color: MUTED }}>Limit price</span>
-                      <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
+                      <button onClick={togglePriceLock} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM }}>
                         {priceLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                       </button>
                     </div>
                     <div className="flex items-center" style={{ background: "rgba(0,0,0,0.4)", border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, height: 30, borderRadius: 8, padding: "0 8px" }}>
                       <input type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) setLimitPrice(e.target.value); }}
+                        onChange={(e) => { if (!priceLocked) { limitUserEditedRef.current = true; setLimitPrice(e.target.value); } }}
                         onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
                         placeholder="0.00"
                         className="flex-1 bg-transparent outline-none text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
@@ -2457,6 +2483,7 @@ export function OrderTicket({
                     <div className="mt-0.5 flex items-center justify-between" style={{ fontSize: S.tiny, color: TEXT }}>
                       <button onClick={() => {
                         if (!priceLocked && effectiveBid != null) {
+                          limitUserEditedRef.current = true;
                           const px = parseCanonicalLimit(effectiveBid, limitTickCtx);
                           if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
                         }
@@ -2961,7 +2988,7 @@ export function OrderTicket({
           quantity={quantity}
           onQuantityChange={setQuantity}
           limitDisplay={limitPrice || submittedLimitDisplay || ""}
-          onLimitChange={setLimitPrice}
+          onLimitChange={noteLimitEdited}
           takeProfitEnabled={mobileTpEnabled}
           onTakeProfitEnabled={setMobileTpEnabled}
           takeProfitPrice={

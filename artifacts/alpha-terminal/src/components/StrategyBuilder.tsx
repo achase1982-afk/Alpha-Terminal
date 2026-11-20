@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { useQuote, type QuoteData } from "@/hooks/useQuote";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
@@ -438,7 +438,7 @@ interface StrategyBuilderProps {
   initialLegs?: StrategyLeg[];
   availableStrikes?: number[];
   availableExpirations?: { label: string; value: string }[];
-  chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number }>;
+  chainData?: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>;
   subscribeOptionSymbols?: (
     symbols: string[],
     opts?: import("@/lib/optionHoldClient").OptionHoldPostOpts,
@@ -475,6 +475,7 @@ export function StrategyBuilder({
   const [limitPrice, setLimitPrice] = useState("");
   const [quantity, setQuantity] = useState(1);
   const [priceLocked, setPriceLocked] = useState(false);
+  const limitUserEditedRef = useRef(false);
   const [extendedHours, setExtendedHours] = useState(false);
   const [timeInForce, setTimeInForce] = useState<"DAY" | "GTC">("DAY");
   const [stage, setStage] = useState<Stage>("form");
@@ -507,6 +508,7 @@ export function StrategyBuilder({
     if (isOpen) {
       setExpandedLeg(null);
       setRiskCollapsed(true);
+      limitUserEditedRef.current = false;
       setLimitPrice("");
       setQuantity(1);
       setPriceLocked(false);
@@ -578,7 +580,7 @@ export function StrategyBuilder({
         schwabSymbol,
         bid: cd?.bid,
         ask: cd?.ask,
-        contractTs: cd?.contractTs,
+        quoteTimeMs: cd?.quoteTimeMs,
       },
       tick,
     );
@@ -626,7 +628,7 @@ export function StrategyBuilder({
         const cd = chainData?.get(schwabSymbol);
         const tick = useOptionsStreamStore.getState().ticks[schwabSymbol];
         const merged = mergeLegStreamQuotes(
-          { ...updated, schwabSymbol, bid: cd?.bid, ask: cd?.ask, contractTs: cd?.contractTs },
+          { ...updated, schwabSymbol, bid: cd?.bid, ask: cd?.ask, quoteTimeMs: cd?.quoteTimeMs },
           tick,
         );
         updated.schwabSymbol = schwabSymbol;
@@ -691,10 +693,11 @@ export function StrategyBuilder({
   }, [pricedLegs, limitTickCtx]);
 
   useEffect(() => {
-    if (spreadPrices?.spreadMid != null && !limitPrice && !priceLocked) {
-      setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
-    }
-  }, [spreadPrices, limitPrice, priceLocked, limitTickCtx]);
+    if (!isOpen || stage !== "form" || priceLocked || limitUserEditedRef.current) return;
+    if (spreadPrices?.spreadMid == null) return;
+    const next = displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid);
+    setLimitPrice((prev) => (prev === next ? prev : next));
+  }, [isOpen, stage, priceLocked, spreadPrices?.spreadMid, limitTickCtx]);
 
   const effectiveBid = spreadPrices?.spreadBid ?? null;
   const effectiveAsk = spreadPrices?.spreadAsk ?? null;
@@ -767,12 +770,22 @@ export function StrategyBuilder({
   const overallRisk = useMemo(() => getOverallLevel(riskChecks), [riskChecks]);
   const blockedByRisk = false;
 
+  const togglePriceLock = useCallback(() => {
+    setPriceLocked((locked) => {
+      const next = !locked;
+      limitUserEditedRef.current = next;
+      return next;
+    });
+  }, []);
+
   const setMidPrice = useCallback(() => {
+    limitUserEditedRef.current = false;
     if (spreadPrices?.spreadMid == null) return;
     setLimitPrice(displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid));
   }, [spreadPrices, limitTickCtx]);
 
   const setNatPrice = useCallback(() => {
+    limitUserEditedRef.current = true;
     if (!spreadPrices) return;
     const raw = isCredit ? spreadPrices.spreadBid : spreadPrices.spreadAsk;
     const px = parseCanonicalLimit(raw, limitTickCtx);
@@ -1428,14 +1441,14 @@ export function StrategyBuilder({
                   <div className="mt-1.5 flex flex-col gap-px">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px]" style={{ color: MUTED }}>Net {isCredit ? "credit" : "debit"} price</span>
-                      <button onClick={() => setPriceLocked(!priceLocked)} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM, background: "none", border: "none", cursor: "pointer" }} aria-label={priceLocked ? "Unlock price" : "Lock price"}>
+                      <button onClick={togglePriceLock} className="p-0.5" style={{ color: priceLocked ? GOLD : DIM, background: "none", border: "none", cursor: "pointer" }} aria-label={priceLocked ? "Unlock price" : "Lock price"}>
                         {priceLocked ? <Lock className="w-2.5 h-2.5" /> : <Unlock className="w-2.5 h-2.5" />}
                       </button>
                     </div>
                     <div className="flex items-center gap-1" style={{ height: 28, borderRadius: 7, border: `1px solid ${priceLocked ? `${GOLD}4d` : BORDER}`, background: "rgba(0,0,0,0.4)", padding: "0 8px" }}>
                       <input
                         type="number" inputMode="decimal" step="0.01" value={limitPrice}
-                        onChange={(e) => { if (!priceLocked) { setLimitPrice(e.target.value); setPriceError(""); } }}
+                        onChange={(e) => { if (!priceLocked) { limitUserEditedRef.current = true; setLimitPrice(e.target.value); setPriceError(""); } }}
                         onBlur={() => { if (!priceLocked) snapLimitOnBlur(); }}
                         placeholder="0.00"
                         className="flex-1 text-[13px] bg-transparent outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-right"
@@ -1448,6 +1461,7 @@ export function StrategyBuilder({
                       <button
                         onClick={() => {
                           if (!priceLocked && effectiveBid != null) {
+                            limitUserEditedRef.current = true;
                             const px = parseCanonicalLimit(effectiveBid, limitTickCtx);
                             if (px != null) setLimitPrice(displaySubmittedLimit(limitTickCtx, px));
                           }
