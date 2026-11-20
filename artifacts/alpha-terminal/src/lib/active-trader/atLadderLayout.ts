@@ -21,10 +21,11 @@ export const AT_LADDER_STRIKE_COL_W = STRIKE_COL_W;
  * Equity ladder with the same centered strike/price rail width as options/SPX:
  * volume | bid size | price | ask size | (transparent balance rail).
  * The final rail carries no data; it mirrors the volume lane so PRICE remains
- * mathematically centered in every viewport.
+ * mathematically centered in every viewport. Bid/ask size lanes use a smaller
+ * flex share so extra width goes to VOL and the balance rail.
  */
 export const AT_STOCK_LADDER_GRID =
-  `minmax(58px,1fr) minmax(52px,1fr) ${AT_LADDER_STRIKE_COL_W}px minmax(52px,1fr) minmax(58px,1fr)`;
+  `minmax(58px,1.2fr) minmax(40px,0.65fr) ${AT_LADDER_STRIKE_COL_W}px minmax(40px,0.65fr) minmax(58px,1.2fr)`;
 
 /** Dull green behind bid size, dull red behind ask size (equity ladder size columns). */
 export const AT_STOCK_BID_BG = "#173b2a";
