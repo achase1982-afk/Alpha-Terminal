@@ -60,7 +60,6 @@ import { peekPendingStrategistPushJobId, setPendingStrategistPushJobId } from "@
 import { readStashedStrategistPushJob } from "@/lib/strategistPushCache";
 import { openStrategistJobFromNotification, resumeAllRunningPollers } from "@/lib/strategistPoller";
 import { loadDashboardLayoutFromServer } from "@/lib/dashboardStore";
-import type { DashboardWidgetHandlers } from "@/components/dashboard/widgetRegistry";
 import {
   Menu,
   RefreshCw,
@@ -143,13 +142,13 @@ function InsightsView(props: ComponentProps<typeof import("@/components/Insights
     />
   );
 }
-function DashboardWorkspace(props: ComponentProps<typeof import("@/components/dashboard/DashboardWorkspace").DashboardWorkspace>) {
+function DesktopGlance() {
   return (
     <LazyRouteView
-      viewName="Dashboard"
-      fallback={<LazyViewFallback />}
-      loader={() => import("@/components/dashboard/DashboardWorkspace").then((m) => ({ default: m.DashboardWorkspace }))}
-      render={(C, key) => <C key={key} {...props} />}
+      viewName="SPX Glance"
+      fallback={<div className="absolute inset-0" style={{ background: "#0b0d11" }} />}
+      loader={() => import("@/glance/GlancePage")}
+      render={(C, key) => <C key={key} embedded />}
     />
   );
 }
@@ -1194,24 +1193,6 @@ export default function TerminalPage() {
     return () => clearTimeout(timer);
   }, [symbol, accessToken]);
 
-  const dashboardHandlers: DashboardWidgetHandlers = {
-    onNavigateToSymbol: (sym) => {
-      if (sym) useTerminalStore.getState().setSymbol(sym);
-      setActiveBottom("markets");
-    },
-    onTrade: openOrderForSymbol,
-    onRoll: (sym) => {
-      useTerminalStore.getState().setSymbol(sym);
-      setActiveBottom("markets");
-      setContextTab("options");
-    },
-    subscribeEquitySymbols,
-    subscribeOptionSymbols,
-    onTradeSingle: handleOptionTradeSingle,
-    onSendToStrategist: navigateToStrategist,
-    openOrder,
-  };
-
   return (
     <div className="app-shell bg-background flex flex-col overflow-hidden selection:bg-primary/30 selection:text-white">
 
@@ -1490,8 +1471,8 @@ export default function TerminalPage() {
                 </div>
               </>
             ) : (
-              <main ref={scrollRef} onScroll={handleScroll} className="flex-1 min-w-0 app-content pb-4 overflow-y-auto" style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
-                {activeBottom === "dashboard" && <DashboardWorkspace handlers={dashboardHandlers} />}
+              <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-w-0 app-content ${activeBottom === "dashboard" ? "relative overflow-hidden" : "pb-4 overflow-y-auto"}`} style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
+                {activeBottom === "dashboard" && <DesktopGlance />}
                 {activeBottom === "ai" && (
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
                 )}
@@ -1509,8 +1490,13 @@ export default function TerminalPage() {
             ref={mobileTabUsesInnerScroll ? undefined : scrollRef}
             onScroll={mobileTabUsesInnerScroll ? undefined : handleScroll}
             className={`app-content flex min-h-0 flex-1 min-w-0 flex-col ${
-              activeBottom === "markets" && contextTab === "options" && atSubViewActive ? "pb-0" : "pb-4"
+              activeBottom === "dashboard"
+                ? "relative overflow-hidden"
+                : activeBottom === "markets" && contextTab === "options" && atSubViewActive
+                  ? "pb-0"
+                  : "pb-4"
             } ${
+              activeBottom === "dashboard" ||
               mobileTabUsesInnerScroll ||
               (activeBottom === "markets" && contextTab === "newsChat")
                 ? "overflow-hidden"
@@ -1518,7 +1504,7 @@ export default function TerminalPage() {
             }`}
             style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
           >
-            {activeBottom === "dashboard" && <DashboardWorkspace handlers={dashboardHandlers} />}
+            {activeBottom === "dashboard" && <DesktopGlance />}
             {activeBottom === "markets" && (
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="shrink-0 border-b border-zinc-800/60 bg-background">
