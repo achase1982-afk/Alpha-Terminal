@@ -15,6 +15,9 @@ export const EMPTY_LADDER_HEAT_CELL: LadderHeatCellView = Object.freeze({
   availability: "unavailable",
   contracts30s: 0,
   intensity: 0,
+  buyIntensity: 0,
+  sellIntensity: 0,
+  neutralIntensity: 0,
 });
 
 /** Smallest intensity move worth a repaint (about one shade step). */
@@ -24,12 +27,18 @@ export function createAtLadderHeatStore(): AtLadderHeatStore {
   return createStore<AtLadderHeatState>(() => ({ cells: {} }));
 }
 
-/** The pair prints the contract count, so a count change is a visible update. */
+function channel(n: number | undefined): number {
+  return n ?? 0;
+}
+
+/** A count change is not a repaint. The wash moves only when a side's shade moves. */
 function sameShade(a: LadderHeatCellView, b: LadderHeatCellView): boolean {
   return (
     a.availability === b.availability &&
-    a.contracts30s === b.contracts30s &&
-    Math.abs(a.intensity - b.intensity) <= AT_HEAT_REPAINT_EPSILON
+    Math.abs(a.intensity - b.intensity) <= AT_HEAT_REPAINT_EPSILON &&
+    Math.abs(channel(a.buyIntensity) - channel(b.buyIntensity)) <= AT_HEAT_REPAINT_EPSILON &&
+    Math.abs(channel(a.sellIntensity) - channel(b.sellIntensity)) <= AT_HEAT_REPAINT_EPSILON &&
+    Math.abs(channel(a.neutralIntensity) - channel(b.neutralIntensity)) <= AT_HEAT_REPAINT_EPSILON
   );
 }
 
