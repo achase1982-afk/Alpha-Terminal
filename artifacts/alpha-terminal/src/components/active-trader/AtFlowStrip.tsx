@@ -54,7 +54,6 @@ export type AtFlowStripProps = {
   netPremium: DeskNetPremiumGlance;
   zones: ZoneModel;
   forceDash: boolean;
-  scopeLabel?: string;
 };
 
 export const AtFlowStrip = memo(function AtFlowStrip({
@@ -63,7 +62,6 @@ export const AtFlowStrip = memo(function AtFlowStrip({
   netPremium,
   zones,
   forceDash,
-  scopeLabel,
 }: AtFlowStripProps) {
   const [tab, setTab] = useState<AtFlowStripTab>(() => loadAtFlowStripTab());
   const dash = forceDash || netPremium.stale || netPremium.closed || netPremium.unsupported;
@@ -169,17 +167,15 @@ export const AtFlowStrip = memo(function AtFlowStrip({
               {resolveGammaFlipDisplay(zones)}
             </b>
           </span>
-          <span style={{ fontSize: 11, color: "#a4a6aa" }}>
-            {zones.levelSource ?? "model"} · {zones.glanceCaption ?? "levels"}
-          </span>
         </div>
       ) : null}
 
-      <div className="at-flow-strip-footer">
-        {flip ? <span className="at-flow-strip-flags">FLIP · EXPERIMENTAL </span> : null}
-        {freshBadge ? <span data-at-flow-freshness="">{freshBadge} </span> : null}
-        <span className="at-flow-strip-scope">{scopeLabel ?? "Desk flow · symbol-wide premium estimate"}</span>
-      </div>
+      {flip || freshBadge ? (
+        <div className="at-flow-strip-footer">
+          {flip ? <span className="at-flow-strip-flags">FLIP · EXPERIMENTAL </span> : null}
+          {freshBadge ? <span data-at-flow-freshness="">{freshBadge}</span> : null}
+        </div>
+      ) : null}
     </div>
   );
 });

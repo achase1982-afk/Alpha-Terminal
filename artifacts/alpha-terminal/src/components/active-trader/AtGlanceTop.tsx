@@ -303,7 +303,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           netPremium={netPremium}
           zones={zones}
           forceDash={flowDashShell}
-          scopeLabel="Desk flow · symbol-wide classified premium"
         />
       ) : !stockTemplate ? (
         <div data-at-glance-flow-band style={{ padding: "4px 16px", fontSize: 12, color: AT_SECONDARY }}>

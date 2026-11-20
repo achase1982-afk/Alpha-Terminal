@@ -62,7 +62,6 @@
   color: #a4a6aa;
   line-height: 1.25;
 }
-.at-flow-strip-scope { display: block; }
 .at-flow-strip-flags { color: #f5c542; font-weight: 600; }
 .at-flow-strip-session-grid {
   display: grid;
