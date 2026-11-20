@@ -258,7 +258,7 @@ export function BottomNav({
     <nav
       ref={containerRef}
       data-bottom-nav
-      className="relative z-50 flex shrink-0 items-center gap-0.5 border-t border-zinc-800/60 bg-[#0c0c0c] px-1.5"
+      className="relative z-50 flex shrink-0 items-center gap-0.5 border-t border-zinc-800/60 bg-card px-1.5"
       style={{ paddingTop: 6, paddingBottom: 18, touchAction: dragging ? "none" : "manipulation" }}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

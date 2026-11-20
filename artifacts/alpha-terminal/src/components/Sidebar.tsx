@@ -200,7 +200,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
           style={{ top: `${headerHeight}px`, bottom: "80px" }}
         >
           {activePage !== "Calendar" && (
-            <div className="flex items-center justify-between p-3 border-b border-card-border bg-[#141414]">
+            <div className="flex items-center justify-between p-3 border-b border-card-border bg-card">
               <div className="flex items-center gap-2 ml-1">
                 {SETTINGS_SUBPAGES.has(activePage) && (
                   <button
@@ -260,7 +260,7 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
             onClick={activePage ? onClose : handleCloseAll}
           />
 
-          <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-[#0c0c0c] border-r border-card-border z-[120] transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
+          <div className={`fixed top-0 left-0 h-full w-[280px] sm:w-[320px] bg-card border-r border-card-border z-[120] transform transition-transform duration-300 flex flex-col ${isOpen ? "translate-x-0" : "-translate-x-full"}`}>
 
             <div className="h-12 bg-card shrink-0 border-b border-card-border flex items-center px-4">
               <button
@@ -386,7 +386,7 @@ function WatchlistPage({ onClose }: { onClose: () => void }) {
 function LinkedBrokeragePage() {
   return (
     <div className="max-w-xl lg:max-w-2xl mx-auto">
-      <div className="rounded-lg border border-zinc-800/50 bg-[#0c0c0c] p-4">
+      <div className="rounded-lg border border-zinc-800/50 bg-card p-4">
         <AuthPanel />
       </div>
     </div>
@@ -521,7 +521,7 @@ function DisplayMarqueePage() {
 
       <button
         onClick={handleSave}
-        className={`w-full font-mono text-xs h-8 rounded-md transition-all border ${saved ? "text-primary border-primary/50" : "bg-[#0c0c0c] text-primary border-primary hover:border-primary/70"}`}
+        className={`w-full font-mono text-xs h-8 rounded-md transition-all border ${saved ? "text-primary border-primary/50" : "bg-card text-primary border-primary hover:border-primary/70"}`}
       >
         {saved ? "✓ SAVED" : "APPLY SETTINGS"}
       </button>
@@ -583,7 +583,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
       </button>
 
       {expanded && (
-        <div className="px-3 py-3 space-y-3 bg-[#0a0a0a] border-t border-card-border">
+        <div className="px-3 py-3 space-y-3 bg-card border-t border-card-border">
           <div className="space-y-1.5">
             <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Model</span>
             <select
@@ -706,7 +706,7 @@ function AiLabStrategistControl() {
       </button>
 
       {expanded && (
-        <div className="px-3 py-3 space-y-4 bg-[#0a0a0a] border-t border-card-border">
+        <div className="px-3 py-3 space-y-4 bg-card border-t border-card-border">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[8px] text-zinc-500 uppercase tracking-widest">Enabled</span>
             <Switch
@@ -1039,7 +1039,7 @@ function MoversAiControl() {
       </button>
 
       {expanded && (
-        <div className="px-3 py-3 space-y-4 bg-[#0a0a0a] border-t border-card-border">
+        <div className="px-3 py-3 space-y-4 bg-card border-t border-card-border">
           <div className="space-y-2">
             <span className="font-mono text-[9px] text-white uppercase tracking-widest font-medium">
               Catalyst Model
@@ -1872,7 +1872,7 @@ function DiagnosticsPage() {
           Live connection state across data and execution surfaces.
         </p>
 
-        <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-2.5">
+        <div className="rounded-lg border border-card-border bg-card p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-mono text-[11px] text-zinc-400">Schwab Stream</span>
             <span className="font-mono text-[10px] uppercase tracking-wider" style={{ color: streamColor }}>
@@ -1887,7 +1887,7 @@ function DiagnosticsPage() {
           </div>
         </div>
 
-        <div className="rounded-lg border border-card-border bg-[#0c0c0c] p-3 space-y-1.5">
+        <div className="rounded-lg border border-card-border bg-card p-3 space-y-1.5">
           <div className="font-mono text-[10px] text-zinc-500 uppercase tracking-widest font-bold">Deeper checks</div>
           <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
             Telemetry shows individual API/stream events. Linked Brokerage shows broker auth state.

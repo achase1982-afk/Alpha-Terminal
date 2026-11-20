@@ -38,7 +38,7 @@ export const scannerUiTw = {
  * (identity + price, UAI signal, compact context). Matches `ScannerLayer1ColumnHeader`.
  */
 export const SCANNER_LAYER1_CARD_GRID_CLASS =
-  "flex w-full min-w-0 items-stretch gap-2 bg-black px-3 py-2 text-sm tabular-nums";
+  "flex w-full min-w-0 items-stretch gap-2 bg-background px-3 py-2 text-sm tabular-nums";
 
 /**
  * Urgency readout for collapsed-row bar (0–99). Prefers Layer-7 composite score when present;

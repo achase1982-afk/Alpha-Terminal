@@ -9,6 +9,7 @@ import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react
 import { useShallow } from "zustand/react/shallow";
 import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 import { formatDayRangeLabel } from "@/lib/formatDayRange";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 const UP_COLOR   = "#00d166";
 const DOWN_COLOR = "#f23645";
@@ -174,7 +175,7 @@ function TickerBlock({ symbol, description, showData, opacityCls, transitionCls,
 
 const GRID_CLS = "grid items-center gap-2 sm:gap-4 w-full min-h-[70px] sm:min-h-[80px]";
 const GRID_COLS = "grid-cols-[minmax(80px,1fr)_minmax(90px,1.3fr)_auto]";
-const HEADER_BG = "#0c0c0c";
+const HEADER_BG = APP_SURFACE;
 
 function HeaderSkeleton() {
   return (

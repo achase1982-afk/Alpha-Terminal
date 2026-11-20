@@ -185,7 +185,7 @@ export function ScannerCardDetail({
   };
 
   return (
-    <div className="space-y-0 border-t border-zinc-900 bg-black px-2 pb-2 pt-2 text-white">
+    <div className="space-y-0 border-t border-zinc-900 bg-background px-2 pb-2 pt-2 text-white">
       {/* Headline strip */}
       <div
         className="flex flex-wrap items-center gap-2 border-b border-zinc-900 pb-2 text-[11px] font-semibold uppercase tracking-wide"
@@ -321,7 +321,7 @@ export function ScannerCardDetail({
           { k: "VOL", v: volMult === dashCell() ? dashCell() : `${String(volMult).replace(/\u00d7/g, "x").replace(/×/g, "x")}` },
           { k: "TOP", v: topStrikeChip },
         ].map((c) => (
-          <div key={c.k} className="rounded-md border border-zinc-800 bg-black px-2 py-2">
+          <div key={c.k} className="rounded-md border border-zinc-800 bg-background px-2 py-2">
             <div className="text-[9px] font-bold uppercase tracking-wider text-zinc-500" style={scannerSansFontStyle}>
               {c.k}
             </div>

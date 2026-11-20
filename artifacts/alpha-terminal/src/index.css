@@ -48,10 +48,11 @@
 }
 
 :root, .dark {
-  --background: 0 0% 0%;
+  /* Unified chrome: legacy header was 10% grey; 9% is one shade darker, not jet black. */
+  --background: 0 0% 9%;
   --foreground: 240 6% 90%;
   
-  --card: 0 0% 10%;
+  --card: 0 0% 9%;
   --card-foreground: 240 6% 90%;
   --card-border: 0 0% 15%;
   
@@ -168,7 +169,7 @@
     overflow-x: hidden;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
-    background: #030303;
+    background: hsl(var(--background));
   }
 
   .pf-hscroll {

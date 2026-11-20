@@ -37,7 +37,7 @@ export const ChainDraftStrip = memo(function ChainDraftStrip({
       style={{
         bottom: MOBILE_BOTTOM_NAV_RESERVE_PX,
         height: CHAIN_DRAFT_STRIP_HEIGHT_PX,
-        background: "#000000",
+        background: "hsl(var(--background))",
         borderColor: limitRejected ? DOWN : BORDER,
         fontFamily: MONO,
         boxShadow: limitRejected ? `0 0 12px ${DOWN}55` : "0 -4px 24px rgba(0,0,0,0.85)",

@@ -784,9 +784,9 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
               <div aria-live="polite" aria-atomic="true" className="sr-only">
                 {`Scanner universe loaded: ${unified.layer1Universe.count} tickers, ${layer1ActiveAndQuiet.active.length} with flow today, ${layer1ActiveAndQuiet.quiet.length} quiet after mutes.`}
               </div>
-              <div className="divide-y divide-zinc-900 border-y border-zinc-900 overflow-hidden rounded-none bg-black">
+              <div className="divide-y divide-zinc-900 border-y border-zinc-900 overflow-hidden rounded-none bg-background">
                 <div
-                  className="flex items-center justify-between bg-black px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500"
+                  className="flex items-center justify-between bg-background px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-500"
                   style={{
                     fontFamily:
                       "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial, sans-serif",
@@ -824,11 +824,11 @@ function MarketScannerInner({ subscribeEquitySymbols, onNavigateToSymbol, onSend
                   ))}
                 </div>
                 {layer1ActiveAndQuiet.quiet.length > 0 ? (
-                  <div className="border-t border-zinc-900 bg-black">
+                  <div className="border-t border-zinc-900 bg-background">
                     <button
                       type="button"
                       onClick={() => setQuietTodayExpanded((v) => !v)}
-                      className="flex w-full items-center gap-2 bg-black px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-500 hover:bg-zinc-950 hover:text-zinc-300"
+                      className="flex w-full items-center gap-2 bg-background px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-zinc-500 hover:bg-zinc-950 hover:text-zinc-300"
                     >
                       {quietTodayExpanded ? (
                         <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -9,7 +9,7 @@ export function ScannerCardActions({
 }) {
   return (
     <div
-      className="flex flex-wrap items-stretch gap-2 border-t border-zinc-900 bg-black pt-2"
+      className="flex flex-wrap items-stretch gap-2 border-t border-zinc-900 bg-background pt-2"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => e.stopPropagation()}
     >
@@ -18,7 +18,7 @@ export function ScannerCardActions({
         onClick={() => {
           onAction("mute");
         }}
-        className="flex-1 rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD100]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+        className="flex-1 rounded-md border border-zinc-700 bg-background px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD100]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
         Mute today
       </button>
@@ -27,7 +27,7 @@ export function ScannerCardActions({
         onClick={() => {
           onAction("watchlist");
         }}
-        className="flex-1 rounded-md border border-zinc-700 bg-black px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD100]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+        className="flex-1 rounded-md border border-zinc-700 bg-background px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-zinc-500 hover:bg-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#FFD100]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
       >
         + Watchlist
       </button>

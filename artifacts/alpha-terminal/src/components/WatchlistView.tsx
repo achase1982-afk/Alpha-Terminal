@@ -22,6 +22,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 type IndicatorKey =
   | "mark" | "markChg" | "volume" | "rsi" | "pcRatio" | "beta"
@@ -179,7 +180,7 @@ function WatchlistRow({
         gridTemplateColumns: gridCols,
         minWidth: minW,
         borderBottom: "1px solid #2A2A2C",
-        background: tapped ? "#1a1a1a" : "#000000",
+        background: tapped ? "#1a1a1a" : APP_SURFACE,
         transition: "background 0.15s ease",
         alignItems: "center",
       }}
@@ -189,7 +190,7 @@ function WatchlistRow({
           position: "sticky",
           left: 0,
           zIndex: 1,
-          background: tapped ? "#1a1a1a" : "#000000",
+          background: tapped ? "#1a1a1a" : APP_SURFACE,
           display: "flex",
           alignItems: "center",
           borderRight: "1px solid rgba(255,255,255,0.08)",
@@ -877,7 +878,7 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
   const minRowW = useMemo(() => stickyW + sparkW + visibleIndicators.reduce((s, i) => s + i.width, 0), [stickyW, visibleIndicators]);
 
   return (
-    <div className="flex-1 flex flex-col" style={{ background: "#000000" }}>
+    <div className="flex-1 flex flex-col" style={{ background: APP_SURFACE }}>
       {settingsOpen && (
         <WatchlistSettingsPanel
           activeIndicators={activeIndicators}
@@ -964,11 +965,11 @@ export function WatchlistView({ onNavigateToSymbol }: { onNavigateToSymbol?: (sy
                   gridTemplateColumns: gridCols,
                   minWidth: minRowW,
                   borderBottom: "1px solid #2A2A2C",
-                  background: "#000000",
+                  background: APP_SURFACE,
                   alignItems: "center",
                 }}
               >
-                <div style={{ position: "sticky", left: 0, zIndex: 3, background: "#000000", padding: "4px 12px", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ position: "sticky", left: 0, zIndex: 3, background: APP_SURFACE, padding: "4px 12px", borderRight: "1px solid rgba(255,255,255,0.08)" }}>
                   <button
                     onClick={() => handleSort("symbol")}
                     className="font-mono tracking-wider flex items-center gap-0.5 transition-colors"

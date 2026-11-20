@@ -6,10 +6,11 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { DeskStructure, PayoffScenario, PayoffScenariosSummary } from "@/lib/strategistDeskResult";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 export const DESK_PAL = {
-  bgCard: "#141414",
-  bgInner: "#0a0a0a",
+  bgCard: APP_SURFACE,
+  bgInner: APP_SURFACE,
   border: "#2a2a2a",
   borderInner: "#1f1f1f",
   label: "#a3a3a3",
