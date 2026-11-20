@@ -1038,6 +1038,44 @@ function buildRequest(service: string, command: string, parameters: Record<strin
   };
 }
 
+const capabilityGatewayServices = new Set<string>();
+
+/**
+ * Send an on-demand request for any documented Schwab streamer service.
+ * Existing managed subscriptions keep their dedicated state; gateway
+ * responses and data are additionally broadcast as raw typed events.
+ */
+export function sendSchwabCapabilityStreamerRequest(input: {
+  service: string;
+  command: string;
+  parameters: Record<string, string>;
+}): { sent: boolean; requestId: string | null; status: string } {
+  if (
+    connectionState !== "connected" ||
+    !schwabWs ||
+    schwabWs.readyState !== WebSocket.OPEN ||
+    !streamerInfo
+  ) {
+    return { sent: false, requestId: null, status: connectionState };
+  }
+
+  const parameters = { ...input.parameters };
+  if (input.service === "ACCT_ACTIVITY") {
+    parameters.keys ??= streamerInfo.schwabClientCorrelId;
+    parameters.fields ??= "0,1,2,3";
+  }
+  const req = buildRequest(input.service, input.command, parameters);
+  if (!req) return { sent: false, requestId: null, status: connectionState };
+
+  capabilityGatewayServices.add(input.service);
+  sendStreamerJson({ requests: [req] });
+  logger.info(
+    { service: input.service, command: input.command, requestId: req.requestid },
+    "Schwab streamer capability request sent",
+  );
+  return { sent: true, requestId: req.requestid, status: connectionState };
+}
+
 function sendLogin() {
   if (!schwabWs || schwabWs.readyState !== WebSocket.OPEN || !streamerInfo) return;
 
@@ -2479,6 +2517,14 @@ function handleMessage(raw: string) {
       if (service !== "ADMIN") {
         logger.info({ service, command, code, msg: msgText }, "Schwab streamer: subscription response");
       }
+      if (capabilityGatewayServices.has(service)) {
+        broadcast("schwabStreamerResponse", {
+          service,
+          command,
+          content,
+          timestamp: Date.now(),
+        });
+      }
       if (
         service === "TIMESALE_OPTIONS" ||
         service === "TIMESALE_EQUITY" ||
@@ -2634,6 +2680,13 @@ function handleMessage(raw: string) {
     const dataItems = msg["data"] as Array<{ service: string; content: Record<string, unknown>[] }>;
     for (const item of dataItems) {
       if (!item.content) continue;
+      if (capabilityGatewayServices.has(item.service)) {
+        broadcast("schwabStreamerData", {
+          service: item.service,
+          content: item.content,
+          timestamp: Date.now(),
+        });
+      }
       if (item.service === "LEVELONE_EQUITIES") {
         processEquityTick(item.content);
       } else if (item.service === "LEVELONE_FUTURES") {
