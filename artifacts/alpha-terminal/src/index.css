@@ -348,8 +348,8 @@
 }
 
 /*
- * Active Trader ladder numbers: the platform UI font (SF on iOS and macOS) with
- * fixed-width figures, so prices keep their place as they tick.
+ * Active Trader + options chain ladder numbers: platform UI font (SF on iOS/macOS)
+ * with tabular figures. Options chain uses the same `.at-ladder-num` wrapper as AT.
  * index.html pins every element to Inter with !important, so this needs it too.
  */
 .at-ladder-num,

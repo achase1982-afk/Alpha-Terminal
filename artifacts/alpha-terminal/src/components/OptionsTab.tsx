@@ -24,16 +24,18 @@ import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import {
-  CHAIN_LADDER_CELL_FONT_SIZE,
-  CHAIN_LADDER_CELL_FONT_WEIGHT,
   CHAIN_OTM_ROW_BG,
-  STRIKE_COL_FONT_WEIGHT,
   STRIKE_COL_PAD_X,
   STRIKE_RAIL_LETTER_SPACING,
   STRIKE_RAIL_LINE_HEIGHT,
   strikeRailFontSize,
 } from "@/lib/options/strikeColumnChrome";
-import { AT_LADDER_PRICE_COLOR } from "@/lib/active-trader/atLadderLayout";
+import {
+  AT_LADDER_PRICE_COLOR,
+  AT_LADDER_PRICE_SIZE,
+  AT_LADDER_PRICE_WEIGHT,
+  AT_LADDER_STRIKE_WEIGHT,
+} from "@/lib/active-trader/atLadderLayout";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
@@ -727,14 +729,17 @@ const DataCell = memo(function DataCell({
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         data-chain-quote-reason={priceReason ?? undefined}
         style={{
-          fontSize: isPrice ? CHAIN_LADDER_CELL_FONT_SIZE : 12,
-          fontWeight: isPrice ? CHAIN_LADDER_CELL_FONT_WEIGHT : FW_LIGHT,
+          fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
+          fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
           opacity: priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
-          fontFamily: MONO,
-          letterSpacing: STRIKE_RAIL_LETTER_SPACING,
-          lineHeight: isPrice ? STRIKE_RAIL_LINE_HEIGHT : 1,
+          ...(isPrice
+            ? {
+                letterSpacing: STRIKE_RAIL_LETTER_SPACING,
+                lineHeight: STRIKE_RAIL_LINE_HEIGHT,
+              }
+            : { fontFamily: MONO }),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -802,7 +807,7 @@ const DataCell = memo(function DataCell({
         aria-pressed={isSelected}
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}${asOfLabel ? `, ${asOfLabel}` : ""}`}
         title={asOfLabel ?? undefined}
-        className="w-full text-left cursor-pointer select-none relative"
+        className="at-ladder-num w-full text-left cursor-pointer select-none relative"
         style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
         {inner}
@@ -1128,10 +1133,9 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         data-ui-audit="chain-strike-cell"
         style={{
           fontSize: strikeRailFontSize(strike),
-          fontWeight: STRIKE_COL_FONT_WEIGHT,
+          fontWeight: AT_LADDER_STRIKE_WEIGHT,
           color: "#000",
           fontVariantNumeric: "tabular-nums",
-          fontFamily: MONO,
           letterSpacing: STRIKE_RAIL_LETTER_SPACING,
           lineHeight: STRIKE_RAIL_LINE_HEIGHT,
           padding: `0 ${STRIKE_COL_PAD_X}px`,
@@ -1214,7 +1218,11 @@ function OptionsGrid({
 
   return (
     <div>
-      <div style={{ display: "flex", fontVariantNumeric: "tabular-nums", fontFamily: MONO, position: "relative" }}>
+      <div
+        className="at-ladder-num"
+        data-chain-ladder-grid
+        style={{ display: "flex", fontVariantNumeric: "tabular-nums", position: "relative" }}
+      >
         {atmLineTop >= 0 && (
           <div
             className="pointer-events-none"
