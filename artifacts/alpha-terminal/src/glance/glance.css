@@ -429,7 +429,7 @@
 
 .windows {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 8px 14px;
   font-size: 22px;
 }
@@ -589,18 +589,49 @@
   min-height: 22px;
 }
 
+.sheet-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.35);
+}
+
 .sheet {
-  position: fixed;
-  top: 52px;
-  right: 24px;
-  width: min(420px, calc(100vw - 48px));
-  max-height: calc(100vh - 80px);
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 16px);
   overflow: auto;
   background: #12161d;
   border: 1px solid #2a3342;
   border-radius: 8px;
   padding: 14px;
-  z-index: 40;
+  z-index: 41;
+}
+
+.sheet-head {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: -14px -14px 8px;
+  padding: 8px 14px;
+  background: #12161d;
+}
+
+.sheet-head button {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid #2a3342;
+  border-radius: 6px;
+  background: #151a22;
+}
+
+.sheet-head h3 {
+  margin: 0;
 }
 
 .sheet h3 {
