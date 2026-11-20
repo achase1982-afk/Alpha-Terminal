@@ -183,14 +183,8 @@ export function GlanceLadder({
     centered.current = true;
   }, [rows, spotStrike]);
 
-  const status = chain.isError ? "Chain unavailable" : rows.length === 0 ? "Waiting for 0DTE" : "SPXW · live";
-
   return (
     <section className="block glance-ladder" aria-label="Active trader">
-      <h2>
-        <span>Active trader</span>
-        <span>{status}</span>
-      </h2>
       <div style={{ background: AT_HEADER_BG, borderBottom: `1px solid ${BORDER}` }}>
         <div
           className="grid items-center at-ladder-num"

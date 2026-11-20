@@ -455,10 +455,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       <div className="band">
         <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
         <section className="block" aria-label="Flow">
-            <h2>
-              <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : ""}</span>
-              <span>{fixture ? "Age 30s · fixture" : formatAge(live.flowAgeSec)}</span>
-            </h2>
             <div className="windows num">
               {(
                 [
