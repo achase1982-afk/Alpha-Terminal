@@ -3,11 +3,15 @@ import { useLayoutEffect } from "react";
 /**
  * Phone shell size.
  *
- * iOS home-screen apps fire a visualViewport resize while switching away and
- * often never fire a correcting one on the way back. The height left behind is
- * a short band: the chain clips to a couple of rows, Recenter sits on the
- * quotes, and the search button rides up over the tab bar. While nothing is
- * being typed, keep the last full height for this orientation.
+ * The installed app (standalone) is the full phone, under the status bar.
+ * iOS still reports a viewport height that is short of that screen, so a shell
+ * sized to innerHeight / visualViewport / 100lvh ends above the bottom and the
+ * footer floats with a gap under it. While nothing is being typed, pin that
+ * shell to screen.height and do not translate it — an offset slides the header
+ * under the clock or shoves the footer off the bottom.
+ *
+ * Safari keeps the visible viewport. After an app switch iOS can freeze that
+ * viewport short; keep the last height that actually filled the screen.
  */
 
 const COLLAPSE_PX = 140;
@@ -42,6 +46,21 @@ function isPhone(): boolean {
 function isStandalonePwa(): boolean {
   const nav = navigator as Navigator & { standalone?: boolean };
   return nav.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+}
+
+/**
+ * Full phone size in CSS pixels.
+ * Do not derive orientation from innerHeight — that is the short value this
+ * corrects, and a frozen viewport can be shorter than the width.
+ */
+function standaloneScreenBox(): { h: number; w: number } {
+  const sh = window.screen?.height || 0;
+  const sw = window.screen?.width || 0;
+  if (sh <= 0 || sw <= 0) return { h: 0, w: 0 };
+  const landscape = window.matchMedia("(orientation: landscape)").matches;
+  const screenLandscape = sw > sh;
+  if (landscape === screenLandscape) return { h: sh, w: sw };
+  return { h: sw, w: sh };
 }
 
 function writeViewport(height: number, width: number, top: number, left: number) {
@@ -97,13 +116,16 @@ export function useViewportShell() {
       const vvLeft = vv?.offsetLeft ?? 0;
       const reported = Math.max(innerH, vvH);
       const focused = isEditableFocused();
+      const phone = isPhone();
+      const standalone = phone && isStandalonePwa();
+      if (standalone) document.documentElement.dataset.standalone = "true";
 
       if (lastGoodW > 0 && Math.abs(innerW - lastGoodW) > 80) {
         lastGoodH = 0;
         lastGoodW = 0;
       }
 
-      if (!isPhone()) {
+      if (!phone) {
         writeViewport(reported, Math.max(innerW, vvW), vvTop, vvLeft);
         return;
       }
@@ -115,6 +137,16 @@ export function useViewportShell() {
         return;
       }
 
+      if (standalone) {
+        const fitted = standaloneScreenBox();
+        const height = fitted.h > 0 ? fitted.h : reported;
+        const width = fitted.w > 0 ? fitted.w : Math.max(innerW, vvW);
+        lastGoodH = height;
+        lastGoodW = innerW;
+        writeViewport(height, width, 0, 0);
+        return;
+      }
+
       const lvh = readLvh(innerW);
       const collapsed = lastGoodH > 0 && lastGoodH - reported > COLLAPSE_PX;
       if (collapsed) {
@@ -122,10 +154,9 @@ export function useViewportShell() {
         return;
       }
 
-      const next = isStandalonePwa() ? Math.max(reported, lvh) : reported;
-      lastGoodH = next;
+      lastGoodH = reported;
       lastGoodW = innerW;
-      writeViewport(next, Math.max(innerW, vvW), vvTop, vvLeft);
+      writeViewport(reported, Math.max(innerW, vvW), vvTop, vvLeft);
     };
 
     const clearResumeTimers = () => {

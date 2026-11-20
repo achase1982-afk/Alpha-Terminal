@@ -359,11 +359,21 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Tight spacer above the wordmark/ticker. In regular Safari iOS handles
-   the notch via its own chrome, so we only need a few pixels of breathing
-   room — no inset-clearing needed. */
+/* Safari draws the page below its own chrome. The installed app does not:
+   black-translucent paints under the status bar, and with no inset the
+   wordmark sits behind the clock. */
 .safe-top {
   padding-top: 0px;
+}
+
+@media (display-mode: standalone) {
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+html[data-standalone="true"] .safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* Telemetry copy: native <dialog> — top layer, works when portaled z-index does not */
