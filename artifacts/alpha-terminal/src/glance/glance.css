@@ -484,26 +484,43 @@
   white-space: nowrap;
 }
 
+.gex-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.35;
+  padding-bottom: 6px;
+}
+
+.gex-box span {
+  display: block;
+  max-width: 100%;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
 .rail {
   position: relative;
-  height: 156px;
+  height: 200px;
   margin-top: 4px;
+  overflow: hidden;
   border-top: 1px solid #2a3342;
   border-bottom: 1px solid #2a3342;
 }
 
 .rail .axis {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 78px;
+  left: 12px;
+  right: 12px;
+  top: 100px;
   height: 1px;
   background: #2a3342;
 }
 
 .mark {
   position: absolute;
-  top: 72px;
+  top: 96px;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -513,23 +530,14 @@
 .mark em {
   position: absolute;
   left: 50%;
-  transform: translateX(-50%);
+  top: 0;
+  height: 20px;
+  transform: translate(var(--shift, -50%), var(--lift, -20px));
   font-style: normal;
-  font-size: 18px;
+  font-size: 16px;
+  line-height: 20px;
   white-space: nowrap;
   color: #cbd5e1;
-}
-
-.mark.lane-0 em {
-  top: -28px;
-}
-
-.mark.lane-1 em {
-  top: 16px;
-}
-
-.mark.lane-2 em {
-  top: -78px;
 }
 
 .footer {
