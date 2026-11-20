@@ -1,13 +1,14 @@
-/** Scroll the ladder body so the spot line (or nearest strike) is vertically centered. */
-export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPrice: number | null): void {
-  if (!container || underlyingPrice == null || !Number.isFinite(underlyingPrice)) return;
-  const strikes = [...container.querySelectorAll<HTMLElement>("[data-at-strike]")];
-  if (!strikes.length) return;
-
+function nearestStrikeRow(
+  container: HTMLElement,
+  underlyingPrice: number,
+  strikeAttr: string,
+): HTMLElement | null {
+  const strikes = [...container.querySelectorAll<HTMLElement>(`[${strikeAttr}]`)];
+  if (!strikes.length) return null;
   let best: HTMLElement | null = null;
   let bestDist = Infinity;
   for (const el of strikes) {
-    const raw = el.getAttribute("data-at-strike");
+    const raw = el.getAttribute(strikeAttr);
     const strike = raw != null ? Number(raw) : NaN;
     if (!Number.isFinite(strike)) continue;
     const d = Math.abs(strike - underlyingPrice);
@@ -16,17 +17,57 @@ export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPr
       best = el;
     }
   }
+  return best;
+}
+
+/** Scroll a strike-keyed viewport so the row nearest underlying is on the spot band. */
+export function scrollViewportToNearestStrike(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+  strikeAttr: string,
+  centerFraction = 0.42,
+  behavior: ScrollBehavior = "smooth",
+): void {
+  if (!container || underlyingPrice == null || !Number.isFinite(underlyingPrice)) return;
+  const best = nearestStrikeRow(container, underlyingPrice, strikeAttr);
   if (!best) return;
 
   const cRect = container.getBoundingClientRect();
-  const tRect = best.getBoundingClientRect();
   const spotGap = container.querySelector<HTMLElement>("[data-at-spot-gap]");
-  const targetTop =
-    spotGap != null
+  const tRect = best.getBoundingClientRect();
+  const rowTop =
+    spotGap != null && strikeAttr === "data-at-strike"
       ? spotGap.getBoundingClientRect().top - cRect.top + container.scrollTop
       : tRect.top - cRect.top + container.scrollTop;
-  const centerOffset = container.clientHeight * 0.42;
-  container.scrollTop = Math.max(0, targetTop - centerOffset);
+  const rowH = tRect.height > 0 ? tRect.height : 1;
+  const target = rowTop + rowH / 2 - container.clientHeight * centerFraction;
+  const top = Math.max(0, target);
+  if (behavior === "smooth") container.scrollTo({ top, behavior: "smooth" });
+  else container.scrollTop = top;
+}
+
+/** True when the nearest strike row is outside the centered band (show recenter affordance). */
+export function viewportNearestStrikeOffCenter(
+  container: HTMLElement | null,
+  underlyingPrice: number | null,
+  strikeAttr: string,
+  tolerancePx = 56,
+  centerFraction = 0.42,
+): boolean {
+  if (!container || underlyingPrice == null || !Number.isFinite(underlyingPrice)) return false;
+  const best = nearestStrikeRow(container, underlyingPrice, strikeAttr);
+  if (!best) return false;
+
+  const cRect = container.getBoundingClientRect();
+  const tRect = best.getBoundingClientRect();
+  const rowCenter = tRect.top + tRect.height / 2 - cRect.top;
+  const bandCenter = container.clientHeight * centerFraction;
+  return Math.abs(rowCenter - bandCenter) > tolerancePx;
+}
+
+/** Scroll the ladder body so the spot line (or nearest strike) is vertically centered. */
+export function scrollAtLadderToSpot(container: HTMLElement | null, underlyingPrice: number | null): void {
+  scrollViewportToNearestStrike(container, underlyingPrice, "data-at-strike", 0.42, "auto");
 }
 
 /** True when the spot/ATM row is outside the centered band (show recenter affordance). */
@@ -35,29 +76,7 @@ export function atLadderSpotOffCenter(
   underlyingPrice: number | null,
   tolerancePx = 56,
 ): boolean {
-  if (!container || underlyingPrice == null || !Number.isFinite(underlyingPrice)) return false;
-  const strikes = [...container.querySelectorAll<HTMLElement>("[data-at-strike]")];
-  if (!strikes.length) return false;
-
-  let best: HTMLElement | null = null;
-  let bestDist = Infinity;
-  for (const el of strikes) {
-    const raw = el.getAttribute("data-at-strike");
-    const strike = raw != null ? Number(raw) : NaN;
-    if (!Number.isFinite(strike)) continue;
-    const d = Math.abs(strike - underlyingPrice);
-    if (d < bestDist) {
-      bestDist = d;
-      best = el;
-    }
-  }
-  if (!best) return false;
-
-  const cRect = container.getBoundingClientRect();
-  const tRect = best.getBoundingClientRect();
-  const rowCenter = tRect.top + tRect.height / 2 - cRect.top;
-  const bandCenter = container.clientHeight * 0.42;
-  return Math.abs(rowCenter - bandCenter) > tolerancePx;
+  return viewportNearestStrikeOffCenter(container, underlyingPrice, "data-at-strike", tolerancePx, 0.42);
 }
 
 /** Keep a selected strike row in the visible band above chrome / trade bar. */
