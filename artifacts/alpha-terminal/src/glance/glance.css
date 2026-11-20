@@ -1,4 +1,14 @@
 .glance {
+  /* Match mobile `APP_SURFACE` / index.css --card (9% grey), not the old blue-tinted canvas. */
+  --glance-bg: #171717;
+  --glance-bg-deep: #0c0c0c;
+  --glance-chrome: #212121;
+  --glance-border: #262626;
+  --glance-border-mid: #2a2a2c;
+  --glance-muted: #a1a1aa;
+  --glance-text: #e4e4e7;
+  --glance-text-soft: #d4d4d8;
+
   position: fixed;
   inset: 0;
   z-index: 30;
@@ -7,10 +17,11 @@
   align-content: stretch;
   gap: 4px;
   padding: 0 12px;
-  background: #0b0d11;
-  color: #f8fafc;
+  background: var(--glance-bg);
+  color: var(--glance-text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0;
+  letter-spacing: -0.025em;
   overflow: hidden;
   font-size: 18px;
 }
@@ -64,7 +75,7 @@
 }
 
 .cmd .sub {
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
 }
 
@@ -76,10 +87,10 @@
 .cmd a {
   min-height: 36px;
   padding: 0 10px;
-  border: 1px solid #2a3342;
+  border: 1px solid var(--glance-border-mid);
   border-radius: 6px;
-  background: #151a22;
-  color: #e2e8f0;
+  background: var(--glance-chrome);
+  color: var(--glance-text);
   font-size: 18px;
   font-weight: 650;
   text-decoration: none;
@@ -97,8 +108,8 @@
   grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.9fr) minmax(180px, 1.2fr) minmax(180px, 1.1fr);
   align-items: end;
   gap: 10px;
-  border-top: 1px solid #232b38;
-  border-bottom: 1px solid #232b38;
+  border-top: 1px solid var(--glance-border);
+  border-bottom: 1px solid var(--glance-border);
   padding: 2px 0;
   min-width: 0;
 }
@@ -109,7 +120,7 @@
 
 .headline .k {
   display: block;
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
   font-weight: 650;
   letter-spacing: 0.04em;
@@ -160,7 +171,7 @@
 
 .support {
   margin-top: 0;
-  color: #cbd5e1;
+  color: var(--glance-text-soft);
   font-size: 18px;
   line-height: 1.15;
   white-space: nowrap;
@@ -177,7 +188,7 @@
 
 .hl .when {
   margin-left: 6px;
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
 }
 
@@ -193,8 +204,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-left: 8px;
   min-width: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--glance-border);
+  border-radius: 6px;
+  background: var(--glance-bg);
 }
 
 .cmd-quote-id,
@@ -262,7 +276,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: #060709;
+  background: var(--glance-bg-deep);
 }
 
 .glance-ladder-scroll {
@@ -292,7 +306,7 @@
   flex: 1 1 40px;
   min-height: 40px;
   height: auto;
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
 }
 
@@ -301,7 +315,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   align-items: center;
-  border-top: 1px solid #232b38;
+  border-top: 1px solid var(--glance-border);
   padding: 2px 0;
 }
 
@@ -346,7 +360,7 @@
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: #9aa6b8;
+  color: var(--glance-muted);
 }
 
 .flow-row {
@@ -406,7 +420,7 @@
   display: block;
   margin-top: 4px;
   font-size: 18px;
-  color: #9aa6b8;
+  color: var(--glance-muted);
 }
 
 .track {
@@ -417,7 +431,7 @@
   grid-template-columns: 1fr 1fr;
   height: var(--flow-num);
   align-self: center;
-  background: #1b222e;
+  background: var(--glance-border-mid);
   border-radius: 999px;
   overflow: hidden;
 }
@@ -429,7 +443,7 @@
   bottom: 0;
   width: 2px;
   transform: translateX(-50%);
-  background: #0b0d11;
+  background: var(--glance-bg-deep);
 }
 
 .track .bought {
@@ -461,7 +475,7 @@
 
 .hist b.gap {
   background: transparent;
-  border-bottom: 1px solid #2a3342;
+  border-bottom: 1px solid var(--glance-border-mid);
   min-height: 0;
   height: 8px !important;
 }
@@ -474,7 +488,7 @@
 
 .table th {
   text-align: right;
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
   white-space: nowrap;
   font-weight: 650;
@@ -484,7 +498,7 @@
 .table th:first-child,
 .table td:first-child {
   text-align: left;
-  color: #9aa6b8;
+  color: var(--glance-muted);
 }
 
 .table td {
@@ -500,7 +514,7 @@
   flex-wrap: wrap;
   gap: 8px 14px;
   font-size: 18px;
-  color: #cbd5e1;
+  color: var(--glance-text-soft);
 }
 
 .nets span {
@@ -521,7 +535,7 @@
 }
 
 .behavior {
-  border-top: 1px solid #232b38;
+  border-top: 1px solid var(--glance-border);
   padding-top: 6px;
 }
 
@@ -533,7 +547,7 @@
 }
 
 .windows span {
-  color: #9aa6b8;
+  color: var(--glance-muted);
   margin-right: 4px;
   font-size: 18px;
 }
@@ -576,12 +590,12 @@
   padding: 1px 4px;
   font-size: 18px;
   line-height: 1.1;
-  border-bottom: 1px solid #1c2330;
+  border-bottom: 1px solid var(--glance-border);
   white-space: nowrap;
 }
 
 .levels th {
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
   font-weight: 650;
 }
@@ -642,8 +656,8 @@
   height: 112px;
   margin-top: 2px;
   overflow: hidden;
-  border-top: 1px solid #2a3342;
-  border-bottom: 1px solid #2a3342;
+  border-top: 1px solid var(--glance-border-mid);
+  border-bottom: 1px solid var(--glance-border-mid);
 }
 
 .rail .axis {
@@ -652,7 +666,7 @@
   right: 12px;
   top: 50px;
   height: 1px;
-  background: #2a3342;
+  background: var(--glance-border-mid);
 }
 
 .mark {
@@ -674,14 +688,14 @@
   font-size: 16px;
   line-height: 20px;
   white-space: nowrap;
-  color: #cbd5e1;
+  color: var(--glance-text-soft);
 }
 
 .footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  color: #9aa6b8;
+  color: var(--glance-muted);
   font-size: 18px;
   white-space: nowrap;
   min-height: 22px;
@@ -701,8 +715,8 @@
   width: min(420px, calc(100% - 24px));
   max-height: calc(100% - 16px);
   overflow: auto;
-  background: #12161d;
-  border: 1px solid #2a3342;
+  background: var(--glance-chrome);
+  border: 1px solid var(--glance-border-mid);
   border-radius: 8px;
   padding: 14px;
   z-index: 41;
@@ -717,15 +731,15 @@
   gap: 12px;
   margin: -14px -14px 8px;
   padding: 8px 14px;
-  background: #12161d;
+  background: var(--glance-chrome);
 }
 
 .sheet-head button {
   min-height: 44px;
   padding: 0 14px;
-  border: 1px solid #2a3342;
+  border: 1px solid var(--glance-border-mid);
   border-radius: 6px;
-  background: #151a22;
+  background: var(--glance-bg);
 }
 
 .sheet-head h3 {
@@ -739,7 +753,7 @@
 
 .sheet p,
 .sheet li {
-  color: #cbd5e1;
+  color: var(--glance-text-soft);
   font-size: 18px;
   line-height: 1.4;
 }
@@ -754,9 +768,9 @@
 
 .sheet input {
   width: 120px;
-  background: #0b0d11;
+  background: var(--glance-bg-deep);
   color: #fff;
-  border: 1px solid #2a3342;
+  border: 1px solid var(--glance-border-mid);
   border-radius: 4px;
   padding: 8px;
   font-size: 18px;

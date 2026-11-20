@@ -411,14 +411,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <em>TERMINAL</em>
           </div>
         )}
-        <span className="spacer" />
-        {embedded ? null : <Link href="/">Mobile</Link>}
-        <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
-          Settings
-        </button>
-        <button type="button" onClick={() => setPanel(panel === "details" ? null : "details")}>
-          Details
-        </button>
         <div className="cmd-quote" aria-label={formatDisplaySymbol("$SPX")}>
           <div className="cmd-quote-id">
             <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
@@ -437,6 +429,14 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             </span>
           </div>
         </div>
+        <span className="spacer" />
+        {embedded ? null : <Link href="/">Mobile</Link>}
+        <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
+          Settings
+        </button>
+        <button type="button" onClick={() => setPanel(panel === "details" ? null : "details")}>
+          Details
+        </button>
       </header>
 
       <section className="headline" aria-label="Market headline">
@@ -510,7 +510,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                   {trend.horizon} minutes {trend.direction < 0 ? "▼" : "▲"} {formatSignedPts(trend.move, 1)} points · efficiency {trend.efficiency.toFixed(2)}
                 </div>
               ) : (
-                <div className="trend" style={{ color: "#9aa6b8" }}>
+                <div className="trend" style={{ color: "#a1a1aa" }}>
                   {trendOn ? "Trend —" : "Trend off"}
                 </div>
               )}
