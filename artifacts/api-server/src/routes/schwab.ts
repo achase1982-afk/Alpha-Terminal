@@ -42,6 +42,7 @@ router.get("/capabilities", (_req, res) => {
     },
     rest: {
       endpoint: "/api/schwab/invoke",
+      pathGate: "Every path under /marketdata/v1/ and /trader/v1/ is accepted. The operation lists are a catalog, not a block list.",
       methods: SCHWAB_HTTP_METHODS,
       namespaces: SCHWAB_REST_NAMESPACES,
     },

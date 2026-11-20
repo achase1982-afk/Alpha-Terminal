@@ -26,6 +26,8 @@ secret is returned.
 }
 ```
 
+Every path under those two prefixes is accepted. The lists name what Schwab documents. They do not turn an unlisted read off.
+
 Allowed namespaces:
 
 - `/marketdata/v1/` — batch/single quotes, option chains, expiration chains,

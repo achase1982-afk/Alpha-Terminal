@@ -9,39 +9,52 @@ import {
 
 export type EntitledProvider = "alpaca" | "tradier" | "tastytrade" | "unusual-whales";
 
+/**
+ * Prefixes are the only path gate. `products` names families so callers can
+ * see them. An unlisted informational route under a prefix is still accepted.
+ */
+export const ENTITLED_PATH_GATE =
+  "Every path under pathPrefixes is accepted. products is a catalog, not a block list.";
+
 export const PROVIDER_CAPABILITIES = {
   alpaca: {
     hosts: ["https://api.alpaca.markets", "https://paper-api.alpaca.markets", "https://data.alpaca.markets"],
-    pathPrefixes: ["/v1/", "/v1beta1/", "/v2/", "/v3/"],
+    pathPrefixes: ["/v1/", "/v1beta1/", "/v1beta3/", "/v2/", "/v3/"],
+    pathGate: ENTITLED_PATH_GATE,
     products: [
       "accounts", "configuration", "activities", "portfolio-history", "assets",
       "orders", "positions", "options-exercise", "watchlists", "clock-calendar",
-      "corporate-actions", "stocks", "options", "crypto", "news", "screeners",
+      "corporate-actions", "stocks", "quotes", "bars", "trades", "snapshots",
+      "options", "crypto", "news", "screeners", "most-actives",
       "logos", "fixed-income", "locates", "wallets", "tokenization",
     ],
     streams: ["stocks", "options", "crypto", "news", "trade_updates"],
     targets: ["live", "paper", "market-data"],
   },
   tradier: {
-    hosts: ["https://api.tradier.com", "https://sandbox.tradier.com"],
+    hosts: ["https://api.tradier.com", "https://sandbox.tradier.com", "https://stream.tradier.com"],
     pathPrefixes: ["/v1/"],
+    pathGate: ENTITLED_PATH_GATE,
     products: [
       "profile", "accounts", "balances", "history", "gain-loss", "positions",
       "position-groups", "orders", "order-preview", "advanced-orders", "options",
-      "history-timesales", "etb", "clock-calendar", "search-lookup", "watchlists",
+      "quotes", "history-timesales", "etb", "clock-calendar", "search-lookup",
+      "watchlists", "fundamentals", "dividends", "corporate-actions", "ratios",
+      "financials", "statistics",
     ],
     streams: ["market", "account"],
-    targets: ["production", "sandbox"],
+    targets: ["production", "sandbox", "stream"],
   },
   tastytrade: {
     hosts: ["https://api.tastyworks.com"],
     pathPrefixes: ["/"],
+    pathGate: ENTITLED_PATH_GATE,
     products: [
       "customers", "accounts", "balances", "positions", "transactions", "fees",
       "orders", "complex-orders", "order-dry-run", "instruments", "equities",
       "options", "futures", "future-options", "crypto", "market-sessions",
       "metrics", "watchlists", "trading-status", "net-liq", "margin", "risk",
-      "alerts", "backtesting", "quote-tokens",
+      "alerts", "backtesting", "quote-tokens", "symbol-search", "option-chains",
     ],
     streams: ["dxlink", "account-streamer"],
     targets: ["production"],
@@ -49,6 +62,7 @@ export const PROVIDER_CAPABILITIES = {
   "unusual-whales": {
     hosts: ["https://api.unusualwhales.com"],
     pathPrefixes: ["/api/"],
+    pathGate: ENTITLED_PATH_GATE,
     products: [
       "futures", "gex-greeks", "alerts", "commodities", "companies", "congress",
       "crypto", "dark-pool", "earnings", "economy", "etfs", "flex", "forex",
@@ -103,14 +117,21 @@ function selectTarget(provider: EntitledProvider, target: unknown): { base: stri
   }
   if (provider === "tradier") {
     const selected = target == null ? "production" : String(target);
-    const sandbox = selected === "sandbox";
-    if (!sandbox && selected !== "production") throw new EntitledGatewayError("invalid_tradier_target");
+    if (selected !== "sandbox" && selected !== "production" && selected !== "stream") {
+      throw new EntitledGatewayError("invalid_tradier_target");
+    }
     const token = required(
-      sandbox ? deskEnv("TRADIER_SANDBOX_TOKEN") : deskEnv("TRADIER_API_KEY", "TRADIER_TOKEN"),
-      sandbox ? "tradier_sandbox_not_configured" : "tradier_not_configured",
+      selected === "sandbox" ? deskEnv("TRADIER_SANDBOX_TOKEN") : deskEnv("TRADIER_API_KEY", "TRADIER_TOKEN"),
+      selected === "sandbox" ? "tradier_sandbox_not_configured" : "tradier_not_configured",
     );
+    const base =
+      selected === "sandbox"
+        ? "https://sandbox.tradier.com"
+        : selected === "stream"
+          ? "https://stream.tradier.com"
+          : "https://api.tradier.com";
     return {
-      base: sandbox ? "https://sandbox.tradier.com" : "https://api.tradier.com",
+      base,
       headers: { Authorization: `Bearer ${token}` },
     };
   }

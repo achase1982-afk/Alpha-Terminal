@@ -26,6 +26,8 @@ Credentials and access tokens are never returned.
 }
 ```
 
+The gateway accepts every path under the two prefixes below. The category lists are a catalog, not a block list.
+
 The gateway supports all documented HTTP methods for paths under:
 
 - `/market-data/` — stocks, options, futures, crypto, event contracts, news,
