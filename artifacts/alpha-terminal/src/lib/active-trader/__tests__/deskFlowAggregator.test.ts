@@ -48,6 +48,7 @@ describe("deskFlowAggregator", () => {
     expect(out.index?.callBuy1m).toBe(2e6);
     expect(out.index?.callBuy5m).toBe(6e6);
     expect(out.index?.callBuyHr).toBe(15e6);
+    expect(out.index?.callBuyDay).toBe(2e6);
     expect(out.connection).toBe("live");
   });
 

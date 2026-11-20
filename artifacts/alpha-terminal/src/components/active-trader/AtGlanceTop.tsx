@@ -110,10 +110,13 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   stockTemplate = false,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const showFlowStrip = mode === "index" && !stockTemplate && !skipNetwork;
+  const showFlowStrip = mode !== "futures" && !stockTemplate && !skipNetwork;
+  const showVix = mode === "index" && showFlowStrip;
+  const categoryLabel =
+    mode === "futures" ? "Futures" : stockTemplate ? "Equity" : mode === "index" ? "Index" : "Equity options";
   const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
-  const vixLevel = useAtVixQuote(showFlowStrip);
+  const vixLevel = useAtVixQuote(showVix);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
 
@@ -177,6 +180,13 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           >
             {symLabel}
           </span>
+          <span
+            data-at-instrument-category={categoryLabel}
+            className="shrink-0"
+            style={{ fontSize: 11, fontWeight: 600, color: AT_SECONDARY, letterSpacing: "0.02em", whiteSpace: "nowrap" }}
+          >
+            {categoryLabel}
+          </span>
           <span className="inline-flex items-baseline" style={{ gap: 4 }}>
             <span
               className="num"
@@ -212,7 +222,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
               {fromOpenLabel}
             </span>
           ) : null}
-          {showFlowStrip ? (
+          {showVix ? (
             <span className="shrink-0 num" data-at-vix-glance="" style={{ ...NUM_FEAT, fontSize: 12, color: AT_SECONDARY, whiteSpace: "nowrap" }}>
               VIX {vixLabel}
             </span>
@@ -320,7 +330,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             boxSizing: "border-box",
           }}
         >
-          Flow strip unavailable for this symbol
+          {stockTemplate ? null : "Flow strip unavailable for this symbol"}
           {ladderHeatSource?.label ? (
             <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>
               {ladderHeatSource.label}

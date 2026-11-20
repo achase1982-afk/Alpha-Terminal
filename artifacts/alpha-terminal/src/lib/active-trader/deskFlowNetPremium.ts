@@ -178,7 +178,7 @@ export function buildDeskNetPremiumGlance(
     return {
       glance: {
         streamKind: agg.mode === "index" ? "spx_options" : "underlying_tape",
-        streamNote: agg.mode === "index" ? null : "Underlying tape · not SPX option flow",
+        streamNote: null,
         calls: null,
         puts: null,
         connection: agg.connection,
@@ -269,8 +269,8 @@ export function buildDeskNetPremiumGlance(
 
   return {
     glance: {
-      streamKind: agg.mode === "index" ? "spx_options" : "underlying_tape",
-      streamNote: agg.mode === "index" ? null : "Underlying tape · not SPX option flow",
+      streamKind: agg.mode === "index" || calls != null ? "spx_options" : "underlying_tape",
+      streamNote: agg.mode === "index" || calls != null ? null : "Underlying tape · not option flow",
       calls,
       puts,
       connection: stale ? "offline" : agg.connection,

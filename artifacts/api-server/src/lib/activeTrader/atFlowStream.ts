@@ -5,6 +5,7 @@ import { registerDeskLiveFlowSse } from "../desk/deskLiveFlowHub.js";
 import { deskLiveFlowEnabled } from "../desk/deskLiveFlowConfig.js";
 import { DESK_LIVE_FLOW_SSE_HEARTBEAT_MS } from "../desk/deskLiveFlowConfig.js";
 import { buildDeskHealthFeeds } from "../desk/deskFeedFreshness.js";
+import { deskLiveFlowPublishDaySnapshot } from "../desk/deskLiveFlowEngine.js";
 
 export const AT_FLOW_STREAMS_PER_CLIENT = 3;
 
@@ -100,6 +101,7 @@ export function handleAtFlowStream(req: Request, res: import("express").Response
   });
 
   registerDeskLiveFlowSse(res, parsed.parsed.sym, parsed.parsed.kind);
+  deskLiveFlowPublishDaySnapshot(parsed.parsed.sym);
   const meta: FlowMetaState = { sessionClosed: null };
   const publish = () => {
     try {
