@@ -132,6 +132,17 @@ function PortfolioView(props: ComponentProps<typeof import("@/components/Portfol
     />
   );
 }
+function InsightsView(props: ComponentProps<typeof import("@/components/InsightsView").InsightsView>) {
+  return (
+    <LazyRouteView
+      viewName="Insights"
+      freshImportOnRetry
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/InsightsView").then((m) => ({ default: m.InsightsView }))}
+      render={(C, key) => <C key={key} {...props} />}
+    />
+  );
+}
 function DashboardWorkspace(props: ComponentProps<typeof import("@/components/dashboard/DashboardWorkspace").DashboardWorkspace>) {
   return (
     <LazyRouteView
@@ -205,7 +216,7 @@ function SearchOverlay(props: ComponentProps<typeof import("@/components/SearchO
 }
 
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "dashboard";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "dashboard" | "insights";
 type ContextTab = MarketDataTab;
 
 function normalizeOptionDirection(
@@ -345,6 +356,7 @@ const DESKTOP_NAV_TABS: { id: BottomTab; label: string }[] = [
   { id: "markets", label: "Markets" },
   { id: "portfolio", label: "Portfolio" },
   { id: "ai", label: "AI" },
+  { id: "insights", label: "Insights" },
 ];
 
 const isMacLike = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -472,14 +484,14 @@ export default function TerminalPage() {
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
     const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
     if (fx?.enabled) return "markets";
-    // Desktop lands on the customizable dashboard; phone keeps Markets.
+    // Desktop lands on the customizable dashboard; phone opens Insights.
     const fallback: BottomTab =
       typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
         ? "dashboard"
-        : "markets";
+        : "insights";
     try {
       const saved = sessionStorage.getItem("alpha_session_tab") as BottomTab | null;
-      const valid: BottomTab[] = ["portfolio", "markets", "ai", "watchlist", "dashboard"];
+      const valid: BottomTab[] = ["portfolio", "markets", "ai", "watchlist", "dashboard", "insights"];
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
@@ -940,6 +952,7 @@ export default function TerminalPage() {
   const mobileTabUsesInnerScroll =
     marketsMobileShellLock ||
     (activeBottom === "portfolio" && !isWide) ||
+    (activeBottom === "insights" && !isWide) ||
     (activeBottom === "ai" && !isWide);
 
   // Load watchlists from server on mount so they're shared across devices.
@@ -1073,7 +1086,7 @@ export default function TerminalPage() {
         return main.querySelector(".tab-inner-scroll");
       }
     }
-    if (activeBottom === "ai" || activeBottom === "portfolio") {
+    if (activeBottom === "ai" || activeBottom === "portfolio" || activeBottom === "insights") {
       return main.querySelector(":scope > .tab-inner-scroll");
     }
     return null;
@@ -1416,6 +1429,12 @@ export default function TerminalPage() {
               </div>
             )}
 
+            {activeBottom === "insights" && (
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <InsightsView subscribeEquitySymbols={subscribeEquitySymbols} />
+              </div>
+            )}
+
             {activeBottom === "watchlist" && (
               <div className="flex flex-col bg-background" style={{ minHeight: "calc(100vh - 60px)" }}>
                 <WatchlistView onNavigateToSymbol={() => setActiveBottom("markets")} />
@@ -1478,6 +1497,9 @@ export default function TerminalPage() {
                 )}
                 {activeBottom === "portfolio" && (
                   <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+                )}
+                {activeBottom === "insights" && (
+                  <InsightsView subscribeEquitySymbols={subscribeEquitySymbols} />
                 )}
               </main>
             )}
@@ -1561,6 +1583,12 @@ export default function TerminalPage() {
             {activeBottom === "portfolio" && (
               <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
                 <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              </div>
+            )}
+
+            {activeBottom === "insights" && (
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <InsightsView subscribeEquitySymbols={subscribeEquitySymbols} />
               </div>
             )}
           </main>
