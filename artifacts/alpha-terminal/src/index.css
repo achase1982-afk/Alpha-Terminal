@@ -359,9 +359,9 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Safari draws the page below its own chrome. The installed app does not:
-   black-translucent paints under the status bar, and with no inset the
-   wordmark sits behind the clock. */
+/* Safari already starts below its chrome. The installed app uses an opaque
+   status bar, so the page starts under that bar and this inset is usually 0.
+   When a build still reports a top inset, keep the wordmark below the clock. */
 .safe-top {
   padding-top: 0px;
 }
