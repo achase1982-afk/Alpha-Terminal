@@ -418,10 +418,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     symbol,
   );
   const canStock = stockTemplateAvailable(instrumentClass);
-  const [template, setTemplate] = useState<AtInstrumentTemplate>("options");
-  useEffect(() => {
-    setTemplate(resolveInstrumentTemplate(symbol, instrumentClass));
-  }, [symbol, instrumentClass]);
+  const resolvedTemplate = resolveInstrumentTemplate(symbol, instrumentClass);
+  // A choice belongs to the symbol it was made on. The next ticker uses its
+  // resolved template in this render, so AAPL's Stock mode cannot paint on SPX.
+  const [chosenTemplate, setChosenTemplate] = useState<{
+    symbol: string;
+    template: AtInstrumentTemplate;
+  } | null>(null);
+  const template = chosenTemplate?.symbol === symbol ? chosenTemplate.template : resolvedTemplate;
   const stockTemplate = canStock && template === "stock";
   const [atStockDraft, setAtStockDraft] = useState<EquityTicketDraft | null>(null);
   const [atStockCollapsed, setAtStockCollapsed] = useState(false);
@@ -438,7 +442,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!canStock) return;
     const next: AtInstrumentTemplate = template === "stock" ? "options" : "stock";
     saveExplicitInstrumentTemplate(symbol, next);
-    setTemplate(next);
+    setChosenTemplate({ symbol, template: next });
   }, [canStock, template, symbol]);
   const keepawayUseMean = useAtChromeStore((s) => s.keepawayUseMean);
   const setKeepawayUseMean = useAtChromeStore((s) => s.setKeepawayUseMean);
