@@ -26,14 +26,18 @@ import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import {
   CHAIN_LADDER_CELL_FONT_SIZE,
   CHAIN_LADDER_CELL_FONT_WEIGHT,
+  CHAIN_OTM_ROW_BG,
   STRIKE_COL_FONT_WEIGHT,
   STRIKE_COL_PAD_X,
+  STRIKE_RAIL_LETTER_SPACING,
+  STRIKE_RAIL_LINE_HEIGHT,
   strikeRailFontSize,
 } from "@/lib/options/strikeColumnChrome";
+import { AT_LADDER_PRICE_COLOR } from "@/lib/active-trader/atLadderLayout";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
-  UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, OTM_PURPLE, SEL_BORDER_COLOR,
+  UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, SEL_BORDER_COLOR,
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
 } from "@/components/options/optionsTheme";
 import { ActiveTraderView, type AtExpirationGroup } from "@/components/active-trader/ActiveTraderView";
@@ -563,7 +567,7 @@ function isStrikeITM(strike: number, underlyingPrice: number | null, isCallSide:
 
 function getRowBg(strike: number, underlyingPrice: number | null, isCallSide: boolean): string {
   if (isStrikeITM(strike, underlyingPrice, isCallSide)) return ITM_OCEAN;
-  return OTM_PURPLE;
+  return CHAIN_OTM_ROW_BG;
 }
 
 const OIBar = memo(function OIBar({ value, max }: { value: number; max: number }) {
@@ -698,13 +702,22 @@ const DataCell = memo(function DataCell({
   let textColor: string;
   if (topStr === "\u2014") textColor = MUTED;
   else if (priceDimmed) textColor = MUTED;
+  else if (isPrice) textColor = AT_LADDER_PRICE_COLOR;
   else if (isBid) textColor = "#f23645";
   else textColor = WHITE;
 
   const oiValue = isOI ? topVal : undefined;
 
   const inner = (
-    <div className="flex flex-col justify-center overflow-hidden" style={{ height: ROW_H, minHeight: ROW_H, padding: isBid ? "0 2px 0 8px" : "0 2px" }}>
+    <div
+      className="flex flex-col justify-center overflow-hidden"
+      style={{
+        height: ROW_H,
+        minHeight: ROW_H,
+        padding: isBid ? "0 2px 0 8px" : "0 2px",
+        boxSizing: "border-box",
+      }}
+    >
       <span
         className="leading-none"
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
@@ -716,7 +729,8 @@ const DataCell = memo(function DataCell({
           opacity: priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
-          letterSpacing: "0.01em",
+          letterSpacing: STRIKE_RAIL_LETTER_SPACING,
+          lineHeight: isPrice ? STRIKE_RAIL_LINE_HEIGHT : 1,
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -1114,7 +1128,8 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
           color: "#000",
           fontVariantNumeric: "tabular-nums",
           fontFamily: MONO,
-          lineHeight: 1,
+          letterSpacing: STRIKE_RAIL_LETTER_SPACING,
+          lineHeight: STRIKE_RAIL_LINE_HEIGHT,
           padding: `0 ${STRIKE_COL_PAD_X}px`,
           width: "100%",
           whiteSpace: "nowrap",

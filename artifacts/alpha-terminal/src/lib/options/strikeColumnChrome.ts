@@ -7,9 +7,16 @@ export const STRIKE_COL_W = 62;
 export const STRIKE_COL_FONT_SIZE = 16;
 export const STRIKE_COL_FONT_WEIGHT = 500;
 
-/** Bid / ask / primary quote numbers in wing cells. */
-export const CHAIN_LADDER_CELL_FONT_SIZE = 15;
+/** Bid / ask / primary quote numbers in wing cells (matches AT ladder). */
+export const CHAIN_LADDER_CELL_FONT_SIZE = 16;
 export const CHAIN_LADDER_CELL_FONT_WEIGHT = 450;
+
+/** Center strike rail typography — shared chain + AT. */
+export const STRIKE_RAIL_LETTER_SPACING = "0.01em";
+export const STRIKE_RAIL_LINE_HEIGHT = 1.05;
+
+/** OTM wing rows on the chain use the same panel black as AT. */
+export const CHAIN_OTM_ROW_BG = "#060709";
 
 /** Horizontal inset so multi-digit strikes (e.g. /YM, /ES) sit comfortably in the rail. */
 export const STRIKE_COL_PAD_X = 7;
