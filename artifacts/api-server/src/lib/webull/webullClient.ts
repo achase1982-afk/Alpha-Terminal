@@ -1,6 +1,6 @@
 import { logger } from "../logger.js";
 import { webullApiHost, webullNonce, webullSignRequest, webullUtcTimestamp } from "./webullSign.js";
-import { webullRateLimitWait } from "./webullRateLimit.js";
+import { webullRateLimitWait, type WebullRateBucket } from "./webullRateLimit.js";
 import {
   getWebullToken,
   isWebullTradingReady,
@@ -33,16 +33,20 @@ export async function webullSignedFetch<T = unknown>(opts: {
   path: string;
   query?: Record<string, string>;
   body?: unknown;
-  /** Token-auth endpoints (trading). Omit for /auth/tokens/* */
+  /** Token-auth endpoints (trading and market data when 2FA is on). Omit for /auth/tokens/* */
   withAccessToken?: boolean;
   accessTokenOverride?: string;
+  /** Quote polling must not share the trading request budget. */
+  rateBucket?: WebullRateBucket;
 }): Promise<T> {
   if (!webullCredentialsConfigured()) {
     throw new WebullApiError("webull_not_configured", 503, "");
   }
   const appKey = webullAppKey();
   const appSecret = webullAppSecret();
-  await webullRateLimitWait(accountsPath(opts.path) ? "accounts" : "default");
+  await webullRateLimitWait(
+    opts.rateBucket ?? (accountsPath(opts.path) ? "accounts" : "default"),
+  );
 
   let accessToken = opts.accessTokenOverride ?? "";
   if (opts.withAccessToken) {

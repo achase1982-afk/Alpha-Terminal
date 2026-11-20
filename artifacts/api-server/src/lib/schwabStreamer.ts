@@ -94,8 +94,8 @@ export interface LiveQuote {
   ts:           number;
   /** Field 35 — trade time of `last`. Absent on quote-only frames. */
   tradeTimeMs?: number | null;
-  /** Quote origin for merge policy (Cboe One vs Schwab vs IBKR PRO breadth). */
-  quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
+  /** Quote origin for merge policy (Cboe One vs Schwab vs IBKR PRO vs Webull). */
+  quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO" | "WEBULL";
   /** Set only when this frame carried both bid price and bid size. */
   bidQuoteTs?: number | null;
   /** Set only when this frame carried both ask price and ask size. */
@@ -847,6 +847,62 @@ function broadcast(event: string, data: unknown) {
 export function injectExternalQuote(sym: string, quote: LiveQuote) {
   quoteCache.set(sym, quote);
   broadcast("quote", quote);
+}
+
+/** Equities the terminal asked the streamer to follow, including when Schwab is offline. */
+export function getSubscribedEquitySymbols(): string[] {
+  return [...subscribedSymbols];
+}
+
+const WEBULL_TAKEOVER_MS = 15_000;
+
+function sameLivePrices(a: LiveQuote, b: LiveQuote): boolean {
+  return (
+    a.last === b.last &&
+    a.bid === b.bid &&
+    a.ask === b.ask &&
+    a.bidSize === b.bidSize &&
+    a.askSize === b.askSize &&
+    a.volume === b.volume &&
+    a.change === b.change &&
+    a.changePct === b.changePct
+  );
+}
+
+/**
+ * Publish a Webull snapshot onto the shared quote tape.
+ * A fresh Schwab or IBKR print keeps the symbol. Webull fills the symbol when
+ * that feed is missing or older than 15s, which is the Webull-only case.
+ */
+export function injectWebullQuote(quote: LiveQuote): void {
+  const streamKey = equityStreamKeyFromCaller(quote.symbol);
+  const displays = getClassShareDisplaysForKey(streamKey);
+  const targets = displays.size > 0 ? [...displays] : [streamKey];
+  if (!targets.includes(streamKey)) targets.push(streamKey);
+  const caller = quote.symbol.toUpperCase();
+  if (!targets.includes(caller)) targets.push(caller);
+
+  for (const symbol of targets) {
+    const incoming: LiveQuote = { ...quote, symbol, quoteSource: "WEBULL" };
+    const existing = quoteCache.get(symbol);
+    if (
+      existing &&
+      existing.quoteSource !== "WEBULL" &&
+      existing.last != null &&
+      Date.now() - existing.ts < WEBULL_TAKEOVER_MS
+    ) {
+      continue;
+    }
+    if (existing?.quoteSource === "WEBULL" && sameLivePrices(existing, incoming)) {
+      quoteCache.set(symbol, {
+        ...incoming,
+        ts: incoming.ts,
+      });
+      continue;
+    }
+    quoteCache.set(symbol, incoming);
+    broadcast("quote", incoming);
+  }
 }
 
 function quoteSourceRank(source: LiveQuote["quoteSource"]): number {
