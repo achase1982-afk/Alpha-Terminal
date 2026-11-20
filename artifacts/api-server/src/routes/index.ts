@@ -33,6 +33,7 @@ import autoTradeRouter from "./autoTrade";
 import engineRouter from "./engine";
 import webullRouter from "./webull";
 import schwabRouter from "./schwab";
+import providerEntitlementsRouter from "./providerEntitlements";
 const router: IRouter = Router();
 
 router.use("/auth", authRouter);
@@ -69,5 +70,6 @@ router.use("/auto-trade", autoTradeRouter);
 router.use("/engine", engineRouter);
 router.use("/webull", webullRouter);
 router.use("/schwab", schwabRouter);
+router.use("/providers", providerEntitlementsRouter);
 
 export default router;

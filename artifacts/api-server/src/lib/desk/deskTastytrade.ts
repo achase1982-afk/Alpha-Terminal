@@ -8,8 +8,13 @@ import {
 import { logger } from "../logger.js";
 
 const OAUTH_URL = "https://api.tastyworks.com/oauth/token";
-const API_BASE = "https://api.tastytrade.com";
+const API_BASE = "https://api.tastyworks.com";
 const SOURCE = "tastytrade_dxlink";
+const TASTY_HEADERS = {
+  Accept: "application/json",
+  "User-Agent": "Alpha-Terminal/1.0",
+  "Accept-Version": "20261012",
+} as const;
 
 type TokenCache = { accessToken: string; expiresAtMs: number };
 
@@ -36,15 +41,14 @@ export async function deskTastytradeAccessToken(): Promise<string | null> {
 
   tokenRefreshInFlight = (async () => {
     try {
-      const form = new URLSearchParams();
-      form.set("grant_type", "refresh_token");
-      form.set("refresh_token", refreshToken);
-      form.set("client_secret", clientSecret);
-
       const res = await fetch(OAUTH_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-        body: form.toString(),
+        headers: { ...TASTY_HEADERS, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+          client_secret: clientSecret,
+        }),
         signal: AbortSignal.timeout(15_000),
       });
       const raw = await res.text();
@@ -98,7 +102,7 @@ export async function deskTastytradeAccessToken(): Promise<string | null> {
         (json.expires_in as number) ??
         (data?.["expires-in"] as number) ??
         (data?.expires_in as number) ??
-        3600;
+        900;
       if (!access) {
         deskMarkFeedError("tastytrade", "tastytrade_oauth_empty", SOURCE);
         return null;
@@ -125,7 +129,7 @@ export async function deskProbeTastytrade(): Promise<void> {
   if (!token) return;
   try {
     const res = await fetch(`${API_BASE}/market-data/by-type?equity=SPY`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      headers: { ...TASTY_HEADERS, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (res.status === 401 || res.status === 403) {
@@ -154,7 +158,7 @@ export async function deskTastytradeQuotes(
   const equity = uniq.join(",");
   const url = `${API_BASE}/market-data/by-type?equity=${encodeURIComponent(equity)}`;
   const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    headers: { ...TASTY_HEADERS, Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(15_000),
   });
   if (res.status === 401 || res.status === 403) {
