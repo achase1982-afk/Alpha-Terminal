@@ -1,10 +1,8 @@
-import { equityOptionsSessionEnded } from "@workspace/order-ticket-math";
-
 /** Minimal shape for pickers — matches OptionsTab `ExpirationGroup` / AT chrome rows. */
 export type ExpirationDteRow = { expiration: string; dte: number };
 
-function isTradableDte(dte: number, nowMs: number): boolean {
-  return dte > 0 || (dte === 0 && !equityOptionsSessionEnded(nowMs));
+function isTradableDte(dte: number, _nowMs: number): boolean {
+  return dte >= 0;
 }
 
 /** Nearest unexpired session (groups must be sorted by dte ascending). */

@@ -1,5 +1,4 @@
 import type { Request } from "express";
-import { equityOptionsSessionOpen } from "@workspace/order-ticket-math";
 import { parseDeskFlowSymbol } from "../desk/deskLiveFlowSymbol.js";
 import { deskLiveFlowCanSubscribe } from "../desk/deskLiveFlowLimits.js";
 import { registerDeskLiveFlowSse } from "../desk/deskLiveFlowHub.js";
@@ -31,9 +30,9 @@ export type FlowFeedRow = { feed: string; status: string };
 
 export type FlowMetaState = { sessionClosed: boolean | null };
 
-/** Closed outside the equity-options session (7:30 AM–4:15 PM ET). Feed rows do not move this. */
-export function flowSessionClosed(_feeds: readonly FlowFeedRow[], nowMs = Date.now()): boolean {
-  return !equityOptionsSessionOpen(nowMs);
+/** Live flow is no longer gated on the equity-options session calendar. */
+export function flowSessionClosed(_feeds: readonly FlowFeedRow[], _nowMs = Date.now()): boolean {
+  return false;
 }
 
 /** Writes a meta event only when the session flag changes, including closed → open. */

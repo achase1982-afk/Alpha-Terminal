@@ -123,16 +123,25 @@ describe("optionQuotes", () => {
     expect(stale.tapable).toBe(true);
     expect(stale.dimmed).toBe(true);
 
-    const closedNow = Date.parse("2026-11-18T22:00:00.000Z");
-    const closed = resolveChainQuotePresentation({
+    const afterHoursNow = Date.parse("2026-11-18T22:00:00.000Z");
+    const aged = resolveChainQuotePresentation({
       bid: 1,
       ask: 1.1,
       quoteTimeMs: Date.parse("2026-11-18T21:14:00.000Z"),
-      nowMs: closedNow,
+      nowMs: afterHoursNow,
     });
-    expect(closed.displayState).toBe("prior_session");
-    expect(closed.tapable).toBe(true);
-    expect(closed.dimmed).toBe(true);
+    expect(aged.displayState).toBe("stale");
+    expect(aged.tapable).toBe(true);
+    expect(aged.dimmed).toBe(true);
+
+    const freshAfterHours = resolveChainQuotePresentation({
+      bid: 1,
+      ask: 1.1,
+      quoteTimeMs: afterHoursNow - 1_000,
+      nowMs: afterHoursNow,
+    });
+    expect(freshAfterHours.displayState).toBe("ok");
+    expect(freshAfterHours.dimmed).toBe(false);
   });
 
   it("debit vertical uses positive natural-direction NBBO", () => {

@@ -42,7 +42,7 @@ describe("auditNearAtmLadderQuotes", () => {
     expect(audit.nearAtm[0]?.reason).toBe("No quote");
   });
 
-  it("does not treat prior-session carryover as invalid", () => {
+  it("marks aged quotes stale near-ATM without a session calendar gate", () => {
     const audit = auditNearAtmLadderQuotes({
       rows: [{ strike: 352.5, call: baseContract(352.5, prior), put: null }],
       underlyingPrice: 352.5,
@@ -50,13 +50,14 @@ describe("auditNearAtmLadderQuotes", () => {
       chainQuoteTs: now,
       nowMs: now,
     });
-    expect(audit.nearAtmHasInvalid).toBe(false);
-    expect(resolveChainDisplayQuote(baseContract(350, prior), null, now, now).displayState).toBe("prior_session");
+    expect(audit.nearAtmHasInvalid).toBe(true);
+    expect(audit.counts.stale).toBe(1);
+    expect(resolveChainDisplayQuote(baseContract(350, prior), null, now, now).displayState).toBe("stale");
   });
 
   it("accepts locked quotes with locked flag", () => {
     const view = resolveChainDisplayQuote({ bid: 0.54, ask: 0.54, quoteTimeMs: prior }, null, Date.now(), now);
-    expect(view.displayState).toBe("prior_session");
+    expect(view.displayState).toBe("stale");
     expect(view.locked).toBe(true);
     expect(view.bid).toBe(0.54);
   });

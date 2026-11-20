@@ -14,10 +14,6 @@ import {
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
 import { auditNearAtmLadderQuotes, type LadderQuoteHealthAudit } from "@/lib/active-trader/atLadderQuoteHealth";
-import {
-  equityOptionsClosedPill,
-  equityOptionsSessionOpen,
-} from "@workspace/order-ticket-math";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
 import type { ChainHoldSubscribers } from "@/hooks/useChainOptionHold";
@@ -712,10 +708,6 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   }, [ladderRows]);
 
   const ladderHeatSourceDisplay = useMemo(() => {
-    const now = Date.now();
-    if (!equityOptionsSessionOpen(now)) {
-      return { ...ladderHeatSource, label: equityOptionsClosedPill(now), sourceFresh: false };
-    }
     if (
       quoteAudit.nearAtmHasInvalid &&
       (ladderHeatSource.kind === "poll" || ladderHeatSource.kind === "stream") &&
@@ -729,10 +721,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       if (staleCount > 0 || quoteAudit.nearAtmHasInvalid) {
         return { ...ladderHeatSource, label: "Quotes degraded", sourceFresh: false };
       }
-      if (equityOptionsSessionOpen(now)) {
-        return { ...ladderHeatSource, label: "", sourceFresh: false };
-      }
-      return { ...ladderHeatSource, label: "Snapshot · prior session", sourceFresh: false };
+      return { ...ladderHeatSource, label: "", sourceFresh: ladderHeatSource.sourceFresh };
     }
     return ladderHeatSource;
   }, [ladderHeatSource, quoteAudit]);
