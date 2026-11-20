@@ -255,9 +255,26 @@ const FuturesEsFixtureDevPage = import.meta.env.DEV
 const JournalFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/JournalFixtureDevPage"))
   : null;
+
+const SpxGlancePage = lazy(() => import("@/glance/GlancePage"));
+
 function Router() {
   return (
     <Switch>
+      <Route path="/ipad">
+        {() => (
+          <Suspense fallback={<div style={{ height: "100dvh", background: "#090B0E" }} />}>
+            <SpxGlancePage />
+          </Suspense>
+        )}
+      </Route>
+      <Route path="/glance">
+        {() => (
+          <Suspense fallback={<div style={{ height: "100dvh", background: "#090B0E" }} />}>
+            <SpxGlancePage />
+          </Suspense>
+        )}
+      </Route>
       {ChainOrderFixtureDevPage ? (
         <Route path="/dev/chain-order-sheet">
           {() => (
