@@ -3,7 +3,7 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: 44px 108px minmax(0, 1fr) 24px;
+  grid-template-rows: 44px 108px minmax(220px, 296px) minmax(148px, 164px) 96px 26px;
   gap: 12px;
   padding: 0 24px;
   background: #0b0d11;
@@ -92,7 +92,7 @@
 
 .headline {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(150px, 180px) minmax(160px, 190px) minmax(220px, 270px) minmax(220px, 1fr);
+  grid-template-columns: minmax(0, 2.15fr) minmax(0, 1.08fr) minmax(0, 1.08fr) minmax(0, 1.7fr) minmax(0, 1.65fr);
   align-items: end;
   gap: 12px;
   border-top: 1px solid #232b38;
@@ -159,18 +159,54 @@
   color: #ff6b74;
 }
 
-.main {
+.band,
+.levels-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 720fr) minmax(0, 488fr);
-  gap: 24px;
+  gap: 16px;
+  min-height: 0;
+  min-width: 0;
+}
+
+.band {
+  grid-template-columns: minmax(0, 680fr) minmax(280px, 536fr);
+}
+
+.levels-wrap {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.trace {
+  width: 100%;
+  height: 112px;
+  display: block;
+}
+
+.trace-empty {
+  height: 112px;
+  color: #9aa6b8;
+  font-size: 13px;
+}
+
+.pulse {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #232b38;
   min-height: 0;
 }
 
-.left {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) 140px;
-  gap: 12px;
-  min-height: 0;
+.pulse-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.pulse-cell b {
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .block {
@@ -195,10 +231,10 @@
 
 .flow-row {
   display: grid;
-  grid-template-columns: 52px minmax(88px, 120px) minmax(0, 1fr) minmax(88px, 120px);
+  grid-template-columns: 52px minmax(108px, 140px) minmax(0, 1fr) minmax(108px, 140px);
   gap: 8px;
   align-items: center;
-  height: 84px;
+  height: 68px;
 }
 
 .side-name {
@@ -208,9 +244,10 @@
 }
 
 .amt {
-  font-size: 30px;
+  font-size: 28px;
   line-height: 1;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .amt small {
@@ -521,7 +558,18 @@
   overflow: auto;
 }
 
-@media (max-width: 1100px) {
+@media (max-height: 760px) {
+  .glance {
+    grid-template-rows: 44px 100px 220px 140px 72px 20px;
+    gap: 8px;
+  }
+
+  .spot {
+    font-size: 48px;
+  }
+}
+
+@media (max-width: 760px) {
   .glance {
     position: absolute;
     overflow: auto;
@@ -530,13 +578,10 @@
   }
 
   .headline,
-  .main,
-  .left {
+  .band,
+  .levels-wrap,
+  .pulse {
     display: flex;
     flex-direction: column;
-  }
-
-  .spot {
-    font-size: 48px;
   }
 }

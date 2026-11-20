@@ -4,7 +4,7 @@ import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { computeHighZoneBottom, computeLowZoneTop } from "@/lib/active-trader/spxRefZone";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
-import type { DeskIndexFlowTotals } from "@/lib/active-trader/deskFlowAggregator";
+import type { DeskFlowMinute, DeskIndexFlowTotals } from "@/lib/active-trader/deskFlowAggregator";
 import { formatEtMinute, pathStats, type GrossQuad } from "./math";
 
 export type MinuteBar = { t: number; o: number; h: number; l: number; c: number };
@@ -25,7 +25,9 @@ function parseBars(body: unknown): MinuteBar[] {
     ? body
     : body && typeof body === "object" && Array.isArray((body as { bars?: unknown }).bars)
       ? (body as { bars: unknown[] }).bars
-      : [];
+      : body && typeof body === "object" && Array.isArray((body as { candles?: unknown }).candles)
+        ? (body as { candles: unknown[] }).candles
+        : [];
   const out: MinuteBar[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object") continue;
@@ -119,11 +121,18 @@ export function sessionExtremes(bars: readonly MinuteBar[]): {
   };
 }
 
-function quadFrom(index: DeskIndexFlowTotals | null, observed: boolean, window: "1" | "5" | "15"): GrossQuad {
-  if (!index || !observed) return EMPTY;
+function quadFrom(index: DeskIndexFlowTotals | null, window: "1" | "5" | "15" | "day"): GrossQuad {
+  if (!index) return EMPTY;
   if (window === "1") return { cb: index.callBuy1m, cs: index.callSell1m, pb: index.putBuy1m, ps: index.putSell1m };
   if (window === "5") return { cb: index.callBuy5m, cs: index.callSell5m, pb: index.putBuy5m, ps: index.putSell5m };
-  return { cb: index.callBuy15m, cs: index.callSell15m, pb: index.putBuy15m, ps: index.putSell15m };
+  if (window === "15") return { cb: index.callBuy15m, cs: index.callSell15m, pb: index.putBuy15m, ps: index.putSell15m };
+  return { cb: index.callBuyDay, cs: index.callSellDay, pb: index.putBuyDay, ps: index.putSellDay };
+}
+
+function historySide(minutes: readonly DeskFlowMinute[], key: "callSell" | "callBuy" | "putSell" | "putBuy"): (number | null)[] {
+  const values = minutes.map((minute) => minute[key]);
+  const missing = Array<number | null>(Math.max(0, 15 - values.length)).fill(null);
+  return [...missing, ...values].slice(-15);
 }
 
 export function useGlanceLive() {
@@ -134,6 +143,8 @@ export function useGlanceLive() {
   const [bars, setBars] = useState<MinuteBar[]>([]);
   const [zones, setZones] = useState<ZoneModel | null>(null);
   const [zonesAsOf, setZonesAsOf] = useState<number | null>(null);
+  const [gammaSource, setGammaSource] = useState<string | null>(null);
+  const indexRef = useRef<DeskIndexFlowTotals | null>(null);
   const spotRef = useRef(spx.data);
   spotRef.current = spx.data;
   const vixRef = useRef(vix.data);
@@ -155,12 +166,20 @@ export function useGlanceLive() {
   }, []);
 
   useEffect(() => {
+    void fetchWithAuth("/api/stream/symbols", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols: ["$SPX", "$VIX", "SPY", "QQQ", "IWM"] }),
+      clerkTokenTimeoutMs: 1500,
+    }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     let stop = false;
     const load = async () => {
       try {
-        const url = "/api/desk/v1/bars?source=schwab&symbol=%24SPX&timeframe=1m&limit=500";
-        let res = await fetchWithAuth(url, { clerkTokenTimeoutMs: 1500 });
-        if (!res.ok) res = await fetch(url);
+        const url = "/api/market/history?symbol=%24SPX&periodType=day&period=1&frequencyType=minute&frequency=1";
+        const res = await fetchWithAuth(url, { clerkTokenTimeoutMs: 1500 });
         if (!res.ok || stop) return;
         const body = await res.json();
         if (!stop) setBars(parseBars(body));
@@ -181,12 +200,12 @@ export function useGlanceLive() {
     const load = async () => {
       try {
         const url = "/api/market/at-gamma-glance?symbol=%24SPX";
-        let res = await fetchWithAuth(url, { clerkTokenTimeoutMs: 1500 });
-        if (!res.ok) res = await fetch(url);
+        const res = await fetchWithAuth(url, { clerkTokenTimeoutMs: 1500 });
         if (!res.ok || stop) return;
-        const body = (await res.json()) as { zones?: ZoneModel; asOfMs?: number };
+        const body = (await res.json()) as { zones?: ZoneModel; asOfMs?: number; source?: string };
         if (stop || !body.zones) return;
         setZones(body.zones);
+        setGammaSource(body.source ?? body.zones.levelSource ?? "gamma");
         if (typeof body.asOfMs === "number") setZonesAsOf(body.asOfMs);
       } catch {
         /* keep the last snapshot */
@@ -207,15 +226,24 @@ export function useGlanceLive() {
     return pathStats(extremes.closes.slice(-need));
   };
   const quote = spx.data;
-  const observedFlow = flow.aggregate.lastRxMs != null && (flow.aggregate.connection === "live" || flow.aggregate.connection === "no_prints");
-  const flowAgeSec = flow.aggregate.lastRxMs != null ? Math.max(0, (now - flow.aggregate.lastRxMs) / 1000) : null;
+  if (flow.aggregate.connection === "live" && flow.aggregate.index) indexRef.current = flow.aggregate.index;
+  const flowIndex = flow.aggregate.connection === "live" ? flow.aggregate.index : indexRef.current;
+  const flowObserved = flowIndex != null;
+  const flowEnd = flow.aggregate.observationEndMs;
+  const flowAgeSec = flowEnd != null ? Math.max(0, (now - flowEnd) / 1000) : null;
   const spotAgeSec = quote?.tradeTimeMs != null ? Math.max(0, (now - quote.tradeTimeMs) / 1000) : null;
   const vixAgeSec = vix.data?.tradeTimeMs != null ? Math.max(0, (now - vix.data.tradeTimeMs) / 1000) : null;
   const lowZone = extremes.low != null ? computeLowZoneTop(extremes.low) : null;
   const highZone = extremes.high != null ? computeHighZoneBottom(extremes.high) : null;
+  const session = sessionBars(bars);
+  const lastBar = session.length ? session[session.length - 1]! : null;
+  const traceBars = lastBar ? session.filter((bar) => bar.t >= lastBar.t - 30 * 60_000) : [];
+  const minutes = flow.aggregate.recentMinutes;
 
   return {
     spot: paintedSpot ?? quote?.last ?? null,
+    lastClose: lastBar?.c ?? null,
+    lastCloseMinute: lastBar ? formatEtMinute(lastBar.t) : null,
     previousClose: quote?.close ?? null,
     dayPoints: quote?.change ?? null,
     dayPct: quote?.changePct ?? null,
@@ -225,18 +253,26 @@ export function useGlanceLive() {
     low: extremes.low,
     lowMinute: extremes.lowMinute,
     closes: extremes.closes,
+    traceBars,
     spotAgeSec,
     vix: paintedVix ?? vix.data?.last ?? null,
     vixOpen: null as number | null,
     vixLow: vix.data?.low ?? null,
     vixHigh: vix.data?.high ?? null,
     vixAgeSec,
-    flow1: quadFrom(flow.aggregate.index, observedFlow, "1"),
-    flow5: quadFrom(flow.aggregate.index, observedFlow, "5"),
-    flow15: quadFrom(flow.aggregate.index, observedFlow, "15"),
-    flowSession: EMPTY,
+    flow1: quadFrom(flowObserved ? flowIndex : null, "1"),
+    flow5: quadFrom(flowObserved ? flowIndex : null, "5"),
+    flow15: quadFrom(flowObserved ? flowIndex : null, "15"),
+    flowSession: quadFrom(flowObserved ? flowIndex : null, "day"),
+    flowHist: {
+      cs: historySide(minutes, "callSell"),
+      cb: historySide(minutes, "callBuy"),
+      ps: historySide(minutes, "putSell"),
+      pb: historySide(minutes, "putBuy"),
+    },
     flowAgeSec,
     flowConnection: flow.aggregate.connection,
+    gammaSource,
     zones,
     zonesAsOf,
     zonesAgeSec: zonesAsOf != null ? Math.max(0, (now - zonesAsOf) / 1000) : null,

@@ -61,6 +61,14 @@ export type DeskFlowConnection =
   | "offline"
   | "unsupported";
 
+export type DeskFlowMinute = {
+  startMs: number;
+  callBuy: number;
+  callSell: number;
+  putBuy: number;
+  putSell: number;
+};
+
 export type DeskFlowAggregate = {
   mode: AtGlanceMode;
   connection: DeskFlowConnection;
@@ -68,6 +76,9 @@ export type DeskFlowAggregate = {
   tape: DeskTapeTotals | null;
   livePx: DeskFlowLivePx | null;
   lastRxMs: number | null;
+  /** End of the newest premium bucket. Not the transport receive time. */
+  observationEndMs: number | null;
+  recentMinutes: DeskFlowMinute[];
 };
 
 type Flow1sBucket = Pick<DeskFlow1s, "bucket_ms" | "call_buy" | "call_sell" | "put_buy" | "put_sell">;
@@ -366,6 +377,8 @@ export function deskFlowAggregatorMarkUnsupported(state: Internal): DeskFlowAggr
     tape: null,
     livePx: state.livePx,
     lastRxMs: state.lastRxMs,
+    observationEndMs: null,
+    recentMinutes: [],
   };
 }
 
@@ -397,6 +410,22 @@ function project(state: Internal): DeskFlowAggregate {
   if (connected && hadNonEmptyPrint) connection = "live";
   else if (connected) connection = "no_prints";
 
+  const recentMinutes = [...state.flow60s]
+    .sort((a, b) => a.bar_start_ms - b.bar_start_ms)
+    .slice(-15)
+    .map((bar) => ({
+      startMs: bar.bar_start_ms,
+      callBuy: bar.call_buy ?? 0,
+      callSell: bar.call_sell ?? 0,
+      putBuy: bar.put_buy ?? 0,
+      putSell: bar.put_sell ?? 0,
+    }));
+  let observationEndMs = recentMinutes.length ? recentMinutes[recentMinutes.length - 1]!.startMs + MS_1M : null;
+  for (const bucket of state.flow1s) {
+    const end = bucket.bucket_ms + 1000;
+    if (observationEndMs == null || end > observationEndMs) observationEndMs = end;
+  }
+
   return {
     mode,
     connection,
@@ -404,6 +433,8 @@ function project(state: Internal): DeskFlowAggregate {
     tape,
     livePx: state.livePx,
     lastRxMs: state.lastRxMs,
+    observationEndMs,
+    recentMinutes,
   };
 }
 

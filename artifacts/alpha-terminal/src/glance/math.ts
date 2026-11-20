@@ -140,7 +140,20 @@ export function sideSign(side: GrossSide): 1 | -1 {
 
 export type RailPoint = { id: string; price: number };
 
-export function railPositions(spot: number, points: readonly RailPoint[]): { id: string; x: number; price: number }[] {
+export function railPositions(spot: number | null, points: readonly RailPoint[]): { id: string; x: number; price: number }[] {
+  if (points.length === 0) return [];
+  if (spot == null || !Number.isFinite(spot)) {
+    let min = Infinity;
+    let max = -Infinity;
+    for (const p of points) {
+      min = Math.min(min, p.price);
+      max = Math.max(max, p.price);
+    }
+    const pad = Math.max(1, (max - min) * 0.1);
+    const lo = min - pad;
+    const span = max + pad - lo || 1;
+    return points.map((p) => ({ id: p.id, price: p.price, x: (p.price - lo) / span }));
+  }
   let d = 0;
   for (const p of points) d = Math.max(d, Math.abs(p.price - spot));
   const half = d === 0 ? 1 : d * 1.1;
@@ -190,7 +203,8 @@ export function formatNet(n: number | null): string {
   if (Object.is(n, -0) || n === 0) return "$0";
   const sign = n > 0 ? "+" : "−";
   const a = Math.abs(n);
-  const body = a >= 1e6 ? `$${(a / 1e6).toFixed(1)}M` : a >= 1e3 ? `$${(a / 1e3).toFixed(1)}K` : `$${a.toFixed(0)}`;
+  const body =
+    a >= 1e9 ? `$${(a / 1e9).toFixed(1)}B` : a >= 1e6 ? `$${(a / 1e6).toFixed(1)}M` : a >= 1e3 ? `$${(a / 1e3).toFixed(1)}K` : `$${a.toFixed(0)}`;
   return `${sign}${body}`;
 }
 
