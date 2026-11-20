@@ -39,8 +39,8 @@ import {
   AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_COL_W,
-  AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
+  AT_SPOT_PILL,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import {
@@ -48,6 +48,7 @@ import {
   STRIKE_RAIL_LETTER_SPACING,
   STRIKE_RAIL_LINE_HEIGHT,
   strikeRailFontSize,
+  strikeRailFontWeight,
 } from "@/lib/options/strikeColumnChrome";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
 import { useAtLadderHeatCell, type AtLadderHeatStore } from "@/lib/active-trader/atLadderHeatStore";
@@ -718,7 +719,7 @@ const LadderRowView = memo(function LadderRowView({
           padding: `0 ${STRIKE_COL_PAD_X}px`,
           boxSizing: "border-box",
           fontVariantNumeric: "tabular-nums",
-          background: spotRow ? GOLD : AT_LADDER_STRIKE_BG,
+          background: spotRow ? AT_SPOT_PILL : AT_LADDER_STRIKE_BG,
         }}
         data-at-strike={row.strike}
       >
@@ -745,8 +746,8 @@ const LadderRowView = memo(function LadderRowView({
             color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
             borderRadius: 0,
             border: "none",
-            fontSize: strikeRailFontSize(row.strike),
-            fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
+            fontSize: strikeRailFontSize(row.strike, spotRow),
+            fontWeight: strikeRailFontWeight(spotRow),
             lineHeight: STRIKE_RAIL_LINE_HEIGHT,
             letterSpacing: spotRow ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
           }}

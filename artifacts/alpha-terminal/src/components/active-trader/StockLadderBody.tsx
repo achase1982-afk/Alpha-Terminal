@@ -15,7 +15,14 @@ import {
   AT_LADDER_GROUP_HDR_H,
   AT_STOCK_LADDER_GRID,
   AT_LADDER_ROW_H,
+  AT_SPOT_PILL,
+  AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
+import {
+  STRIKE_COL_FONT_SIZE,
+  strikeRailFontSize,
+  strikeRailFontWeight,
+} from "@/lib/options/strikeColumnChrome";
 import { useEquityTapeStore } from "@/lib/active-trader/equityTapeStore";
 import {
   reduceStockTop,
@@ -588,10 +595,12 @@ export function StockLadderBody({
           const bidIntensity = stockBookSizeIntensity(bidSize, bidPeak);
           const askIntensity = stockBookSizeIntensity(askSize, askPeak);
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
+          const spotRow = anchor != null && stockPriceKey(anchor) === key;
           return (
             <div
               key={key}
               data-at-stock-price={key}
+              data-at-spot-row={spotRow ? "1" : undefined}
               data-at-stock-traded={traded > 0 ? String(Math.round(traded)) : undefined}
               data-at-stock-accum-volume={traded > 0 ? String(Math.round(traded)) : undefined}
               className="grid items-stretch"
@@ -664,10 +673,10 @@ export function StockLadderBody({
                 data-at-stock-price-bar={key}
                 className="h-full text-center num"
                 style={{
-                  color: WHITE,
-                  fontSize: 16,
-                  fontWeight: 600,
-                  background: AT_LADDER_STRIKE_BG,
+                  color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
+                  fontSize: spotRow ? strikeRailFontSize(price, true) : STRIKE_COL_FONT_SIZE,
+                  fontWeight: strikeRailFontWeight(spotRow),
+                  background: spotRow ? AT_SPOT_PILL : AT_LADDER_STRIKE_BG,
                   border: "none",
                   borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
                   borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
