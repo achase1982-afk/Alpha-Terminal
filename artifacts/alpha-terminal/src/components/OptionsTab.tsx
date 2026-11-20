@@ -732,14 +732,9 @@ const DataCell = memo(function DataCell({
           fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
           fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
-          opacity: priceDimmed ? 0.75 : 1,
+          opacity: isPrice && priceDimmed ? 0.72 : priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
-          ...(isPrice
-            ? {
-                letterSpacing: STRIKE_RAIL_LETTER_SPACING,
-                lineHeight: STRIKE_RAIL_LINE_HEIGHT,
-              }
-            : { fontFamily: MONO }),
+          ...(isPrice ? {} : { fontFamily: MONO }),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -838,7 +833,14 @@ const DataCell = memo(function DataCell({
     );
   }
 
-  return <div className="relative" style={{ fontVariantNumeric: "tabular-nums" }}>{inner}</div>;
+  return (
+    <div
+      className={isPrice ? "at-ladder-num relative" : "relative"}
+      style={{ fontVariantNumeric: "tabular-nums" }}
+    >
+      {inner}
+    </div>
+  );
 });
 
 function LongPressMenu({
