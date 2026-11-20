@@ -111,7 +111,7 @@ function FlowSide({
   return (
     <div className={compact ? "flow-row flow-row-compact" : "flow-row"}>
       <span className="flow-read buy">
-        <span className="flow-words">{name} bought</span>
+        <span className="flow-words">{compact ? name : `${name} bought`}</span>
         <span className="flow-dollars up">{moneyOr(bought)}</span>
       </span>
       <div className="track" aria-hidden>
@@ -121,7 +121,7 @@ function FlowSide({
       </div>
       <span className="flow-read sell">
         <span className="flow-dollars down">{moneyOr(sold)}</span>
-        <span className="flow-words">{name} sold</span>
+        {compact ? null : <span className="flow-words">{name} sold</span>}
       </span>
       {compact ? null : (
         <>
@@ -211,9 +211,10 @@ function PulseQuote({ symbol, quote }: { symbol: string; quote: ReturnType<typeo
 export default function GlancePage({ embedded = false }: { embedded?: boolean }) {
   const live = useGlanceLive();
   const spxQuote = useQuote("$SPX");
-  const spy = useQuote("SPY");
-  const qqq = useQuote("QQQ");
-  const iwm = useQuote("IWM");
+  const es = useQuote("/ES");
+  const nq = useQuote("/NQ");
+  const ym = useQuote("/YM");
+  const vixPulse = useQuote("$VIX");
   const [mode, setMode] = useState<Mode>(readMode);
   const [trendOn, setTrendOn] = useState(() => {
     try {
@@ -345,10 +346,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const putOi = fixture ? FIXTURE.walls.putOi.now : (live.zones?.putWall ?? null);
   const callOiOpen = fixture ? FIXTURE.walls.callOi.open : null;
   const putOiOpen = fixture ? FIXTURE.walls.putOi.open : null;
-  const callVol = fixture ? FIXTURE.walls.callVol.now : (live.zones?.callWallVol ?? null);
-  const putVol = fixture ? FIXTURE.walls.putVol.now : (live.zones?.putWallVol ?? null);
-  const callVolOpen = fixture ? FIXTURE.walls.callVol.open : null;
-  const putVolOpen = fixture ? FIXTURE.walls.putVol.open : null;
   const flip = fixture ? FIXTURE.flip : (live.zones?.flip ?? null);
   const lowZone = fixture ? FIXTURE.lowZoneTop : live.lowZone;
   const highZone = fixture ? FIXTURE.highZoneBottom : live.highZone;
@@ -359,14 +356,12 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       { id: "spot", price: spot },
       callOi != null ? { id: "callOi", price: callOi } : null,
       putOi != null ? { id: "putOi", price: putOi } : null,
-      callVol != null ? { id: "callVol", price: callVol } : null,
-      putVol != null ? { id: "putVol", price: putVol } : null,
       flip != null ? { id: "flip", price: flip } : null,
       high != null ? { id: "high", price: high } : null,
       low != null ? { id: "low", price: low } : null,
     ].filter((p): p is { id: string; price: number } => p != null);
     return railPositions(spot, points);
-  }, [callOi, callVol, flip, high, low, putOi, putVol, spot]);
+  }, [callOi, flip, high, low, putOi, spot]);
   const railLanes = assignRailLanes(rail, 0.32);
   const tracePoints = fixture
     ? FIXTURE.closes.map((c, i) => ({ t: i * 60_000, c }))
@@ -394,7 +389,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
     const drift = wallDrift(now, baseline);
     return (
       <tr>
-        <td className={tone}>{label}</td>
+        <td className="wall-name">{label}</td>
         <td className={`wall-now num ${tone}`}>{formatWall(now)}</td>
         <td className="num">{baseline == null ? "—" : `${formatWall(baseline)} ${baselineNote}`}</td>
         <td className="num">{formatSignedPts(drift, 0)}</td>
@@ -567,7 +562,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </div>
 
       <div className="levels-wrap">
-        <section className="block levels" aria-label="Levels">
+        <section className="block levels" aria-label="Level map">
           <table>
             <thead>
               <tr>
@@ -580,13 +575,9 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             </thead>
             <tbody>
               {wallRow("Call wall", "call", callOi, callOiOpen, fixture ? "open" : "")}
-              {wallRow("Call volume wall", "call", callVol, callVolOpen, fixture ? "open" : "")}
               {wallRow("Put wall", "put", putOi, putOiOpen, fixture ? "open" : "")}
-              {wallRow("Put volume wall", "put", putVol, putVolOpen, fixture ? "open" : "")}
             </tbody>
           </table>
-        </section>
-        <section className="block levels" aria-label="Level map">
           <div className="meta-row">
             <span className="flip">Gamma flip {flip == null ? "none in range" : formatWall(flip)}</span>
             <span className="num">{spot != null && flip != null ? `${formatSignedPts(spot - flip)} from spot` : "—"}</span>
@@ -605,7 +596,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             {rail.map((mark, index) => {
               const lane = railLanes[index] ?? 0;
               const color =
-                mark.id === "spot" ? "#fff" : mark.id.startsWith("call") ? "#ffb800" : mark.id.startsWith("put") ? "#14b8a6" : mark.id === "flip" ? "#a78bfa" : "#94a3b8";
+                mark.id === "spot" ? "#fff" : mark.id.startsWith("call") ? "#fbbf24" : mark.id.startsWith("put") ? "#14b8a6" : mark.id === "flip" ? "#a78bfa" : "#94a3b8";
               const label = RAIL_LABEL[mark.id] ?? mark.id;
               return (
                 <span
@@ -629,9 +620,10 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </div>
 
       <section className="pulse" aria-label="Market context">
-        <PulseQuote symbol="SPY" quote={spy} />
-        <PulseQuote symbol="QQQ" quote={qqq} />
-        <PulseQuote symbol="IWM" quote={iwm} />
+        <PulseQuote symbol="ES" quote={es} />
+        <PulseQuote symbol="NQ" quote={nq} />
+        <PulseQuote symbol="YM" quote={ym} />
+        <PulseQuote symbol="VIX" quote={vixPulse} />
       </section>
 
       <footer className="footer">
@@ -743,7 +735,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 <li>SPX and VIX come from the quote stream. Day change uses the quote close when that field is present.</li>
                 <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the regular-hours open.</li>
                 <li>Flow now and the day row are 1-minute premium bars since 09:30 Eastern. Level 1 estimate is the separate streamer total.</li>
-                <li>Call wall and put wall are the strikes with the largest open-interest gamma. Call volume wall and put volume wall are the strikes with the largest volume gamma. The number is the strike, not a contract count. One strike can sit on more than one row.</li>
+                <li>Call wall and put wall are the strikes with the largest open-interest gamma. The number is the strike, not a contract count.</li>
                 <li>PRICE NOT FOLLOWING needs all four 5-minute gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
                 <li>Flow connection: {fixture ? "fixture" : live.flowConnection}.</li>
               </ul>

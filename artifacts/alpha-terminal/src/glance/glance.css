@@ -279,9 +279,13 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   margin-top: 8px;
   justify-self: start;
+  background: var(--glance-bg-deep);
+  border: 1px solid var(--glance-border);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
 .glance-at-col > .glance-ladder {
@@ -296,20 +300,27 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 440px;
-  max-width: 100%;
-  padding: 6px 0 2px;
+  width: 100%;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--glance-border);
+  background: var(--glance-bg-deep);
 }
 
 .flow-row-compact {
-  --flow-num: 22px;
+  --flow-num: 18px;
   grid-template-rows: auto;
   column-gap: 8px;
 }
 
-.flow-row-compact .flow-words,
-.flow-row-compact .flow-dollars {
+.flow-row-compact .flow-words {
   font-size: 22px;
+  font-weight: 650;
+  color: #fff;
+}
+
+.flow-row-compact .flow-dollars {
+  font-size: 18px;
+  font-weight: 500;
 }
 
 .flow-row-compact .track {
@@ -366,6 +377,15 @@
   margin-top: 16px;
 }
 
+.levels-wrap > .levels {
+  grid-column: 2;
+}
+
+.wall-name {
+  color: #fff;
+  font-weight: 650;
+}
+
 .trace {
   width: 100%;
   flex: 1 1 40px;
@@ -384,7 +404,7 @@
 
 .pulse {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
   align-items: center;
   border-top: 1px solid var(--glance-border);
@@ -684,7 +704,7 @@
 }
 
 .call {
-  color: #ffb800;
+  color: #fbbf24;
 }
 
 .put {
@@ -906,9 +926,12 @@
     min-height: 0;
   }
 
-  .flow-row-compact .flow-words,
-  .flow-row-compact .flow-dollars {
+  .flow-row-compact .flow-words {
     font-size: 22px;
+  }
+
+  .flow-row-compact .flow-dollars {
+    font-size: 18px;
   }
 
   .flow-row-compact .track {
