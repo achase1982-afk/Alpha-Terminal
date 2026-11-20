@@ -85,8 +85,8 @@ self.addEventListener("push", (e) => {
   const title = payload.title || "Alpha Terminal";
   const options = {
     body: payload.body || "",
-    icon: "/favicon.svg",
-    badge: "/favicon.svg",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
     tag: payload.tag || "order-alert",
     renotify: true,
     vibrate: [200, 100, 200],
