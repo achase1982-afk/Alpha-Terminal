@@ -20,7 +20,6 @@ import { useAutoRefreshToken } from "@/hooks/useAutoRefreshToken";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import { useSchwabSessionReconciliation } from "@/hooks/useSchwabSessionReconciliation";
 import { useSchwabAccountsBootstrap } from "@/hooks/useSchwabAccountsBootstrap";
-import { SchwabAccountHeader } from "@/components/SchwabAccountHeader";
 import { SchwabAccountPickerSheet } from "@/components/SchwabAccountPickerSheet";
 import { useViewportShell } from "@/hooks/useViewportShell";
 
@@ -1183,7 +1182,6 @@ export default function TerminalPage() {
               <div className="flex flex-1 min-h-0 flex-col">
                 {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
-                  {schwabLinked && !atGlanceChrome ? <SchwabAccountHeader compact /> : null}
                   {atOptionsChrome && !atGlanceChrome ? (
                     <AtSymbolHeader compact={false} />
                   ) : atOptionsChrome ? null : (
@@ -1478,7 +1476,7 @@ export default function TerminalPage() {
           closeOrderTicket();
         }}
       />
-      {schwabLinked && <SchwabAccountPickerSheet />}
+      <SchwabAccountPickerSheet />
       <CompanyTearSheet
         isOpen={companyTearSheetOpen}
         onClose={() => setCompanyTearSheetOpen(false)}

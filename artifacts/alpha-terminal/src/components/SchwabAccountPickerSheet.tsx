@@ -46,6 +46,12 @@ function dayPlLine(acct: SchwabAccountSummary, hidden: boolean) {
   );
 }
 
+function brokerLabel(acct: SchwabAccountSummary): string {
+  return acct.broker === "webull" || acct.hashValue?.startsWith("webull:")
+    ? "Webull"
+    : "Schwab";
+}
+
 export function SchwabAccountPickerSheet() {
   const open = useSchwabAccountStore((s) => s.pickerOpen);
   const setOpen = useSchwabAccountStore((s) => s.setPickerOpen);
@@ -142,8 +148,8 @@ export function SchwabAccountPickerSheet() {
                   </div>
                   <div className="text-[12px] text-zinc-500 mt-0.5">
                     {isPaperSchwabAccount(acct)
-                      ? `Paper · ${formatSchwabAccountType(acct.type)}`
-                      : formatSchwabAccountType(acct.type)}
+                      ? `${brokerLabel(acct)} · Paper · ${formatSchwabAccountType(acct.type)}`
+                      : `${brokerLabel(acct)} · ${formatSchwabAccountType(acct.type)}`}
                   </div>
                   <div className="mt-0.5">{dayPlLine(acct, hideBalances)}</div>
                 </div>
