@@ -1,3 +1,4 @@
+/** @vitest-environment jsdom */
 import { describe, expect, it } from "vitest";
 import {
   atLadderNudgeToClearSheet,
@@ -6,6 +7,8 @@ import {
   atLadderScrollShiftForRows,
   atLadderScrollTopForRow,
   atLadderVisibleRowRange,
+  resolveChainAtmRow,
+  scrollChainViewportToAtm,
 } from "@/lib/active-trader/atLadderScroll";
 
 const ROW = 38;
@@ -62,5 +65,58 @@ describe("ladder scroll math", () => {
     expect(atLadderScrollShiftForRows(base, [7330, 7325, 7320], ROW)).toBe(-2 * ROW);
     expect(atLadderScrollShiftForRows(base, [6000, 5995], ROW)).toBe(0);
     expect(atLadderScrollShiftForRows([], base, ROW)).toBe(0);
+  });
+});
+
+describe("options chain ATM recenter", () => {
+  it("prefers the marked spot strike rail over nearest strike by price", () => {
+    const container = document.createElement("div");
+    container.innerHTML = `
+      <div data-chain-strike="4999" data-chain-strike-rail style="height:38px"></div>
+      <div data-chain-strike="5000" data-chain-strike-rail style="height:38px">
+        <span data-chain-spot-strike="1"></span>
+      </div>
+      <div data-chain-strike="5001" data-chain-strike-rail style="height:38px"></div>
+    `;
+    const row = resolveChainAtmRow(container, 5000.25);
+    expect(row?.getAttribute("data-chain-strike")).toBe("5000");
+    expect(row?.hasAttribute("data-chain-strike-rail")).toBe(true);
+  });
+
+  it("falls back to nearest data-chain-strike when spot marker is absent", () => {
+    const container = document.createElement("div");
+    container.innerHTML = `
+      <div data-chain-strike="100" style="height:38px"></div>
+      <div data-chain-strike="105" style="height:38px"></div>
+    `;
+    expect(resolveChainAtmRow(container, 104)?.getAttribute("data-chain-strike")).toBe("105");
+  });
+
+  it("scrolls the ATM row to the viewport center", () => {
+    const container = document.createElement("div");
+    Object.defineProperty(container, "clientHeight", { value: 400, configurable: true });
+    let scrollTop = 0;
+    Object.defineProperty(container, "scrollTop", {
+      get: () => scrollTop,
+      set: (v: number) => {
+        scrollTop = v;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(container, "scrollHeight", { value: 4000, configurable: true });
+    container.getBoundingClientRect = () =>
+      ({ top: 0, left: 0, width: 320, height: 400, bottom: 400, right: 320, x: 0, y: 0, toJSON: () => ({}) });
+    const atm = document.createElement("div");
+    atm.setAttribute("data-chain-strike", "5000");
+    atm.setAttribute("data-chain-strike-rail", "");
+    Object.defineProperty(atm, "offsetHeight", { value: 38, configurable: true });
+    atm.getBoundingClientRect = () =>
+      ({ top: 800, left: 0, width: 80, height: 38, bottom: 838, right: 80, x: 0, y: 800, toJSON: () => ({}) });
+    const spot = document.createElement("span");
+    spot.setAttribute("data-chain-spot-strike", "1");
+    atm.appendChild(spot);
+    container.appendChild(atm);
+    scrollChainViewportToAtm(container, 5000, 0, "auto");
+    expect(scrollTop).toBeGreaterThan(0);
   });
 });
