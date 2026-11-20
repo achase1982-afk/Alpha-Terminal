@@ -4,10 +4,11 @@ import {
   Activity,
   Briefcase,
   ChartCandlestick,
+  LineChart,
   ListOrdered,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
   scanner:      { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
@@ -16,9 +17,10 @@ const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.
   portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
   activeTrader: { label: "TRADER", icon: (c) => <ChartCandlestick className={c} /> },
+  insights:     { label: "INSIGHTS",  icon: (c) => <LineChart className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai"];
+const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "insights"];
 const STORAGE_KEY = "alphaTerminalBottomNavOrder:v3";
 const LEGACY_STORAGE_KEY = "alphaTerminalBottomNavOrder:v2";
 const LONG_PRESS_MS = 450;
@@ -271,7 +273,7 @@ export function BottomNav({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <div className="flex w-full items-stretch gap-1 rounded-xl bg-zinc-950/80 p-1 ring-1 ring-inset ring-zinc-800/80">
+      <div className="flex w-full items-stretch gap-1 rounded-xl bg-card p-1 ring-1 ring-inset ring-zinc-800/60">
       <style>{`
         @keyframes bnav-jiggle {
           0%   { transform: rotate(0deg) translate(0, 0); }
