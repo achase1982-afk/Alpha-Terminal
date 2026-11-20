@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AtInstrumentModePill } from "./AtInstrumentModePill";
 import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import {
@@ -47,7 +47,7 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import type { SchwabAccountSummary, SchwabPosition } from "@/lib/schwab-account-types";
 import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
 import { toast } from "@/hooks/use-toast";
-import { BORDER, WHITE } from "@/components/options/optionsTheme";
+import { BORDER, DOWN, UP, WHITE } from "@/components/options/optionsTheme";
 import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
 
 function fmtPx(price: number): string {
@@ -70,6 +70,20 @@ function fmtNotional(amount: number): string {
 
 const EMPTY_PRINTS: { price: number; size: number; ts: number }[] = [];
 const EMPTY_VOLUME: Record<string, number> = {};
+
+const STOCK_ACTION_BTN_BASE: CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  border: "none",
+  borderRadius: 6,
+  fontSize: 10,
+  fontWeight: 750,
+  letterSpacing: "0.04em",
+  color: "#ffffff",
+};
+
+const STOCK_ACTION_BAR_PAD = 6;
+const STOCK_ACTION_BTN_GAP = 6;
 
 type EquityTapeSeedResponse = {
   sessionDate?: string;
@@ -462,16 +476,19 @@ export function StockLadderBody({
   return (
     <div className="flex flex-col flex-1 min-h-0" data-at-stock-ladder={symbol}>
       <div
-        className="grid grid-cols-4 shrink-0"
+        className="flex shrink-0 items-stretch"
         data-at-stock-actions
         style={{
-          height: 44,
+          gap: STOCK_ACTION_BTN_GAP,
+          minHeight: 44,
+          padding: STOCK_ACTION_BAR_PAD,
           background: "#050606",
           borderBottom: `1px solid ${BORDER}`,
         }}
       >
         <button
           type="button"
+          data-at-stock-action="buy"
           disabled={!tradingAccountHash || !!actionBusy}
           onClick={() => {
             if (onOpenStockTicket) {
@@ -481,19 +498,16 @@ export function StockLadderBody({
             void placeStockOrder("BUY", "MARKET");
           }}
           style={{
-            border: "none",
-            borderRight: `1px solid ${BORDER}`,
-            background: "rgba(0, 209, 102, 0.15)",
-            color: "#82f2b6",
-            fontSize: 10,
-            fontWeight: 750,
-            letterSpacing: "0.03em",
+            ...STOCK_ACTION_BTN_BASE,
+            background: UP,
+            opacity: !tradingAccountHash || actionBusy ? 0.45 : 1,
           }}
         >
-          BUY STOCK
+          BUY MKT
         </button>
         <button
           type="button"
+          data-at-stock-action="sell"
           disabled={!tradingAccountHash || !!actionBusy}
           onClick={() => {
             if (onOpenStockTicket) {
@@ -503,44 +517,35 @@ export function StockLadderBody({
             void placeStockOrder("SELL_SHORT", "MARKET");
           }}
           style={{
-            border: "none",
-            borderRight: `1px solid ${BORDER}`,
-            background: "rgba(242, 54, 69, 0.15)",
-            color: "#ff929b",
-            fontSize: 10,
-            fontWeight: 750,
-            letterSpacing: "0.03em",
+            ...STOCK_ACTION_BTN_BASE,
+            background: DOWN,
+            opacity: !tradingAccountHash || actionBusy ? 0.45 : 1,
           }}
         >
-          SELL STOCK
+          SELL MKT
         </button>
         <button
           type="button"
+          data-at-stock-action="cancel"
           disabled={!tradingAccountHash || !!actionBusy}
           onClick={() => void handleCancelAll()}
           style={{
-            border: "none",
-            borderRight: `1px solid ${BORDER}`,
-            background: "#111315",
-            color: WHITE,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
+            ...STOCK_ACTION_BTN_BASE,
+            background: actionBusy === "cancel" ? "#71717a" : "#3f3f46",
+            opacity: !tradingAccountHash || actionBusy ? 0.45 : 1,
           }}
         >
           {actionBusy === "cancel" ? "CANCELING" : "CANCEL"}
         </button>
         <button
           type="button"
+          data-at-stock-action="flatten"
           disabled={!tradingAccountHash || !!actionBusy}
           onClick={() => void handleFlatten()}
           style={{
-            border: "none",
-            background: actionBusy === "flatten" ? "rgba(251,191,36,0.18)" : "#111315",
-            color: actionBusy === "flatten" ? "#fbd46c" : WHITE,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.04em",
+            ...STOCK_ACTION_BTN_BASE,
+            background: actionBusy === "flatten" ? "#c2410c" : "#9f1239",
+            opacity: !tradingAccountHash || actionBusy ? 0.45 : 1,
           }}
         >
           {actionBusy === "flatten" ? "FLATTENING" : "FLATTEN"}
