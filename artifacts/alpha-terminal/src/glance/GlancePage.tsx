@@ -27,7 +27,6 @@ import {
   type PnfResult,
   type TrendReading,
 } from "./math";
-import { dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { useGlanceLive } from "./useGlanceLive";
 import "./glance.css";
 
@@ -222,7 +221,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const day = dayMove(spot, prev);
   const dayPoints = fixture ? (day?.points ?? null) : live.dayPoints;
   const dayPct = fixture ? (day?.percent ?? null) : live.dayPct;
-  const dayStatus = resolveDayStatus({ change: dayPoints, changePct: dayPct });
   const open = fixture ? FIXTURE.rthOpen : live.open;
   const fromOpen = fromOpenPoints(spot, open);
   const high = fixture ? FIXTURE.high : live.high;
@@ -416,28 +414,33 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           <div className="spot num">{formatSpot(spot)}</div>
         </div>
         <div className="day-read">
-          <span className="k">{dayStatusLabel(dayStatus)}</span>
+          <span className="k">SPX day</span>
           <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>
-          <div className={`support num ${signedClass(dayPoints)}`}>{dayPoints == null ? "—" : `${formatSignedPts(dayPoints)} vs close`}</div>
+          <div className={`day-pts num ${signedClass(dayPoints)}`}>
+            {dayPoints == null ? "—" : `${formatSignedPts(dayPoints, 0)} points from the close`}
+          </div>
         </div>
         <div>
-          <span className="k">From open</span>
-          <div className={`open-pts num ${signedClass(fromOpen)}`}>{formatSignedPts(fromOpen, 2)}</div>
+          <span className="k">SPX from the open</span>
+          <div className={`open-pts num ${signedClass(fromOpen)}`}>
+            {fromOpen == null ? "—" : `${formatSignedPts(fromOpen, 0)} points`}
+          </div>
           <div className="support num">Open {formatSpot(open)}</div>
         </div>
         <div>
-          <span className="k">Session range</span>
+          <span className="k">Session high</span>
           <div className="hl num">
-            <span className="hl-px">H {formatSpot(high)}</span>{" "}
+            <span className="hl-px">{formatSpot(high)}</span>{" "}
             {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute} ET</span> : null}
           </div>
+          <span className="k">Session low</span>
           <div className="hl num">
-            <span className="hl-px">L {formatSpot(low)}</span>{" "}
+            <span className="hl-px">{formatSpot(low)}</span>{" "}
             {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute} ET</span> : null}
           </div>
           {spot != null && high != null && low != null ? (
             <div className="support num">
-              {formatSignedPts(high - spot, 1)} high · {formatSignedPts(spot - low, 1)} low
+              {formatSignedPts(high - spot, 0)} points under the high · {formatSignedPts(spot - low, 0)} points above the low
             </div>
           ) : null}
         </div>
@@ -446,7 +449,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
           <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open</div>
           <div className="support num">
-            L {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · H{" "}
+            VIX low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · VIX high{" "}
             {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
           </div>
         </div>
