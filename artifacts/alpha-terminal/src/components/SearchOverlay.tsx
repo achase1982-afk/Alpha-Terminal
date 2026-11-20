@@ -5,10 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
-import {
-  measureKeyboardOverlapPx,
-  useVisualViewportComposerMetrics,
-} from "@/hooks/useVisualViewportKeyboardInset";
+import { useSearchInputDock } from "@/hooks/useVisualViewportKeyboardInset";
 
 function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash: boolean }) {
   const BadgeIcon = isInWatchlist ? MinusCircle : PlusCircle;
@@ -268,15 +265,19 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
   const [dockHeightPx, setDockHeightPx] = useState(72);
   const exactInput = inputVal.trim().toUpperCase();
   const narrowMobile = useMediaQuery("(max-width: 767px)");
-  const { dockBottomPx, remeasure, resetBaseline } = useVisualViewportComposerMetrics(0, {
-    composerFocused: narrowMobile && inputFocused,
-  });
+  const mobileSearchDockActive = narrowMobile && isOpen;
+  const { dockBottomPx, scrollPaddingBottomPx, remeasure } = useSearchInputDock(
+    mobileSearchDockActive,
+    inputFocused,
+    dockHeightPx,
+  );
+  const listPinnedToBottomRef = useRef(true);
 
   useEffect(() => {
     if (isOpen) {
       setInputVal("");
       setInputFocused(false);
-      resetBaseline();
+      listPinnedToBottomRef.current = true;
       remeasure();
       const t = window.setTimeout(() => {
         inputRef.current?.focus();
@@ -285,9 +286,8 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
       return () => window.clearTimeout(t);
     }
     setInputFocused(false);
-    resetBaseline();
     return undefined;
-  }, [isOpen, remeasure, resetBaseline]);
+  }, [isOpen, remeasure]);
 
   useLayoutEffect(() => {
     if (!narrowMobile || !isOpen) return;
@@ -301,31 +301,32 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
     ro?.observe(el);
     return () => ro?.disconnect();
-  }, [narrowMobile, isOpen, exactInput, dockBottomPx]);
+  }, [narrowMobile, isOpen, exactInput]);
 
-  useEffect(() => {
-    if (!narrowMobile || !isOpen) return;
-    const vv = window.visualViewport;
-    const bump = () => remeasure();
-    vv?.addEventListener("resize", bump);
-    vv?.addEventListener("scroll", bump);
-    return () => {
-      vv?.removeEventListener("resize", bump);
-      vv?.removeEventListener("scroll", bump);
-    };
-  }, [narrowMobile, isOpen, remeasure]);
-
-  const scrollListToEnd = useCallback(() => {
+  const scrollListToEnd = useCallback((force = false) => {
     const el = scrollRef.current;
     if (!el) return;
+    if (!force && !listPinnedToBottomRef.current) return;
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
     });
   }, []);
 
+  const handleRecentListScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    listPinnedToBottomRef.current = distanceFromBottom <= 96;
+  }, []);
+
   useEffect(() => {
-    if (isOpen && narrowMobile) scrollListToEnd();
-  }, [isOpen, narrowMobile, recentSymbols.length, scrollListToEnd]);
+    if (isOpen && narrowMobile) scrollListToEnd(true);
+  }, [isOpen, narrowMobile, scrollListToEnd]);
+
+  useEffect(() => {
+    if (!isOpen || !narrowMobile) return;
+    scrollListToEnd();
+  }, [scrollPaddingBottomPx, dockHeightPx, isOpen, narrowMobile, scrollListToEnd]);
 
   // Esc closes the overlay (it opens via Cmd/Ctrl+K on desktop, so it must
   // also close from the keyboard — otherwise the full-screen sheet keeps
@@ -369,9 +370,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
 
   const recentBottomOrder = recentForBottomDock(recentSymbols);
 
-  const mobileScrollPad = dockHeightPx + dockBottomPx + 8;
-
-  const keyboardOpen = narrowMobile && measureKeyboardOverlapPx() >= 48;
+  const keyboardOpen = narrowMobile && dockBottomPx >= 48;
 
   const recentListBody = (
     <>
@@ -443,8 +442,9 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
             <div
               ref={scrollRef}
               className="flex-1 min-h-0 overflow-y-auto flex flex-col"
+              onScroll={handleRecentListScroll}
               style={{
-                paddingBottom: mobileScrollPad,
+                paddingBottom: scrollPaddingBottomPx,
                 WebkitOverflowScrolling: "touch",
               }}
             >
