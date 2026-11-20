@@ -353,6 +353,41 @@ describe("LadderBody", () => {
     expect(spot.style.fontWeight).toBe("500");
   });
 
+  it("skips the call-wall outline on the spot row so yellow does not stack", () => {
+    const rows = buildRows();
+    const heat = createAtLadderHeatStore();
+    const selection = createAtLadderSelectionStore();
+    const rowByStrike = new Map(rows.map((r) => [r.strike, r]));
+    const view = render(
+      <LadderBody
+        rows={rows}
+        accentHex={GOLD}
+        spotStrike={7350}
+        flip={7295}
+        callWall={7351}
+        putWall={7300}
+        pinStrike={null}
+        wallsRolling={false}
+        selectedStrike={null}
+        onQuoteTap={vi.fn()}
+        positionQtyByKey={new Map()}
+        heat={heat}
+        selection={selection}
+        ladderMode="single"
+        verticalWidth={5}
+        rowByStrike={rowByStrike}
+        onVerticalTap={vi.fn()}
+        chainQuoteTs={NOW}
+        expiryLabel="18 Nov 26"
+      />,
+    );
+    const spotRow = view.container.querySelector<HTMLElement>('[data-at-spot-row="1"]')!;
+    expect(spotRow.getAttribute("data-at-ladder-row")).toBe("7350");
+    expect(spotRow.querySelector("[data-at-call-wall-outline]")).toBeNull();
+    expect(spotRow.querySelector("[data-at-strike-call-wall]")).not.toBeNull();
+    cleanup();
+  });
+
   it("outlines the call wall in gold and the put wall in teal", () => {
     const { view } = setup();
     const callRow = view.container.querySelector<HTMLElement>('[data-at-call-wall-row="1"]')!;

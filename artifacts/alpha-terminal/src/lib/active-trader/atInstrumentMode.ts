@@ -27,6 +27,21 @@ export function instrumentClassFromAssetType(
   return "unknown";
 }
 
+/**
+ * Schwab metadata can lag on first paint. Plain tickers that are not index,
+ * futures, or option roots still get the penny share ladder until verified.
+ */
+export function resolveInstrumentClass(
+  assetType: string | null | undefined,
+  symbol: string,
+): AtInstrumentClass {
+  const direct = instrumentClassFromAssetType(assetType, symbol);
+  if (direct !== "unknown") return direct;
+  const u = normSymbol(symbol);
+  if (!u || u.startsWith("$") || u.includes("/")) return "unknown";
+  return "equity";
+}
+
 export function stockTemplateAvailable(instrumentClass: AtInstrumentClass): boolean {
   return instrumentClass === "equity" || instrumentClass === "etf";
 }
@@ -80,5 +95,5 @@ export function resolveInstrumentTemplate(
   if (!stockTemplateAvailable(instrumentClass)) return "options";
   const explicit = loadExplicitInstrumentTemplate(symbol);
   if (explicit) return explicit;
-  return peekAtEntryFromChain(symbol) ? "options" : "stock";
+  return "stock";
 }

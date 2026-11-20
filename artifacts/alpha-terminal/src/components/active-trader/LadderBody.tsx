@@ -680,7 +680,7 @@ const LadderRowView = memo(function LadderRowView({
           style={{ inset: 3, border: `1px solid ${AT_LADDER_GAMMA}`, borderRadius: 4 }}
         />
       ) : null}
-      {callWallRow ? (
+      {callWallRow && !spotRow ? (
         <span
           aria-hidden
           data-at-call-wall-outline=""
