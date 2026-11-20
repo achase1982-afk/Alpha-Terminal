@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { OptionsTab } from "./OptionsTab";
 
 vi.mock("@/lib/active-trader/atGlanceFeature", () => ({
@@ -39,10 +39,13 @@ vi.mock("@/lib/options-store", () => ({
 }));
 
 vi.mock("@/lib/options-columns-store", () => ({
-  useOptionsColumnsStore: () => ({ activeColumnIds: ["bid", "ask"] }),
+  useOptionsColumnsStore: () => ({ activeColumnIds: ["bid", "ask", "vol", "oi", "delta"] }),
   COLUMN_REGISTRY: [
-    { id: "bid", label: "Bid" },
-    { id: "ask", label: "Ask" },
+    { id: "bid", label: "Bid", shortLabel: "BID", topKey: "bid", bottomKey: "bidSize", topDecimals: 2, isPrice: true, group: "Price" },
+    { id: "ask", label: "Ask", shortLabel: "ASK", topKey: "ask", bottomKey: "askSize", topDecimals: 2, isPrice: true, group: "Price" },
+    { id: "vol", label: "Volume", shortLabel: "VOL", topKey: "volume", topDecimals: 0, group: "Flow" },
+    { id: "oi", label: "Open Int", shortLabel: "OI", topKey: "openInterest", topDecimals: 0, group: "Flow" },
+    { id: "delta", label: "Delta", shortLabel: "Δ", topKey: "delta", topDecimals: 3, group: "Greeks" },
   ],
 }));
 
@@ -96,6 +99,11 @@ vi.mock("@workspace/api-client-react", () => ({
           expiration: "2026-11-21",
           bid: 2.5,
           ask: 2.7,
+          bidSize: 12,
+          askSize: 8,
+          volume: 1400,
+          openInterest: 3200,
+          delta: 0.51,
           streamKey: "AAPL_CALL_350",
         },
       ],
@@ -105,6 +113,11 @@ vi.mock("@workspace/api-client-react", () => ({
           expiration: "2026-11-21",
           bid: 2.4,
           ask: 2.6,
+          bidSize: 9,
+          askSize: 11,
+          volume: 900,
+          openInterest: 2100,
+          delta: -0.49,
           streamKey: "AAPL_PUT_350",
         },
       ],
@@ -160,5 +173,29 @@ describe("OptionsTab subview toggle", () => {
 
     expect(screen.queryByRole("switch", { name: "Options view" })).toBeNull();
     expect(screen.queryByTestId("active-trader-pane")).toBeNull();
+  });
+
+  it("centers bid, ask, and volume numbers in each chain cell", async () => {
+    render(<OptionsTab />);
+
+    const prices = await waitFor(() => {
+      const nodes = document.querySelectorAll("[data-ui-audit='chain-bid-cell']");
+      expect(nodes.length).toBeGreaterThan(0);
+      return [...nodes] as HTMLElement[];
+    });
+    const volumes = [...document.querySelectorAll("[data-ui-audit='chain-num-cell']")] as HTMLElement[];
+    expect(volumes.length).toBeGreaterThan(0);
+
+    for (const node of [...prices, ...volumes]) {
+      expect(node.style.textAlign).toBe("center");
+      expect(node.parentElement?.className).toContain("justify-center");
+    }
+
+    const quoteButtons = screen.getAllByRole("button", { name: /^(Bid|Ask) / });
+    expect(quoteButtons.length).toBeGreaterThan(0);
+    for (const button of quoteButtons) {
+      expect(button.className).toContain("text-center");
+      expect(button.className).not.toContain("text-left");
+    }
   });
 });

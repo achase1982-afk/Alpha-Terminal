@@ -751,25 +751,23 @@ const DataCell = memo(function DataCell({
                 ? `Size: ${fmtCompact(bottomVal)}`
                 : null;
 
-  // Vol cell stacks volume over open interest. Same ladder face as bid/ask,
-  // one point larger than the previous 12 / 8, with the pair centered.
+  // Vol cell stacks volume over open interest. Every chain number — bid,
+  // ask, last, volume, OI, greeks — is centered in its cell, matching the
+  // Active Trader ladder.
   const volOiStack = isVol;
   const inner = (
     <div
-      className={
-        volOiStack
-          ? "relative flex h-full w-full min-w-0 flex-col items-center justify-center overflow-hidden"
-          : "relative flex h-full w-full items-center overflow-hidden"
-      }
+      className="relative flex h-full w-full min-w-0 items-center justify-center overflow-hidden"
       style={{
-        padding: isBid ? "0 2px 0 8px" : volOiStack ? "1px 2px" : "0 2px",
+        flexDirection: volOiStack ? "column" : "row",
+        padding: volOiStack ? "1px 2px" : "0 2px",
         boxSizing: "border-box",
         gap: volOiStack ? 4 : undefined,
       }}
     >
       <span
         className="leading-none"
-        data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
+        data-ui-audit={isPrice ? "chain-bid-cell" : "chain-num-cell"}
         data-chain-quote-reason={priceReason ?? undefined}
         style={{
           fontSize: isPrice ? AT_LADDER_PRICE_SIZE : volOiStack ? 13 : 12,
@@ -778,15 +776,11 @@ const DataCell = memo(function DataCell({
           opacity: isPrice && priceDimmed ? 0.72 : 1,
           fontVariantNumeric: "tabular-nums",
           lineHeight: 1,
+          width: "100%",
+          minWidth: 0,
+          textAlign: "center",
           ...(isPrice || volOiStack ? {} : { fontFamily: MONO }),
-          ...(volOiStack
-            ? {
-                width: "100%",
-                minWidth: 0,
-                textAlign: "center" as const,
-                letterSpacing: "0.04em",
-              }
-            : {}),
+          ...(volOiStack ? { letterSpacing: "0.04em" } : {}),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -816,11 +810,12 @@ const DataCell = memo(function DataCell({
                 }
               : {
                   position: "absolute",
-                  left: isBid ? 8 : 2,
+                  left: 2,
                   right: 2,
                   bottom: 1,
                   fontSize: 8,
                   lineHeight: 1,
+                  textAlign: "center",
                   color: isShaded ? "#a0a0a8" : MUTED,
                   fontVariantNumeric: "tabular-nums",
                   whiteSpace: "nowrap",
@@ -865,7 +860,7 @@ const DataCell = memo(function DataCell({
         aria-pressed={isSelected}
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}${asOfLabel ? `, ${asOfLabel}` : ""}`}
         title={asOfLabel ?? undefined}
-        className="at-ladder-num w-full text-left cursor-pointer select-none relative"
+        className="at-ladder-num w-full text-center cursor-pointer select-none relative"
         style={{ ...cellFrame, outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
         {inner}
