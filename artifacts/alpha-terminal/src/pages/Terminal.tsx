@@ -2,13 +2,12 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useId, type 
 import { LazyRouteView } from "@/components/LazyRouteView";
 import { setLazyRecoveryTradeLatch } from "@/lib/lazyChunkRecovery";
 import { Sidebar, type SidebarHandle } from "@/components/Sidebar";
-import { MetricsBar, VolumeBar } from "@/components/MetricsBar";
+import { MetricsBar } from "@/components/MetricsBar";
 import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { TradingChart } from "@/components/TradingChart";
 import { MacroBar } from "@/components/MacroBar";
-import { TickerTape } from "@/components/TickerTape";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore, loadWatchlistsFromServer } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -47,7 +46,6 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
 import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
-import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
 import { MobileEdgeSearch } from "@/components/MobileEdgeSearch";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
@@ -474,8 +472,6 @@ export default function TerminalPage() {
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolledRaw, setIsScrolledRaw] = useState(false);
   const headerMode = useUICustomizationStore((s) => s.headerMode);
-  const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
-  const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const isCompact = headerMode === "collapsed";
@@ -1250,8 +1246,6 @@ export default function TerminalPage() {
             }}
           />
         </div>
-        {showTickerTape && !isCompact && <TickerTape />}
-        {showAiBiasStrip && !isCompact && <AiBiasStrip onNavigateToPulse={() => { setActiveBottom("ai"); setAiSubTab("pulse"); }} />}
       </header>
 
       {activeBottom === "ai" && (
@@ -1353,7 +1347,6 @@ export default function TerminalPage() {
                   ) : atOptionsChrome ? null : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
-                      <VolumeBar />
                     </>
                   )}
                   {!atGlanceChrome ? <MarketDataTabs activeTab={contextTab} setActiveTab={setContextTab} /> : null}
@@ -1513,7 +1506,6 @@ export default function TerminalPage() {
                   ) : atOptionsChrome ? null : (
                     <>
                       <MetricsBar compact={isScrolled} onTrade={openOrder} onOpenTearSheet={() => setCompanyTearSheetOpen(true)} />
-                      <VolumeBar />
                     </>
                   )}
                 </div>
