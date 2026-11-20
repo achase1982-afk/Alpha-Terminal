@@ -8,19 +8,19 @@ const C = {
 };
 
 interface SchwabAccountHeaderProps {
-  /** Optional compact mode for non-portfolio surfaces */
+  /** Compact spacing is retained for embedded portfolio variants. */
   compact?: boolean;
 }
 
 /**
- * Thinkorswim-style account selector row. Opens bottom sheet to pick All Accounts or one sub-account.
+ * Portfolio account selector row. Opens the shared brokerage-account sheet.
  */
 export function SchwabAccountHeader({ compact = false }: SchwabAccountHeaderProps) {
   const label = useSchwabAccountStore((s) => s.headerLabel());
   const setPickerOpen = useSchwabAccountStore((s) => s.setPickerOpen);
   const accounts = useSchwabAccountStore((s) => s.accounts);
 
-  if (accounts.length <= 1 && accounts[0]) {
+  if (accounts.length <= 1) {
     return null;
   }
 

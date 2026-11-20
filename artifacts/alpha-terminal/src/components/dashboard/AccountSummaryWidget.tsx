@@ -1,6 +1,5 @@
 import { usePortfolioStreamStore } from "@/lib/portfolio-stream-store";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
-import { SchwabAccountHeader } from "@/components/SchwabAccountHeader";
 
 function money(n: number, hide: boolean): string {
   if (hide) return "••••••";
@@ -32,9 +31,8 @@ function Stat({ label, value, color }: { label: string; value: string; color?: s
 }
 
 /**
- * Compact account strip for the dashboard: totals aggregated across all
- * Schwab sub-accounts from the live portfolio stream. Respects the
- * hide-balances privacy preference.
+ * Compact dashboard totals aggregated across connected brokerage accounts.
+ * Account filtering belongs to Portfolio and Insights, not this widget.
  */
 export function AccountSummaryWidget() {
   const accounts = usePortfolioStreamStore((s) => s.accounts);
@@ -67,7 +65,6 @@ export function AccountSummaryWidget() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <SchwabAccountHeader compact />
       <div className="flex flex-wrap gap-2 overflow-y-auto p-2">
         <Stat label="Net Liq" value={money(totals.liq, hideBalances)} />
         <Stat label="Day P/L" value={day.text} color={day.color} />

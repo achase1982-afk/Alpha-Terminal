@@ -14,6 +14,7 @@ import {
 } from "@/lib/orders/schwabOrderFees";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { formatSchwabAccountType } from "@/lib/schwabAccountAggregate";
+import type { SchwabAccountSummary } from "@/lib/schwab-account-types";
 import { startStrategistPolling } from "@/lib/strategistPoller";
 import { hash8 } from "@/lib/streamClientId";
 import type { OptionHoldPostOpts } from "@/lib/optionHoldClient";
@@ -62,7 +63,7 @@ import {
 } from "@workspace/order-ticket-math";
 import { useGetOptionChain } from "@workspace/api-client-react";
 import {
-  X, Minus, Plus, Loader2, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
+  X, Minus, Plus, Loader2, Check, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp,
   ShieldX, Lock, Unlock,
   Sparkles, ArrowLeft, ChevronLeft,
 } from "lucide-react";
@@ -74,6 +75,22 @@ type ConfirmStage = "form" | "review" | "submitting" | "success" | "error";
 type RiskLevel = "GREEN" | "YELLOW" | "RED";
 type PositionEffect = "OPENING" | "CLOSING" | "AUTO";
 type TicketMode = "options" | "stock";
+
+function accountBrokerName(account: SchwabAccountSummary): "Schwab" | "Webull" {
+  return account.broker === "webull" || account.hashValue?.startsWith("webull:")
+    ? "Webull"
+    : "Schwab";
+}
+
+function orderTicketAccountEligible(account: SchwabAccountSummary): boolean {
+  if (!account.hashValue) return false;
+  if (accountBrokerName(account) !== "Webull") return true;
+  return !/(EVENT|FUTURE)/i.test(account.type);
+}
+
+function orderTicketAccountLabel(account: SchwabAccountSummary): string {
+  return `${accountBrokerName(account)} · ${account.accountNumber} · ${formatSchwabAccountType(account.type)}`;
+}
 
 function optionRootFromOcc(sym: string): string {
   const root = sym.trim().slice(0, 6).trim();
@@ -521,6 +538,7 @@ export function OrderTicket({
   const [extendedHours, setExtendedHours] = useState(false);
   const [stage, setStage] = useState<ConfirmStage>("form");
   const submitInFlightRef = useRef(false);
+  const accountSelectionInitializedRef = useRef(false);
   const [submitInFlight, setSubmitInFlight] = useState(false);
   const [orderId, setOrderId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -528,7 +546,17 @@ export function OrderTicket({
   const orderTicketHash = useSchwabAccountStore((s) => s.orderTicketAccountHash);
   const setOrderTicketHash = useSchwabAccountStore((s) => s.setOrderTicketAccountHash);
   const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
-  const accountHash = orderTicketHash ?? tradingHash;
+  const eligibleOrderAccounts = useMemo(
+    () => schwabAccounts.filter(orderTicketAccountEligible),
+    [schwabAccounts],
+  );
+  const eligibleOrderAccountHashes = useMemo(
+    () => eligibleOrderAccounts.flatMap((account) => account.hashValue ? [account.hashValue] : []),
+    [eligibleOrderAccounts],
+  );
+  const [selectedAccountHashes, setSelectedAccountHashes] = useState<string[]>([]);
+  const accountHash = selectedAccountHashes[0] ?? orderTicketHash ?? tradingHash;
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
   const [showOrderType, setShowOrderType] = useState(false);
   const [showTifDropdown, setShowTifDropdown] = useState(false);
   const [priceLocked, setPriceLocked] = useState(false);
@@ -620,6 +648,30 @@ export function OrderTicket({
   ]);
   const displaySymbol = isMultiLeg ? `${symbol} Strategy (${strategyLegs!.length} legs)` : optionSymbol ?? symbol;
   const ticketHeaderSymbol = isOption && optionSymbol ? optionRootFromOcc(optionSymbol) : symbol;
+  const selectedOrderAccounts = useMemo(
+    () => eligibleOrderAccounts.filter(
+      (account) => !!account.hashValue && selectedAccountHashes.includes(account.hashValue),
+    ),
+    [eligibleOrderAccounts, selectedAccountHashes],
+  );
+  const selectedAccountSummary =
+    selectedOrderAccounts.length === 1
+      ? orderTicketAccountLabel(selectedOrderAccounts[0])
+      : `${selectedOrderAccounts.length} accounts`;
+  const successDestinationLabel =
+    selectedOrderAccounts.length === 1
+      ? `Sent to ${accountBrokerName(selectedOrderAccounts[0])}`
+      : `Sent to ${selectedOrderAccounts.length} accounts`;
+
+  const toggleOrderAccount = useCallback((hash: string) => {
+    const selected = selectedAccountHashes.includes(hash);
+    if (selected && selectedAccountHashes.length === 1) return;
+    const next = selected
+      ? selectedAccountHashes.filter((value) => value !== hash)
+      : [...selectedAccountHashes, hash];
+    setSelectedAccountHashes(next);
+    setOrderTicketHash(next[0] ?? null);
+  }, [selectedAccountHashes, setOrderTicketHash]);
 
   const ticketStreamKeys = useMemo(() => {
     if (!isOpen) return [] as string[];
@@ -721,6 +773,8 @@ export function OrderTicket({
     setSubmitInFlight(false);
     setOrderId(null);
     setErrorMsg("");
+    setSelectedAccountHashes([]);
+    setShowAccountDropdown(false);
     setShowOrderType(false);
     setShowTifDropdown(false);
     setPriceLocked(false);
@@ -743,10 +797,33 @@ export function OrderTicket({
   const [balances, setBalances] = useState<{ buyingPower: number | null; cashBalance: number | null; liquidationValue: number | null }>({ buyingPower: null, cashBalance: null, liquidationValue: null });
 
   useEffect(() => {
-    if (!isOpen) return;
-    const h = useSchwabAccountStore.getState().tradingAccountHash();
-    setOrderTicketHash(h);
-  }, [isOpen, setOrderTicketHash]);
+    if (!isOpen) {
+      accountSelectionInitializedRef.current = false;
+      return;
+    }
+    if (accountSelectionInitializedRef.current || eligibleOrderAccountHashes.length === 0) return;
+    const preferred = useSchwabAccountStore.getState().tradingAccountHash();
+    const initial =
+      preferred && eligibleOrderAccountHashes.includes(preferred)
+        ? preferred
+        : eligibleOrderAccountHashes[0] ?? null;
+    accountSelectionInitializedRef.current = true;
+    setSelectedAccountHashes(initial ? [initial] : []);
+    setOrderTicketHash(initial);
+  }, [eligibleOrderAccountHashes, isOpen, setOrderTicketHash]);
+
+  useEffect(() => {
+    if (!isOpen || !accountSelectionInitializedRef.current) return;
+    const valid = selectedAccountHashes.filter((hash) => eligibleOrderAccountHashes.includes(hash));
+    if (valid.length === selectedAccountHashes.length) return;
+    const next = valid.length > 0
+      ? valid
+      : eligibleOrderAccountHashes[0]
+        ? [eligibleOrderAccountHashes[0]]
+        : [];
+    setSelectedAccountHashes(next);
+    setOrderTicketHash(next[0] ?? null);
+  }, [eligibleOrderAccountHashes, isOpen, selectedAccountHashes, setOrderTicketHash]);
 
   useEffect(() => {
     if (!isOpen || !accountHash) return;
@@ -1321,10 +1398,20 @@ export function OrderTicket({
     if (submitInFlightRef.current || stage === "submitting") return;
     if (!atSendLive) return;
     if (futuresOrderBlocked) return;
-    if (!accountHash || !isValid) return;
+    const selectedTargets = selectedAccountHashes.filter((hash) =>
+      eligibleOrderAccountHashes.includes(hash),
+    );
+    const targetAccountHashes =
+      selectedTargets.length > 0
+        ? selectedTargets
+        : accountHash
+          ? [accountHash]
+          : [];
+    if (targetAccountHashes.length === 0 || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
     if (atTemplatePlan?.validationError) return;
     submitInFlightRef.current = true;
+    setShowAccountDropdown(false);
     setSubmitInFlight(true);
     setStage("submitting");
     try {
@@ -1368,34 +1455,84 @@ export function OrderTicket({
         quantity: parseInt(String(quantity)) || null,
       };
 
-      const res = await fetchWithAuth("/api/portfolio/place-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          accountHash,
-          order,
-          journalContext,
-          preTradeGate: {
-            enabled: preTradeEnabled,
-            blockOnRed: preTradeBlockOnRed,
-            overall: preTradeEnabled ? overallRisk : "GREEN",
-            checks: preTradeEnabled ? riskChecks.map((c) => ({ id: c.id, level: c.level })) : [],
-          },
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        const msg = humanizeFailedApiBody(res.status, JSON.stringify(data));
+      const preTradeGatePayload = {
+        enabled: preTradeEnabled,
+        blockOnRed: preTradeBlockOnRed,
+        overall: preTradeEnabled ? overallRisk : "GREEN",
+        checks: preTradeEnabled ? riskChecks.map((c) => ({ id: c.id, level: c.level })) : [],
+      };
+      const results = await Promise.all(targetAccountHashes.map(async (targetAccountHash) => {
+        try {
+          const res = await fetchWithAuth("/api/portfolio/place-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              accountHash: targetAccountHash,
+              order,
+              journalContext,
+              preTradeGate: preTradeGatePayload,
+            }),
+          });
+          const data = await res.json().catch(() => ({})) as {
+            error?: string;
+            message?: string;
+            orderId?: string;
+          };
+          if (!res.ok || data.error) {
+            return {
+              accountHash: targetAccountHash,
+              ok: false as const,
+              status: res.status,
+              message: humanizeFailedApiBody(res.status, JSON.stringify(data)),
+            };
+          }
+          return {
+            accountHash: targetAccountHash,
+            ok: true as const,
+            orderId: data.orderId ?? "—",
+          };
+        } catch (err: unknown) {
+          return {
+            accountHash: targetAccountHash,
+            ok: false as const,
+            status: 0,
+            message: err instanceof Error ? err.message : "Network error",
+          };
+        }
+      }));
+
+      const failures = results.filter((result) => !result.ok);
+      const successes = results.filter((result) => result.ok);
+      if (failures.length > 0) {
+        const failedLabels = failures.map((failure) => {
+          const account = eligibleOrderAccounts.find((candidate) => candidate.hashValue === failure.accountHash);
+          return account ? orderTicketAccountLabel(account) : failure.accountHash;
+        });
+        const firstFailure = failures[0];
+        const msg = successes.length > 0
+          ? `Placed in ${successes.length} of ${results.length} accounts. Not placed in ${failedLabels.join(", ")}: ${firstFailure.message}. The ticket now targets only the failed accounts.`
+          : firstFailure.message;
         enqueueBrowserTelemetry({
           level: "ERROR",
           message: "order_ticket_place_order_failed",
-          details: { status: res.status, symbol, atActiveTrader: !!atTemplatePrefs },
+          details: {
+            status: firstFailure.status,
+            symbol,
+            atActiveTrader: !!atTemplatePrefs,
+            accountCount: results.length,
+            failedAccountCount: failures.length,
+          },
         });
+        if (successes.length > 0) {
+          const failedHashes = failures.map((failure) => failure.accountHash);
+          setSelectedAccountHashes(failedHashes);
+          setOrderTicketHash(failedHashes[0] ?? null);
+        }
         setErrorMsg(msg);
         setStage("error");
         return;
       }
-      setOrderId(data.orderId ?? "—");
+      setOrderId(successes.map((result) => result.orderId).join(" · ") || "—");
       setStage("success");
     } catch (err: any) {
       enqueueBrowserTelemetry({
@@ -1413,7 +1550,8 @@ export function OrderTicket({
     accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
     overallRisk, riskChecks, ticketEconomics, stage, atTemplatePlan?.validationError, atTemplatePrefs, isValid,
-    futuresOrderBlocked, atSendLive,
+    futuresOrderBlocked, atSendLive, selectedAccountHashes, eligibleOrderAccountHashes,
+    eligibleOrderAccounts, setOrderTicketHash,
   ]);
 
   // ── Send-to-Strategist (trade validation) ────────────────────────────────
@@ -1929,16 +2067,18 @@ export function OrderTicket({
       </header>
       ) : null}
 
-      {schwabAccounts.length > 1 && stage !== "success" && (
+      {eligibleOrderAccounts.length > 0 && stage !== "success" && (
         <div
-          className="shrink-0 px-3 py-2 flex items-center gap-2"
+          className="relative shrink-0 px-3 py-2 flex items-center gap-2"
           style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(0,0,0,0.2)" }}
         >
-          <span style={{ fontSize: S.label, color: MUTED, flexShrink: 0 }}>Account</span>
-          <select
-            value={accountHash ?? ""}
-            onChange={(e) => setOrderTicketHash(e.target.value || null)}
-            className="flex-1 min-w-0 px-2 py-1 rounded-md"
+          <span style={{ fontSize: S.label, color: MUTED, flexShrink: 0 }}>Accounts</span>
+          <button
+            type="button"
+            aria-expanded={showAccountDropdown}
+            aria-haspopup="listbox"
+            onClick={() => setShowAccountDropdown((open) => !open)}
+            className="flex flex-1 min-w-0 items-center justify-between gap-2 px-2 py-1 rounded-md text-left"
             style={{
               fontSize: S.label,
               color: WHITE,
@@ -1946,14 +2086,70 @@ export function OrderTicket({
               border: `1px solid ${BORDER}`,
             }}
           >
-            {schwabAccounts.map((a) =>
-              a.hashValue ? (
-                <option key={a.hashValue} value={a.hashValue}>
-                  {a.accountNumber} · {formatSchwabAccountType(a.type)}
-                </option>
-              ) : null,
-            )}
-          </select>
+            <span className="truncate">{selectedAccountSummary}</span>
+            <ChevronDown
+              className={`h-3.5 w-3.5 shrink-0 transition-transform ${showAccountDropdown ? "rotate-180" : ""}`}
+              style={{ color: MUTED }}
+            />
+          </button>
+          {showAccountDropdown && (
+            <div
+              role="listbox"
+              aria-label="Order destination accounts"
+              aria-multiselectable="true"
+              className="absolute left-3 right-3 top-full z-50 mt-1 overflow-hidden shadow-xl"
+              style={{ background: CARD, border: `1px solid ${BORDER}`, borderRadius: 9 }}
+            >
+              {eligibleOrderAccounts.map((account) => {
+                const hash = account.hashValue;
+                if (!hash) return null;
+                const selected = selectedAccountHashes.includes(hash);
+                return (
+                  <button
+                    key={hash}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    onClick={() => toggleOrderAccount(hash)}
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left transition-colors hover:bg-white/5"
+                    style={{ borderBottom: `1px solid ${BORDER}` }}
+                  >
+                    <span
+                      className="flex h-4 w-4 shrink-0 items-center justify-center rounded"
+                      style={{
+                        border: `1px solid ${selected ? GOLD : BORDER}`,
+                        background: selected ? `${GOLD}22` : "transparent",
+                        color: GOLD,
+                      }}
+                    >
+                      {selected && <Check className="h-3 w-3" />}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate" style={{ fontSize: S.label, color: WHITE }}>
+                        {account.accountNumber}
+                      </span>
+                      <span className="block truncate" style={{ fontSize: S.tiny, color: MUTED }}>
+                        {accountBrokerName(account)} · {formatSchwabAccountType(account.type)}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+              <div className="flex items-center justify-between gap-3 px-3 py-2">
+                <span style={{ fontSize: S.tiny, color: MUTED }}>
+                  One order per selected account
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAccountDropdown(false)}
+                  className="rounded-md px-2 py-1"
+                  style={{ fontSize: S.label, color: GOLD, border: `1px solid ${GOLD}55` }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -2965,12 +3161,15 @@ export function OrderTicket({
           <div className="w-14 h-14 flex items-center justify-center" style={{ borderRadius: "50%", background: `${UP}12`, border: `1px solid ${UP}40` }}>
             <CheckCircle2 className="w-8 h-8" style={{ color: UP }} />
           </div>
-          <p style={{ fontSize: 16, color: WHITE }}>Sent to Schwab</p>
+          <p style={{ fontSize: 16, color: WHITE }}>{successDestinationLabel}</p>
           <p className="text-center" style={{ fontSize: S.heading, color: TEXT }}>
             {side === "BUY" ? "Bought" : "Sold"} {quantity} {isOption ? "contract" : "share"}{quantity > 1 ? "s" : ""} of {displaySymbol}
+            {selectedOrderAccounts.length > 1 ? " per account" : ""}
           </p>
           {orderId && (
-            <p style={{ fontSize: S.label, color: MUTED }}>Order ID: {orderId}</p>
+            <p className="text-center break-all" style={{ fontSize: S.label, color: MUTED }}>
+              Order ID{selectedOrderAccounts.length > 1 ? "s" : ""}: {orderId}
+            </p>
           )}
           <button
             onClick={onClose}

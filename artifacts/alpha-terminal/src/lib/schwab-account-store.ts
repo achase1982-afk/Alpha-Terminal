@@ -180,7 +180,11 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
         if (viewSelection === "all") return "All Accounts";
         const acct = accounts.find((a) => a.hashValue === viewSelection);
         if (!acct) return "Account";
-        return `${acct.accountNumber} ${acct.type}`;
+        const broker =
+          acct.broker === "webull" || acct.hashValue?.startsWith("webull:")
+            ? "Webull"
+            : "Schwab";
+        return `${broker} · ${acct.accountNumber} ${acct.type}`;
       },
     }),
     {
