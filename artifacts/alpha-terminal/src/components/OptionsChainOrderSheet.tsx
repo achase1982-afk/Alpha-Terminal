@@ -43,8 +43,16 @@ import {
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { computeOrderEconomics } from "@workspace/order-ticket-math";
-import { estimateSchwabOptionFees, computeOrderNetCash } from "@/lib/orders/schwabOrderFees";
-import { humanInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import {
+   estimateSchwabOptionFees,
+  computeOrderNetCash,
+  roundMoney,
+} from "@/lib/orders/schwabOrderFees";
+import {
+  humanInstruction,
+  type SchwabEquityInstruction,
+  type SchwabInstruction,
+} from "@/lib/active-trader/atSchwabOrderBuilder";
 import { buildChainSheetSchwabOrder, resolveVisibleChainOrderType } from "@/lib/active-trader/chainSheetSchwabOrder";
 import { interpretBracketPlaceOrderResult } from "@/lib/active-trader/bracketPlaceOrderResult";
 import {
@@ -64,9 +72,12 @@ import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
 import { seriesRootFromExpiration } from "@/lib/active-trader/optionSeries";
 import { TriggerOrderConfirmSummary } from "@/components/orders/TriggerOrderConfirmSummary";
 import { formatAtExitDuration } from "@/lib/active-trader/atSummaryFormat";
-import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { AtApprovedMobileOrderSheet } from "@/components/active-trader/AtApprovedMobileOrderSheet";
+import {
+  AtApprovedMobileOrderSheet,
+  type EquitySheetDisplayLeg,
+} from "@/components/active-trader/AtApprovedMobileOrderSheet";
 import type { ChainDraftSheetSession } from "@/lib/orders/chainDraftSessionStore";
+import { dispatchStrategistValidation } from "@/lib/orders/dispatchStrategistValidation";
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
@@ -99,8 +110,26 @@ function fmtCurrency(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
+export interface EquityTicketDraft {
+  symbol: string;
+  side: "BUY" | "SELL";
+  instruction?: SchwabEquityInstruction;
+  quantity: number;
+  isClose?: boolean;
+  initialLimitPrice?: number | null;
+}
+
+export type StrategistSheetDispatchResult =
+  | { ok: true; ticker: string }
+  | { ok: false; error: string };
+
 export interface OptionsChainOrderSheetProps {
   legs: StrategyLeg[];
+  /** Unified equity draft (opening or closing stock position). */
+  equityDraft?: EquityTicketDraft | null;
+  onEquityQuantityChange?: (quantity: number) => void;
+  /** Initial net/contract limit price when opening from AI Strategist or reopen card. */
+  initialLimitPrice?: number | null;
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   onClearAll: () => void;
@@ -134,6 +163,10 @@ export interface OptionsChainOrderSheetProps {
   };
   /** Active Trader: open bracket/advanced builder; restores scroll in parent. */
   onAdvancedOrders?: () => void;
+  /** Populated while a draft is mounted so the Order Defaults popup can dispatch to AI Strategist. */
+  strategistHandlerRef?: React.MutableRefObject<
+    ((opts: { thesis?: string }) => Promise<StrategistSheetDispatchResult>) | null
+  >;
   /** Restored limit lock after Options remount (chunk recovery). */
   restoredSheetSession?: ChainDraftSheetSession;
   onSheetSessionPersist?: (session: ChainDraftSheetSession) => void;
@@ -182,6 +215,7 @@ function brokerAcceptance(data: unknown): { accepted: true; orderId: string | nu
  */
 function chainDraftRevision(input: {
   legs: StrategyLeg[];
+  equityKey?: string;
   quantity: number;
   limitLocked: boolean;
   orderType: string;
@@ -192,7 +226,7 @@ function chainDraftRevision(input: {
       [leg.id, leg.direction, leg.optionType, leg.strike, leg.expiration, leg.quantity].join(":"),
     )
     .join("|");
-  return `${legs}#${input.quantity}#${input.limitLocked ? 1 : 0}#${input.orderType}#${input.limitEditEpoch}`;
+  return `${input.equityKey ?? legs}#${input.quantity}#${input.limitLocked ? 1 : 0}#${input.orderType}#${input.limitEditEpoch}`;
 }
 
 type PreparedAcceptSound = { play: () => void; close: () => void };
@@ -259,8 +293,71 @@ function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | 
   return key || undefined;
 }
 
+function resolveEquityPositionAndInstruction(input: {
+  draft: EquityTicketDraft;
+  quantity: number;
+  accounts: Array<{
+    hashValue: string | null;
+    positions: Array<{
+      symbol: string;
+      assetType?: string;
+      longQuantity?: number;
+      shortQuantity?: number;
+    }>;
+  }>;
+  accountHash: string | null;
+}): {
+  cleanSymbol: string;
+  instruction: SchwabEquityInstruction;
+  isClosing: boolean;
+  heldLong: number;
+  heldShort: number;
+} {
+  const cleanSymbol = input.draft.symbol.replace(/^\$/, "").trim().toUpperCase();
+  const activeAccount =
+    input.accounts.find((a) => a.hashValue != null && a.hashValue === input.accountHash) ??
+    input.accounts[0];
+  const pos = (activeAccount?.positions ?? []).find((p) => {
+    const sym = p.symbol.trim().toUpperCase();
+    if (sym !== cleanSymbol) return false;
+    if (p.assetType) return p.assetType.toUpperCase() === "EQUITY";
+    return sym.length < 15;
+  });
+  const heldLong = Number(pos?.longQuantity ?? 0);
+  const heldShort = Number(pos?.shortQuantity ?? 0);
+
+  if (input.draft.instruction) {
+    const instruction = input.draft.instruction;
+    const isClosing =
+      Boolean(input.draft.isClose) || instruction === "SELL" || instruction === "BUY_TO_COVER";
+    return { cleanSymbol, instruction, isClosing, heldLong, heldShort };
+  }
+
+  if (input.draft.isClose) {
+    if (input.draft.side === "BUY" || (heldShort > 0 && heldLong <= 0)) {
+      return { cleanSymbol, instruction: "BUY_TO_COVER", isClosing: true, heldLong, heldShort };
+    }
+    return { cleanSymbol, instruction: "SELL", isClosing: true, heldLong, heldShort };
+  }
+
+  if (input.draft.side === "BUY") {
+    if (heldShort > 0 && input.quantity <= heldShort) {
+      return { cleanSymbol, instruction: "BUY_TO_COVER", isClosing: true, heldLong, heldShort };
+    }
+    return { cleanSymbol, instruction: "BUY", isClosing: false, heldLong, heldShort };
+  }
+
+  if (heldLong > 0 && input.quantity <= heldLong) {
+    return { cleanSymbol, instruction: "SELL", isClosing: true, heldLong, heldShort };
+  }
+  return { cleanSymbol, instruction: "SELL_SHORT", isClosing: false, heldLong, heldShort };
+}
+
 export function OptionsChainOrderSheet({
   legs,
+  equityDraft,
+  onEquityQuantityChange,
+  initialLimitPrice,
   collapsed,
   onCollapsedChange,
   onClearAll,
@@ -277,18 +374,23 @@ export function OptionsChainOrderSheet({
   draftDistinctLegCount,
   atBracketDraft,
   onAdvancedOrders,
+  strategistHandlerRef,
   restoredSheetSession,
   onSheetSessionPersist,
   onWorkingOrderAccepted,
 }: OptionsChainOrderSheetProps) {
-  const symbol = useTerminalStore((s) => s.symbol);
+  const storeSymbol = useTerminalStore((s) => s.symbol);
+  const isEquityDraft = legs.length === 0 && equityDraft != null;
+  const hasDraft = legs.length > 0 || isEquityDraft;
+  const symbol = isEquityDraft ? equityDraft.symbol : storeSymbol;
   const sendAllowed = atOrderSendAllowed();
-  const underlyingSpot = useTerminalStore((s) => {
+  const liveStreamQuote = useTerminalStore((s) => {
     const u = symbol.toUpperCase();
     const alt = u.startsWith("$") ? u.slice(1) : `$${u}`;
-    const q = s.streamPrices[u] ?? s.streamPrices[alt];
-    return q?.last ?? q?.regularLast ?? q?.extendedLast ?? null;
+    return s.streamPrices[u] ?? s.streamPrices[alt] ?? null;
   });
+  const underlyingSpot =
+    liveStreamQuote?.last ?? liveStreamQuote?.regularLast ?? liveStreamQuote?.extendedLast ?? null;
   const accounts = useSchwabAccountStore((s) => s.accounts);
   const accountHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   /**
@@ -312,6 +414,17 @@ export function OptionsChainOrderSheet({
     const restored = restoredSheetSession?.spreadQuantity;
     return typeof restored === "number" && Number.isInteger(restored) && restored >= 1 ? restored : 1;
   });
+  const effectiveQuantity = isEquityDraft
+    ? Math.max(1, Math.floor(equityDraft.quantity || quantity) || 1)
+    : quantity;
+  const handleQuantityChange = useCallback(
+    (next: number) => {
+      const clamped = Math.max(1, Math.floor(next) || 1);
+      setQuantity(clamped);
+      if (isEquityDraft) onEquityQuantityChange?.(clamped);
+    },
+    [isEquityDraft, onEquityQuantityChange],
+  );
   const [timeInForce, setTimeInForce] = useState<string>("DAY");
   const [stage, setStage] = useState<Stage>("form");
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -327,8 +440,34 @@ export function OptionsChainOrderSheet({
   };
   const legsHydrateKeyRef = useRef("");
   const legDirectionKeyRef = useRef<string | null>(null);
+  const equityHydrateKeyRef = useRef("");
   const [limitLocked, setLimitLocked] = useState(restoredSheetSession?.limitLocked ?? false);
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
+
+  useEffect(() => {
+    const prefType = atBracketDraft?.prefs.schwabEntryType;
+    if (prefType === "MARKET") setOrderType("MARKET");
+    else if (prefType === "LIMIT") setOrderType("LIMIT");
+  }, [atBracketDraft?.prefs.schwabEntryType]);
+
+  const equityResolved = useMemo(
+    () =>
+      isEquityDraft && equityDraft
+        ? resolveEquityPositionAndInstruction({
+            draft: equityDraft,
+            quantity: effectiveQuantity,
+            accounts,
+            accountHash,
+          })
+        : null,
+    [isEquityDraft, equityDraft, effectiveQuantity, accounts, accountHash],
+  );
+
+  const isClosingOption = useMemo(
+    () => !isEquityDraft && legs.length > 0 && legs.every((l) => l.direction.endsWith("_TO_CLOSE")),
+    [isEquityDraft, legs],
+  );
+  const isClosingOrder = isEquityDraft ? Boolean(equityResolved?.isClosing) : isClosingOption;
 
   const pricedLegs = useMemo(
     () =>
@@ -349,25 +488,26 @@ export function OptionsChainOrderSheet({
   }, [legs, subscribeOptionSymbols]);
 
   useEffect(() => {
-    if (legs.length === 0) {
+    if (!hasDraft) {
       setStage("form");
       setLimitPrice("");
       setQuantity(1);
       limitUserEditedRef.current = false;
       legsHydrateKeyRef.current = "";
       legDirectionKeyRef.current = null;
+      equityHydrateKeyRef.current = "";
       setAtBracketConfirmSnapshot(null);
     }
-  }, [legs.length]);
+  }, [hasDraft]);
 
   useEffect(() => {
     onSheetSessionPersist?.({
       limitPrice,
       limitLocked,
       limitUserEdited: limitUserEditedRef.current,
-      spreadQuantity: quantity,
+      spreadQuantity: effectiveQuantity,
     });
-  }, [limitPrice, limitLocked, quantity, onSheetSessionPersist]);
+  }, [limitPrice, limitLocked, effectiveQuantity, onSheetSessionPersist]);
 
   const legsHydrateKey = useMemo(
     () =>
@@ -383,9 +523,43 @@ export function OptionsChainOrderSheet({
     [legs],
   );
 
-  const limitTickCtx = useMemo((): LimitTickContext => ({ underlyingSymbol: symbol, isOption: true }), [symbol]);
+  const limitTickCtx = useMemo(
+    (): LimitTickContext => ({ underlyingSymbol: symbol, isOption: !isEquityDraft }),
+    [symbol, isEquityDraft],
+  );
+
+  const eqBid =
+    liveStreamQuote && "bid" in liveStreamQuote && typeof liveStreamQuote.bid === "number"
+      ? liveStreamQuote.bid
+      : null;
+  const eqAsk =
+    liveStreamQuote && "ask" in liveStreamQuote && typeof liveStreamQuote.ask === "number"
+      ? liveStreamQuote.ask
+      : null;
+  const eqChangePct =
+    liveStreamQuote && "changePct" in liveStreamQuote && typeof liveStreamQuote.changePct === "number"
+      ? liveStreamQuote.changePct
+      : null;
+  const eqMid = useMemo(() => {
+    if (!isEquityDraft) return null;
+    const rawMid =
+      eqBid != null && eqBid > 0 && eqAsk != null && eqAsk > 0
+        ? midpointFromBidAsk(eqBid, eqAsk)
+        : underlyingSpot;
+    if (rawMid == null || !(rawMid > 0)) return null;
+    return parseCanonicalLimit(rawMid, limitTickCtx);
+  }, [isEquityDraft, eqBid, eqAsk, underlyingSpot, limitTickCtx]);
 
   const spreadPrices = useMemo(() => {
+    if (isEquityDraft) {
+      if (eqMid == null && eqBid == null && eqAsk == null) return null;
+      return {
+        spreadBid: eqBid,
+        spreadMid: eqMid,
+        spreadAsk: eqAsk,
+        crossed: false,
+      };
+    }
     if (pricedLegs.length === 0) return null;
     const agg = aggregateSpreadNBBO(
       pricedLegs.map((l) => ({
@@ -398,7 +572,7 @@ export function OptionsChainOrderSheet({
     if (!agg) return null;
     const roundedMid = agg.mid != null ? parseCanonicalLimit(agg.mid, limitTickCtx) : null;
     return { spreadBid: agg.bid, spreadMid: roundedMid, spreadAsk: agg.ask, crossed: agg.crossed };
-  }, [pricedLegs, limitTickCtx]);
+  }, [isEquityDraft, eqBid, eqMid, eqAsk, pricedLegs, limitTickCtx]);
 
   const submittedLimit = useMemo(
     () => resolveSubmittedLimit(limitTickCtx, limitPrice),
@@ -406,6 +580,11 @@ export function OptionsChainOrderSheet({
   );
 
   const isCredit = useMemo(() => {
+    if (isEquityDraft && equityResolved) {
+      return (
+        equityResolved.instruction === "SELL" || equityResolved.instruction === "SELL_SHORT"
+      );
+    }
     const econLegs = pricedLegs.map((l) => ({
       strike: l.strike,
       optionType: l.optionType,
@@ -426,60 +605,93 @@ export function OptionsChainOrderSheet({
     }
     if (complete && Math.abs(netMid) > 1e-6) return netMid < 0;
     return false;
-  }, [pricedLegs]);
+  }, [isEquityDraft, equityResolved, pricedLegs]);
 
   const resolvedOrder = useMemo(
     () =>
       resolveVisibleChainOrderType({
         visible: orderType,
         isCredit,
-        legCount: legs.length,
+        legCount: isEquityDraft ? 1 : legs.length,
       }),
-    [orderType, isCredit, legs.length],
+    [orderType, isCredit, isEquityDraft, legs.length],
   );
   const resolvedOrderLabel = resolvedOrder.label;
 
   const summary = useMemo(
     () =>
-      computeChainTicketSummary({
-        underlyingSymbol: symbol,
-        legs: pricedLegs.map((l) => ({
-          strike: l.strike,
-          optionType: l.optionType,
-          instruction: l.direction,
-          expiration: l.expiration.split(":")[0].trim(),
-          quantity: l.quantity,
-          bid: l.bid,
-          ask: l.ask,
-          delta: l.delta,
-          gamma: l.gamma,
-          theta: l.theta,
-          vega: l.vega,
-          iv: l.iv,
-        })),
-        limitPrice: submittedLimit ?? spreadPrices?.spreadMid ?? null,
-        spreadQuantity: quantity,
-        isCredit,
-        spotPrice: underlyingSpot,
-      }),
-    [pricedLegs, symbol, submittedLimit, spreadPrices, quantity, isCredit, underlyingSpot],
+      isEquityDraft
+        ? null
+        : computeChainTicketSummary({
+            underlyingSymbol: symbol,
+            legs: pricedLegs.map((l) => ({
+              strike: l.strike,
+              optionType: l.optionType,
+              instruction: l.direction,
+              expiration: l.expiration.split(":")[0].trim(),
+              quantity: l.quantity,
+              bid: l.bid,
+              ask: l.ask,
+              delta: l.delta,
+              gamma: l.gamma,
+              theta: l.theta,
+              vega: l.vega,
+              iv: l.iv,
+            })),
+            limitPrice: submittedLimit ?? spreadPrices?.spreadMid ?? null,
+            spreadQuantity: effectiveQuantity,
+            isCredit,
+            spotPrice: underlyingSpot,
+          }),
+    [isEquityDraft, pricedLegs, symbol, submittedLimit, spreadPrices, effectiveQuantity, isCredit, underlyingSpot],
   );
 
+  const equityUnitPrice = submittedLimit ?? eqMid ?? null;
+  const equityGrossDollars = useMemo(() => {
+    if (!isEquityDraft || equityUnitPrice == null || !(equityUnitPrice > 0)) return null;
+    return roundMoney(equityUnitPrice * effectiveQuantity);
+  }, [isEquityDraft, equityUnitPrice, effectiveQuantity]);
+
   const buyingPowerDisplay = useMemo(
-    () => summary?.buyingPowerEffect ?? null,
-    [summary?.buyingPowerEffect],
+    () =>
+      isEquityDraft
+        ? isClosingOrder
+          ? null
+          : equityGrossDollars != null
+            ? -equityGrossDollars
+            : null
+        : (summary?.buyingPowerEffect ?? null),
+    [isEquityDraft, isClosingOrder, equityGrossDollars, summary?.buyingPowerEffect],
   );
 
   const feeAdjustedNetCash = useMemo(() => {
+    if (isEquityDraft) {
+      if (equityGrossDollars == null) return null;
+      return isCredit ? equityGrossDollars : -equityGrossDollars;
+    }
     if (summary?.grossNotional == null) return null;
-    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * effectiveQuantity;
     const fees = estimateSchwabOptionFees(totalContracts);
     const cash = computeOrderNetCash(Math.abs(summary.grossNotional), isCredit, totalContracts, fees);
     return isCredit ? cash.net : -cash.net;
-  }, [summary?.grossNotional, legs, quantity, isCredit]);
+  }, [isEquityDraft, equityGrossDollars, summary?.grossNotional, legs, effectiveQuantity, isCredit]);
 
   const netDebitForName = summary?.grossNotional != null ? (isCredit ? -summary.grossNotional : summary.grossNotional) : 0;
-  const strategyId = useMemo(() => detectStrategyType(legs, netDebitForName), [legs, netDebitForName]);
+  const strategyId = useMemo(() => {
+    if (isEquityDraft && equityResolved) {
+      switch (equityResolved.instruction) {
+        case "BUY":
+          return { id: "buy_stock", name: "Buy Stock (Open)", color: UP };
+        case "SELL_SHORT":
+          return { id: "short_stock", name: "Short Stock (Open)", color: DOWN };
+        case "SELL":
+          return { id: "sell_stock_close", name: "Sell Stock (Close)", color: DOWN };
+        case "BUY_TO_COVER":
+          return { id: "cover_stock_close", name: "Buy to Cover (Close)", color: UP };
+      }
+    }
+    return detectStrategyType(legs, netDebitForName);
+  }, [isEquityDraft, equityResolved, legs, netDebitForName]);
 
   const allLegsQuoted = useMemo(
     () => pricedLegs.length > 0 && pricedLegs.every((l) => quoteSideState(l.bid, l.ask) === "ok"),
@@ -490,8 +702,44 @@ export function OptionsChainOrderSheet({
     [legs],
   );
 
+  const equityHydrateKey = useMemo(
+    () =>
+      isEquityDraft && equityDraft && equityResolved
+        ? `${equityResolved.cleanSymbol}:${equityDraft.side}:${equityResolved.instruction}:${equityDraft.initialLimitPrice ?? ""}`
+        : "",
+    [isEquityDraft, equityDraft, equityResolved],
+  );
+
   useEffect(() => {
-    if (legs.length === 0 || stage !== "form") return;
+    if (!isEquityDraft || stage !== "form") return;
+    const keyChanged = equityHydrateKeyRef.current !== equityHydrateKey;
+    if (keyChanged) {
+      equityHydrateKeyRef.current = equityHydrateKey;
+      setQuantity(Math.max(1, Math.floor(equityDraft?.quantity ?? 1) || 1));
+      if (equityDraft?.initialLimitPrice != null && equityDraft.initialLimitPrice > 0) {
+        limitUserEditedRef.current = true;
+        setLimitLocked(false);
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, equityDraft.initialLimitPrice));
+        return;
+      }
+      limitUserEditedRef.current = false;
+      if (limitLocked) setLimitLocked(false);
+      if (eqMid != null) {
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, eqMid));
+      } else {
+        setLimitPrice("");
+      }
+      return;
+    }
+    if (limitLocked || limitUserEditedRef.current) return;
+    if (eqMid != null) {
+      const next = displaySubmittedLimit(limitTickCtx, eqMid);
+      if (next !== limitPrice) setLimitPrice(next);
+    }
+  }, [isEquityDraft, stage, equityHydrateKey, equityDraft, limitTickCtx, eqMid, limitLocked, limitPrice]);
+
+  useEffect(() => {
+    if (isEquityDraft || legs.length === 0 || stage !== "form") return;
     const prevDirections = legDirectionKeyRef.current;
     const directionsChanged = prevDirections != null && prevDirections !== legDirectionKey;
     legDirectionKeyRef.current = legDirectionKey;
@@ -500,6 +748,11 @@ export function OptionsChainOrderSheet({
     const keyChanged = legsHydrateKeyRef.current !== legsHydrateKey;
     if (keyChanged) {
       legsHydrateKeyRef.current = legsHydrateKey;
+      if (initialLimitPrice != null && initialLimitPrice > 0) {
+        limitUserEditedRef.current = true;
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, initialLimitPrice));
+        return;
+      }
       if (!limitUserEditedRef.current && !allLegsQuoted) {
         setLimitPrice("");
       }
@@ -518,7 +771,7 @@ export function OptionsChainOrderSheet({
       const next = displaySubmittedLimit(limitTickCtx, spreadPrices.spreadMid);
       if (next !== limitPrice) setLimitPrice(next);
     }
-  }, [legDirectionKey, legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
+  }, [isEquityDraft, initialLimitPrice, legDirectionKey, legsHydrateKey, legs.length, spreadPrices?.spreadMid, limitTickCtx, stage, limitPrice, allLegsQuoted, limitLocked]);
 
   const snapLimitForSubmit = useCallback((): number | null => {
     const snapped = resolveSubmittedLimit(limitTickCtx, limitPrice);
@@ -529,8 +782,19 @@ export function OptionsChainOrderSheet({
 
   const nudgePrice = useCallback(
     (dir: "up" | "down") => {
-      const base = parseCanonicalLimit(limitPrice, limitTickCtx) ?? spreadPrices?.spreadMid;
+      const base =
+        parseCanonicalLimit(limitPrice, limitTickCtx) ??
+        (isEquityDraft ? eqMid : spreadPrices?.spreadMid);
       if (base == null) return;
+      if (isEquityDraft) {
+        const raw = dir === "up" ? base + 0.01 : Math.max(0.01, base - 0.01);
+        const rounded = Math.round(raw * 100) / 100;
+        limitUserEditedRef.current = true;
+        noteLimitReplaced();
+        setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
+        setPriceError("");
+        return;
+      }
       const tick = optionPremiumTickForSymbol(symbol, base) ?? 0.01;
       const raw = dir === "up" ? base + tick : Math.max(tick, base - tick);
       const rounded = roundOptionPriceToTick(raw, limitTickCtx, dir === "up" ? "up" : "down");
@@ -539,12 +803,56 @@ export function OptionsChainOrderSheet({
       setLimitPrice(displaySubmittedLimit(limitTickCtx, rounded));
       setPriceError("");
     },
-    [limitPrice, limitTickCtx, spreadPrices, symbol],
+    [limitPrice, limitTickCtx, isEquityDraft, eqMid, spreadPrices, symbol],
   );
+
+  const effectiveAtBracketDraft = useMemo(() => {
+    if (!atBracketDraft) return undefined;
+    if (isClosingOrder) {
+      return {
+        primaryInstruction: isEquityDraft && equityResolved ? equityResolved.instruction : atBracketDraft.primaryInstruction,
+        prefs: {
+          ...atBracketDraft.prefs,
+          template: "Single" as const,
+          advancedRoute: "SINGLE" as const,
+          takeProfit: { ...atBracketDraft.prefs.takeProfit, enabled: false },
+          stopLoss: { ...atBracketDraft.prefs.stopLoss, enabled: false },
+        },
+      };
+    }
+    if (isEquityDraft && equityResolved) {
+      return {
+        prefs: atBracketDraft.prefs,
+        primaryInstruction: equityResolved.instruction,
+      };
+    }
+    return atBracketDraft;
+  }, [atBracketDraft, isClosingOrder, isEquityDraft, equityResolved]);
 
   const buildSchwabOrder = useCallback(
     (priceOverride?: number) => {
       const parsed = priceOverride ?? schwabPriceFromTicket(limitTickCtx, limitPrice);
+      if (isEquityDraft && equityResolved) {
+        return buildChainSheetSchwabOrder({
+          prefs: effectiveAtBracketDraft?.prefs ?? atBracketDraft?.prefs,
+          primaryInstruction: equityResolved.instruction,
+          legs: [],
+          equityLeg: {
+            symbol: equityResolved.cleanSymbol,
+            instruction: equityResolved.instruction,
+            quantity: effectiveQuantity,
+            isClosing: equityResolved.isClosing,
+          },
+          quantityMultiplier: 1,
+          limitPrice: parsed,
+          isCredit,
+          visibleOrderType: orderType,
+          complexOrderStrategyType: "NONE",
+          underlyingSymbol: equityResolved.cleanSymbol,
+          underlyingPrice: underlyingSpot,
+          timeInForce,
+        });
+      }
       const complexType = inferSchwabComplexOrderStrategyType(
         legs.map((leg) => ({
           strike: leg.strike,
@@ -556,8 +864,8 @@ export function OptionsChainOrderSheet({
         })),
       );
       return buildChainSheetSchwabOrder({
-        prefs: atBracketDraft?.prefs,
-        primaryInstruction: atBracketDraft?.primaryInstruction,
+        prefs: effectiveAtBracketDraft?.prefs ?? atBracketDraft?.prefs,
+        primaryInstruction: effectiveAtBracketDraft?.primaryInstruction ?? atBracketDraft?.primaryInstruction,
         legs: legs.map((leg) => ({
           direction: leg.direction,
           quantity: leg.quantity,
@@ -566,7 +874,7 @@ export function OptionsChainOrderSheet({
           delta: leg.delta,
           iv: leg.iv,
         })),
-        quantityMultiplier: quantity,
+        quantityMultiplier: effectiveQuantity,
         limitPrice: parsed,
         isCredit,
         visibleOrderType: orderType,
@@ -576,10 +884,25 @@ export function OptionsChainOrderSheet({
         timeInForce,
       });
     },
-    [isCredit, timeInForce, legs, quantity, limitPrice, limitTickCtx, atBracketDraft, symbol, underlyingSpot, orderType],
+    [
+      isEquityDraft,
+      equityResolved,
+      effectiveAtBracketDraft,
+      isCredit,
+      timeInForce,
+      legs,
+      effectiveQuantity,
+      limitPrice,
+      limitTickCtx,
+      atBracketDraft,
+      symbol,
+      underlyingSpot,
+      orderType,
+    ],
   );
 
   const guardDraftLegCount = useCallback(() => {
+    if (isEquityDraft) return true;
     const distinct = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
     try {
       assertChainDraftLegCount(distinct);
@@ -588,7 +911,7 @@ export function OptionsChainOrderSheet({
       setPriceError(CHAIN_LEG_LIMIT_MESSAGE);
       return false;
     }
-  }, [draftDistinctLegCount, legs]);
+  }, [isEquityDraft, draftDistinctLegCount, legs]);
 
   const validateAndReview = useCallback(() => {
     if (!guardDraftLegCount()) return;
@@ -599,34 +922,52 @@ export function OptionsChainOrderSheet({
     }
     setReviewLimitSnapped(px);
     setPriceError("");
-    const draft = atBracketDraft;
+    const draft = effectiveAtBracketDraft;
     if (draft && bracketPrefsActive(draft.prefs)) {
-      const leg = legs[0];
-      const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
-      const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
-      const entryGross =
-        summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
-      const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
-      if (sym) {
+      if (isEquityDraft && equityResolved) {
+        const entryGross = px != null && px > 0 ? roundMoney(px * effectiveQuantity) : null;
         const econ = buildChainSheetBracketEconomics({
           prefs: draft.prefs,
-          primaryInstruction: draft.primaryInstruction,
+          primaryInstruction: equityResolved.instruction,
           lockedLimit: px,
-          legCount: distinctLegs,
-          optionSymbol: sym,
-          underlyingSymbol: symbol.replace(/^\$/, ""),
-          spreadQuantity: quantity,
-          totalContracts,
+          legCount: 1,
+          optionSymbol: equityResolved.cleanSymbol,
+          underlyingSymbol: equityResolved.cleanSymbol,
+          spreadQuantity: effectiveQuantity,
+          totalContracts: 0,
           entryGrossDollars: entryGross,
           isCredit,
+          assetType: "EQUITY",
         });
         setAtBracketConfirmSnapshot(econ.bracketConfirm);
       } else {
-        setAtBracketConfirmSnapshot({
-          mode: "unsupported",
-          testId: "at-chain-bracket-unsupported",
-          message: "Missing option symbol — cannot preview bracket exits on this leg.",
-        });
+        const leg = legs[0];
+        const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
+        const distinctLegs = draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs);
+        const entryGross =
+          summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
+        const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * effectiveQuantity;
+        if (sym) {
+          const econ = buildChainSheetBracketEconomics({
+            prefs: draft.prefs,
+            primaryInstruction: draft.primaryInstruction,
+            lockedLimit: px,
+            legCount: distinctLegs,
+            optionSymbol: sym,
+            underlyingSymbol: symbol.replace(/^\$/, ""),
+            spreadQuantity: effectiveQuantity,
+            totalContracts,
+            entryGrossDollars: entryGross,
+            isCredit,
+          });
+          setAtBracketConfirmSnapshot(econ.bracketConfirm);
+        } else {
+          setAtBracketConfirmSnapshot({
+            mode: "unsupported",
+            testId: "at-chain-bracket-unsupported",
+            message: "Missing option symbol — cannot preview bracket exits on this leg.",
+          });
+        }
       }
     } else {
       setAtBracketConfirmSnapshot(null);
@@ -635,12 +976,14 @@ export function OptionsChainOrderSheet({
   }, [
     snapLimitForSubmit,
     guardDraftLegCount,
-    atBracketDraft,
+    effectiveAtBracketDraft,
+    isEquityDraft,
+    equityResolved,
     legs,
     draftDistinctLegCount,
     symbol,
     summary?.grossNotional,
-    quantity,
+    effectiveQuantity,
     isCredit,
     resolvedOrder,
   ]);
@@ -650,20 +993,90 @@ export function OptionsChainOrderSheet({
   const draftRevisionRef = useRef("");
   draftRevisionRef.current = chainDraftRevision({
     legs,
-    quantity,
+    equityKey: isEquityDraft ? equityHydrateKey : undefined,
+    quantity: effectiveQuantity,
     limitLocked,
     orderType,
     limitEditEpoch: limitEditEpochRef.current,
   });
   const [sendLocked, setSendLocked] = useState(false);
   useEffect(() => {
-    if (!openReviewOnMount || openReviewRef.current || legs.length === 0) return;
+    if (!openReviewOnMount || openReviewRef.current || !hasDraft) return;
     const px = submittedLimit ?? spreadPrices?.spreadMid;
     if (px == null || px <= 0) return;
     openReviewRef.current = true;
     const t = window.setTimeout(() => validateAndReview(), 500);
     return () => window.clearTimeout(t);
-  }, [openReviewOnMount, legs.length, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
+  }, [openReviewOnMount, hasDraft, submittedLimit, spreadPrices?.spreadMid, validateAndReview]);
+
+  useEffect(() => {
+    if (!strategistHandlerRef) return;
+    if (!hasDraft) {
+      strategistHandlerRef.current = null;
+      return;
+    }
+    strategistHandlerRef.current = async ({ thesis }) => {
+      const duration =
+        effectiveAtBracketDraft?.prefs.entryDuration ??
+        (timeInForce === "GTC" ? "GOOD_TILL_CANCEL" : "DAY");
+      const estMaxRisk = isEquityDraft
+        ? isClosingOrder
+          ? null
+          : equityResolved?.instruction === "SELL_SHORT"
+            ? null
+            : equityGrossDollars
+        : (summary?.maxLoss ?? null);
+      const estMaxProfit = isEquityDraft
+        ? null
+        : (summary?.maxProfit ?? null);
+      const breakeven = isEquityDraft
+        ? (submittedLimit ?? eqMid ?? null)
+        : (summary?.breakevens?.[0] ?? null);
+      return dispatchStrategistValidation({
+        symbol,
+        legs: pricedLegs,
+        isEquityDraft,
+        equitySide: equityDraft?.side,
+        equityInstruction: equityResolved?.instruction,
+        isClosingOrder,
+        orderType: resolvedOrder.orderType === "MARKET" ? "MARKET" : "LIMIT",
+        duration,
+        quantity: effectiveQuantity,
+        limitPrice: resolvedOrder.orderType === "MARKET" ? null : (submittedLimit ?? spreadPrices?.spreadMid ?? null),
+        isCredit,
+        underlyingPrice: underlyingSpot,
+        underlyingChangePct: eqChangePct,
+        estMaxRisk,
+        estMaxProfit,
+        breakeven,
+        thesis,
+      });
+    };
+    return () => {
+      strategistHandlerRef.current = null;
+    };
+  }, [
+    strategistHandlerRef,
+    hasDraft,
+    effectiveAtBracketDraft,
+    timeInForce,
+    isEquityDraft,
+    isClosingOrder,
+    equityResolved,
+    equityGrossDollars,
+    summary,
+    submittedLimit,
+    eqMid,
+    symbol,
+    pricedLegs,
+    equityDraft?.side,
+    resolvedOrder.orderType,
+    effectiveQuantity,
+    spreadPrices?.spreadMid,
+    isCredit,
+    underlyingSpot,
+    eqChangePct,
+  ]);
 
   const handleSubmit = useCallback(async () => {
     if (!guardDraftLegCount()) return;
@@ -779,28 +1192,41 @@ export function OptionsChainOrderSheet({
   const handleClearAllClick = useCallback(() => {
     limitUserEditedRef.current = false;
     legsHydrateKeyRef.current = "";
+    equityHydrateKeyRef.current = "";
     onClearAll();
   }, [onClearAll]);
 
   const isValid =
-    legs.length > 0 &&
-    submittedLimit != null &&
-    submittedLimit > 0 &&
-    quantity > 0 &&
+    hasDraft &&
+    (resolvedOrder.orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
+    effectiveQuantity > 0 &&
     (demoFixture || !!accountHash);
 
-  const effectiveAtBracketDraft = atBracketDraft;
-
   const bracketEconomics = useMemo(() => {
-    const draft = atBracketDraft;
+    const draft = effectiveAtBracketDraft;
     if (!draft || !bracketPrefsActive(draft.prefs)) return null;
+    if (isEquityDraft && equityResolved) {
+      return buildChainSheetBracketEconomics({
+        prefs: draft.prefs,
+        primaryInstruction: equityResolved.instruction,
+        lockedLimit: submittedLimit,
+        legCount: 1,
+        optionSymbol: equityResolved.cleanSymbol,
+        underlyingSymbol: equityResolved.cleanSymbol,
+        spreadQuantity: effectiveQuantity,
+        totalContracts: 0,
+        entryGrossDollars: equityGrossDollars,
+        isCredit,
+        assetType: "EQUITY",
+      });
+    }
     const leg = legs[0];
     const sym = leg ? primaryLegOptionSymbol(leg, symbol) : undefined;
     if (!sym) return null;
     const limitForBracket = submittedLimit;
     const entryGross =
       summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
-    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+    const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * effectiveQuantity;
     const econ = buildChainSheetBracketEconomics({
       prefs: draft.prefs,
       primaryInstruction: draft.primaryInstruction,
@@ -808,17 +1234,20 @@ export function OptionsChainOrderSheet({
       legCount: draftDistinctLegCount ?? distinctChainLegsFromStrategy(legs),
       optionSymbol: sym,
       underlyingSymbol: symbol.replace(/^\$/, ""),
-      spreadQuantity: quantity,
+      spreadQuantity: effectiveQuantity,
       totalContracts,
       entryGrossDollars: entryGross,
       isCredit,
     });
     return econ;
   }, [
-    atBracketDraft,
+    effectiveAtBracketDraft,
+    isEquityDraft,
+    equityResolved,
+    equityGrossDollars,
     legs,
     symbol,
-    quantity,
+    effectiveQuantity,
     submittedLimit,
     summary?.grossNotional,
     isCredit,
@@ -833,9 +1262,26 @@ export function OptionsChainOrderSheet({
     const draft = effectiveAtBracketDraft;
     if (!draft || !bracketPrefsActive(draft.prefs)) return snap;
 
-    const leg = legs[0];
     const px = reviewLimitSnapped;
-    if (!leg || px == null || px <= 0) return snap;
+    if (px == null || px <= 0) return snap;
+
+    if (isEquityDraft && equityResolved) {
+      const built = buildChainSheetAtBracketConfirm({
+        prefs: draft.prefs,
+        legCount: 1,
+        primaryInstruction: equityResolved.instruction,
+        limitPrice: px,
+        optionSymbol: equityResolved.cleanSymbol,
+        underlyingSymbol: equityResolved.cleanSymbol,
+        assetType: "EQUITY",
+        quantityOverride: effectiveQuantity,
+      });
+      if (built.mode === "trigger" || built.mode === "unsupported") return built;
+      return snap;
+    }
+
+    const leg = legs[0];
+    if (!leg) return snap;
 
     const sym = primaryLegOptionSymbol(leg, symbol);
     if (!sym) {
@@ -868,42 +1314,110 @@ export function OptionsChainOrderSheet({
     stage,
     atBracketConfirmSnapshot,
     effectiveAtBracketDraft,
+    isEquityDraft,
+    equityResolved,
+    effectiveQuantity,
     legs,
     symbol,
     reviewLimitSnapped,
     draftDistinctLegCount,
   ]);
 
-  if (legs.length === 0) return null;
+  const equityLegDisplay = useMemo((): EquitySheetDisplayLeg | null => {
+    if (!isEquityDraft || !equityResolved) return null;
+    const badgeMap: Record<SchwabEquityInstruction, string> = {
+      BUY: "BUY",
+      SELL: "SELL",
+      SELL_SHORT: "SHORT",
+      BUY_TO_COVER: "COVER",
+    };
+    const quoteSummary =
+      eqBid != null && eqBid > 0 && eqAsk != null && eqAsk > 0
+        ? `${fmt(eqBid)}/${fmt(eqAsk)}`
+        : underlyingSpot != null && underlyingSpot > 0
+          ? `$${fmt(underlyingSpot)}`
+          : null;
+    return {
+      symbol: equityResolved.cleanSymbol,
+      badgeLabel: badgeMap[equityResolved.instruction],
+      isBuy:
+        equityResolved.instruction === "BUY" ||
+        equityResolved.instruction === "BUY_TO_COVER",
+      quantity: effectiveQuantity,
+      isClosing: equityResolved.isClosing,
+      quoteSummary,
+    };
+  }, [isEquityDraft, equityResolved, eqBid, eqAsk, underlyingSpot, effectiveQuantity]);
+
+  if (!hasDraft) return null;
+
+  const equityEntryLabel =
+    isEquityDraft && equityResolved
+      ? equityResolved.instruction === "SELL"
+        ? "Closing proceeds"
+        : equityResolved.instruction === "SELL_SHORT"
+          ? "Short credit"
+          : equityResolved.instruction === "BUY_TO_COVER"
+            ? "Cover debit"
+            : "Entry debit"
+      : isCredit
+        ? "Entry credit"
+        : "Entry debit";
+
+  const effectiveTifDisplay =
+    effectiveAtBracketDraft?.prefs.entryDuration === "GOOD_TILL_CANCEL"
+      ? "GTC"
+      : effectiveAtBracketDraft?.prefs.entryDuration === "FILL_OR_KILL"
+        ? "FOK"
+        : timeInForce;
 
   if (atDocked) {
-    const entryMultiplier = quantity * 100;
-    const entryDollars =
-      summary?.grossNotional != null ? Math.abs(summary.grossNotional) : null;
-    const legacyEntryAbs =
-      summary?.grossNotional != null ? Math.abs(summary.grossNotional) * entryMultiplier : null;
+    const entryMultiplier = effectiveQuantity * 100;
+    const entryDollars = isEquityDraft
+      ? equityGrossDollars
+      : summary?.grossNotional != null
+        ? Math.abs(summary.grossNotional)
+        : null;
+    const legacyEntryAbs = isEquityDraft
+      ? equityGrossDollars
+      : summary?.grossNotional != null
+        ? Math.abs(summary.grossNotional) * entryMultiplier
+        : null;
     const exitAbs = bracketEconomics?.targetExitDollars ?? null;
     const dockedEstNetProfit = bracketEconomics?.estNetUnavailable
       ? null
       : bracketEconomics?.estNetProfit ?? null;
-    const maxLossLabel =
-      summary?.maxLoss != null
+    const maxLossLabel = isEquityDraft
+      ? isClosingOrder
+        ? "— (closing)"
+        : equityResolved?.instruction === "SELL_SHORT"
+          ? "uncapped"
+          : equityGrossDollars != null
+            ? `$${Math.round(equityGrossDollars).toLocaleString("en-US")}`
+            : "—"
+      : summary?.maxLoss != null
         ? `$${Math.round(summary.maxLoss).toLocaleString("en-US")}`
         : summary?.maxLoss === null
           ? "uncapped"
           : "—";
-    const mid = summary?.spreadMid != null ? fmt(summary.spreadMid) : null;
+    const mid = isEquityDraft
+      ? eqMid != null
+        ? fmt(eqMid)
+        : null
+      : summary?.spreadMid != null
+        ? fmt(summary.spreadMid)
+        : null;
     const limitInvalid = orderType !== "MARKET" && !(submittedLimit != null && submittedLimit > 0);
     const bracketMessage =
       bracketEconomics?.bracketConfirm.mode === "unsupported"
         ? bracketEconomics.bracketConfirm.message
         : null;
     const sendUnavailableReason =
-      legs.length === 0
+      !hasDraft
         ? "Add a leg before sending."
         : limitInvalid
           ? "Invalid limit."
-          : quantity <= 0
+          : effectiveQuantity <= 0
             ? "Enter a quantity."
             : bracketMessage
               ? bracketMessage
@@ -921,8 +1435,21 @@ export function OptionsChainOrderSheet({
             strategyColor={strategyId.color}
             symbol={symbol}
             legs={legs}
-            quantity={quantity}
-            timeInForce={timeInForce}
+            equityConfirm={
+              isEquityDraft && equityResolved
+                ? {
+                    symbol: equityResolved.cleanSymbol,
+                    instruction: equityResolved.instruction,
+                    quantity: effectiveQuantity,
+                    isClosing: equityResolved.isClosing,
+                    grossDollars:
+                      equityGrossDollars ??
+                      roundMoney(Math.abs(reviewLimitSnapped ?? submittedLimit ?? eqMid ?? 0) * effectiveQuantity),
+                  }
+                : undefined
+            }
+            quantity={effectiveQuantity}
+            timeInForce={effectiveTifDisplay}
             isCredit={isCredit}
             orderTypeLabel={resolvedOrderLabel}
             limitTickCtx={limitTickCtx}
@@ -952,14 +1479,15 @@ export function OptionsChainOrderSheet({
 
     const bracketBlocksSend = bracketEconomics?.bracketConfirm.mode === "unsupported";
     const dockedValid =
-      legs.length > 0 &&
+      hasDraft &&
       (resolvedOrder.orderType === "MARKET" || (submittedLimit != null && submittedLimit > 0)) &&
-      quantity > 0 &&
+      effectiveQuantity > 0 &&
       !bracketBlocksSend;
 
     return (
       <AtApprovedMobileOrderSheet
         legs={legs}
+        equityLegDisplay={equityLegDisplay}
         collapsed={collapsed}
         sheetPeek={sheetPeek}
         docked={!!atDocked}
@@ -968,7 +1496,7 @@ export function OptionsChainOrderSheet({
         onRemoveLeg={onRemoveLeg}
         onFlipSides={onFlipSides}
         isCredit={isCredit}
-        entryLabel={isCredit ? "Entry credit" : "Entry debit"}
+        entryLabel={equityEntryLabel}
         entryAmount={atDocked ? entryDollars : legacyEntryAbs}
         targetExitAmount={exitAbs}
         estNetAmount={atDocked ? dockedEstNetProfit : feeAdjustedNetCash}
@@ -979,8 +1507,10 @@ export function OptionsChainOrderSheet({
         }
         maxLossLabel={atDocked ? maxLossLabel : summary?.maxLoss != null ? fmtCurrency(summary.maxLoss) : summary?.maxLoss === null ? "uncapped" : "—"}
         midDisplay={mid}
-        spreadQuantity={quantity}
-        onSpreadQuantityChange={setQuantity}
+        spreadQuantity={effectiveQuantity}
+        onSpreadQuantityChange={handleQuantityChange}
+        quantityLabel={isEquityDraft ? "Shares" : "Spreads"}
+        editableQuantity={isEquityDraft}
         limitPrice={limitPrice}
         onLimitPriceChange={(v) => {
           limitUserEditedRef.current = true;
@@ -1001,7 +1531,7 @@ export function OptionsChainOrderSheet({
         sendLabel={
           sendUnavailableReason
             ? "Send unavailable"
-            : atBracketDraft?.prefs.submission === "send"
+            : effectiveAtBracketDraft?.prefs.submission === "send"
               ? "Send"
               : atDocked
                 ? "Send"
@@ -1025,7 +1555,7 @@ export function OptionsChainOrderSheet({
         primaryActionTestId="chain-sheet-review"
         onSend={() => {
           if (!atDocked && !limitLocked) return;
-          if (atBracketDraft?.prefs.submission === "send") void handleSubmit();
+          if (effectiveAtBracketDraft?.prefs.submission === "send") void handleSubmit();
           else validateAndReview();
         }}
         onAdvancedOrders={onAdvancedOrders}
@@ -1343,8 +1873,21 @@ export function OptionsChainOrderSheet({
           strategyColor={strategyId.color}
           symbol={symbol}
           legs={legs}
-          quantity={quantity}
-          timeInForce={timeInForce}
+          equityConfirm={
+            isEquityDraft && equityResolved
+              ? {
+                  symbol: equityResolved.cleanSymbol,
+                  instruction: equityResolved.instruction,
+                  quantity: effectiveQuantity,
+                  isClosing: equityResolved.isClosing,
+                  grossDollars:
+                    equityGrossDollars ??
+                    roundMoney(Math.abs(reviewLimitSnapped ?? submittedLimit ?? eqMid ?? 0) * effectiveQuantity),
+                }
+              : undefined
+          }
+          quantity={effectiveQuantity}
+          timeInForce={effectiveTifDisplay}
           isCredit={isCredit}
           orderTypeLabel={resolvedOrderLabel}
           limitTickCtx={limitTickCtx}
@@ -1406,6 +1949,7 @@ function ConfirmPanel({
   strategyColor,
   symbol,
   legs,
+  equityConfirm,
   quantity,
   timeInForce,
   isCredit,
@@ -1427,6 +1971,13 @@ function ConfirmPanel({
   strategyColor: string;
   symbol: string;
   legs: StrategyLeg[];
+  equityConfirm?: {
+    symbol: string;
+    instruction: SchwabEquityInstruction;
+    quantity: number;
+    isClosing: boolean;
+    grossDollars: number;
+  };
   quantity: number;
   timeInForce: string;
   isCredit: boolean;
@@ -1445,31 +1996,52 @@ function ConfirmPanel({
   atExitDurationLabel?: string;
 }) {
   const px = reviewLimitSnapped ?? submittedLimit ?? 0;
-  const totalContracts = legs.reduce((s, l) => s + l.quantity, 0) * quantity;
-  const fees = estimateSchwabOptionFees(totalContracts);
-  const gross =
-    summary?.grossNotional != null
+  const isEquity = equityConfirm != null;
+  const totalContracts = isEquity ? 0 : legs.reduce((s, l) => s + l.quantity, 0) * quantity;
+  const fees = isEquity ? { commission: 0, regulatoryEst: 0 } : estimateSchwabOptionFees(totalContracts);
+  const gross = isEquity
+    ? equityConfirm.grossDollars
+    : summary?.grossNotional != null
       ? Math.abs(summary.grossNotional)
       : Math.abs(px) * quantity * 100;
   const cash = computeOrderNetCash(gross, isCredit, totalContracts, fees);
   const netCashAfterFees = feeAdjustedNetCash ?? (isCredit ? cash.net : -cash.net);
-  const reviewEcon = computeOrderEconomics({
-    underlyingSymbol: symbol,
-    isOption: true,
-    legs: legs.map((l) => ({
-      strike: l.strike,
-      optionType: l.optionType,
-      instruction: l.direction,
-      expiration: l.expiration.split(":")[0].trim(),
-      quantity: l.quantity,
-    })),
-    limitPrice: px,
-    quantity,
-    isCredit,
-    contractCount: totalContracts,
-  });
-  const maxLoss = reviewEcon?.maxRisk ?? summary?.maxLoss ?? null;
-  const bpEffect = summary?.buyingPowerEffect ?? reviewEcon?.buyingPowerEffect ?? null;
+  const reviewEcon = isEquity
+    ? computeOrderEconomics({
+        underlyingSymbol: equityConfirm.symbol,
+        isOption: false,
+        limitPrice: px,
+        quantity,
+        isCredit,
+        closesPosition: equityConfirm.isClosing,
+      })
+    : computeOrderEconomics({
+        underlyingSymbol: symbol,
+        isOption: true,
+        legs: legs.map((l) => ({
+          strike: l.strike,
+          optionType: l.optionType,
+          instruction: l.direction,
+          expiration: l.expiration.split(":")[0].trim(),
+          quantity: l.quantity,
+        })),
+        limitPrice: px,
+        quantity,
+        isCredit,
+        contractCount: totalContracts,
+      });
+  const maxLoss = isEquity
+    ? equityConfirm.isClosing
+      ? null
+      : equityConfirm.instruction === "SELL_SHORT"
+        ? null
+        : gross
+    : (reviewEcon?.maxRisk ?? summary?.maxLoss ?? null);
+  const bpEffect = isEquity
+    ? equityConfirm.isClosing
+      ? null
+      : -gross
+    : (summary?.buyingPowerEffect ?? reviewEcon?.buyingPowerEffect ?? null);
   const bpKind = summary?.buyingPowerEffectKind ?? reviewEcon?.buyingPowerEffectKind ?? "estimated";
 
   const hidePlainSingleLegConfirm =
@@ -1513,10 +2085,10 @@ function ConfirmPanel({
               label="Entry"
               value={humanInstruction(atBracketConfirm.primaryInstruction)}
             />
-            <ButtonRow label="Template qty" value={String(atBracketConfirm.quantity)} />
+            <ButtonRow label={isEquity ? "Shares" : "Template qty"} value={String(atBracketConfirm.quantity)} />
             <ButtonRow
               label="Limit price"
-              value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
+              value={orderTypeLabel === "Market" ? "Market" : `$${displaySubmittedLimit(limitTickCtx, px)}`}
             />
             <ButtonRow label="Time in force" value={timeInForce} />
             <TriggerOrderConfirmSummary
@@ -1533,18 +2105,46 @@ function ConfirmPanel({
         {!hidePlainSingleLegConfirm ? (
           <div className="space-y-1 p-2.5 rounded-lg" style={{ background: "#111", border: `1px solid ${BORDER}` }}>
             <ButtonRow label="Strategy" value={strategyName} valueColor={strategyColor} />
+            {isEquity ? (
+              <ButtonRow
+                label="Position effect"
+                value={equityConfirm.isClosing ? "Closing position" : "Opening position"}
+                valueColor={equityConfirm.isClosing ? GOLD : WHITE}
+              />
+            ) : null}
             <ButtonRow label="Order type" value={orderTypeLabel} />
-            {legs.map((leg, i) => (
-              <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
-                {formatLegLine(leg, symbol, quantity)}
+            {isEquity ? (
+              <p className="text-[13px] leading-snug" style={{ color: WHITE }}>
+                {humanInstruction(equityConfirm.instruction)} · {equityConfirm.quantity} × {equityConfirm.symbol} Share{equityConfirm.quantity === 1 ? "" : "s"}
               </p>
-            ))}
-            <ButtonRow label={`Net ${isCredit ? "credit" : "debit"}`} value={fmtCurrency(gross)} />
+            ) : (
+              legs.map((leg, i) => (
+                <p key={i} className="text-[13px] leading-snug" style={{ color: WHITE }}>
+                  {formatLegLine(leg, symbol, quantity)}
+                </p>
+              ))
+            )}
             <ButtonRow
-              label={`Est. commissions (${totalContracts} × $0.65)`}
+              label={
+                isEquity
+                  ? equityConfirm.isClosing
+                    ? isCredit
+                      ? "Est. closing proceeds"
+                      : "Est. cover debit"
+                    : isCredit
+                      ? "Est. short credit"
+                      : "Est. cost"
+                  : `Net ${isCredit ? "credit" : "debit"}`
+              }
+              value={fmtCurrency(gross)}
+            />
+            <ButtonRow
+              label={isEquity ? "Est. commissions" : `Est. commissions (${totalContracts} × $0.65)`}
               value={fmtCurrency(fees.commission)}
             />
-            <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
+            {!isEquity ? (
+              <ButtonRow label="Est. regulatory fees" value={fmtCurrency(fees.regulatoryEst)} />
+            ) : null}
             <ButtonRow
               label={isCredit ? "Net credit (after est. fees)" : "Net debit (after est. fees)"}
               value={`${netCashAfterFees >= 0 ? "+" : "−"}${fmtCurrency(Math.abs(netCashAfterFees))}`}
@@ -1554,11 +2154,14 @@ function ConfirmPanel({
             <ButtonRow label="Time in force" value={timeInForce} />
             <ButtonRow
               label="Limit price"
-              value={`$${displaySubmittedLimit(limitTickCtx, px)}`}
+              value={orderTypeLabel === "Market" ? "Market" : `$${displaySubmittedLimit(limitTickCtx, px)}`}
             />
             {maxLoss != null && (
               <ButtonRow label="Max loss" value={fmtCurrency(maxLoss)} valueColor={DOWN} />
             )}
+            {isEquity && !equityConfirm.isClosing && equityConfirm.instruction === "SELL_SHORT" ? (
+              <ButtonRow label="Max loss" value="Uncapped" valueColor={DOWN} />
+            ) : null}
             {bpEffect != null && (
               <ButtonRow
                 label={
@@ -1570,7 +2173,7 @@ function ConfirmPanel({
                 valueColor={DOWN}
               />
             )}
-            {bpEffect == null && bpKind === "not_estimated" && (
+            {!isEquity && bpEffect == null && bpKind === "not_estimated" && (
               <ButtonRow label="Buying power" value="Not estimated" />
             )}
           </div>

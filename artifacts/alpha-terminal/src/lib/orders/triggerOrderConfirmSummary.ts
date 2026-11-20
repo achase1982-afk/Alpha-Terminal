@@ -27,6 +27,7 @@ export interface TriggerConfirmOrderInput {
   limitPrice: number;
   orderType: "LIMIT" | "STOP" | "MARKET";
   contractCountForFees: number;
+  assetType?: "OPTION" | "EQUITY";
   /** When set (golden tests), skips estimator. */
   feeOverride?: { commission: number; regulatoryEst: number };
 }
@@ -89,9 +90,13 @@ function buildInstructionLine(o: TriggerConfirmOrderInput): string {
 
 export function buildTriggerOrderConfirmSummary(input: TriggerConfirmSummaryInput): TriggerConfirmSummary {
   const blocks: TriggerConfirmOrderBlock[] = input.orders.map((o) => {
-    const gross = grossOptionPremiumDollars(o.limitPrice, o.quantity);
+    const isEquity = o.assetType === "EQUITY";
+    const gross = isEquity
+      ? roundMoney(Math.abs(o.limitPrice) * Math.max(0, o.quantity))
+      : grossOptionPremiumDollars(o.limitPrice, o.quantity);
     const isCredit = isCreditInstruction(o.instruction);
-    const cashFlow = computeOrderNetCash(gross, isCredit, o.contractCountForFees, o.feeOverride);
+    const feeOverride = o.feeOverride ?? (isEquity ? { commission: 0, regulatoryEst: 0 } : undefined);
+    const cashFlow = computeOrderNetCash(gross, isCredit, isEquity ? 0 : o.contractCountForFees, feeOverride);
     const header = o.isTriggerParent
       ? `Order #${o.orderNumber} (TRIGGER)`
       : `Order #${o.orderNumber}`;

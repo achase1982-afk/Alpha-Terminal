@@ -23,10 +23,12 @@ function atOrderBuildInput(input: {
   optionSymbol: string;
   underlyingSymbol: string;
   spreadQuantity: number;
+  assetType?: "OPTION" | "EQUITY";
 }): AtOrderBuildInput {
+  const assetType = input.assetType ?? "OPTION";
   return {
     template: input.prefs.template,
-    assetType: "OPTION",
+    assetType,
     symbol: input.optionSymbol,
     underlyingSymbol: input.underlyingSymbol,
     primaryInstruction: input.primaryInstruction,
@@ -38,7 +40,7 @@ function atOrderBuildInput(input: {
     exitDuration: input.prefs.exitDuration,
     stopLossOrderType: input.prefs.stopLossOrderType,
     stopLimitOffset: input.prefs.stopLimitOffset,
-    isSpread: input.legCount > 1,
+    isSpread: assetType === "OPTION" && input.legCount > 1,
   };
 }
 
@@ -57,7 +59,10 @@ export function buildChainSheetBracketEconomics(input: {
   totalContracts: number;
   entryGrossDollars: number | null;
   isCredit: boolean;
+  assetType?: "OPTION" | "EQUITY";
 }): ChainSheetBracketEconomics {
+  const assetType = input.assetType ?? "OPTION";
+  const multiplier = assetType === "EQUITY" ? 1 : 100;
   const bracketConfirm =
     input.lockedLimit != null && input.lockedLimit > 0
       ? buildChainSheetAtBracketConfirm({
@@ -67,6 +72,8 @@ export function buildChainSheetBracketEconomics(input: {
           limitPrice: input.lockedLimit,
           optionSymbol: input.optionSymbol,
           underlyingSymbol: input.underlyingSymbol,
+          assetType,
+          quantityOverride: assetType === "EQUITY" ? input.spreadQuantity : undefined,
         })
       : ({
           mode: "unsupported",
@@ -94,6 +101,7 @@ export function buildChainSheetBracketEconomics(input: {
       optionSymbol: input.optionSymbol,
       underlyingSymbol: input.underlyingSymbol,
       spreadQuantity: input.spreadQuantity,
+      assetType,
     }),
   );
 
@@ -102,7 +110,7 @@ export function buildChainSheetBracketEconomics(input: {
 
   let targetExitDollars: number | null = null;
   if (tpEnabled && takeProfitLimit != null) {
-    targetExitDollars = roundMoney(Math.abs(takeProfitLimit) * input.spreadQuantity * 100);
+    targetExitDollars = roundMoney(Math.abs(takeProfitLimit) * input.spreadQuantity * multiplier);
   }
 
   const bracketBlocksSend =
@@ -119,9 +127,14 @@ export function buildChainSheetBracketEconomics(input: {
     ) {
       estNetUnavailable = true;
     } else {
-      const exitDollars = Math.abs(takeProfitLimit) * input.spreadQuantity * 100;
-      const oneWay = estimateSchwabOptionFees(input.totalContracts);
-      const roundTrip = roundMoney(2 * (oneWay.commission + oneWay.regulatoryEst));
+      const exitDollars = Math.abs(takeProfitLimit) * input.spreadQuantity * multiplier;
+      const roundTrip =
+        assetType === "EQUITY"
+          ? 0
+          : (() => {
+              const oneWay = estimateSchwabOptionFees(input.totalContracts);
+              return roundMoney(2 * (oneWay.commission + oneWay.regulatoryEst));
+            })();
       const grossEdge = input.isCredit
         ? input.entryGrossDollars - exitDollars
         : exitDollars - input.entryGrossDollars;

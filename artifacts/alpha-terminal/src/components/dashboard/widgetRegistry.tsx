@@ -25,6 +25,7 @@ export interface DashboardWidgetHandlers {
   ) => Promise<string | undefined>;
   onTradeSingle?: ComponentProps<typeof OptionsTab>["onTradeSingle"];
   onOpenStrategyBuilder?: ComponentProps<typeof OptionsTab>["onOpenStrategyBuilder"];
+  onSendToStrategist?: (ticker?: string) => void;
   /** Open the stock order ticket for the active symbol. */
   openOrder?: (side: "BUY" | "SELL") => void;
 }
@@ -83,7 +84,7 @@ export const WIDGET_REGISTRY: Record<DashboardWidgetId, WidgetDef> = {
         subscribeOptionSymbols={h.subscribeOptionSymbols}
         stickyOffset={0}
         onTradeSingle={h.onTradeSingle}
-        onOpenStrategyBuilder={h.onOpenStrategyBuilder}
+        onSendToStrategist={h.onSendToStrategist}
       />
     ),
   },

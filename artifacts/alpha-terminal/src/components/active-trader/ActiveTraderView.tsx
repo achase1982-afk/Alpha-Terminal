@@ -50,6 +50,8 @@ import { AtFuturesLiveQuote } from "@/components/active-trader/AtFuturesLiveQuot
 import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
+  type EquityTicketDraft,
+  type StrategistSheetDispatchResult,
 } from "@/components/OptionsChainOrderSheet";
 import { AtLegBuildTray } from "@/components/active-trader/AtLegBuildTray";
 import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
@@ -184,6 +186,7 @@ interface ActiveTraderViewProps {
   onSheetCollapsedChange?: (collapsed: boolean) => void;
   restoredSheetSession?: ChainDraftSheetSession;
   onSheetSessionPersist?: (session: ChainDraftSheetSession) => void;
+  onSendToStrategist?: (ticker?: string) => void;
 }
 
 function sharedDraftSig(legs: Iterable<AtLadderLegPick>, qty: Iterable<[string, number]>): string {
@@ -300,6 +303,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   onSheetCollapsedChange,
   restoredSheetSession,
   onSheetSessionPersist,
+  onSendToStrategist,
 }: ActiveTraderViewProps) {
   const expiryClockMinute = useMinuteClock();
   const tradableGroups = useMemo(
@@ -422,6 +426,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     setTemplate(resolveInstrumentTemplate(symbol, instrumentClass));
   }, [symbol, instrumentClass]);
   const stockTemplate = canStock && template === "stock";
+  const [atStockDraft, setAtStockDraft] = useState<EquityTicketDraft | null>(null);
+  const [atStockCollapsed, setAtStockCollapsed] = useState(false);
+  const strategistHandlerRef = useRef<
+    ((opts: { thesis?: string }) => Promise<StrategistSheetDispatchResult>) | null
+  >(null);
+  const [strategistBusy, setStrategistBusy] = useState(false);
+  const [strategistError, setStrategistError] = useState<string | null>(null);
+  useEffect(() => {
+    setAtStockDraft(null);
+    setAtStockCollapsed(false);
+  }, [symbol, stockTemplate]);
   const toggleTemplate = useCallback(() => {
     if (!canStock) return;
     const next: AtInstrumentTemplate = template === "stock" ? "options" : "stock";
@@ -1593,14 +1608,41 @@ export const ActiveTraderView = memo(function ActiveTraderView({
           }}
           ladderHeatSource={ladderHeatSourceDisplay}
         />
-        <div hidden={stockTemplate}>
         <AtOrderDefaultsSheet
           open={settingsOpen}
           prefs={prefs}
-          primaryInstruction={templatePrimaryInstruction}
+          primaryInstruction={
+            stockTemplate && atStockDraft
+              ? (atStockDraft.side === "SELL" ? "SELL_SHORT" : "BUY")
+              : templatePrimaryInstruction
+          }
           windowSec={windowSec}
           onWindowSecChange={setWindowSec}
+          onSendToStrategist={
+            ticketLegs.length > 0 || (stockTemplate && atStockDraft != null)
+              ? async ({ thesis }) => {
+                  const fn = strategistHandlerRef.current;
+                  if (!fn) return;
+                  setStrategistBusy(true);
+                  setStrategistError(null);
+                  const res = await fn({ thesis });
+                  setStrategistBusy(false);
+                  if (!res.ok) {
+                    setStrategistError(res.error);
+                    return;
+                  }
+                  setSettingsOpen(false);
+                  saveAtSettingsPanelOpen(false);
+                  setAtStockDraft(null);
+                  handleClearLegs();
+                  onSendToStrategist?.(res.ticker);
+                }
+              : undefined
+          }
+          strategistBusy={strategistBusy}
+          strategistError={strategistError}
           onClose={() => {
+            setStrategistError(null);
             setSettingsOpen(false);
             saveAtSettingsPanelOpen(false);
           }}
@@ -1610,12 +1652,65 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             saveAtSettingsPanelOpen(false);
           }}
         />
-        </div>
       </div>
 
       {stockTemplate ? (
-        <div className="flex flex-1 min-h-0 flex-col" data-at-stock-template>
-          <StockLadderBody symbol={symbol} onToggleTemplate={toggleTemplate} />
+        <div className="relative flex flex-1 min-h-0 flex-col" data-at-stock-template>
+          <StockLadderBody
+            symbol={symbol}
+            onToggleTemplate={toggleTemplate}
+            onOpenStockTicket={({ side, quantity, limitPrice }) => {
+              setAtStockCollapsed(false);
+              setAtStockDraft({
+                symbol,
+                side,
+                quantity,
+                initialLimitPrice: limitPrice ?? null,
+              });
+            }}
+          />
+          {atStockDraft ? (
+            <div
+              data-at-order-sheet
+              data-at-order-sheet-state={atStockCollapsed ? "collapsed" : "open"}
+              className="absolute left-0 right-0 bottom-0"
+              style={{ zIndex: AT_ORDER_SHEET_Z }}
+            >
+              <OptionsChainOrderSheet
+                legs={[]}
+                equityDraft={atStockDraft}
+                onEquityQuantityChange={(qty) =>
+                  setAtStockDraft((prev) => (prev ? { ...prev, quantity: qty } : prev))
+                }
+                collapsed={atStockCollapsed}
+                onCollapsedChange={setAtStockCollapsed}
+                sheetPeek={chainSheetPeek}
+                onSheetPeekChange={setChainSheetPeek}
+                onClearAll={() => setAtStockDraft(null)}
+                onLegQuantityChange={() => {}}
+                onRemoveLeg={() => setAtStockDraft(null)}
+                onFlipSides={() =>
+                  setAtStockDraft((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          side: prev.side === "BUY" ? "SELL" : "BUY",
+                          initialLimitPrice: null,
+                        }
+                      : prev,
+                  )
+                }
+                demoFixture={blockLiveSend}
+                atDocked
+                atBracketDraft={{
+                  prefs,
+                  primaryInstruction: atStockDraft.side === "SELL" ? "SELL_SHORT" : "BUY",
+                }}
+                onAdvancedOrders={toggleSettings}
+                strategistHandlerRef={strategistHandlerRef}
+              />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
@@ -1846,6 +1941,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
               atDocked
               atBracketDraft={atBracketDraft}
               onAdvancedOrders={toggleSettings}
+              strategistHandlerRef={strategistHandlerRef}
               restoredSheetSession={restoredSheetSession}
               onSheetSessionPersist={onSheetSessionPersist}
               onWorkingOrderAccepted={onWorkingOrderAccepted}

@@ -28,7 +28,23 @@ import type { StrategistValidationMeta } from "@/lib/store";
 import type { StrategistSendToOrderPayload } from "@/components/StrategistV2Card";
 import type { StrategyLeg } from "@/components/StrategyBuilder";
 import type { OptionsContract } from "@/components/OptionsTab";
-import { loadActiveTraderPrefs, type ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
+import {
+  OptionsChainOrderSheet,
+  legsFromChainSelection,
+  type EquityTicketDraft,
+  type StrategistSheetDispatchResult,
+} from "@/components/OptionsChainOrderSheet";
+import { AtOrderDefaultsSheet } from "@/components/active-trader/AtOrderDefaultsSheet";
+import {
+  loadActiveTraderPrefs,
+  saveActiveTraderPrefs,
+  type ActiveTraderTemplatePrefs,
+} from "@/lib/active-trader/activeTraderPrefs";
+import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
+import { buildSchwabOptionKey } from "@/lib/optionsSchwabKey";
+import { parseSchwabOptionSymbol } from "@workspace/order-ticket-math";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
 import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
@@ -166,27 +182,6 @@ function CompanyTearSheet(props: ComponentProps<typeof import("@/components/Comp
     />
   );
 }
-function StrategyBuilder(props: ComponentProps<typeof import("@/components/StrategyBuilder").StrategyBuilder>) {
-  return (
-    <LazyRouteView
-      viewName="Strategy builder"
-      fallback={null}
-      loader={() => import("@/components/StrategyBuilder").then((m) => ({ default: m.StrategyBuilder }))}
-      render={(C, key) => <C key={key} {...props} />}
-    />
-  );
-}
-function OrderTicket(props: ComponentProps<typeof import("@/components/OrderTicket").OrderTicket>) {
-  return (
-    <LazyRouteView
-      viewName="Order ticket"
-      freshImportOnRetry
-      fallback={null}
-      loader={() => import("@/components/OrderTicket").then((m) => ({ default: m.OrderTicket }))}
-      render={(C, key) => <C key={key} {...props} />}
-    />
-  );
-}
 function InAppBrowser() {
   return (
     <LazyRouteView
@@ -212,11 +207,91 @@ function SearchOverlay(props: ComponentProps<typeof import("@/components/SearchO
 type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "dashboard";
 type ContextTab = MarketDataTab;
 
-function optionTradeStreamKey(contract: OptionsContract): string {
-  const stream = contract.streamKey;
-  if (typeof stream === "string" && stream.length > 0) return stream;
-  const schwab = contract.schwabSymbol;
-  return typeof schwab === "string" ? schwab : "";
+function normalizeOptionDirection(
+  raw: string | undefined,
+  fallbackSide: "BUY" | "SELL",
+  isClose?: boolean,
+): StrategyLeg["direction"] {
+  if (
+    raw === "BUY_TO_OPEN" ||
+    raw === "SELL_TO_OPEN" ||
+    raw === "BUY_TO_CLOSE" ||
+    raw === "SELL_TO_CLOSE"
+  ) {
+    return raw;
+  }
+  if (isClose) {
+    return fallbackSide === "BUY" ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE";
+  }
+  return fallbackSide === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
+}
+
+function lookupAccountEquityCloseQty(sym: string): number {
+  const { accounts, tradingAccountHash } = useSchwabAccountStore.getState();
+  const hash = tradingAccountHash();
+  const acct = (hash ? accounts.find((a) => a.hashValue === hash) : undefined) ?? accounts[0];
+  const target = sym.replace(/^\$/, "").trim().toUpperCase();
+  for (const pos of acct?.positions ?? []) {
+    if (pos.assetType !== "EQUITY" && pos.assetType !== "COLLECTIVE_INVESTMENT") continue;
+    if (pos.symbol.trim().toUpperCase() !== target) continue;
+    const net = Math.abs((pos.longQuantity ?? 0) - (pos.shortQuantity ?? 0));
+    const raw = net > 0 ? net : Math.max(pos.longQuantity ?? 0, pos.shortQuantity ?? 0);
+    if (raw > 0) return Math.max(1, Math.round(raw));
+  }
+  return 1;
+}
+
+function lookupAccountOptionClosePosition(optionSymbol: string): { quantity: number; mark?: number } {
+  const { accounts, tradingAccountHash } = useSchwabAccountStore.getState();
+  const hash = tradingAccountHash();
+  const acct = (hash ? accounts.find((a) => a.hashValue === hash) : undefined) ?? accounts[0];
+  const norm = optionSymbol.replace(/\s+/g, " ").trim();
+  for (const pos of acct?.positions ?? []) {
+    if (pos.assetType !== "OPTION") continue;
+    if (pos.symbol.replace(/\s+/g, " ").trim() !== norm) continue;
+    const net = Math.abs((pos.longQuantity ?? 0) - (pos.shortQuantity ?? 0));
+    const qty = Math.max(1, Math.round(net > 0 ? net : Math.max(pos.longQuantity ?? 0, pos.shortQuantity ?? 0, 1)));
+    const mark =
+      pos.marketValue && qty > 0 && Number.isFinite(pos.marketValue)
+        ? Math.abs(pos.marketValue) / (qty * 100)
+        : undefined;
+    return { quantity: qty, mark };
+  }
+  return { quantity: 1 };
+}
+
+function mapOrderLegsToStrategyLegs(
+  underlying: string,
+  legs: OrderLeg[],
+  isClose?: boolean,
+): StrategyLeg[] {
+  return legs.map((l, i) => {
+    const parsed = l.schwabSymbol ? parseSchwabOptionSymbol(l.schwabSymbol) : null;
+    const rawType = (l.optionType || parsed?.optionType || "CALL").toUpperCase();
+    const optionType: "CALL" | "PUT" = rawType.startsWith("P") ? "PUT" : "CALL";
+    const strike = l.strike || parsed?.strike || 0;
+    const expiration = l.expiration || parsed?.expiration || "";
+    const schwabSymbol =
+      l.schwabSymbol ||
+      (expiration && strike > 0
+        ? buildSchwabOptionKey(underlying, expiration, strike, optionType === "CALL" ? "C" : "P")
+        : "");
+    const fallbackSide: "BUY" | "SELL" = l.instruction?.toUpperCase().startsWith("SELL")
+      ? "SELL"
+      : "BUY";
+    return {
+      id: `unified-${Date.now()}-${i}-${schwabSymbol || strike}`,
+      optionType,
+      direction: normalizeOptionDirection(l.instruction, fallbackSide, isClose),
+      strike,
+      expiration,
+      quantity: Math.max(1, Math.round(l.quantity || 1)),
+      bid: l.bid,
+      ask: l.ask,
+      delta: l.delta,
+      schwabSymbol,
+    };
+  });
 }
 
 const DESKTOP_CONTEXT_TABS: { id: MarketDataTab; label: string }[] = [
@@ -428,33 +503,90 @@ export default function TerminalPage() {
   const [strategistDeepLinkJobId, setStrategistDeepLinkJobId] = useState<string | null>(null);
   const [futuresTradeNoticeOpen, setFuturesTradeNoticeOpen] = useState(false);
   const terminalSymbol = useTerminalStore((s) => s.symbol);
-  const [orderOpen, setOrderOpen] = useState(false);
-  const [orderSide, setOrderSide] = useState<"BUY" | "SELL">("BUY");
-  const [orderOptionSymbol, setOrderOptionSymbol] = useState<string | undefined>();
-  const [orderOptionInstruction, setOrderOptionInstruction] = useState<string | undefined>();
-  const [orderStrategyLegs, setOrderStrategyLegs] = useState<OrderLeg[] | undefined>();
-  const [orderStrategyNetPrice, setOrderStrategyNetPrice] = useState<number | undefined>();
-  const [orderStrategyIsCredit, setOrderStrategyIsCredit] = useState(false);
-  const [orderIsClose, setOrderIsClose] = useState(false);
-  const [orderInitialStage, setOrderInitialStage] = useState<"form" | "review">("form");
-  const [orderAtPrefs, setOrderAtPrefs] = useState<ActiveTraderTemplatePrefs | null>(null);
-  const savedOptionsCtxRef = useRef<{
-    legs?: OrderLeg[];
-    netPrice?: number;
-    isCredit?: boolean;
-    optionSymbol?: string;
-    optionInstruction?: string;
-  } | null>(null);
+  const { subscribeOptionSymbols, subscribeEquitySymbols, releaseOptionHold } = useMarketStream();
 
-  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [unifiedLegs, setUnifiedLegs] = useState<StrategyLeg[]>([]);
+  const [unifiedEquityDraft, setUnifiedEquityDraft] = useState<EquityTicketDraft | null>(null);
+  const [unifiedInitialLimit, setUnifiedInitialLimit] = useState<number | null>(null);
+  const [unifiedSheetCollapsed, setUnifiedSheetCollapsed] = useState(false);
+  const [unifiedSheetPeek, setUnifiedSheetPeek] = useState(true);
+  const [unifiedDefaultsOpen, setUnifiedDefaultsOpen] = useState(false);
+  const [unifiedDefaultsWindowSec, setUnifiedDefaultsWindowSec] = useState<30 | 60 | 300>(30);
+  const unifiedOrderSymbolClass =
+    terminalSymbol.toUpperCase().includes("SPX") || terminalSymbol.startsWith("$")
+      ? ("index" as const)
+      : ("equity" as const);
+  const [unifiedOrderPrefs, setUnifiedOrderPrefs] = useState<ActiveTraderTemplatePrefs>(() =>
+    loadActiveTraderPrefs(unifiedOrderSymbolClass),
+  );
+  useEffect(() => {
+    setUnifiedOrderPrefs(loadActiveTraderPrefs(unifiedOrderSymbolClass));
+  }, [unifiedOrderSymbolClass]);
+
+  const unifiedStrategistRef = useRef<
+    ((opts: { thesis?: string }) => Promise<StrategistSheetDispatchResult>) | null
+  >(null);
+  const [unifiedStrategistBusy, setUnifiedStrategistBusy] = useState(false);
+  const [unifiedStrategistError, setUnifiedStrategistError] = useState<string | null>(null);
+
+  const hasUnifiedDraft = unifiedLegs.length > 0 || unifiedEquityDraft != null;
 
   useEffect(() => {
-    setLazyRecoveryTradeLatch(orderOpen || strategyOpen);
+    setLazyRecoveryTradeLatch(hasUnifiedDraft);
     return () => setLazyRecoveryTradeLatch(false);
-  }, [orderOpen, strategyOpen]);
-  const [strategyStrikes, setStrategyStrikes] = useState<number[]>([]);
-  const [strategyExpirations, setStrategyExpirations] = useState<{ label: string; value: string }[]>([]);
-  const [strategyChainData, setStrategyChainData] = useState<Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>>(new Map());
+  }, [hasUnifiedDraft]);
+
+  const chainDraftCount = useChainDraftSessionStore((s) => s.selectedLegs.length);
+  const prevChainDraftCountRef = useRef(chainDraftCount);
+  useEffect(() => {
+    if (chainDraftCount > 0 && prevChainDraftCountRef.current === 0 && hasUnifiedDraft) {
+      setUnifiedLegs([]);
+      setUnifiedEquityDraft(null);
+      setUnifiedInitialLimit(null);
+    }
+    prevChainDraftCountRef.current = chainDraftCount;
+  }, [chainDraftCount, hasUnifiedDraft]);
+
+  useEffect(() => {
+    if (unifiedEquityDraft?.symbol) {
+      subscribeEquitySymbols([unifiedEquityDraft.symbol.replace(/^\$/, "").trim().toUpperCase()]);
+    }
+  }, [unifiedEquityDraft?.symbol, subscribeEquitySymbols]);
+
+  useEffect(() => {
+    const occKeys = Array.from(
+      new Set(
+        unifiedLegs
+          .map((l) => l.schwabSymbol)
+          .filter((k): k is string => typeof k === "string" && k.trim().length > 0),
+      ),
+    );
+    if (occKeys.length === 0) {
+      void releaseOptionHold?.("unified-order-sheet");
+      return;
+    }
+    void subscribeOptionSymbols(occKeys, {
+      purpose: "order-sheet",
+      viewId: "unified-order-sheet",
+      holderId: "unified-order-sheet",
+    });
+    return () => {
+      void releaseOptionHold?.("unified-order-sheet");
+    };
+  }, [unifiedLegs, subscribeOptionSymbols, releaseOptionHold]);
+
+  const clearUnifiedDraft = useCallback(() => {
+    setUnifiedLegs([]);
+    setUnifiedEquityDraft(null);
+    setUnifiedInitialLimit(null);
+    setUnifiedStrategistError(null);
+  }, []);
+
+  const navigateToStrategist = useCallback((ticker?: string) => {
+    if (ticker) useTerminalStore.getState().setSymbol(ticker);
+    setActiveBottom("ai");
+    setAiSubTab("strategist");
+  }, []);
 
   const openOrder = useCallback((side: "BUY" | "SELL") => {
     const sym = useTerminalStore.getState().symbol;
@@ -462,18 +594,14 @@ export default function TerminalPage() {
       setFuturesTradeNoticeOpen(true);
       return;
     }
-    setOrderAtPrefs(null);
-    setOrderOptionSymbol(undefined);
-    setOrderOptionInstruction(undefined);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
-    setOrderSide(side);
-    setOrderOpen(true);
+    useChainDraftSessionStore.getState().clear();
+    setUnifiedLegs([]);
+    setUnifiedInitialLimit(null);
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
+    setUnifiedEquityDraft({ symbol: sym, side, quantity: 1 });
   }, []);
 
-  // Reopen the OrderTicket from a strategist validation card. We map the
-  // ValidationMeta ticket back into the OrderTicket inputs so the user lands
-  // on the same trade they sent for review.
   const reopenValidatedOrder = useCallback((meta: StrategistValidationMeta) => {
     const t = meta.ticket;
     if (isFuturesDisplaySymbol(t.ticker)) {
@@ -481,42 +609,55 @@ export default function TerminalPage() {
       setFuturesTradeNoticeOpen(true);
       return;
     }
-    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(t.ticker);
-    setOrderSide(t.side ?? "BUY");
-    setOrderIsClose(meta.mode === "closing");
+    useChainDraftSessionStore.getState().clear();
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
+    const isClose = meta.mode === "closing";
+
     if (t.isMultiLeg && t.legs && t.legs.length >= 2) {
-      const legs: OrderLeg[] = t.legs.map(l => ({
+      const orderLegs: OrderLeg[] = t.legs.map((l) => ({
         schwabSymbol: "",
         instruction: l.instruction,
-        quantity: l.quantity ?? 1,
-        optionType: l.optionType ?? "",
+        quantity: l.quantity ?? Math.max(1, t.quantity || 1),
+        optionType: l.optionType ?? "CALL",
         strike: l.strike ?? 0,
         expiration: l.expiration ?? "",
         bid: l.bid ?? undefined,
         ask: l.ask ?? undefined,
         delta: l.delta ?? undefined,
       }));
-      setOrderStrategyLegs(legs);
-      setOrderStrategyNetPrice(t.netPrice ?? undefined);
-      setOrderStrategyIsCredit(!!t.isCredit);
-      setOrderOptionSymbol(undefined);
-      setOrderOptionInstruction(undefined);
-    } else if (t.isOption && t.optionSymbol) {
-      // Single-leg option: use the symbol we echoed into validationMeta.
-      setOrderStrategyLegs(undefined);
-      setOrderStrategyNetPrice(undefined);
-      setOrderStrategyIsCredit(false);
-      setOrderOptionSymbol(t.optionSymbol);
-      setOrderOptionInstruction(t.optionInstruction ?? (t.legs?.[0]?.instruction));
+      setUnifiedEquityDraft(null);
+      setUnifiedLegs(mapOrderLegsToStrategyLegs(t.ticker, orderLegs, isClose));
+      setUnifiedInitialLimit(t.netPrice ?? t.limitPrice ?? null);
+    } else if (t.isOption && (t.optionSymbol || (t.legs && t.legs.length === 1))) {
+      const l0 = t.legs?.[0];
+      const singleOrderLeg: OrderLeg = {
+        schwabSymbol: t.optionSymbol ?? "",
+        instruction: t.optionInstruction ?? l0?.instruction ?? (t.side === "SELL" ? "SELL_TO_OPEN" : "BUY_TO_OPEN"),
+        quantity: l0?.quantity ?? Math.max(1, t.quantity || 1),
+        optionType: l0?.optionType ?? "",
+        strike: l0?.strike ?? 0,
+        expiration: l0?.expiration ?? "",
+        bid: l0?.bid ?? undefined,
+        ask: l0?.ask ?? undefined,
+        delta: l0?.delta ?? undefined,
+      };
+      setUnifiedEquityDraft(null);
+      setUnifiedLegs(mapOrderLegsToStrategyLegs(t.ticker, [singleOrderLeg], isClose));
+      setUnifiedInitialLimit(t.limitPrice ?? t.netPrice ?? null);
     } else {
-      setOrderStrategyLegs(undefined);
-      setOrderStrategyNetPrice(undefined);
-      setOrderStrategyIsCredit(false);
-      setOrderOptionSymbol(undefined);
-      setOrderOptionInstruction(undefined);
+      const side: "BUY" | "SELL" = t.side ?? "BUY";
+      setUnifiedLegs([]);
+      setUnifiedInitialLimit(null);
+      setUnifiedEquityDraft({
+        symbol: t.ticker,
+        side,
+        quantity: Math.max(1, Math.round(t.quantity || 1)),
+        isClose,
+        initialLimitPrice: t.limitPrice ?? null,
+      });
     }
-    setOrderOpen(true);
   }, []);
 
   const openOrderForSymbol = useCallback((
@@ -526,7 +667,7 @@ export default function TerminalPage() {
     optionInstruction?: string,
     strategyLegs?: OrderLeg[],
     strategyNetPrice?: number,
-    strategyIsCredit?: boolean,
+    _strategyIsCredit?: boolean,
     isClose?: boolean,
   ) => {
     if (isFuturesDisplaySymbol(sym)) {
@@ -534,58 +675,45 @@ export default function TerminalPage() {
       setFuturesTradeNoticeOpen(true);
       return;
     }
-    setOrderAtPrefs(null);
     useTerminalStore.getState().setSymbol(sym);
-    setOrderSide(side);
-    setOrderOptionSymbol(optionSymbol);
-    setOrderOptionInstruction(optionInstruction);
-    setOrderStrategyLegs(strategyLegs);
-    setOrderStrategyNetPrice(strategyNetPrice);
-    setOrderStrategyIsCredit(strategyIsCredit ?? false);
-    setOrderIsClose(isClose ?? false);
-    setOrderOpen(true);
-  }, []);
+    useChainDraftSessionStore.getState().clear();
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
 
-  const closeOrderTicket = useCallback(() => {
-    setOrderAtPrefs(null);
-    setOrderOpen(false);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
-    setOrderStrategyIsCredit(false);
-    setOrderOptionSymbol(undefined);
-    setOrderOptionInstruction(undefined);
-    setOrderIsClose(false);
-    setOrderInitialStage("form");
-  }, []);
-
-  const handleSwitchToStock = useCallback(() => {
-    savedOptionsCtxRef.current = {
-      legs: orderStrategyLegs,
-      netPrice: orderStrategyNetPrice,
-      isCredit: orderStrategyIsCredit,
-      optionSymbol: orderOptionSymbol,
-      optionInstruction: orderOptionInstruction,
-    };
-    setOrderOptionSymbol(undefined);
-    setOrderOptionInstruction(undefined);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
-    setOrderStrategyIsCredit(false);
-    setOrderIsClose(false);
-  }, [orderStrategyLegs, orderStrategyNetPrice, orderStrategyIsCredit, orderOptionSymbol, orderOptionInstruction]);
-
-  const handleSwitchToOptions = useCallback(() => {
-    const saved = savedOptionsCtxRef.current;
-    if (saved) {
-      if (saved.legs && saved.legs.length > 0) {
-        setOrderStrategyLegs(saved.legs);
-        setOrderStrategyNetPrice(saved.netPrice);
-        setOrderStrategyIsCredit(saved.isCredit ?? false);
-      } else if (saved.optionSymbol) {
-        setOrderOptionSymbol(saved.optionSymbol);
-        setOrderOptionInstruction(saved.optionInstruction);
-      }
+    if (strategyLegs && strategyLegs.length > 0) {
+      setUnifiedEquityDraft(null);
+      setUnifiedLegs(mapOrderLegsToStrategyLegs(sym, strategyLegs, isClose));
+      setUnifiedInitialLimit(strategyNetPrice ?? null);
+      return;
     }
+
+    if (optionSymbol) {
+      const held = isClose ? lookupAccountOptionClosePosition(optionSymbol) : { quantity: 1 };
+      const singleLeg: OrderLeg = {
+        schwabSymbol: optionSymbol,
+        instruction: optionInstruction ?? (isClose ? (side === "BUY" ? "BUY_TO_CLOSE" : "SELL_TO_CLOSE") : side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN"),
+        quantity: held.quantity,
+        optionType: "",
+        strike: 0,
+        expiration: "",
+        bid: held.mark,
+        ask: held.mark,
+      };
+      setUnifiedEquityDraft(null);
+      setUnifiedLegs(mapOrderLegsToStrategyLegs(sym, [singleLeg], isClose));
+      setUnifiedInitialLimit(strategyNetPrice ?? held.mark ?? null);
+      return;
+    }
+
+    const qty = isClose ? lookupAccountEquityCloseQty(sym) : 1;
+    setUnifiedLegs([]);
+    setUnifiedInitialLimit(null);
+    setUnifiedEquityDraft({
+      symbol: sym,
+      side,
+      quantity: qty,
+      isClose: Boolean(isClose),
+    });
   }, []);
 
   const handleOptionTradeSingle = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
@@ -594,16 +722,27 @@ export default function TerminalPage() {
       setFuturesTradeNoticeOpen(true);
       return;
     }
-    setOrderAtPrefs(null);
-    const schwabSym = optionTradeStreamKey(contract);
-    const instruction = side === "BUY" ? "BUY_TO_OPEN" : "SELL_TO_OPEN";
-    setOrderSide(side);
-    setOrderOptionSymbol(schwabSym);
-    setOrderOptionInstruction(instruction);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
-    setOrderInitialStage("form");
-    setOrderOpen(true);
+    useChainDraftSessionStore.getState().clear();
+    const { accounts, tradingAccountHash } = useSchwabAccountStore.getState();
+    const legs = legsFromChainSelection(
+      [
+        {
+          key: `${contract.expiration}_${contract.strike}_${type}`,
+          contract,
+          type,
+          side: side === "BUY" ? "ask" : "bid",
+        },
+      ],
+      sym,
+      accounts,
+      buildSchwabOptionKey,
+      tradingAccountHash(),
+    );
+    setUnifiedEquityDraft(null);
+    setUnifiedInitialLimit(null);
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
+    setUnifiedLegs(legs);
   }, []);
 
   const handleActiveTraderReview = useCallback((contract: OptionsContract, side: "BUY" | "SELL", type: "CALL" | "PUT") => {
@@ -617,24 +756,28 @@ export default function TerminalPage() {
       return;
     }
     const symClass = sym.toUpperCase().includes("SPX") || sym.startsWith("$") ? "index" : "equity";
-    setOrderAtPrefs(loadActiveTraderPrefs(symClass));
-    const schwabSym = optionTradeStreamKey(contract);
-    const instruction =
-      side === "BUY"
-        ? type === "CALL"
-          ? "BUY_TO_OPEN"
-          : "BUY_TO_OPEN"
-        : type === "CALL"
-          ? "SELL_TO_OPEN"
-          : "SELL_TO_OPEN";
-    setOrderSide(side);
-    setOrderOptionSymbol(schwabSym);
-    setOrderOptionInstruction(instruction);
-    setOrderStrategyLegs(undefined);
-    setOrderStrategyNetPrice(undefined);
-    setOrderIsClose(false);
-    setOrderInitialStage("form");
-    setOrderOpen(true);
+    setUnifiedOrderPrefs(loadActiveTraderPrefs(symClass));
+    useChainDraftSessionStore.getState().clear();
+    const { accounts, tradingAccountHash } = useSchwabAccountStore.getState();
+    const legs = legsFromChainSelection(
+      [
+        {
+          key: `${contract.expiration}_${contract.strike}_${type}`,
+          contract,
+          type,
+          side: side === "BUY" ? "ask" : "bid",
+        },
+      ],
+      sym,
+      accounts,
+      buildSchwabOptionKey,
+      tradingAccountHash(),
+    );
+    setUnifiedEquityDraft(null);
+    setUnifiedInitialLimit(null);
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
+    setUnifiedLegs(legs);
   }, []);
 
   useLayoutEffect(() => {
@@ -651,40 +794,6 @@ export default function TerminalPage() {
     }
   }, []);
 
-  const [strategyInitialLegs, setStrategyInitialLegs] = useState<StrategyLeg[]>([]);
-
-  const handleOpenStrategyBuilder = useCallback((strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>, preSelectedLegs?: { contract: OptionsContract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => {
-    setStrategyStrikes(strikes);
-    setStrategyExpirations(expirations);
-    setStrategyChainData(chainData);
-    if (preSelectedLegs && preSelectedLegs.length > 0) {
-      const mapped: StrategyLeg[] = preSelectedLegs.map((leg, i) => ({
-        id: `pre-${Date.now()}-${i}`,
-        optionType: leg.type === "CALL" ? "CALL" as const : "PUT" as const,
-        direction: leg.side === "bid" ? "SELL_TO_OPEN" as const : "BUY_TO_OPEN" as const,
-        strike: leg.contract.strike,
-        expiration: leg.contract.expiration,
-        quantity: 1,
-        bid: leg.contract.bid,
-        ask: leg.contract.ask,
-        delta: leg.contract.delta,
-        gamma: leg.contract.gamma,
-        theta: leg.contract.theta,
-        vega: leg.contract.vega,
-        iv: leg.contract.iv,
-        schwabSymbol: leg.contract.schwabSymbol || "",
-      }));
-      setStrategyInitialLegs(mapped);
-    } else {
-      setStrategyInitialLegs([]);
-    }
-    setStrategyOpen(true);
-  }, []);
-
-  const handleStrategyToOrderTicket = useCallback((_legs: unknown[], _netPrice: number, _isCredit: boolean) => {
-    setStrategyOpen(false);
-  }, []);
-
   const handleSendToOrder = useCallback((trade: {
     ticker: string;
     strategy: string;
@@ -693,40 +802,51 @@ export default function TerminalPage() {
     pricing: { type: string; executable_amount: number };
     sizing: { recommended_contracts: number };
   }) => {
-    useTerminalStore.getState().setSymbol(trade.ticker);
-
-    const mapped: StrategyLeg[] = trade.legs.map((leg, i) => ({
-      id: `resolved-${Date.now()}-${i}`,
-      optionType: leg.type === "call" ? "CALL" as const : "PUT" as const,
-      direction: leg.action === "buy" ? "BUY_TO_OPEN" as const : "SELL_TO_OPEN" as const,
-      strike: leg.strike,
-      expiration: trade.expiration,
-      quantity: trade.sizing.recommended_contracts,
-      bid: leg.bid,
-      ask: leg.ask,
-      delta: leg.delta,
-      schwabSymbol: leg.schwabSymbol || "",
-    }));
-
-    const strikes = mapped.map(l => l.strike);
-    const exp = trade.expiration;
-    const chainMap = new Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number }>();
-    for (const leg of trade.legs) {
-      const key = `${leg.strike}_${exp}_${leg.type === "call" ? "CALL" : "PUT"}`;
-      chainMap.set(key, { bid: leg.bid, ask: leg.ask, delta: leg.delta });
+    if (isFuturesDisplaySymbol(trade.ticker)) {
+      useTerminalStore.getState().setSymbol(trade.ticker);
+      setFuturesTradeNoticeOpen(true);
+      return;
     }
+    useTerminalStore.getState().setSymbol(trade.ticker);
+    useChainDraftSessionStore.getState().clear();
 
-    setStrategyStrikes(strikes);
-    setStrategyExpirations([{ label: exp, value: exp }]);
-    setStrategyChainData(chainMap);
-    setStrategyInitialLegs(mapped);
-    setStrategyOpen(true);
+    const mapped: StrategyLeg[] = trade.legs.map((leg, i) => {
+      const optionType = leg.type.toLowerCase() === "call" ? ("CALL" as const) : ("PUT" as const);
+      const schwabSymbol =
+        leg.schwabSymbol ||
+        buildSchwabOptionKey(trade.ticker, trade.expiration, leg.strike, optionType === "CALL" ? "C" : "P");
+      return {
+        id: `resolved-${Date.now()}-${i}`,
+        optionType,
+        direction: leg.action.toLowerCase() === "buy" ? ("BUY_TO_OPEN" as const) : ("SELL_TO_OPEN" as const),
+        strike: leg.strike,
+        expiration: trade.expiration,
+        quantity: Math.max(1, trade.sizing.recommended_contracts || 1),
+        bid: leg.bid,
+        ask: leg.ask,
+        delta: leg.delta,
+        schwabSymbol,
+      };
+    });
+
+    setUnifiedEquityDraft(null);
+    setUnifiedLegs(mapped);
+    setUnifiedInitialLimit(
+      Number.isFinite(trade.pricing?.executable_amount) ? trade.pricing.executable_amount : null,
+    );
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
   }, []);
 
   const handleStrategistSendToOrder = useCallback((payload: StrategistSendToOrderPayload) => {
-    setOrderAtPrefs(null);
+    if (isFuturesDisplaySymbol(payload.ticker)) {
+      useTerminalStore.getState().setSymbol(payload.ticker);
+      setFuturesTradeNoticeOpen(true);
+      return;
+    }
     useTerminalStore.getState().setSymbol(payload.ticker);
-    const orderLegs: OrderLeg[] = payload.legs.map(leg => ({
+    useChainDraftSessionStore.getState().clear();
+    const orderLegs: OrderLeg[] = payload.legs.map((leg) => ({
       schwabSymbol: leg.schwabSymbol,
       instruction: leg.instruction,
       quantity: leg.quantity,
@@ -737,15 +857,60 @@ export default function TerminalPage() {
       ask: leg.ask,
       delta: leg.delta,
     }));
-    setOrderSide("BUY");
-    setOrderOptionSymbol(undefined);
-    setOrderOptionInstruction(undefined);
-    setOrderStrategyLegs(orderLegs);
-    setOrderStrategyNetPrice(payload.netPrice);
-    setOrderStrategyIsCredit(payload.isCredit);
-    setOrderIsClose(false);
-    setOrderOpen(true);
+    setUnifiedEquityDraft(null);
+    setUnifiedLegs(mapOrderLegsToStrategyLegs(payload.ticker, orderLegs, false));
+    setUnifiedInitialLimit(Number.isFinite(payload.netPrice) ? payload.netPrice : null);
+    setUnifiedSheetCollapsed(false);
+    setUnifiedSheetPeek(true);
   }, []);
+
+  const handleUnifiedFlipSides = useCallback(() => {
+    setUnifiedEquityDraft((prev) =>
+      prev
+        ? {
+            ...prev,
+            side: prev.side === "BUY" ? "SELL" : "BUY",
+            instruction: undefined,
+            initialLimitPrice: null,
+          }
+        : null,
+    );
+    setUnifiedLegs((prev) =>
+      prev.map((l) => ({
+        ...l,
+        direction:
+          l.direction === "BUY_TO_OPEN"
+            ? "SELL_TO_OPEN"
+            : l.direction === "SELL_TO_OPEN"
+              ? "BUY_TO_OPEN"
+              : l.direction === "BUY_TO_CLOSE"
+                ? "SELL_TO_CLOSE"
+                : "BUY_TO_CLOSE",
+      })),
+    );
+    setUnifiedInitialLimit(null);
+  }, []);
+
+  const handleUnifiedLegQtyChange = useCallback((legId: string, qty: number) => {
+    setUnifiedLegs((prev) =>
+      prev.map((l) => (l.id === legId ? { ...l, quantity: Math.max(1, Math.min(999, qty)) } : l)),
+    );
+  }, []);
+
+  const handleUnifiedRemoveLeg = useCallback((legId: string) => {
+    setUnifiedLegs((prev) => prev.filter((l) => l.id !== legId));
+  }, []);
+
+  const unifiedPrimaryInstruction: SchwabInstruction = (() => {
+    if (unifiedEquityDraft) {
+      if (unifiedEquityDraft.instruction) return unifiedEquityDraft.instruction;
+      if (unifiedEquityDraft.isClose) {
+        return unifiedEquityDraft.side === "SELL" ? "SELL" : "BUY_TO_COVER";
+      }
+      return unifiedEquityDraft.side === "BUY" ? "BUY" : "SELL_SHORT";
+    }
+    return (unifiedLegs[0]?.direction ?? "BUY_TO_OPEN") as SchwabInstruction;
+  })();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickyWrapRef = useRef<HTMLDivElement>(null);
@@ -976,8 +1141,6 @@ export default function TerminalPage() {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [aiSubTab, mobileTabUsesInnerScroll, activeBottom]);
 
-  const { subscribeOptionSymbols, subscribeEquitySymbols, releaseOptionHold } = useMarketStream();
-
   const chartParams = chartParamsFromStore(chartPeriod, chartInterval);
   const { data: historyData, isLoading: historyLoading, isFetching: historyFetching } = useGetPriceHistory<PriceHistoryResponse>(
     {
@@ -1023,7 +1186,7 @@ export default function TerminalPage() {
     subscribeEquitySymbols,
     subscribeOptionSymbols,
     onTradeSingle: handleOptionTradeSingle,
-    onOpenStrategyBuilder: handleOpenStrategyBuilder,
+    onSendToStrategist: navigateToStrategist,
     openOrder,
   };
 
@@ -1207,7 +1370,7 @@ export default function TerminalPage() {
                       <NewsTab />
                     </div>
                   )}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onActiveTraderReview={handleActiveTraderReview} onSendToStrategist={navigateToStrategist} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1282,7 +1445,7 @@ export default function TerminalPage() {
                   >
                     {contextTab === "news" && <NewsTab />}
                     {contextTab === "options" && atSubViewActive ? <AtSymbolHeader /> : null}
-                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
+                    {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={0} onTradeSingle={handleOptionTradeSingle} onActiveTraderReview={handleActiveTraderReview} onSendToStrategist={navigateToStrategist} />}
                     {contextTab === "company" && (
                       <CompanySwipablePages
                         candles={historyData?.candles}
@@ -1355,7 +1518,7 @@ export default function TerminalPage() {
                       <NewsTab />
                     </div>
                   )}
-                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onOpenStrategyBuilder={handleOpenStrategyBuilder} onActiveTraderReview={handleActiveTraderReview} />}
+                  {contextTab === "options" && <OptionsTab subscribeOptionSymbols={subscribeOptionSymbols} releaseOptionHold={releaseOptionHold} stickyOffset={stickyH} onTradeSingle={handleOptionTradeSingle} onActiveTraderReview={handleActiveTraderReview} onSendToStrategist={navigateToStrategist} />}
                   {contextTab === "company" && (
                     <CompanySwipablePages
                       candles={historyData?.candles}
@@ -1392,6 +1555,46 @@ export default function TerminalPage() {
               </div>
             )}
           </main>
+        )}
+
+        {hasUnifiedDraft && (
+          <div
+            data-unified-order-dock="1"
+            className={`pointer-events-none absolute bottom-0 right-0 z-[90] ${
+              isWide && activeBottom !== "dashboard"
+                ? "left-0 md:left-[280px] xl:left-[320px] min-[1920px]:left-[360px]"
+                : "left-0"
+            }`}
+          >
+            <div className="pointer-events-auto">
+              <OptionsChainOrderSheet
+                atDocked
+                legs={unifiedLegs}
+                equityDraft={unifiedEquityDraft}
+                initialLimitPrice={unifiedInitialLimit}
+                onEquityQuantityChange={(qty) =>
+                  setUnifiedEquityDraft((prev) =>
+                    prev ? { ...prev, quantity: Math.max(1, Math.min(999999, qty)) } : null,
+                  )
+                }
+                onFlipSides={handleUnifiedFlipSides}
+                onLegQuantityChange={handleUnifiedLegQtyChange}
+                onRemoveLeg={handleUnifiedRemoveLeg}
+                onClearAll={clearUnifiedDraft}
+                subscribeOptionSymbols={subscribeOptionSymbols}
+                collapsed={unifiedSheetCollapsed}
+                onCollapsedChange={setUnifiedSheetCollapsed}
+                sheetPeek={unifiedSheetPeek}
+                onSheetPeekChange={setUnifiedSheetPeek}
+                onAdvancedOrders={() => setUnifiedDefaultsOpen(true)}
+                strategistHandlerRef={unifiedStrategistRef}
+                atBracketDraft={{
+                  prefs: unifiedOrderPrefs,
+                  primaryInstruction: unifiedPrimaryInstruction,
+                }}
+              />
+            </div>
+          </div>
         )}
       </div>
 
@@ -1439,41 +1642,41 @@ export default function TerminalPage() {
         }}
       />
       <InAppBrowser />
-      <StrategyBuilder
-        isOpen={strategyOpen}
-        onClose={() => setStrategyOpen(false)}
-        onBack={() => setStrategyOpen(false)}
-        onSwitchToStock={() => { setStrategyOpen(false); openOrder("BUY"); }}
-        availableStrikes={strategyStrikes}
-        availableExpirations={strategyExpirations}
-        chainData={strategyChainData}
-        initialLegs={strategyInitialLegs}
-        subscribeOptionSymbols={subscribeOptionSymbols}
-      />
-      <OrderTicket
-        isOpen={orderOpen}
-        onClose={closeOrderTicket}
-        initialSide={orderSide}
-        optionSymbol={orderOptionSymbol}
-        optionInstruction={orderOptionInstruction}
-        strategyLegs={orderStrategyLegs}
-        strategyNetPrice={orderStrategyNetPrice}
-        strategyIsCredit={orderStrategyIsCredit}
-        isCloseOrder={orderIsClose}
-        onSwitchToStock={handleSwitchToStock}
-        onSwitchToOptions={handleSwitchToOptions}
-        subscribeOptionSymbols={subscribeOptionSymbols}
-        releaseOptionHold={releaseOptionHold}
-        initialStage={orderInitialStage}
-        atTemplatePrefs={orderAtPrefs ?? undefined}
-        onSendToStrategist={(ticker) => {
-          // Strategist tab pulls results for the active symbol — switch to
-          // the validated ticket's ticker so the live debate + verdict card
-          // surface immediately.
-          if (ticker) useTerminalStore.getState().setSymbol(ticker);
-          setActiveBottom("ai");
-          setAiSubTab("strategist");
-          closeOrderTicket();
+      <AtOrderDefaultsSheet
+        open={unifiedDefaultsOpen}
+        prefs={unifiedOrderPrefs}
+        primaryInstruction={unifiedPrimaryInstruction}
+        windowSec={unifiedDefaultsWindowSec}
+        onWindowSecChange={setUnifiedDefaultsWindowSec}
+        onSendToStrategist={
+          hasUnifiedDraft
+            ? async ({ thesis }) => {
+                const fn = unifiedStrategistRef.current;
+                if (!fn) return;
+                setUnifiedStrategistBusy(true);
+                setUnifiedStrategistError(null);
+                const res = await fn({ thesis });
+                setUnifiedStrategistBusy(false);
+                if (!res.ok) {
+                  setUnifiedStrategistError(res.error);
+                  return;
+                }
+                setUnifiedDefaultsOpen(false);
+                clearUnifiedDraft();
+                navigateToStrategist(res.ticker);
+              }
+            : undefined
+        }
+        strategistBusy={unifiedStrategistBusy}
+        strategistError={unifiedStrategistError}
+        onClose={() => {
+          setUnifiedStrategistError(null);
+          setUnifiedDefaultsOpen(false);
+        }}
+        onSave={(next) => {
+          setUnifiedOrderPrefs(next);
+          saveActiveTraderPrefs(unifiedOrderSymbolClass, next);
+          setUnifiedDefaultsOpen(false);
         }}
       />
       <SchwabAccountPickerSheet />

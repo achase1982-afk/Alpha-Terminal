@@ -49,8 +49,18 @@ function fmtMoney(n: number | null | undefined, cents = true): string {
   });
 }
 
+export type EquitySheetDisplayLeg = {
+  symbol: string;
+  badgeLabel: string;
+  isBuy: boolean;
+  quantity: number;
+  isClosing: boolean;
+  quoteSummary?: string | null;
+};
+
 export type AtApprovedMobileOrderSheetProps = {
   legs: StrategyLeg[];
+  equityLegDisplay?: EquitySheetDisplayLeg | null;
   collapsed: boolean;
   sheetPeek: boolean;
   docked?: boolean;
@@ -76,9 +86,11 @@ export type AtApprovedMobileOrderSheetProps = {
   sendDisabled: boolean;
   /** Why Send cannot be used. Shown on the ticket; it does not enable a live route. */
   sendDetail?: string | null;
-  /** Strategy-wide spread count. Each leg keeps its own ratio. */
+  /** Strategy-wide spread count or share count. Each leg keeps its own ratio. */
   spreadQuantity?: number;
   onSpreadQuantityChange?: (next: number) => void;
+  quantityLabel?: string;
+  editableQuantity?: boolean;
   /** In-flight and broker result for the docked ticket. Success that closes the dock uses a toast. */
   sendPhase?: "idle" | "submitting" | "error" | "sent";
   sendError?: string | null;
@@ -119,9 +131,13 @@ const SHEET_TAP_SLOP_PX = 8;
 function SpreadQuantityStepper({
   quantity,
   onChange,
+  label = "Spreads",
+  editable = false,
 }: {
   quantity: number;
   onChange: (next: number) => void;
+  label?: string;
+  editable?: boolean;
 }) {
   const count = Math.max(1, Math.floor(quantity) || 1);
   return (
@@ -130,14 +146,14 @@ function SpreadQuantityStepper({
       style={{ marginTop: 6, height: 28 }}
       data-at-spread-qty
     >
-      <span style={PEER_LABEL}>Spreads</span>
+      <span style={PEER_LABEL}>{label}</span>
       <div
         className="inline-flex items-center"
         style={{ border: `1px solid ${AT_ORDER_PANEL_BORDER}`, borderRadius: 6, height: 28 }}
       >
         <button
           type="button"
-          aria-label="Fewer spreads"
+          aria-label={`Fewer ${label.toLowerCase()}`}
           disabled={count <= 1}
           onClick={() => onChange(count - 1)}
           className="inline-flex items-center justify-center disabled:opacity-40"
@@ -145,16 +161,36 @@ function SpreadQuantityStepper({
         >
           <Minus className="w-3.5 h-3.5" />
         </button>
-        <span
-          data-at-spread-qty-value
-          className="tabular-nums"
-          style={{ minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 650, color: WHITE }}
-        >
-          {count}
-        </span>
+        {editable ? (
+          <input
+            type="text"
+            inputMode="numeric"
+            aria-label={label}
+            data-at-spread-qty-value
+            value={String(count)}
+            onChange={(e) => {
+              const digits = e.target.value.replace(/[^\d]/g, "");
+              if (!digits) {
+                onChange(1);
+                return;
+              }
+              onChange(Math.max(1, Math.floor(Number(digits) || 1)));
+            }}
+            className="tabular-nums bg-transparent outline-none"
+            style={{ width: 46, textAlign: "center", fontSize: 13, fontWeight: 650, color: WHITE }}
+          />
+        ) : (
+          <span
+            data-at-spread-qty-value
+            className="tabular-nums"
+            style={{ minWidth: 22, textAlign: "center", fontSize: 13, fontWeight: 650, color: WHITE }}
+          >
+            {count}
+          </span>
+        )}
         <button
           type="button"
-          aria-label="More spreads"
+          aria-label={`More ${label.toLowerCase()}`}
           onClick={() => onChange(count + 1)}
           className="inline-flex items-center justify-center"
           style={{ width: 28, height: 28, background: "transparent", border: "none", padding: 0, color: WHITE }}
@@ -297,6 +333,7 @@ function SheetHandle({
 
 export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderSheet({
   legs,
+  equityLegDisplay,
   collapsed,
   sheetPeek,
   docked = false,
@@ -322,6 +359,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   sendDetail,
   spreadQuantity = 1,
   onSpreadQuantityChange,
+  quantityLabel = "Spreads",
+  editableQuantity = false,
   sendPhase = "idle",
   sendError,
   orderReceipt,
@@ -332,16 +371,20 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
   onAdvancedOrders,
   primaryActionTestId,
 }: AtApprovedMobileOrderSheetProps) {
-  if (legs.length === 0) return null;
+  if (legs.length === 0 && !equityLegDisplay) return null;
 
   const sendHeld = sendDisabled || sendPhase === "submitting";
-  const creditOrder = isCredit ?? entryLabel.toLowerCase().includes("credit");
-  const entryColor = entryLabel.toLowerCase().includes("credit") ? UP : DOWN_TEXT;
+  const lowerEntryLabel = entryLabel.toLowerCase();
+  const creditOrder = isCredit ?? (lowerEntryLabel.includes("credit") || lowerEntryLabel.includes("proceeds"));
+  const entryColor = lowerEntryLabel.includes("credit") || lowerEntryLabel.includes("proceeds") ? UP : DOWN_TEXT;
   const sideTone = creditOrder ? DOWN : UP;
   const sideLabel = creditOrder ? "Sell" : "Buy";
   const netColor =
     estNetUnavailable || estNetAmount == null ? MUTED : estNetAmount >= 0 ? UP : DOWN_TEXT;
   const gridCols = legs.length >= 2 ? 2 : 1;
+  const collapsedSummaryLabel = equityLegDisplay
+    ? `${equityLegDisplay.symbol} · ${equityLegDisplay.quantity} sh${equityLegDisplay.isClosing ? " (Close)" : ""}`
+    : `${legs.length} leg${legs.length === 1 ? "" : "s"}`;
 
   if (docked) {
     const sheetStyle: CSSProperties = {
@@ -371,7 +414,7 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             >
               <span className="flex items-baseline gap-2 min-w-0">
                 <span style={{ ...META_VALUE, fontWeight: 600 }}>
-                  {legs.length} leg{legs.length === 1 ? "" : "s"}
+                  {collapsedSummaryLabel}
                 </span>
                 <span className="truncate" style={PEER_LABEL}>
                   {entryLabel}
@@ -472,6 +515,51 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
             }}
             data-at-ticket-legs
           >
+          {equityLegDisplay ? (
+            <div
+              data-at-equity-leg
+              className="flex h-[30px] w-full items-center gap-1.5 rounded-md py-0 pl-2 pr-0.5 min-w-0"
+              style={{
+                border: `1px solid ${AT_ORDER_PANEL_BORDER}`,
+                background: "rgba(255,255,255,0.025)",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: equityLegDisplay.isBuy ? UP : DOWN_TEXT,
+                  letterSpacing: "0.02em",
+                  flexShrink: 0,
+                }}
+              >
+                {equityLegDisplay.badgeLabel}
+              </span>
+              <span
+                className="tabular-nums truncate"
+                style={{ fontSize: 13, fontWeight: 500, color: WHITE }}
+              >
+                {equityLegDisplay.symbol} · ×{equityLegDisplay.quantity}
+                {equityLegDisplay.isClosing ? " · Close" : ""}
+              </span>
+              {equityLegDisplay.quoteSummary ? (
+                <span
+                  className="tabular-nums truncate"
+                  style={{ fontSize: 11, color: GRAY }}
+                >
+                  {equityLegDisplay.quoteSummary}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                className="ml-auto p-0.5 shrink-0"
+                aria-label="Clear equity order"
+                onClick={onClearAll}
+              >
+                <X className="w-3 h-3" style={{ color: GRAY }} />
+              </button>
+            </div>
+          ) : null}
           {legs.map((leg) => {
             const isBuy = leg.direction.startsWith("BUY");
             const tone = isBuy ? UP : DOWN_TEXT;
@@ -527,6 +615,8 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           <SpreadQuantityStepper
             quantity={spreadQuantity}
             onChange={onSpreadQuantityChange}
+            label={quantityLabel}
+            editable={editableQuantity}
           />
         ) : null}
 
@@ -737,6 +827,31 @@ export const AtApprovedMobileOrderSheet = memo(function AtApprovedMobileOrderShe
           }}
           data-at-ticket-legs
         >
+          {equityLegDisplay ? (
+            <div
+              className="flex items-center gap-1 px-2 py-1 rounded-md min-w-0"
+              style={{
+                border: `1px solid ${(equityLegDisplay.isBuy ? UP : DOWN)}55`,
+                background: "rgba(255,255,255,0.04)",
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 600, color: equityLegDisplay.isBuy ? UP : DOWN }}>
+                {equityLegDisplay.badgeLabel} {equityLegDisplay.symbol}
+              </span>
+              <span style={{ fontSize: 11, color: MUTED }}>
+                ×{equityLegDisplay.quantity}
+                {equityLegDisplay.isClosing ? " (Close)" : ""}
+              </span>
+              <button
+                type="button"
+                className="ml-auto p-0.5"
+                aria-label="Clear equity order"
+                onClick={onClearAll}
+              >
+                <X className="w-3 h-3" style={{ color: MUTED }} />
+              </button>
+            </div>
+          ) : null}
           {legs.map((leg) => {
             const isBuy = leg.direction.startsWith("BUY");
             const tone = isBuy ? UP : DOWN;
