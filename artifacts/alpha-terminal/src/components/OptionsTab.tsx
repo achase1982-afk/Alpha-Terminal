@@ -44,7 +44,10 @@ import {
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
-import { atChainDateWindow } from "@/lib/active-trader/atLadderStrikeCount";
+import {
+  atChainDateWindow,
+  optionsExpiryDiscoveryWindow,
+} from "@/lib/active-trader/atLadderStrikeCount";
 import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
   scrollViewportToNearestStrike,
@@ -1760,8 +1763,11 @@ export function OptionsTab({
     [atDepth.above, atDepth.below],
   );
   const atDates = useMemo(
-    () => (atExpiration ? atChainDateWindow(atExpiration) : null),
-    [atExpiration],
+    () =>
+      atExpiration
+        ? atChainDateWindow(atExpiration)
+        : optionsExpiryDiscoveryWindow(),
+    [atExpiration, expiryClockMinute],
   );
   const atSeriesRoot = seriesRootFromExpiration(atExpiration ?? "");
 
@@ -1797,7 +1803,12 @@ export function OptionsTab({
     () => ({
       symbol,
       contractType: "ALL" as const,
-      strikeCount: optionsSubView === "at" ? atRest.strikeCount : strikeCount,
+      strikeCount:
+        atExpiration == null
+          ? 1
+          : optionsSubView === "at"
+            ? atRest.strikeCount
+            : strikeCount,
       ...(optionsSubView === "at" ? { range: atRest.range } : {}),
       ...(atDates ?? {}),
       ...(atSeriesRoot ? { series: atSeriesRoot } : {}),
@@ -1805,13 +1816,13 @@ export function OptionsTab({
         ? { accessToken: schwabAccessTokenForRequest(accessToken)! }
         : {}),
     }),
-    [symbol, strikeCount, accessToken, atDates, atSeriesRoot, atRest.range, atRest.strikeCount, optionsSubView],
+    [symbol, strikeCount, accessToken, atDates, atSeriesRoot, atRest.range, atRest.strikeCount, optionsSubView, atExpiration],
   );
 
   const { data: rawData, isLoading, error, isFetching, dataUpdatedAt, refetch: refetchOptionChain } =
     useGetOptionChain<OptionChainResponse>(optionChainParams, {
       query: {
-        enabled: chainApiEnabled && atDates != null,
+        enabled: chainApiEnabled,
         staleTime: 30_000,
         gcTime: 5 * 60_000,
         retry: isFuturesSymbol ? false : 2,
@@ -1821,7 +1832,6 @@ export function OptionsTab({
         ) => {
           if (!previous) return undefined;
           const previousParams = previousQuery?.queryKey?.[1] as AtChainQueryParams | undefined;
-          if (!atDates) return undefined;
           if (optionsSubView === "at") {
             // The ladder shows its own strike window or a loading state, never the Chain view's list.
             if (!atLadderPlaceholderOk(previousParams, { symbol, ...atDates, series: atSeriesRoot })) return undefined;
