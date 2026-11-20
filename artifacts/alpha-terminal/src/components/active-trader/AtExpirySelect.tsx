@@ -7,7 +7,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
-import { BORDER, GRAY, MONO } from "@/components/options/optionsTheme";
+import { GRAY, MONO } from "@/components/options/optionsTheme";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 export const AtExpirySelect = memo(function AtExpirySelect({ compact }: { compact?: boolean }) {
   const expiryOptions = useAtChromeStore((s) => s.atExpiryOptions);
@@ -21,15 +22,21 @@ export const AtExpirySelect = memo(function AtExpirySelect({ compact }: { compac
   if (!selectedExpiration) return null;
 
   const triggerClass = compact
-    ? "h-5 max-w-[7.5rem] shrink-0 rounded-full px-1.5 text-[9px] font-normal shadow-none border [&>svg]:hidden"
-    : "h-6 max-w-full rounded-full px-2 text-[10px] font-normal shadow-none border [&>svg]:hidden";
+    ? "h-5 max-w-[7.5rem] shrink-0 rounded-full px-1.5 text-[9px] font-normal shadow-none border-0 outline-none ring-0 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 [&>svg]:hidden"
+    : "h-6 max-w-full rounded-full px-2 text-[10px] font-normal shadow-none border-0 outline-none ring-0 focus:ring-0 focus-visible:ring-0 focus:ring-offset-0 [&>svg]:hidden";
 
   if (expiryOptions.length === 0) {
     return (
       <span
         data-at-expiry-pill
         className={`${triggerClass} inline-flex items-center`}
-        style={{ color: GRAY, borderColor: BORDER, fontFamily: MONO }}
+        style={{
+          color: GRAY,
+          background: APP_SURFACE,
+          border: "none",
+          boxShadow: "none",
+          fontFamily: MONO,
+        }}
       >
         {pillLabel}
       </span>
@@ -42,8 +49,10 @@ export const AtExpirySelect = memo(function AtExpirySelect({ compact }: { compac
         data-at-expiry-pill
         className={triggerClass}
         style={{
-          background: "transparent",
-          borderColor: BORDER,
+          background: APP_SURFACE,
+          border: "none",
+          boxShadow: "none",
+          outline: "none",
           color: GRAY,
           fontFamily: MONO,
         }}
