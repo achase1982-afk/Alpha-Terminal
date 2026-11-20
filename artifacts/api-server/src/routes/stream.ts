@@ -50,10 +50,11 @@ function subscribeSymbolsToSchwab(symbols: unknown) {
   const futures = cleaned.filter((s) => s.startsWith("/"));
   const equities = cleaned.filter((s) => !s.startsWith("/"));
 
+  // Always remember the symbols. Webull market data polls this set even when
+  // Schwab has no trader token, which used to drop the subscription entirely.
+  if (equities.length > 0) addSchwabSymbols(equities);
   if (!isConnected() && hasValidTokens("trader")) {
     void startStreamer(undefined, equities);
-  } else if (equities.length > 0) {
-    addSchwabSymbols(equities);
   }
 
   if (futures.length > 0) {

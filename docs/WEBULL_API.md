@@ -18,10 +18,12 @@ Credentials and access tokens are never returned.
 ```json
 {
   "method": "GET",
-  "path": "/market-data/fundamentals/company-profiles/get",
+  "path": "/market-data/stocks/snapshots/list",
   "query": {
-    "symbol": "AAPL",
-    "category": "US_STOCK"
+    "symbols": "AAPL",
+    "category": "US_STOCK",
+    "extend_hour_required": "true",
+    "overnight_required": "true"
   }
 }
 ```
@@ -36,6 +38,21 @@ The gateway supports all documented HTTP methods for paths under:
 - `/trading/` — accounts, balances, positions, activities, transfers,
   instruments, order previews, placement, batch placement, replacement,
   cancellation, open orders, history, and order detail.
+
+## Live quotes
+
+Connecting Webull used to load accounts, balances, positions, and orders only.
+The server now polls `GET /market-data/stocks/snapshots/list` for the symbols
+the terminal is streaming (plus the core tape ETFs) and publishes those
+snapshots on the same quote stream as Schwab.
+
+Webull prints fill a symbol when Schwab or IBKR has no fresh quote. A quote
+younger than 15 seconds from those feeds is left in place. Stock and ETF
+symbols are requested with `category=US_STOCK` and `category=US_ETF`. The
+trading access token is sent because market-data reads require it when the
+app has 2FA enabled. The OpenAPI market-data subscription is separate from a
+Webull app or desktop quote purchase; without that API entitlement the
+snapshot call is rejected and account routes still succeed.
 
 For endpoints with a JSON request body:
 

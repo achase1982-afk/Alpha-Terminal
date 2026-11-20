@@ -181,7 +181,7 @@ export interface LiveQuote {
   ts:           number;
   /** Exchange trade time of `last` (Schwab LEVELONE_EQUITIES field 35), when present. */
   tradeTimeMs?: number | null;
-  quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO";
+  quoteSource?: "SCHWAB" | "IBKR_CBOE_ONE" | "IBKR_PRO" | "WEBULL";
   /** Schwab L1 bid price and size from the same frame. */
   bidQuoteTs?: number | null;
   /** Schwab L1 ask price and size from the same frame. */

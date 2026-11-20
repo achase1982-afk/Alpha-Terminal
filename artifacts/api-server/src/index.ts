@@ -31,6 +31,7 @@ import { LIQUID_CORE_SYMBOL_STRINGS } from "./data/liquidCore130";
 import { initDeskMarketFeeds } from "./lib/desk/deskInit.js";
 import { db, eq, snapshotCollectionLogTable, trackedTickersTable } from "@workspace/db";
 import { startPolygonPCRatioPoller } from "./lib/polygonPutCallRatio";
+import { startWebullMarketDataPoller } from "./lib/webull/webullMarketData.js";
 import { startOptionsWatcher } from "./lib/optionsWatcher";
 import { migrateAiLabSeedData } from "./lib/aiLabMigration";
 import { getBestAccessToken } from "./lib/tokenStore";
@@ -631,6 +632,7 @@ async function boot() {
   });
 
   startPolygonPCRatioPoller();
+  startWebullMarketDataPoller();
 
   // Part 2 — start the persistent options watcher whenever Polygon is configured.
   // Without POLYGON_API_KEY this is a no-op. Initial
