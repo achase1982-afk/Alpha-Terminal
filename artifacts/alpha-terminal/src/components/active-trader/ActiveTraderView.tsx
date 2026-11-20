@@ -83,9 +83,9 @@ import { AtTradeActionBar } from "./AtTradeActionBar";
 import { AtInstrumentModePill } from "./AtInstrumentModePill";
 import { StockLadderBody } from "./StockLadderBody";
 import {
-  instrumentClassFromAssetType,
   resolveInstrumentTemplate,
   saveExplicitInstrumentTemplate,
+  resolveInstrumentClass,
   stockTemplateAvailable,
   type AtInstrumentTemplate,
 } from "@/lib/active-trader/atInstrumentMode";
@@ -413,7 +413,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
   const spxMode = isSpxSymbol(symbol);
   const { data: underlyingQuote, restQuote } = useQuote(symbol);
   const sessionAssetType = useSessionInstrumentAssetType(symbol);
-  const instrumentClass = instrumentClassFromAssetType(
+  const instrumentClass = resolveInstrumentClass(
     sessionAssetType ?? restQuote?.assetType,
     symbol,
   );

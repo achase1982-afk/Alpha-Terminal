@@ -687,7 +687,7 @@ export function StockLadderBody({
                   border: "none",
                   borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
                   borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-                  boxShadow: selected ? `inset 0 0 0 1px ${WHITE}` : "none",
+                  boxShadow: selected && !spotRow ? `inset 0 0 0 1px ${WHITE}` : "none",
                   padding: 0,
                 }}
                 onClick={() => {
