@@ -34,6 +34,8 @@ import {
   AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
+  AT_LADDER_CALLS_HDR,
+  AT_LADDER_PUTS_HDR,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
@@ -1510,7 +1512,12 @@ function OptionsChainHeader({
       >
         {showCalls && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span data-ui-audit="chain-calls-hdr" style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
+            <span
+              data-ui-audit="chain-calls-hdr"
+              style={{ fontSize: 13, letterSpacing: "0.03em", color: AT_LADDER_CALLS_HDR, fontFamily: MONO, fontWeight: FW_PREMIUM }}
+            >
+              CALLS
+            </span>
           </div>
         )}
         <div
@@ -1522,7 +1529,7 @@ function OptionsChainHeader({
             justifyContent: "center",
             borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
             borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-            background: AT_LADDER_STRIKE_BG,
+            background: BG_HEADER,
           }}
         >
           {onBuildStrategy && (
@@ -1544,7 +1551,12 @@ function OptionsChainHeader({
         </div>
         {showPuts && (
           <div style={{ flex: 1, textAlign: "center" }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>PUTS</span>
+            <span
+              data-ui-audit="chain-puts-hdr"
+              style={{ fontSize: 13, letterSpacing: "0.03em", color: AT_LADDER_PUTS_HDR, fontFamily: MONO, fontWeight: FW_PREMIUM }}
+            >
+              PUTS
+            </span>
           </div>
         )}
       </div>
@@ -1582,7 +1594,7 @@ function OptionsChainHeader({
             justifyContent: "center",
             borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
             borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-            background: AT_LADDER_STRIKE_BG,
+            background: "#111111",
           }}
         >
           <span data-ui-audit="chain-strike-hdr" style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
