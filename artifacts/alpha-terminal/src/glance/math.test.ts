@@ -8,6 +8,8 @@ import {
   premiumNet,
   priceNotFollowing,
   qualifiesTrend,
+  assignRailLanes,
+  railLabelShift,
   railPositions,
   resolveTrend,
   wallDistance,
@@ -142,5 +144,23 @@ describe("walls and rail", () => {
     expect(call.x).toBeGreaterThan(0.5);
     expect(put.x).toBeGreaterThan(0.5);
     expect(call.x).toBeGreaterThan(put.x);
+  });
+
+  it("stacks labels that share a strike and keeps separated marks on one lane", () => {
+    const lanes = assignRailLanes([
+      { id: "callOi", x: 0.8 },
+      { id: "putOi", x: 0.8 },
+      { id: "callVol", x: 0.81 },
+      { id: "putVol", x: 0.2 },
+      { id: "spot", x: 0.5 },
+    ]);
+    expect(lanes).toEqual([0, 1, 2, 0, 0]);
+    expect(new Set(lanes.slice(0, 3)).size).toBe(3);
+  });
+
+  it("anchors edge labels inside the rail", () => {
+    expect(railLabelShift(0.02)).toBe("0%");
+    expect(railLabelShift(0.5)).toBe("-50%");
+    expect(railLabelShift(0.97)).toBe("-100%");
   });
 });

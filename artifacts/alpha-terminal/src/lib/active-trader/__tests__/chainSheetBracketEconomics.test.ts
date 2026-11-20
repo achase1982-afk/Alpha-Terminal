@@ -42,6 +42,26 @@ describe("buildChainSheetBracketEconomics", () => {
     expect(econ.estNetProfit!).toBeGreaterThan(45);
   });
 
+  it("confirm quantity follows the ticket, not the template default", () => {
+    const econ = buildChainSheetBracketEconomics({
+      prefs: { ...basePrefs(), qty: 1 },
+      primaryInstruction: "SELL_TO_OPEN",
+      lockedLimit: 4.9,
+      legCount: 4,
+      optionSymbol: "SPXW  251120C07000000",
+      underlyingSymbol: "SPX",
+      spreadQuantity: 2,
+      totalContracts: 8,
+      entryGrossDollars: 980,
+      isCredit: true,
+      contractLine: "SPXW 7000C/7005C/7000P/6995P",
+    });
+    expect(econ.bracketConfirm.mode).toBe("trigger");
+    if (econ.bracketConfirm.mode !== "trigger") return;
+    expect(econ.bracketConfirm.quantity).toBe(2);
+    expect(econ.bracketConfirm.summary.orders[0].instructionLine).toContain("SPXW 7000C/7005C/7000P/6995P");
+  });
+
   it("fails closed when TP enabled but bracket cannot be built", () => {
     const econ = buildChainSheetBracketEconomics({
       prefs: {

@@ -11,6 +11,7 @@ import {
   schwabPriceFromTicket,
   inferNetCreditFromLegStructure,
   inferSchwabComplexOrderStrategyType,
+  readableBrokerRejectMessage,
   midpointFromBidAsk,
   chainLegHydrateKey,
   quoteSideState,
@@ -65,6 +66,7 @@ import {
 import { atOrderSendAllowed, atOrderSendUnavailableReason } from "@/lib/active-trader/atOrderSend";
 import {
   buildChainSheetAtBracketConfirm,
+  spreadConfirmContractLine,
   type ChainSheetAtBracketConfirm,
 } from "@/lib/active-trader/chainSheetAtBracketConfirm";
 import { buildChainSheetBracketEconomics } from "@/lib/active-trader/chainSheetBracketEconomics";
@@ -308,6 +310,11 @@ function prepareOrderAcceptedSound(): PreparedAcceptSound {
   } catch {
     return SILENT_ACCEPT_SOUND;
   }
+}
+
+function optionPackageContractLine(legs: StrategyLeg[], underlying: string): string | undefined {
+  if (legs.length < 2) return undefined;
+  return spreadConfirmContractLine(legs, underlying);
 }
 
 function primaryLegOptionSymbol(leg: StrategyLeg, underlying: string): string | undefined {
@@ -998,6 +1005,7 @@ export function OptionsChainOrderSheet({
             totalContracts,
             entryGrossDollars: entryGross,
             isCredit,
+            contractLine: optionPackageContractLine(legs, symbol),
           });
           setAtBracketConfirmSnapshot(econ.bracketConfirm);
         } else {
@@ -1164,7 +1172,7 @@ export function OptionsChainOrderSheet({
         acceptSound.close();
         placeOrderInFlightRef.current = false;
         setSendLocked(false);
-        setErrorMsg(data.message || data.error || "Order rejected");
+        setErrorMsg(readableBrokerRejectMessage(data.message || data.error || "Order rejected"));
         setStage("error");
         return;
       }
@@ -1277,6 +1285,7 @@ export function OptionsChainOrderSheet({
       totalContracts,
       entryGrossDollars: entryGross,
       isCredit,
+      contractLine: optionPackageContractLine(legs, symbol),
     });
     return econ;
   }, [
@@ -1338,6 +1347,9 @@ export function OptionsChainOrderSheet({
       limitPrice: px,
       optionSymbol: sym,
       underlyingSymbol: symbol.replace(/^\$/, ""),
+      quantityOverride: effectiveQuantity,
+      contractLine: optionPackageContractLine(legs, symbol),
+      contractCountForFees: legs.reduce((sum, leg) => sum + leg.quantity, 0) * effectiveQuantity,
     });
 
     if (built.mode === "trigger" || built.mode === "unsupported") return built;
@@ -2225,7 +2237,7 @@ function ConfirmPanel({
           <p data-at-send-reason className="text-[13px] leading-snug font-semibold" style={{ color: DOWN }}>
             {sendDetail}
           </p>
-        ) : !hidePlainSingleLegConfirm ? (
+        ) : (
           <div
             className="px-2 py-1.5 flex items-center gap-1.5"
             style={{ background: `${GOLD}08`, borderRadius: 8, border: `1px solid ${GOLD}33` }}
@@ -2235,10 +2247,10 @@ function ConfirmPanel({
               Live order via Schwab. Verify all details.
             </p>
           </div>
-        ) : null}
+        )}
         {hidePlainSingleLegConfirm && atBracketConfirm?.mode === "trigger" ? (
           <p className="text-[11px] px-1" style={{ color: MUTED }}>
-            Preview only — order sending is off. Attached exits match your Active Trader template draft.
+            Attached exits match your Active Trader template draft.
           </p>
         ) : null}
         <div className="flex gap-2 pt-1">

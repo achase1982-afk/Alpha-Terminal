@@ -4,6 +4,7 @@ import { useQuote } from "@/hooks/useQuote";
 import { FIXTURE, fixtureHistory } from "./fixture";
 import { GlanceLadder } from "./GlanceLadder";
 import {
+  assignRailLanes,
   dayMove,
   formatAge,
   formatGross,
@@ -16,6 +17,7 @@ import {
   pathStats,
   premiumNet,
   priceNotFollowing,
+  railLabelShift,
   railPositions,
   resolveTrend,
   SIDE_LABEL,
@@ -99,6 +101,23 @@ function FlowSide({
       </div>
     </div>
   );
+}
+
+const RAIL_LABEL: Record<string, string> = {
+  spot: "SPX",
+  callOi: "Call OI",
+  putOi: "Put OI",
+  callVol: "Call vol",
+  putVol: "Put vol",
+  flip: "Flip",
+  high: "High",
+  low: "Low",
+};
+
+/** Even lanes sit above the dot, odd lanes below, one row apart. */
+function railLabelTop(lane: number): number {
+  const row = Math.floor(lane / 2);
+  return lane % 2 === 0 ? -(20 + row * 22) : 12 + row * 22;
 }
 
 function spark(values: readonly number[], color: string) {
@@ -313,6 +332,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
     ].filter((p): p is { id: string; price: number } => p != null);
     return railPositions(spot, points);
   }, [callOi, callVol, flip, high, low, putOi, putVol, spot]);
+  const railLanes = assignRailLanes(rail);
   const tracePoints = fixture
     ? FIXTURE.closes.map((c, i) => ({ t: i * 60_000, c }))
     : live.traceBars.map((bar) => ({ t: bar.t, c: bar.c }));
@@ -436,7 +456,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
         <section className="block" aria-label="Flow">
             <h2>
-              <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : live.flowUw ? " · UW" : ""}</span>
+              <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : ""}</span>
               <span>{fixture ? "Age 30s · fixture" : formatAge(live.flowAgeSec)}</span>
             </h2>
             <div className="windows num">
@@ -497,7 +517,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <span>5m net {formatNet(premiumNet(flow5))}</span>
               <span>15m net {formatNet(premiumNet(flow15))}</span>
               <span>{fixture ? "Session" : "Day"} net {formatNet(premiumNet(flowSession))}</span>
-              {!fixture && live.flowUw ? <span>Schwab L1 est. {formatNet(premiumNet(live.flowL1Session))}</span> : null}
+              {!fixture && live.flowUw ? <span>L1 est. {formatNet(premiumNet(live.flowL1Session))}</span> : null}
             </div>
           </section>
       </div>
@@ -506,9 +526,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <section className="block levels" aria-label="Levels">
           <h2>
             <span>Levels</span>
-            <span>
-              {fixture ? "Fixture walls" : (live.gammaSource ?? "Gamma")} · {formatAge(fixture ? 20 : live.zonesAgeSec)}
-            </span>
           </h2>
           <table>
             <thead>
@@ -538,19 +555,30 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <span>High zone bottom {highZone == null ? "—" : formatSpot(highZone)}</span>
           </div>
           {zonesInverted ? <div className="support">Zone pair invalid</div> : null}
-          <div className="meta-row num">
+          <div className="gex-box num">
             <span>GEX {gex == null ? "—" : `${formatNet(gex)} / 1%`}</span>
             <span>{env === "amplifying" ? "AMPLIFYING · model" : env === "damping" ? "STABILIZING · model" : "Model sign"}</span>
           </div>
           <div className="rail" aria-label="Price rail">
             <i className="axis" />
-            {rail.map((mark) => {
-              const lane = mark.id.endsWith("Vol") ? "lane-1" : mark.id === "high" || mark.id === "low" ? "lane-2" : "lane-0";
+            {rail.map((mark, index) => {
+              const lane = railLanes[index] ?? 0;
               const color =
                 mark.id === "spot" ? "#fff" : mark.id.startsWith("call") ? "#ffb800" : mark.id.startsWith("put") ? "#14b8a6" : mark.id === "flip" ? "#a78bfa" : "#94a3b8";
+              const label = RAIL_LABEL[mark.id] ?? mark.id;
               return (
-                <span key={mark.id} className={`mark ${lane}`} style={{ left: `${mark.x * 100}%`, background: color }} title={`${mark.id} ${formatSpot(mark.price)}`}>
-                  <em>{mark.id === "spot" ? "SPX" : mark.id}</em>
+                <span
+                  key={mark.id}
+                  className="mark"
+                  style={{
+                    left: `${mark.x * 100}%`,
+                    background: color,
+                    ["--shift" as string]: railLabelShift(mark.x),
+                    ["--lift" as string]: `${railLabelTop(lane)}px`,
+                  }}
+                  title={`${label} ${formatSpot(mark.price)}`}
+                >
+                  <em>{label}</em>
                 </span>
               );
             })}
@@ -567,7 +595,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
 
       <footer className="footer">
         <span>{fixture ? "Synthetic fixture" : spotCaption === "Last completed minute" ? `Completed minute ${live.lastCloseMinute ?? ""}`.trim() : formatAge(live.spotAgeSec)}</span>
-        <span>{fixture ? "0DTE" : live.gammaSource ?? "Gamma"}</span>
+        <span>0DTE</span>
       </footer>
 
       {panel ? (
@@ -637,12 +665,12 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <>
               <p>Fixture numbers are the section 16.1 demonstration. Live mode never substitutes them.</p>
               <ul>
-                <li>SPX and VIX come from the existing quote stream. Day change uses the quote close when that field is present.</li>
-                <li>Open, high, and low minutes come from Schwab 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the RTH open.</li>
-                <li>Flow now and the day row are Unusual Whales 1-minute bars since 09:30 ET. The age is now minus tape time. Schwab L1 est. is the separate streamer estimate.</li>
-                <li>Call and put walls are the gamma snapshot’s single basis, shown on the OI rows. Volume rows stay blank rather than copying those strikes.</li>
+                <li>SPX and VIX come from the quote stream. Day change uses the quote close when that field is present.</li>
+                <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the RTH open.</li>
+                <li>Flow now and the day row are 1-minute premium bars since 09:30 ET. The age is now minus tape time. L1 est. is the separate streamer total.</li>
+                <li>Call OI and put OI are the strikes with the largest open-interest gamma. Call volume and put volume are the strikes with the largest volume gamma. One strike can sit on more than one row.</li>
                 <li>PRICE NOT FOLLOWING needs all four 5m gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
-                <li>Flow connection: {fixture ? "fixture" : live.flowConnection}. Gamma source: {fixture ? "fixture" : (live.gammaSource ?? "unavailable")}.</li>
+                <li>Flow connection: {fixture ? "fixture" : live.flowConnection}.</li>
               </ul>
             </>
           )}

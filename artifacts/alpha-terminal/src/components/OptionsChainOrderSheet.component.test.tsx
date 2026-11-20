@@ -201,15 +201,18 @@ describe("OptionsChainOrderSheet", () => {
     const review = screen.getByTestId("chain-sheet-review");
     await waitFor(() => expect((review as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(review);
+    expect(screen.getAllByText(/SPY 600C\/605C/)).toHaveLength(2);
     const send = screen.getByTestId("chain-sheet-send");
     fireEvent.click(send);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const order = body.order;
     expect(order.orderStrategyType).toBe("TRIGGER");
+    expect(order.complexOrderStrategyType).toBe("VERTICAL");
     expect(order.price).toBe(2);
     const child = order.childOrderStrategies[0];
     expect(child.orderType).toBe("NET_DEBIT");
+    expect(child.complexOrderStrategyType).toBe("VERTICAL");
     expect(child.price).toBe(1.5);
     expect(child.orderLegCollection.map((l: { instruction: string }) => l.instruction)).toEqual([
       "BUY_TO_CLOSE",

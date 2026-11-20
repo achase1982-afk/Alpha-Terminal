@@ -12,13 +12,19 @@ export function buildAtTriggerConfirmSummary(params: {
   optionSymbol: string;
   underlyingSymbol: string;
   assetType?: "OPTION" | "EQUITY";
+  /** Package description for a multi-leg entry. Single contracts keep the OCC line. */
+  contractLine?: string;
+  /** Contracts charged a commission. Spreads are more than the package quantity. */
+  contractCountForFees?: number;
 }): TriggerConfirmSummary | null {
   if (params.legs.length < 2) return null;
   const isEquity = params.assetType === "EQUITY";
   const cleanUnderlying = params.underlyingSymbol.replace(/^\$/, "").trim().toUpperCase();
-  const contractLine = isEquity
-    ? `${cleanUnderlying} SHARES`
-    : parseOccOptionContractLine(params.optionSymbol, params.underlyingSymbol);
+  const contractLine =
+    params.contractLine?.trim() ||
+    (isEquity
+      ? `${cleanUnderlying} SHARES`
+      : parseOccOptionContractLine(params.optionSymbol, params.underlyingSymbol));
   const orders = params.legs.map((leg, idx) => {
     const orderNumber = idx + 1;
     const instruction = leg.instruction as SchwabInstruction;
@@ -31,7 +37,7 @@ export function buildAtTriggerConfirmSummary(params: {
       contractLine,
       limitPrice: leg.price ?? 0,
       orderType: (leg.orderType === "STOP" ? "STOP" : "LIMIT") as "LIMIT" | "STOP",
-      contractCountForFees: isEquity ? 0 : params.quantity,
+      contractCountForFees: isEquity ? 0 : (params.contractCountForFees ?? params.quantity),
       assetType: params.assetType ?? "OPTION",
     };
   });

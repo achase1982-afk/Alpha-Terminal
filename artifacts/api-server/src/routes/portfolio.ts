@@ -20,6 +20,7 @@ import { tradeJournalTable } from "@workspace/db/schema";
 import {
   orderReferencesBlockedFutures,
   prepareSchwabOrderForSend,
+  readableBrokerRejectMessage,
 } from "@workspace/order-ticket-math";
 import { fetchMappedWebullAccounts } from "../lib/webull/webullPortfolioAccounts.js";
 import {
@@ -437,7 +438,7 @@ router.post("/place-order", async (req, res) => {
       logger.error({ status: schwabRes.status, body: body.slice(0, 500) }, "Schwab order placement failed");
       return res.status(schwabRes.status).json({
         error: "order_rejected",
-        message: body.slice(0, 500),
+        message: readableBrokerRejectMessage(body),
       });
     }
 

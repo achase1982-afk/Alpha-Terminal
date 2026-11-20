@@ -140,6 +140,31 @@ export function sideSign(side: GrossSide): 1 | -1 {
 
 export type RailPoint = { id: string; price: number };
 
+/**
+ * Lane index for each mark, in input order. Marks closer than `minGap`
+ * (fraction of the rail) take the next free lane so their labels do not stack.
+ */
+export function assignRailLanes(marks: readonly { id: string; x: number }[], minGap = 0.18): number[] {
+  const order = marks.map((mark, index) => ({ index, x: mark.x, id: mark.id }));
+  order.sort((a, b) => a.x - b.x || a.id.localeCompare(b.id) || a.index - b.index);
+  const laneEnds: number[] = [];
+  const lanes = new Array<number>(marks.length);
+  for (const mark of order) {
+    let lane = 0;
+    while (lane < laneEnds.length && mark.x < laneEnds[lane]! + minGap) lane += 1;
+    laneEnds[lane] = mark.x;
+    lanes[mark.index] = lane;
+  }
+  return lanes;
+}
+
+/** Horizontal label anchor. Edge marks grow inward so the words stay in the rail. */
+export function railLabelShift(x: number): string {
+  if (x <= 0.12) return "0%";
+  if (x >= 0.88) return "-100%";
+  return "-50%";
+}
+
 export function railPositions(spot: number | null, points: readonly RailPoint[]): { id: string; x: number; price: number }[] {
   if (points.length === 0) return [];
   if (spot == null || !Number.isFinite(spot)) {
