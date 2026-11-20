@@ -31,7 +31,6 @@ import {
   strikeRailFontSize,
 } from "@/lib/options/strikeColumnChrome";
 import {
-  AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_CALLS_HDR,
@@ -115,6 +114,8 @@ import {
 import { optionChainMatchesActiveSymbol } from "@/lib/optionChainStaleGuard";
 import { mergeChainContractWithStream, resolveChainDisplayQuote } from "@/lib/chainContractQuoteMerge";
 import { useMinuteClock } from "@/lib/active-trader/useAtLadderQuote";
+import { useQuoteMoveArrows } from "@/lib/active-trader/useQuoteMoveArrows";
+import { chainLivePriceColor } from "@/lib/options/chainQuoteTickColor";
 import { isAuthDisabled } from "@/lib/authMode";
 import {
   hasSchwabBrokerageLinked,
@@ -612,6 +613,7 @@ const DataCell = memo(function DataCell({
   chainQuoteTs: number;
 }) {
   const tick = useOptionTick(contract?.streamKey);
+  const quoteEpoch = useOptionsStreamStore((s) => s.quoteEpoch);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const didSwipe = useRef(false);
@@ -711,9 +713,18 @@ const DataCell = memo(function DataCell({
     startPos.current = null;
   }, []);
 
+  const priceNum = typeof topVal === "number" && Number.isFinite(topVal) ? topVal : null;
+  const moveArrows = useQuoteMoveArrows(
+    contract?.streamKey ?? null,
+    isBid ? priceNum : null,
+    isAsk ? priceNum : null,
+    quoteEpoch,
+  );
+  const tickArrow = isBid ? moveArrows.bid : isAsk ? moveArrows.ask : null;
+
   let textColor: string;
   if (isPrice) {
-    textColor = AT_LADDER_PRICE_COLOR;
+    textColor = chainLivePriceColor(isBid ? "bid" : "ask", tickArrow, !!priceDimmed);
   } else if (topStr === "\u2014") {
     textColor = MUTED;
   } else {
