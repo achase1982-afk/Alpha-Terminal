@@ -14,6 +14,27 @@ function bracketDraftActive(prefs: ActiveTraderTemplatePrefs): boolean {
   );
 }
 
+/** Human package line for a multi-leg confirm, e.g. `SPXW 7000C/7005C/7000P/6995P`. */
+export function spreadConfirmContractLine(
+  legs: Array<{ strike: number; optionType: string; schwabSymbol?: string | null }>,
+  underlying: string,
+): string {
+  const occRoot = legs
+    .map((leg) => {
+      const sym = leg.schwabSymbol?.trim() ?? "";
+      if (sym.length < 15) return "";
+      return sym.slice(0, sym.length - 15).trim();
+    })
+    .find((root) => root.length > 0);
+  const root = occRoot || underlying.replace(/^\$/, "").trim().toUpperCase() || "OPT";
+  const parts = legs.map((leg) => {
+    const cp = leg.optionType.toUpperCase().startsWith("P") ? "P" : "C";
+    const strikeText = Number.isInteger(leg.strike) ? String(leg.strike) : String(leg.strike);
+    return `${strikeText}${cp}`;
+  });
+  return `${root} ${parts.join("/")}`;
+}
+
 /** Build AT bracket trigger confirm for chain-sheet review from the same draft inputs as OrderTicket. */
 export function buildChainSheetAtBracketConfirm(input: {
   prefs: ActiveTraderTemplatePrefs;
@@ -24,6 +45,8 @@ export function buildChainSheetAtBracketConfirm(input: {
   underlyingSymbol: string;
   assetType?: "OPTION" | "EQUITY";
   quantityOverride?: number;
+  contractLine?: string;
+  contractCountForFees?: number;
 }): ChainSheetAtBracketConfirm {
   if (!bracketDraftActive(input.prefs)) {
     return { mode: "single" };
@@ -94,6 +117,8 @@ export function buildChainSheetAtBracketConfirm(input: {
     optionSymbol: input.optionSymbol,
     underlyingSymbol: input.underlyingSymbol,
     assetType,
+    contractLine: input.contractLine,
+    contractCountForFees: input.contractCountForFees,
   });
 
   if (!summary) {

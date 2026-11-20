@@ -52,6 +52,7 @@ import {
   formatLimitPriceDisplay,
   midpointFromBidAsk,
   optionMidLimit,
+  inferSchwabComplexOrderStrategyType,
   parseCanonicalLimit,
   resolveSubmittedLimit,
   schwabPriceFromTicket,
@@ -1311,19 +1312,16 @@ export function OrderTicket({
         }
         // Schwab multi-leg orderType: NET_CREDIT when net is positive, NET_DEBIT when negative
         const spreadOrderType = useMarket ? "MARKET" : (netDirection >= 0 ? "NET_CREDIT" : "NET_DEBIT");
-        // Auto-detect complexOrderStrategyType from leg symbols
-        // OCC symbol format: TICKER(6) + YYMMDD(6) + C/P(1) + STRIKE(8) — C/P is always at index 12
-        const getSymParts = (sym: string) => ({ date: sym.substring(6, 12), cp: sym.charAt(12) });
-        let complexType = "CUSTOM";
-        if (liveStrategyLegs.length === 2) {
-          const p0 = getSymParts(liveStrategyLegs[0].schwabSymbol);
-          const p1 = getSymParts(liveStrategyLegs[1].schwabSymbol);
-          if (p0.date === p1.date && p0.cp === p1.cp) complexType = "VERTICAL";
-          else if (p0.date === p1.date && p0.cp !== p1.cp) complexType = "STRANGLE";
-        } else if (liveStrategyLegs.length === 4) {
-          const cps = liveStrategyLegs.map(l => getSymParts(l.schwabSymbol).cp);
-          if (cps.filter(c => c === "C").length === 2 && cps.filter(c => c === "P").length === 2) complexType = "IRON_CONDOR";
-        }
+        const complexType = inferSchwabComplexOrderStrategyType(
+          liveStrategyLegs.map((leg) => ({
+            strike: leg.strike,
+            optionType: leg.optionType,
+            instruction: leg.instruction,
+            quantity: leg.quantity,
+            expiration: leg.expiration,
+            schwabSymbol: leg.schwabSymbol,
+          })),
+        );
         const o: Record<string, unknown> = {
           orderType: spreadOrderType,
           session,

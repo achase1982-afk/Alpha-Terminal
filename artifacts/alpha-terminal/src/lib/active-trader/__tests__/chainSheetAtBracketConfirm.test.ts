@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ActiveTraderTemplatePrefs } from "../activeTraderPrefs";
-import { buildChainSheetAtBracketConfirm } from "../chainSheetAtBracketConfirm";
+import { buildChainSheetAtBracketConfirm, spreadConfirmContractLine } from "../chainSheetAtBracketConfirm";
 
 const basePrefs: ActiveTraderTemplatePrefs = {
   template: "TRG w/ bracket",
@@ -76,6 +76,34 @@ describe("buildChainSheetAtBracketConfirm", () => {
     if (result.mode !== "trigger") return;
     const close = result.summary.orders.find((o) => o.positionEffect === "[TO CLOSE]");
     expect(close?.instructionLine).toMatch(/BUY/);
+  });
+
+  it("iron butterfly confirm names every strike and the ticket quantity", () => {
+    const result = buildChainSheetAtBracketConfirm({
+      prefs: { ...basePrefs, qty: 1 },
+      legCount: 4,
+      primaryInstruction: "SELL_TO_OPEN",
+      limitPrice: 4.9,
+      optionSymbol: "SPXW  251120C07000000",
+      underlyingSymbol: "SPX",
+      quantityOverride: 2,
+      contractLine: spreadConfirmContractLine(
+        [
+          { strike: 7000, optionType: "CALL", schwabSymbol: "SPXW  251120C07000000" },
+          { strike: 7005, optionType: "CALL", schwabSymbol: "SPXW  251120C07005000" },
+          { strike: 7000, optionType: "PUT", schwabSymbol: "SPXW  251120P07000000" },
+          { strike: 6995, optionType: "PUT", schwabSymbol: "SPXW  251120P06995000" },
+        ],
+        "SPX",
+      ),
+      contractCountForFees: 8,
+    });
+    expect(result.mode).toBe("trigger");
+    if (result.mode !== "trigger") return;
+    expect(result.quantity).toBe(2);
+    expect(result.summary.orders[0].instructionLine).toContain("SPXW 7000C/7005C/7000P/6995P");
+    expect(result.summary.orders[0].instructionLine).toMatch(/−2|2/);
+    expect(result.summary.orders[1].instructionLine).toContain("SPXW 7000C/7005C/7000P/6995P");
   });
 
   it("multi-leg spread with stop loss is unsupported", () => {

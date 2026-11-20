@@ -9,8 +9,46 @@ export type SchwabComplexStrategyType =
   | "STRADDLE"
   | "BUTTERFLY"
   | "IRON_CONDOR"
-  | "IRON_BUTTERFLY"
   | "CUSTOM";
+
+/**
+ * Values Schwab's Trader API accepts on `complexOrderStrategyType`.
+ * IRON_BUTTERFLY is not one of them. The gateway answers
+ * `Invalid value "IRON_BUTTERFLY"`. An iron butterfly (short call and short
+ * put at the same strike) is sent as CUSTOM. BUTTERFLY is the same-side
+ * 1/-2/1 fly, and IRON_CONDOR requires the short strikes to be apart.
+ */
+const SCHWAB_COMPLEX_STRATEGY_TYPES = new Set<string>([
+  "NONE",
+  "COVERED",
+  "VERTICAL",
+  "BACK_RATIO",
+  "CALENDAR",
+  "DIAGONAL",
+  "STRADDLE",
+  "STRANGLE",
+  "COLLAR_SYNTHETIC",
+  "BUTTERFLY",
+  "CONDOR",
+  "IRON_CONDOR",
+  "VERTICAL_ROLL",
+  "COLLAR_WITH_STOCK",
+  "DOUBLE_DIAGONAL",
+  "UNBALANCED_BUTTERFLY",
+  "UNBALANCED_CONDOR",
+  "UNBALANCED_IRON_CONDOR",
+  "UNBALANCED_VERTICAL_ROLL",
+  "MUTUAL_FUND_SWAP",
+  "CUSTOM",
+]);
+
+/** Map a strategy label onto a value Schwab will accept. Unknown labels become CUSTOM. */
+export function coerceSchwabComplexOrderStrategyType(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const upper = value.trim().toUpperCase();
+  if (!upper) return undefined;
+  return SCHWAB_COMPLEX_STRATEGY_TYPES.has(upper) ? upper : "CUSTOM";
+}
 
 export interface SchwabComplexLeg extends EconomicsLeg {
   schwabSymbol?: string;
@@ -112,7 +150,8 @@ export function inferSchwabComplexOrderStrategyType(legs: SchwabComplexLeg[]): S
   if (legs.length === 3 && isButterfly(legs)) return "BUTTERFLY";
 
   if (legs.length === 4) {
-    if (isIronButterfly(legs)) return "IRON_BUTTERFLY";
+    // Checked before the condor so equal short strikes are not labeled IRON_CONDOR.
+    if (isIronButterfly(legs)) return "CUSTOM";
     if (isIronCondorShape(legs)) return "IRON_CONDOR";
     return "CUSTOM";
   }
