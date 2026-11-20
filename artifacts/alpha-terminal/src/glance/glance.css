@@ -291,24 +291,56 @@
 }
 
 .flow-row {
+  --flow-num: 28px;
   display: grid;
-  grid-template-columns: 72px minmax(168px, max-content) minmax(72px, 1fr) minmax(168px, max-content);
-  gap: 8px;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-rows: auto auto;
+  column-gap: 4px;
+  row-gap: 4px;
   align-items: center;
-  min-height: 44px;
 }
 
-.side-name {
-  font-size: 18px;
-  font-weight: 650;
-  color: #cbd5e1;
+.flow-read {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  grid-row: 1;
+  white-space: nowrap;
 }
 
-.amt {
-  font-size: 30px;
+.flow-read.buy {
+  grid-column: 1;
+}
+
+.flow-read.sell {
+  grid-column: 3;
+}
+
+.flow-words {
+  color: #fff;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.flow-dollars {
+  font-size: var(--flow-num);
   line-height: 1;
   font-weight: 500;
-  white-space: nowrap;
+}
+
+.flow-hist {
+  grid-row: 2;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.flow-hist.buy {
+  grid-column: 1;
+}
+
+.flow-hist.sell {
+  grid-column: 3;
 }
 
 .amt small {
@@ -321,8 +353,11 @@
 .track {
   position: relative;
   display: grid;
+  grid-column: 2;
+  grid-row: 1;
   grid-template-columns: 1fr 1fr;
-  height: 18px;
+  height: var(--flow-num);
+  align-self: center;
   background: #1b222e;
   border-radius: 999px;
   overflow: hidden;
@@ -341,13 +376,13 @@
 .track .bought {
   justify-self: end;
   height: 100%;
-  background: #00d166;
+  background: linear-gradient(to left, #00d166, #d8ffe9);
 }
 
 .track .sold {
   justify-self: start;
   height: 100%;
-  background: #f23645;
+  background: linear-gradient(to right, #f23645, #ffd5d8);
 }
 
 .hist {
@@ -709,8 +744,12 @@
     margin-top: 4px;
   }
 
-  .amt {
-    font-size: 34px;
+  .flow-row {
+    --flow-num: 32px;
+  }
+
+  .flow-words {
+    font-size: 28px;
   }
 
   .flow-row {
