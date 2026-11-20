@@ -347,10 +347,11 @@ describe("LadderBody", () => {
     expect(strike.style.fontWeight).toBe("500");
     expect(strike.style.fontSize).toBe("16px");
     const spotCell = view.container.querySelector<HTMLElement>('[data-at-strike="7320"]')!;
-    expect(spotCell.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
+    expect(spotCell.style.background).toMatch(/rgb\(253,\s*203,\s*53\)|#fdcb35/i);
     const spot = spotCell.querySelector<HTMLElement>("div")!;
     expect(spot.style.background).toBe("transparent");
-    expect(spot.style.fontWeight).toBe("500");
+    expect(spot.style.fontWeight).toBe("550");
+    expect(spot.style.fontSize).toBe("17px");
   });
 
   it("outlines the call wall in gold and the put wall in teal", () => {
@@ -383,9 +384,9 @@ describe("LadderBody", () => {
     const callType = strikeTypography(callStrike);
     const putType = strikeTypography(putStrike);
     expect(putType.style.fontSize).toBe("17px");
-    expect(putType.style.fontWeight).toBe("500");
+    expect(putType.style.fontWeight).toBe("550");
     expect(callType.style.fontSize).toBe("17px");
-    expect(callType.style.fontWeight).toBe("500");
+    expect(callType.style.fontWeight).toBe("550");
   });
 
   it("draws a thin outline + BUY/SELL tag on a selected cell with no fill wash", () => {

@@ -39,15 +39,17 @@ import {
   AT_LADDER_SELECT_SELL,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_COL_W,
-  AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
+  AT_SPOT_PILL,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
 import {
   STRIKE_COL_PAD_X,
   STRIKE_RAIL_LETTER_SPACING,
   STRIKE_RAIL_LINE_HEIGHT,
+  STRIKE_COL_SPOT_FONT_EXTRA_PX,
   strikeRailFontSize,
+  strikeRailFontWeight,
 } from "@/lib/options/strikeColumnChrome";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
 import { useAtLadderHeatCell, type AtLadderHeatStore } from "@/lib/active-trader/atLadderHeatStore";
@@ -572,7 +574,7 @@ function strikeColumnBackground(
   callWallRow: boolean,
   putWallRow: boolean,
 ): string {
-  if (spotRow) return GOLD;
+  if (spotRow) return AT_SPOT_PILL;
   if (callWallRow) return GOLD;
   if (putWallRow) return PUT_WALL;
   if (gammaFlipRow) return AT_LADDER_GAMMA;
@@ -585,13 +587,16 @@ function strikeRailTypography(
   callWallRow: boolean,
   putWallRow: boolean,
 ): { fontSize: number; fontWeight: number; color: string; letterSpacing: string } {
-  const baseSize = strikeRailFontSize(strike);
   const wallEmphasis = !spotRow && (callWallRow || putWallRow);
-  const spotEmphasis = spotRow;
-  const emphasized = spotEmphasis || wallEmphasis;
+  const emphasized = spotRow || wallEmphasis;
+  const fontSize = spotRow
+    ? strikeRailFontSize(strike, true)
+    : wallEmphasis
+      ? strikeRailFontSize(strike, false) + STRIKE_COL_SPOT_FONT_EXTRA_PX
+      : strikeRailFontSize(strike, false);
   return {
-    fontSize: wallEmphasis ? baseSize + 1 : baseSize,
-    fontWeight: emphasized ? 500 : AT_LADDER_STRIKE_WEIGHT,
+    fontSize,
+    fontWeight: emphasized ? strikeRailFontWeight(true) : strikeRailFontWeight(false),
     color: emphasized ? AT_SPOT_PILL_TEXT : WHITE,
     letterSpacing: emphasized ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
   };
