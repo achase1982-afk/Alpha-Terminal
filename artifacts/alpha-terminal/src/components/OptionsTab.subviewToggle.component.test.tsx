@@ -80,6 +80,11 @@ vi.mock("@/lib/fetchWithAuth", () => ({
 }));
 
 vi.mock("@workspace/api-client-react", () => ({
+  getGetOptionChainQueryOptions: () => ({
+    queryKey: ["option-chain-expanded"],
+    queryFn: vi.fn(),
+    enabled: false,
+  }),
   useGetQuote: () => ({ data: { symbol: "AAPL", last: 350.5, bid: 350.4, ask: 350.6 } }),
   useGetOptionChain: () => ({
     data: {
