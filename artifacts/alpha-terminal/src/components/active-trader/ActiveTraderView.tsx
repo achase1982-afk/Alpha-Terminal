@@ -7,10 +7,12 @@ import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import { buildAtHoldSignature } from "@/lib/active-trader/atHoldSig";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import {
+  ladderModeForStrategy,
   loadActiveTraderPrefs,
   saveActiveTraderPrefs,
   type ActiveTraderTemplatePrefs,
 } from "@/lib/active-trader/activeTraderPrefs";
+import { buildAtStrategyLegs, type AtStrategyTap } from "@/lib/active-trader/atStrategyBuild";
 import { useAtLadderVolumeHeat } from "@/lib/active-trader/useAtLadderVolumeHeat";
 import { selectAtStreamKeys } from "@/lib/active-trader/atLadderWindow";
 import { auditNearAtmLadderQuotes, type LadderQuoteHealthAudit } from "@/lib/active-trader/atLadderQuoteHealth";
@@ -418,10 +420,14 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     symbol,
   );
   const canStock = stockTemplateAvailable(instrumentClass);
-  const [template, setTemplate] = useState<AtInstrumentTemplate>("options");
-  useEffect(() => {
-    setTemplate(resolveInstrumentTemplate(symbol, instrumentClass));
-  }, [symbol, instrumentClass]);
+  const resolvedTemplate = resolveInstrumentTemplate(symbol, instrumentClass);
+  // A choice belongs to the symbol it was made on. The next ticker uses its
+  // resolved template in this render, so AAPL's Stock mode cannot paint on SPX.
+  const [chosenTemplate, setChosenTemplate] = useState<{
+    symbol: string;
+    template: AtInstrumentTemplate;
+  } | null>(null);
+  const template = chosenTemplate?.symbol === symbol ? chosenTemplate.template : resolvedTemplate;
   const stockTemplate = canStock && template === "stock";
   const [atStockDraft, setAtStockDraft] = useState<EquityTicketDraft | null>(null);
   const [atStockCollapsed, setAtStockCollapsed] = useState(false);
@@ -438,7 +444,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     if (!canStock) return;
     const next: AtInstrumentTemplate = template === "stock" ? "options" : "stock";
     saveExplicitInstrumentTemplate(symbol, next);
-    setTemplate(next);
+    setChosenTemplate({ symbol, template: next });
   }, [canStock, template, symbol]);
   const keepawayUseMean = useAtChromeStore((s) => s.keepawayUseMean);
   const setKeepawayUseMean = useAtChromeStore((s) => s.setKeepawayUseMean);
@@ -474,7 +480,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return spxKeepawayBoundary(keepawayStats, "call", sessionLow, sessionHigh, keepawayUseMean);
   }, [keepawayStats, sessionLow, sessionHigh, keepawayUseMean]);
   const [prefs, setPrefs] = useState<ActiveTraderTemplatePrefs>(() => loadActiveTraderPrefs(symbolClass));
-  const ladderMode = prefs.ladderMode;
+  const strategyBuild = prefs.strategyBuild ?? "off";
+  const ladderMode = ladderModeForStrategy(strategyBuild);
   const [settingsOpen, setSettingsOpen] = useState(
     () => settingsPanelInitiallyOpen ?? loadAtSettingsPanelOpen(),
   );
@@ -1045,66 +1052,48 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return () => window.removeEventListener("at-mobile-sheet-open", onSheet);
   }, [tradeStripStrike, armProgrammaticScroll]);
 
-  const handleVerticalTap = useCallback(
-    (payload: {
-      anchorStrike: number;
-      farStrike: number;
-      type: "CALL" | "PUT";
-      side: "BUY" | "SELL";
-      nearContract: OptionsContract;
-    }) => {
-      const farRow = rowByStrike.get(payload.farStrike);
-      const farContract = payload.type === "CALL" ? farRow?.call ?? null : farRow?.put ?? null;
-      if (!farContract) {
-        setSelected({ contract: payload.nearContract, type: payload.type });
-        setTradeContext({
-          mode: "vertical",
-          type: payload.type,
-          anchorStrike: payload.anchorStrike,
-          farStrike: payload.farStrike,
-          width: prefs.verticalWidth,
-          nearContract: payload.nearContract,
-        });
-        setTradeStripStrike(payload.anchorStrike);
+  const handleStrategyTap = useCallback(
+    (target: AtStrategyTap) => {
+      const strategy = prefs.strategyBuild ?? "off";
+      if (strategy === "off") {
+        handleQuoteTap(target.contract, target.type, target.side);
         return;
       }
-      const nearSide = payload.side === "SELL" ? "bid" : "ask";
-      const farSide = payload.side === "SELL" ? "ask" : "bid";
-      const nearKey = atLadderLegKey(payload.nearContract, payload.type);
-      const farKey = atLadderLegKey(farContract, payload.type);
-      const legs = new Map<string, AtLadderLegPick>([
-        [
-          nearKey,
-          {
-            contract: payload.nearContract,
-            type: payload.type,
-            expiration: payload.nearContract.expiration,
-            side: nearSide,
-          },
-        ],
-        [
-          farKey,
-          {
-            contract: farContract,
-            type: payload.type,
-            expiration: farContract.expiration,
-            side: farSide,
-          },
-        ],
-      ]);
-      const prevQty = legQtyRef.current;
-      const qty = new Map<string, number>([
-        [nearKey, prevQty.get(nearKey) ?? 1],
-        [farKey, prevQty.get(farKey) ?? 1],
-      ]);
-      atSelectionSetLegs(selection, legs);
-      setLegQuantities(qty);
-      publishDraft(legs.values(), qty);
-      setTradeContext(null);
-      setSelected({ contract: payload.nearContract, type: payload.type });
-      setTradeStripStrike(payload.anchorStrike);
+      const built = buildAtStrategyLegs({
+        strategy,
+        anchorStrike: target.strike,
+        type: target.type,
+        width: prefs.verticalWidth,
+        nearContract: target.contract,
+        rowByStrike,
+        prevQty: legQtyRef.current,
+      });
+      if (!built) {
+        handleQuoteTap(target.contract, target.type, target.side);
+        return;
+      }
+      atSelectionSetLegs(selection, built.legs);
+      setLegQuantities(built.qty);
+      publishDraft(built.legs.values(), built.qty);
+      const tappedSide = built.legs.get(atLadderLegKey(target.contract, target.type))?.side ?? "ask";
+      startTransition(() => {
+        setLastLegQuoteSide(tappedSide);
+        setSelected({ contract: target.contract, type: target.type });
+        setTradeStripStrike(target.strike);
+        setTradeContext(null);
+      });
+      nudgeRef.current = { strike: target.strike, until: performance.now() + AT_NUDGE_WINDOW_MS };
+      requestAnimationFrame(nudgeTappedStrikeAboveSheet);
     },
-    [prefs.verticalWidth, rowByStrike, selection, publishDraft],
+    [
+      prefs.strategyBuild,
+      prefs.verticalWidth,
+      rowByStrike,
+      handleQuoteTap,
+      selection,
+      publishDraft,
+      nudgeTappedStrikeAboveSheet,
+    ],
   );
 
   useEffect(() => {
@@ -1113,18 +1102,17 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     const strike = fx.tapStrike ?? 7545;
     const row = primary.rows.find((r) => r.strike === strike);
     if (fx.verticalStripOnMount && row?.call) {
-      handleVerticalTap({
-        anchorStrike: strike,
-        farStrike: strike + prefs.verticalWidth,
+      handleStrategyTap({
+        contract: row.call,
         type: "CALL",
-        side: "BUY",
-        nearContract: row.call,
+        side: "SELL",
+        strike,
       });
       return;
     }
     if (fx.scene !== "strip" || !row?.call) return;
     handleQuoteTap(row.call, "CALL", "BUY");
-  }, [primary, handleQuoteTap, handleVerticalTap, prefs.verticalWidth]);
+  }, [primary, handleQuoteTap, handleStrategyTap]);
 
   const trayLegs = useMemo(() => [...selectedLegs.values()], [selectedLegs]);
 
@@ -1305,16 +1293,18 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     return () => document.removeEventListener("pointerdown", closeIfOutside, true);
   }, [settingsOpen]);
 
-  // An open ticket stays in progress. A tap on the ladder, the strike column,
-  // or anywhere else outside the sheet drops it to the peek handle.
+  // An open ticket stays up while legs are picked. A tap on a quote cell keeps
+  // it open. A tap on the strike column, or anywhere outside the cells and the
+  // ticket, slides it down. The draft stays; it can be pulled back up.
   useEffect(() => {
     if (stockTemplate || collapsed || !hasLegs) return;
     const pullDown = (event: Event) => {
-      const node = event.target;
-      if (!(node instanceof Element)) return;
+      const raw = event.target;
+      const node = raw instanceof Element ? raw : raw instanceof Node ? raw.parentElement : null;
+      if (!node) return;
       if (
         node.closest(
-          "[data-at-order-sheet], [data-at-order-defaults], [data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox'], [role='dialog']",
+          "[data-at-cell], [data-at-order-sheet], [data-at-order-defaults], [data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox'], [role='dialog']",
         )
       ) {
         return;
@@ -1845,10 +1835,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
                 wallsRolling={!!zones.wallsRollLabel}
                 selectedStrike={tradeStripStrike}
                 ladderMode={ladderMode}
+                strategyBuild={strategyBuild}
                 rowHeight={ladderRowH}
                 verticalWidth={prefs.verticalWidth}
                 rowByStrike={rowByStrike}
-                onVerticalTap={handleVerticalTap}
+                onStrategyTap={handleStrategyTap}
                 onQuoteTap={handleQuoteTap}
                 positionQtyByKey={positionQtyByKey}
                 heat={heatStore}

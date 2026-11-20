@@ -1828,6 +1828,181 @@ router.get("/fundamentals", async (req, res) => {
   }
 });
 
+type SymbolSearchHit = { symbol: string; name: string };
+
+const symbolSearchCache = new Map<string, { at: number; results: SymbolSearchHit[] }>();
+const SYMBOL_SEARCH_TTL_MS = 60_000;
+const TICKER_KEY_RE = /^[A-Z0-9.$/-]{1,18}$/;
+
+function firstQueryValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  return "";
+}
+
+function escapeSymbolRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function collectInstrumentEntries(json: unknown): Record<string, unknown>[] {
+  if (Array.isArray(json)) {
+    return json.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+  }
+  if (!json || typeof json !== "object") return [];
+  const obj = json as Record<string, unknown>;
+  if (Array.isArray(obj["instruments"])) {
+    return obj["instruments"].filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
+  }
+  const out: Record<string, unknown>[] = [];
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    if (key.toLowerCase() === "error" || key.toLowerCase() === "errors") continue;
+    const entry = value as Record<string, unknown>;
+    const ownSymbol = instrumentSymbolKey(entry);
+    if (ownSymbol) {
+      out.push(entry);
+      continue;
+    }
+    if (TICKER_KEY_RE.test(key.toUpperCase())) out.push({ ...entry, symbol: key });
+  }
+  return out;
+}
+
+function instrumentAssetType(entry: Record<string, unknown>): string {
+  const raw = entry["assetType"] ?? entry["assetMainType"];
+  return typeof raw === "string" ? raw.trim().toUpperCase() : "";
+}
+
+/** Prefix lookup should surface underlyings, not option contracts. */
+function keepSearchInstrument(symbol: string, assetType: string): boolean {
+  if (!TICKER_KEY_RE.test(symbol) || symbol.includes(" ")) return false;
+  if (/\d{6}[CP]\d/.test(symbol)) return false;
+  if (!assetType) return true;
+  if (assetType === "BOND" || assetType.includes("OPTION")) return false;
+  return true;
+}
+
+function symbolSearchNeedles(q: string): string[] {
+  const needles = [q];
+  if (!q.startsWith("/")) {
+    const mapped = formatSchwabSymbol(q);
+    if (mapped && mapped !== q) needles.push(mapped);
+  }
+  return needles;
+}
+
+function preferSearchSymbol(a: string, b: string): string {
+  if (a === b) return a;
+  const aIndex = a.startsWith("$");
+  const bIndex = b.startsWith("$");
+  if (aIndex !== bIndex) return aIndex ? a : b;
+  const sameClass = a.replace("/", ".") === b.replace("/", ".");
+  if (sameClass && a.includes("/") !== b.includes("/")) return a.includes("/") ? a : b;
+  return a.length <= b.length ? a : b;
+}
+
+function searchRank(symbol: string, q: string): number {
+  const bare = symbol.replace(/^[$/]/, "");
+  const qBare = q.replace(/^[$/]/, "");
+  if (symbol === q || bare === qBare) return 0;
+  if (symbol.startsWith(q) || bare.startsWith(qBare)) return 1;
+  if (symbol.includes(q) || bare.includes(qBare)) return 2;
+  return 3;
+}
+
+function buildSymbolSearchHits(entries: Record<string, unknown>[], q: string, limit: number): SymbolSearchHit[] {
+  const byKey = new Map<string, SymbolSearchHit>();
+  for (const entry of entries) {
+    const symbol = instrumentSymbolKey(entry);
+    if (!symbol || !keepSearchInstrument(symbol, instrumentAssetType(entry))) continue;
+    const rawName = typeof entry["description"] === "string" ? entry["description"].trim() : "";
+    const name = rawName.toUpperCase() === symbol ? "" : rawName;
+    const key = symbol.replace(/^\$/, "");
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, { symbol, name });
+      continue;
+    }
+    byKey.set(key, {
+      symbol: preferSearchSymbol(prev.symbol, symbol),
+      name: prev.name || name,
+    });
+  }
+  return [...byKey.values()]
+    .sort((a, b) => {
+      const rank = searchRank(a.symbol, q) - searchRank(b.symbol, q);
+      if (rank !== 0) return rank;
+      if (a.symbol.length !== b.symbol.length) return a.symbol.length - b.symbol.length;
+      return a.symbol.localeCompare(b.symbol);
+    })
+    .slice(0, limit);
+}
+
+async function fetchInstrumentMatches(
+  accessToken: string,
+  needle: string,
+): Promise<{ status: number; entries: Record<string, unknown>[] }> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const pattern = `${escapeSymbolRegex(needle)}.*`;
+  const regexUrl = `${SCHWAB_API_BASE}/instruments?symbol=${encodeURIComponent(pattern)}&projection=symbol-regex`;
+  try {
+    let response = await fetch(regexUrl, { headers, signal: AbortSignal.timeout(3500) });
+    if (response.status !== 401 && !response.ok) {
+      const searchUrl = `${SCHWAB_API_BASE}/instruments?symbol=${encodeURIComponent(needle)}&projection=search`;
+      response = await fetch(searchUrl, { headers, signal: AbortSignal.timeout(3500) });
+    }
+    if (!response.ok) return { status: response.status, entries: [] };
+    const json = await response.json() as unknown;
+    return { status: 200, entries: collectInstrumentEntries(json) };
+  } catch {
+    return { status: 0, entries: [] };
+  }
+}
+
+/**
+ * Prefix ticker lookup for the phone search dock.
+ * `symbol-regex` is Schwab's documented "starts with" instrument search and
+ * includes the company description. `projection=search` is the fallback when
+ * the regex call is rejected.
+ */
+router.get("/symbol-search", async (req, res) => {
+  const q = firstQueryValue(req.query["q"]).trim().toUpperCase();
+  const parsedLimit = Number.parseInt(firstQueryValue(req.query["limit"]), 10);
+  const limit = Number.isFinite(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 8) : 4;
+  if (!q || q.length > 12 || !TICKER_KEY_RE.test(q)) {
+    return res.json({ results: [] });
+  }
+
+  const accessToken = schwabAccessTokenFromRequest(req, true);
+  if (!accessToken) {
+    return res.status(400).json({ results: [], error: "accessToken required" });
+  }
+
+  const needles = symbolSearchNeedles(q);
+  const cacheKey = `${needles.join("|")}|${limit}`;
+  const cached = symbolSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < SYMBOL_SEARCH_TTL_MS) {
+    return res.json({ results: cached.results });
+  }
+
+  try {
+    const fetched = await Promise.all(needles.map((needle) => fetchInstrumentMatches(accessToken, needle)));
+    if (fetched.some((item) => item.status === 401)) {
+      return res.json({ results: [], error: "unauthorized" });
+    }
+    const entries = fetched.flatMap((item) => item.entries);
+    if (entries.length === 0 && fetched.every((item) => item.status !== 200)) {
+      return res.json({ results: [], error: "lookup_failed" });
+    }
+    const results = buildSymbolSearchHits(entries, q, limit);
+    setBounded(symbolSearchCache, cacheKey, { at: Date.now(), results }, 80);
+    return res.json({ results });
+  } catch (err) {
+    req.log.error({ err }, "Symbol search failed");
+    return res.json({ results: [], error: "internal_error" });
+  }
+});
+
 router.get("/earnings-date", async (req, res) => {
   const symbol = (req.query["symbol"] as string || "").toUpperCase().trim();
   if (!symbol) {

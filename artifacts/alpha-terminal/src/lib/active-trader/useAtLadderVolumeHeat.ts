@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AtLadderVolumeHeatEngine, AT_LADDER_HEAT_WINDOW_MS } from "./atLadderVolumeHeatEngine";
+import {
+  AtLadderVolumeHeatEngine,
+  AT_LADDER_HEAT_WINDOW_MS,
+  type LadderHeatQuote,
+} from "./atLadderVolumeHeatEngine";
 import {
   createAtLadderHeatStore,
   publishAtLadderHeat,
@@ -145,6 +149,15 @@ function wantedContractKey(
   return trimmed !== raw && want.has(trimmed) ? trimmed : null;
 }
 
+function heatQuote(src: {
+  bid?: number | null;
+  ask?: number | null;
+  last?: number | null;
+} | null | undefined): LadderHeatQuote | undefined {
+  if (!src) return undefined;
+  return { bid: src.bid ?? null, ask: src.ask ?? null, last: src.last ?? null };
+}
+
 function legContractKey(
   leg: RestChainLeg,
   want: Set<string>,
@@ -201,13 +214,16 @@ export function applyRestQuotes(
       ts: receiptMs,
       volumeSample: null,
     });
+    const quote = heatQuote(leg);
     if (
       leg.volume != null &&
       Number.isFinite(leg.volume) &&
       leg.volumeSampledAt != null &&
       leg.volumeSampledAt > 0
     ) {
-      engine.ingestCumulative(key, leg.volume, leg.volumeSampledAt);
+      engine.ingestCumulative(key, leg.volume, leg.volumeSampledAt, quote);
+    } else {
+      engine.noteQuote(key, quote);
     }
   }
   // One store write for the whole poll body, not one per contract.
@@ -489,13 +505,17 @@ export function useAtLadderVolumeHeat(input: {
         const t = ticks[key];
         if (!t) continue;
         const sample = t.volumeSample;
+        const quote = heatQuote(t);
         if (sample) {
           const rx = resolveHeatSampleMs(sample.tradeTimeMs, nowMs);
           if (rx == null) continue;
           const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
-          if (volumeSigRef.current.get(key) === sig) continue;
+          if (volumeSigRef.current.get(key) === sig) {
+            engine.noteQuote(key, quote);
+            continue;
+          }
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, sample.cumulativeVol, rx);
+          engine.ingestCumulative(key, sample.cumulativeVol, rx, quote);
           streamVolRxRef.current = rx;
           ingested = true;
           continue;
@@ -504,12 +524,17 @@ export function useAtLadderVolumeHeat(input: {
           const rx = resolveHeatSampleMs(t.tradeTime ?? t.ts, nowMs);
           if (rx == null) continue;
           const sig = `vol|${t.volume}`;
-          if (volumeSigRef.current.get(key) === sig) continue;
+          if (volumeSigRef.current.get(key) === sig) {
+            engine.noteQuote(key, quote);
+            continue;
+          }
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, t.volume, rx);
+          engine.ingestCumulative(key, t.volume, rx, quote);
           streamVolRxRef.current = rx;
           ingested = true;
+          continue;
         }
+        engine.noteQuote(key, quote);
       }
       return ingested;
     };
@@ -543,6 +568,7 @@ export function useAtLadderVolumeHeat(input: {
         if (!curr) continue;
         const sample = curr.volumeSample;
         const prevSample = prevTick?.volumeSample;
+        const quote = heatQuote(curr);
         if (
           sample &&
           (prevSample?.cumulativeVol !== sample.cumulativeVol ||
@@ -552,7 +578,7 @@ export function useAtLadderVolumeHeat(input: {
           if (rx == null) continue;
           const sig = `${sample.cumulativeVol}|${sample.tradeTimeMs}`;
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, sample.cumulativeVol, rx);
+          engine.ingestCumulative(key, sample.cumulativeVol, rx, quote);
           streamVolRxRef.current = rx;
           ingested = true;
           continue;
@@ -567,9 +593,13 @@ export function useAtLadderVolumeHeat(input: {
           if (rx == null) continue;
           const sig = `vol|${curr.volume}`;
           volumeSigRef.current.set(key, sig);
-          engine.ingestCumulative(key, curr.volume, rx);
+          engine.ingestCumulative(key, curr.volume, rx, quote);
           streamVolRxRef.current = rx;
           ingested = true;
+          continue;
+        }
+        if (curr.bid !== prevTick?.bid || curr.ask !== prevTick?.ask || curr.last !== prevTick?.last) {
+          engine.noteQuote(key, quote);
         }
       }
       if (ingested) schedulePaintRef.current?.();

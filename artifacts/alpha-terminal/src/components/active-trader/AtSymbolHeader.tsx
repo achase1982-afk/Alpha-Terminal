@@ -5,8 +5,9 @@ import { useQuote } from "@/hooks/useQuote";
 import { AtExpirySelect } from "@/components/active-trader/AtExpirySelect";
 import { GOLD, MONO, DIM, WHITE } from "@/components/options/optionsTheme";
 import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
+import { APP_SURFACE } from "@/lib/theme/appSurface";
 
-const HEADER_BG = "#0a0a0a";
+const HEADER_BG = APP_SURFACE;
 
 function fmtSpot(n: number | null, digits = 2): string {
   if (n == null || Number.isNaN(n)) return "\u2014";

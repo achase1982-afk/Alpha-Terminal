@@ -6,6 +6,9 @@ const cell = (intensity: number, contracts30s = 10): LadderHeatCellView => ({
   availability: "live",
   contracts30s,
   intensity,
+  buyIntensity: 0,
+  sellIntensity: 0,
+  neutralIntensity: 0,
 });
 
 describe("ladder heat store", () => {

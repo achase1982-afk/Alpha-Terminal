@@ -1,4 +1,5 @@
 import { isFuturesDisplaySymbol } from "@/lib/futuresSchwabUi";
+import { isIndexSymbol } from "./atGlanceMode";
 
 /** Options and stock stay distinct. Futures is recognized so it is left alone. */
 export type AtInstrumentClass = "index" | "equity" | "etf" | "futures" | "unknown";
@@ -30,11 +31,14 @@ export function instrumentClassFromAssetType(
 /**
  * Schwab metadata can lag on first paint. Plain tickers that are not index,
  * futures, or option roots still get the penny share ladder until verified.
+ * SPX is an index as soon as the ticker changes. A missing asset type, or the
+ * previous symbol's EQUITY type, must not keep the stock ladder.
  */
 export function resolveInstrumentClass(
   assetType: string | null | undefined,
   symbol: string,
 ): AtInstrumentClass {
+  if (isIndexSymbol(symbol)) return "index";
   const direct = instrumentClassFromAssetType(assetType, symbol);
   if (direct !== "unknown") return direct;
   const u = normSymbol(symbol);

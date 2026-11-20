@@ -11,6 +11,7 @@ import {
 } from "@/lib/active-trader/atLadderSelection";
 import {
   LadderBody,
+  saleHeatColor,
   type AtLadderRenderProbe,
   type LadderRowModel,
 } from "./LadderBody";
@@ -225,7 +226,16 @@ describe("LadderBody", () => {
     const { rows, heat, view } = setup();
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     act(() => {
-      publishAtLadderHeat(heat, { [hot.streamKey!]: { availability: "live", contracts30s: 900, intensity: 0.8 } });
+      publishAtLadderHeat(heat, {
+        [hot.streamKey!]: {
+          availability: "live",
+          contracts30s: 900,
+          intensity: 0.8,
+          buyIntensity: 0.8,
+          sellIntensity: 0,
+          neutralIntensity: 0,
+        },
+      });
     });
     expect(counts).toEqual({ body: 0, row: 0, pair: 1, cell: 0 });
     const pair = view.container.querySelector('[data-at-ladder-row="7325"] [data-at-quote-heat="call"]')!;
@@ -449,19 +459,42 @@ describe("LadderBody", () => {
     expect(pair(7400, "call").style.backgroundImage).toBe("none");
     expect(pair(7400, "put").style.backgroundImage).toBe("none");
     expect(pair(7400, "call").getAttribute("data-at-quote-volume")).toBe("—");
+    expect(pair(7400, "call").textContent).not.toMatch(/contracts/);
 
     const hot = rows.find((r) => r.strike === 7325)!.call!;
     const warm = rows.find((r) => r.strike === 7335)!.put!;
     act(() => {
       publishAtLadderHeat(heat, {
-        [hot.streamKey!]: { availability: "live", contracts30s: 1138, intensity: 1 },
-        [warm.streamKey!]: { availability: "live", contracts30s: 115, intensity: 0.5 },
+        [hot.streamKey!]: {
+          availability: "live",
+          contracts30s: 1138,
+          intensity: 1,
+          buyIntensity: 1,
+          sellIntensity: 0,
+          neutralIntensity: 0,
+        },
+        [warm.streamKey!]: {
+          availability: "live",
+          contracts30s: 115,
+          intensity: 0.5,
+          buyIntensity: 0,
+          sellIntensity: 0.5,
+          neutralIntensity: 0,
+        },
       });
     });
-    expect(pair(7325, "call").style.backgroundColor).toBe("rgb(36, 88, 117)");
+    const pane = (strike: number, side: "call" | "put", book: "bid" | "ask") =>
+      pair(strike, side).querySelector<HTMLElement>(`[data-at-sale-heat-pane="${book}"]`)!;
+    expect(pair(7325, "call").style.backgroundColor).toBe("transparent");
     expect(pair(7325, "call").style.animation).toBe("none");
+    expect(pair(7325, "call").textContent).not.toMatch(/contracts/);
+    expect(pane(7325, "call", "ask").getAttribute("data-at-sale-heat")).toBe("buy");
+    expect(pane(7325, "call", "ask").style.backgroundColor).toBe(saleHeatColor("buy", 1));
+    expect(pane(7325, "call", "bid").getAttribute("data-at-sale-heat")).toBe("off");
     expect(pair(7325, "call").getAttribute("data-at-quote-volume")).toBe("1138 contracts / 30s");
-    expect(pair(7335, "put").style.backgroundColor).toBe("rgb(23, 57, 79)");
+    expect(pane(7335, "put", "bid").getAttribute("data-at-sale-heat")).toBe("sell");
+    expect(pane(7335, "put", "bid").style.backgroundColor).toBe(saleHeatColor("sell", 0.5));
+    expect(pane(7335, "put", "ask").getAttribute("data-at-sale-heat")).toBe("off");
     expect(pair(7335, "put").style.animation).toBe("none");
     expect(pair(7335, "put").getAttribute("data-at-quote-volume")).toBe("115 contracts / 30s");
     expect(pair(7400, "call").style.animation).toBe("none");
