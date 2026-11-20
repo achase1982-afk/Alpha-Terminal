@@ -1,4 +1,6 @@
-type BucketKey = "accounts" | "default";
+export type WebullRateBucket = "accounts" | "default" | "market";
+
+type BucketKey = WebullRateBucket;
 
 interface BucketState {
   timestamps: number[];
@@ -9,6 +11,9 @@ interface BucketState {
 const buckets: Record<BucketKey, BucketState> = {
   accounts: { timestamps: [], windowMs: 30_000, max: 10 },
   default: { timestamps: [], windowMs: 2_000, max: 2 },
+  // Non-display stock snapshots allow 300/60s. Stay under the tighter
+  // display-solution budget so either entitlement can keep up.
+  market: { timestamps: [], windowMs: 60_000, max: 50 },
 };
 
 function prune(state: BucketState, now: number) {

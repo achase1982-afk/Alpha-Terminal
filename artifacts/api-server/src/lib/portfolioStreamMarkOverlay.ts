@@ -122,7 +122,11 @@ export function overlayPortfolioMarksFromStream(mapped: PortfolioMappedAccount[]
       } else {
         const sym = normalizeEquityKey(p.symbol);
         const snap = getQuoteBySymbol(sym);
-        if (snap?.quoteSource === "SCHWAB" || snap?.quoteSource === undefined) {
+        if (
+          snap?.quoteSource === "SCHWAB" ||
+          snap?.quoteSource === "WEBULL" ||
+          snap?.quoteSource === undefined
+        ) {
           mark = snap?.last ?? null;
         }
       }
