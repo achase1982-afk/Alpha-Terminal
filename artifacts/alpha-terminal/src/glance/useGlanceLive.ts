@@ -176,7 +176,7 @@ export function useGlanceLive() {
     void fetchWithAuth("/api/stream/symbols", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbols: ["$SPX", "$VIX", "SPY", "QQQ", "IWM"] }),
+      body: JSON.stringify({ symbols: ["$SPX", "$VIX", "/ES", "/NQ", "/YM"] }),
       clerkTokenTimeoutMs: 1500,
     }).catch(() => undefined);
   }, []);
