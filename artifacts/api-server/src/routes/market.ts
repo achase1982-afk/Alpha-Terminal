@@ -47,6 +47,24 @@ const SCHWAB_API_BASE = "https://api.schwabapi.com/marketdata/v1";
 const companyNameCache = new Map<string, string>();
 const assetTypeCache = new Map<string, string>();
 
+type OptionExpiration = {
+  expirationDate: string;
+  daysToExpiration: number;
+  expirationType?: string;
+  standard?: boolean;
+  settlementType?: string;
+  optionRoots?: string;
+};
+
+type OptionExpirationCacheEntry = {
+  expirations: OptionExpiration[];
+  fetchedAt: number;
+};
+
+const optionExpirationCache = new Map<string, OptionExpirationCacheEntry>();
+const OPTION_EXPIRATION_TTL_MS = 15 * 60_000;
+const OPTION_EXPIRATION_CACHE_MAX = 250;
+
 function pickReferenceAssetType(
   reference: { assetType?: unknown; assetMainType?: unknown } | null | undefined,
 ): string | null {
@@ -148,6 +166,48 @@ function isIndex(symbol: string): boolean {
 
 function isFutures(symbol: string): boolean {
   return symbol.trim().startsWith("/");
+}
+
+function parseOptionExpirations(value: unknown): OptionExpiration[] {
+  if (!Array.isArray(value)) return [];
+  const expirations: OptionExpiration[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object") continue;
+    const row = raw as Record<string, unknown>;
+    const expirationDate =
+      typeof row["expirationDate"] === "string"
+        ? row["expirationDate"].slice(0, 10)
+        : typeof row["expiration"] === "string"
+          ? row["expiration"].slice(0, 10)
+          : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(expirationDate)) continue;
+    const parsedDte =
+      typeof row["daysToExpiration"] === "number"
+        ? row["daysToExpiration"]
+        : Number(row["daysToExpiration"]);
+    if (!Number.isFinite(parsedDte) || parsedDte < 0) continue;
+    const expirationType =
+      typeof row["expirationType"] === "string" ? row["expirationType"] : undefined;
+    const settlementType =
+      typeof row["settlementType"] === "string" ? row["settlementType"] : undefined;
+    const optionRoots =
+      typeof row["optionRoots"] === "string" ? row["optionRoots"] : undefined;
+    const standard = typeof row["standard"] === "boolean" ? row["standard"] : undefined;
+    expirations.push({
+      expirationDate,
+      daysToExpiration: Math.max(0, Math.round(parsedDte)),
+      ...(expirationType ? { expirationType } : {}),
+      ...(standard != null ? { standard } : {}),
+      ...(settlementType ? { settlementType } : {}),
+      ...(optionRoots ? { optionRoots } : {}),
+    });
+  }
+  return expirations.sort(
+    (a, b) =>
+      a.daysToExpiration - b.daysToExpiration ||
+      a.expirationDate.localeCompare(b.expirationDate) ||
+      (a.optionRoots ?? "").localeCompare(b.optionRoots ?? ""),
+  );
 }
 
 const fiftyTwoWeekCache = new Map<string, { high: number; low: number; ts: number }>();
@@ -1243,6 +1303,84 @@ function buildIndexChainFromStreaming(
   return { calls, puts, underlyingPrice };
 }
 
+router.get("/options/expirations", async (req, res) => {
+  const symbol = typeof req.query["symbol"] === "string" ? req.query["symbol"].trim() : "";
+  const accessToken = schwabAccessTokenFromRequest(req, true);
+  if (!symbol || !accessToken) {
+    return res.json({
+      symbol: "",
+      expirations: [],
+      error: "symbol and accessToken are required",
+    });
+  }
+
+  const displaySymbol = symbol.toUpperCase();
+  if (isFutures(displaySymbol)) {
+    return res.json({
+      symbol: displaySymbol,
+      expirations: [],
+      error: "futures_chain_unsupported",
+    });
+  }
+
+  const cached = optionExpirationCache.get(displaySymbol);
+  if (cached && Date.now() - cached.fetchedAt < OPTION_EXPIRATION_TTL_MS) {
+    return res.json({ symbol: displaySymbol, ...cached });
+  }
+
+  try {
+    const chainSymbol = formatSchwabSymbol(displaySymbol);
+    const url = `${SCHWAB_API_BASE}/expirationchain?${new URLSearchParams({ symbol: chainSymbol })}`;
+    const pull = () =>
+      fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: req.socket.destroyed ? AbortSignal.abort() : AbortSignal.timeout(15_000),
+      });
+    let response = await pull();
+    if (response.status === 502 || response.status === 503 || response.status === 429) {
+      req.log.warn(
+        { status: response.status, symbol: displaySymbol },
+        "Option expiration catalog transient error — retrying",
+      );
+      await response.text().catch(() => "");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      response = await pull();
+    }
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      req.log.error(
+        { status: response.status, symbol: displaySymbol, body: body.slice(0, 500) },
+        "Option expiration catalog fetch failed",
+      );
+      return res.json({
+        symbol: displaySymbol,
+        expirations: [],
+        error: "fetch_failed",
+      });
+    }
+
+    const json = (await response.json()) as Record<string, unknown>;
+    const entry: OptionExpirationCacheEntry = {
+      expirations: parseOptionExpirations(json["expirationList"]),
+      fetchedAt: Date.now(),
+    };
+    setBounded(
+      optionExpirationCache,
+      displaySymbol,
+      entry,
+      OPTION_EXPIRATION_CACHE_MAX,
+    );
+    return res.json({ symbol: displaySymbol, ...entry });
+  } catch (err) {
+    req.log.error({ err, symbol: displaySymbol }, "Option expiration catalog fetch error");
+    return res.json({
+      symbol: displaySymbol,
+      expirations: [],
+      error: "internal_error",
+    });
+  }
+});
+
 router.get("/options", async (req, res) => {
   const symbol = req.query["symbol"] as string;
   const accessToken = schwabAccessTokenFromRequest(req, true);
@@ -1370,11 +1508,8 @@ router.get("/options", async (req, res) => {
       if (!bounded) {
         return res.json({ symbol: displaySymbol, calls: [], puts: [], error: "fetch_failed" });
       }
-      const maxDte = EQUITY_CHAIN_MAX_DTE;
-      const filteredCalls = bounded.calls.filter((c) => (c.dte ?? Number.POSITIVE_INFINITY) <= maxDte);
-      const filteredPuts = bounded.puts.filter((c) => (c.dte ?? Number.POSITIVE_INFINITY) <= maxDte);
-      req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice: bounded.underlyingPrice }, "Options chain Schwab result");
-      const entry = { calls: filteredCalls, puts: filteredPuts, underlyingPrice: bounded.underlyingPrice, fetchedAt: Date.now() };
+      req.log.info({ symbol: displaySymbol, calls: bounded.calls.length, puts: bounded.puts.length, underlyingPrice: bounded.underlyingPrice }, "Options chain Schwab result");
+      const entry = { calls: bounded.calls, puts: bounded.puts, underlyingPrice: bounded.underlyingPrice, fetchedAt: Date.now() };
       optionsNtmCache.set(ntmKey, entry);
       if (optionsNtmCache.size > 100) {
         const oldest = [...optionsNtmCache.entries()].sort((a, b) => a[1].fetchedAt - b[1].fetchedAt)[0];
@@ -1452,14 +1587,11 @@ router.get("/options", async (req, res) => {
       allPuts = parseContracts(putMap);
     }
 
-    const MAX_DTE = 400;
     const filteredCalls = allCalls.filter(c =>
-      (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE &&
-      (!indexWindow || expirationInWindow(c.expiration, indexWindow)),
+      !indexWindow || expirationInWindow(c.expiration, indexWindow),
     );
     const filteredPuts = allPuts.filter(c =>
-      (c.dte ?? Number.POSITIVE_INFINITY) <= MAX_DTE &&
-      (!indexWindow || expirationInWindow(c.expiration, indexWindow)),
+      !indexWindow || expirationInWindow(c.expiration, indexWindow),
     );
     req.log.info({ symbol: displaySymbol, calls: filteredCalls.length, puts: filteredPuts.length, underlyingPrice, useSplit }, "Options chain Schwab result");
 
