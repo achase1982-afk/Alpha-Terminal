@@ -443,11 +443,11 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <div className="windows num">
               {(
                 [
-                  ["1 minute", windows.m1],
-                  ["5 minutes", windows.m5],
-                  ["10 minutes", windows.m10],
-                  ["15 minutes", windows.m15],
-                  ["20 minutes", windows.m20],
+                  ["1m", windows.m1],
+                  ["5m", windows.m5],
+                  ["10m", windows.m10],
+                  ["15m", windows.m15],
+                  ["20m", windows.m20],
                 ] as const
               ).map(([label, pts]) => (
                 <div key={label}>
