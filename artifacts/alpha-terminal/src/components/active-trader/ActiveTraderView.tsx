@@ -95,7 +95,6 @@ import {
   atLadderNudgeToClearSheet,
   atLadderRowFullyVisible,
   atLadderScrollShiftForRows,
-  atLadderScrollTopForRow,
   scrollRowToViewportCenter,
   rowOffViewportCenter,
   atLadderVisibleRowRange,
@@ -1368,24 +1367,28 @@ export const ActiveTraderView = memo(function ActiveTraderView({
    * scrolls it, taps Recenter, or a tapped strike would sit under the sheet.
    */
   const centeredKeyRef = useRef<string | null>(null);
-  useLayoutEffect(() => {
+  const centerLadderOnOpenRef = useRef<() => void>(() => {});
+  centerLadderOnOpenRef.current = () => {
     const el = ladderScrollRef.current;
     if (!ladderDataReady) {
       // Back to the loading state: the next strikes to arrive open centered again.
       centeredKeyRef.current = null;
       return;
     }
-    if (!el || spotStrike == null) return;
+    if (!el || spotStrike == null || el.clientHeight <= 0) return;
     const key = `${symbol}|${activeExpiration ?? ""}`;
     if (centeredKeyRef.current === key) return;
-    const idx = ladderStrikes.indexOf(spotStrike);
-    if (idx < 0) return;
+    const row = el.querySelector<HTMLElement>(`[data-at-strike="${spotStrike}"]`);
+    if (!row || row.getBoundingClientRect().height <= 0) return;
     centeredKeyRef.current = key;
     armProgrammaticScroll();
-    el.scrollTop = atLadderScrollTopForRow(idx, readViewport(el));
+    scrollRowToViewportCenter(el, row, { bottomInsetPx: scrollInputRef.current.sheetPad });
     const nextAnchor = ladderScrollAnchor(ladderStrikes, el.scrollTop, ladderRowH, key);
     if (nextAnchor) scrollAnchorRef.current = nextAnchor;
-  }, [symbol, activeExpiration, ladderDataReady, spotStrike, ladderStrikes, ladderRowH, readViewport, armProgrammaticScroll]);
+  };
+  useLayoutEffect(() => {
+    centerLadderOnOpenRef.current();
+  }, [symbol, activeExpiration, ladderDataReady, spotStrike, ladderStrikes, ladderRowH, armProgrammaticScroll]);
 
   const scrollLadderToSpot = useCallback(() => {
     const el = ladderScrollRef.current;
@@ -1531,7 +1534,10 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     el.addEventListener("pointermove", onPointerMove);
     el.addEventListener("pointerup", onPointerUp);
     el.addEventListener("pointercancel", onPointerUp);
-    const ro = new ResizeObserver(() => measure(false));
+    const ro = new ResizeObserver(() => {
+      centerLadderOnOpenRef.current();
+      measure(false);
+    });
     ro.observe(el);
     return () => {
       measureLadderRef.current = null;
