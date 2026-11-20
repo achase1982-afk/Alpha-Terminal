@@ -25,6 +25,7 @@ import { getSchwabBrokerageRedirectUri } from "../lib/desk/schwabOAuthRedirect.j
 import { errorPage, traderSuccessPage } from "../lib/desk/schwabOAuthPages.js";
 import { isAuthDisabled } from "../lib/authMode.js";
 import { refuseAuthDisabledClientOp } from "../lib/authDisabledClientGuard.js";
+import { invalidatePortfolioAccountsCache } from "./portfolio.js";
 
 export { errorPage, traderSuccessPage };
 
@@ -650,6 +651,7 @@ router.post("/disconnect", async (_req, res) => {
     clearTokensAndWait("market"),
     clearTokensAndWait("trader"),
   ]);
+  invalidatePortfolioAccountsCache();
   stopStreamer();
   res.json({ ok: true });
 });

@@ -83,6 +83,10 @@ const SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1";
 let accountsCache: { data: any; fetchedAt: number } | null = null;
 const ACCOUNTS_CACHE_TTL = 20_000;
 
+export function invalidatePortfolioAccountsCache(): void {
+  accountsCache = null;
+}
+
 function getTraderToken(): string | null {
   const trader = getTokens("trader");
   return trader?.accessToken ?? null;

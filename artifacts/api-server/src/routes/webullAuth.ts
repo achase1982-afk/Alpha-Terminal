@@ -8,6 +8,7 @@ import {
   webullCredentialsConfigured,
   type WebullTokenStatus,
 } from "../lib/webull/webullTokenStore.js";
+import { invalidatePortfolioAccountsCache } from "./portfolio.js";
 
 const router: IRouter = Router();
 
@@ -92,6 +93,7 @@ router.post("/connect", async (_req, res) => {
 
 router.post("/disconnect", async (_req, res) => {
   await clearWebullToken();
+  invalidatePortfolioAccountsCache();
   return res.json({ success: true });
 });
 
