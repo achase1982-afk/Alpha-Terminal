@@ -11,13 +11,13 @@ import {
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
-  scanner:      { label: "Scanner",   icon: (c) => <BrainCircuit className={c} strokeWidth={2.25} /> },
-  markets:      { label: "Markets",   icon: (c) => <Activity className={c} strokeWidth={2.25} /> },
-  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} strokeWidth={2.25} /> },
-  portfolio:    { label: "Portfolio", icon: (c) => <Briefcase className={c} strokeWidth={2.25} /> },
-  watchlist:    { label: "Watchlist", icon: (c) => <ListOrdered className={c} strokeWidth={2.25} /> },
-  activeTrader: { label: "Trader",    icon: (c) => <ChartCandlestick className={c} strokeWidth={2.25} /> },
-  insights:     { label: "Insights",  icon: (c) => <LineChart className={c} strokeWidth={2.25} /> },
+  scanner:      { label: "Scanner",   icon: (c) => <BrainCircuit className={c} /> },
+  markets:      { label: "Markets",   icon: (c) => <Activity className={c} /> },
+  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} /> },
+  portfolio:    { label: "Portfolio", icon: (c) => <Briefcase className={c} /> },
+  watchlist:    { label: "Watchlist", icon: (c) => <ListOrdered className={c} /> },
+  activeTrader: { label: "Trader",    icon: (c) => <ChartCandlestick className={c} /> },
+  insights:     { label: "Insights",  icon: (c) => <LineChart className={c} /> },
 };
 
 const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "insights"];
@@ -273,7 +273,7 @@ export function BottomNav({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      <div className="flex w-full items-stretch gap-0.5 rounded-xl bg-card px-0.5 py-1.5 ring-1 ring-inset ring-zinc-800/60">
+      <div className="flex w-full items-stretch gap-0.5 rounded-xl bg-card px-0.5 py-1 ring-1 ring-inset ring-zinc-800/60">
       <style>{`
         @keyframes bnav-jiggle {
           0%   { transform: rotate(0deg) translate(0, 0); }
@@ -300,27 +300,44 @@ export function BottomNav({
           animation: none !important;
         }
         .bnav-tab {
-          color: #ffffff;
+          color: #b5b5bb;
           -webkit-tap-highlight-color: transparent;
         }
-        .bnav-tab-active {
-          color: #ffffff;
-          background: linear-gradient(180deg, #5a5a61 0%, #3c3c42 46%, #2a2a2e 100%);
+        .bnav-face {
+          position: relative;
+          display: flex;
+          width: fit-content;
+          max-width: 100%;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+          border-radius: 8px;
+          padding: 4px 4px 3px;
+        }
+        .bnav-face-active {
+          background: linear-gradient(180deg, #2a2a2e 0%, #222226 100%);
           box-shadow:
-            inset 0 1px 0 rgba(255, 255, 255, 0.42),
-            inset 0 -2px 0 rgba(0, 0, 0, 0.45),
-            0 2px 0 #101012,
-            0 4px 8px rgba(0, 0, 0, 0.5);
+            inset 0 1px 0 rgba(255, 255, 255, 0.1),
+            0 1px 0 rgba(0, 0, 0, 0.45);
+        }
+        .bnav-icon {
+          width: 22px;
+          height: 22px;
+          flex-shrink: 0;
+          filter:
+            drop-shadow(0 -1px 0 rgba(255, 255, 255, 0.18))
+            drop-shadow(0 1px 0 rgba(0, 0, 0, 0.65));
         }
         .bnav-label {
           display: block;
           max-width: 100%;
           overflow: hidden;
-          font-size: 16px;
-          font-weight: 600;
+          font-size: 14px;
+          font-weight: 400;
           line-height: 1;
-          letter-spacing: -0.03em;
-          color: #ffffff;
+          letter-spacing: 0;
+          color: #b5b5bb;
           text-align: center;
           white-space: nowrap;
         }
@@ -358,8 +375,7 @@ export function BottomNav({
             onClick={() => { if (jiggling) { if (Date.now() - jiggleStartedAt.current > 500) stopJiggle(); return; } if (!touchMoved.current) onTabChange(tabId); }}
             onTouchStart={(e) => handleTouchStart(i, e)}
             className={[
-              "bnav-tab relative flex min-h-[60px] w-full flex-col items-center justify-center gap-1 rounded-[10px] px-0 py-1.5 min-w-0 select-none",
-              isActive ? "bnav-tab-active" : "",
+              "bnav-tab relative flex w-full min-w-0 items-center justify-center px-0 py-0.5 select-none",
               jiggling && !isBeingDragged ? "bnav-jiggle bnav-slot-shift" : "",
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
@@ -373,7 +389,8 @@ export function BottomNav({
             }
             aria-current={isActive ? "page" : undefined}
           >
-            {def.icon("h-7 w-7 shrink-0 text-white")}
+            <span className={isActive ? "bnav-face bnav-face-active" : "bnav-face"}>
+            {def.icon("bnav-icon")}
             {showStrategistBadge && (
               <span
                 className={badgeIsRunning ? "animate-pulse" : ""}
@@ -401,6 +418,7 @@ export function BottomNav({
               </span>
             )}
             <span className="bnav-label">{def.label}</span>
+            </span>
           </button>
           </div>
         );

@@ -93,8 +93,8 @@ const DIM = "#52525b";
 const DIVIDER = "#1a1a1a";
 const LABEL_STYLE: CSSProperties = { fontSize: 12, color: GRAY, letterSpacing: "-0.02em" };
 const VALUE_STYLE: CSSProperties = { fontSize: 14, color: WHITE, fontVariantNumeric: "tabular-nums" };
-/** Clear bottom nav (~94px) + home indicator. */
-const SHEET_BOTTOM_OFFSET = "calc(94px + max(env(safe-area-inset-bottom, 0px), 12px))";
+/** Clear bottom nav (~86px) + home indicator. */
+const SHEET_BOTTOM_OFFSET = "calc(86px + max(env(safe-area-inset-bottom, 0px), 12px))";
 
 type Stage = "form" | "review" | "submitting" | "success" | "error";
 
