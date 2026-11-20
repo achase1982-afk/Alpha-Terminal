@@ -183,7 +183,7 @@ export function GlanceLadder({
     centered.current = true;
   }, [rows, spotStrike]);
 
-  const status = chain.isError ? "Chain unavailable" : rows.length === 0 ? "Waiting for 0DTE" : "SPXW · live";
+  const status = chain.isError ? "Chain unavailable" : rows.length === 0 ? "Waiting for today's options" : "Live";
 
   return (
     <section className="block glance-ladder" aria-label="Active trader">

@@ -27,7 +27,6 @@ import {
   type PnfResult,
   type TrendReading,
 } from "./math";
-import { dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { useGlanceLive } from "./useGlanceLive";
 import "./glance.css";
 
@@ -105,11 +104,11 @@ function FlowSide({
 
 const RAIL_LABEL: Record<string, string> = {
   spot: "SPX",
-  callOi: "Call OI",
-  putOi: "Put OI",
-  callVol: "Call vol",
-  putVol: "Put vol",
-  flip: "Flip",
+  callOi: "Call open interest",
+  putOi: "Put open interest",
+  callVol: "Call volume",
+  putVol: "Put volume",
+  flip: "Gamma flip",
   high: "High",
   low: "Low",
 };
@@ -170,7 +169,7 @@ function PulseQuote({ symbol, quote }: { symbol: string; quote: ReturnType<typeo
     <div className="pulse-cell">
       <span className="k">{symbol}</span>
       <b className="num">{last == null ? "—" : last.toFixed(2)}</b>
-      <span className={`num ${signedClass(pct ?? null)}`}>{pct == null ? "day —" : `${formatPct(pct)} day`}</span>
+      <span className={`num ${signedClass(pct ?? null)}`}>{pct == null ? "day unavailable" : `${formatPct(pct)} day`}</span>
       <span className="sub">{age}</span>
     </div>
   );
@@ -222,7 +221,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const day = dayMove(spot, prev);
   const dayPoints = fixture ? (day?.points ?? null) : live.dayPoints;
   const dayPct = fixture ? (day?.percent ?? null) : live.dayPct;
-  const dayStatus = resolveDayStatus({ change: dayPoints, changePct: dayPct });
   const open = fixture ? FIXTURE.rthOpen : live.open;
   const fromOpen = fromOpenPoints(spot, open);
   const high = fixture ? FIXTURE.high : live.high;
@@ -332,7 +330,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
     ].filter((p): p is { id: string; price: number } => p != null);
     return railPositions(spot, points);
   }, [callOi, callVol, flip, high, low, putOi, putVol, spot]);
-  const railLanes = assignRailLanes(rail);
+  const railLanes = assignRailLanes(rail, 0.32);
   const tracePoints = fixture
     ? FIXTURE.closes.map((c, i) => ({ t: i * 60_000, c }))
     : live.traceBars.map((bar) => ({ t: bar.t, c: bar.c }));
@@ -380,25 +378,8 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <em>TERMINAL</em>
           </div>
         )}
-        <h1>SPX 0DTE Glance</h1>
-        <span className="sub">ET</span>
         <span className="spacer" />
         {embedded ? null : <Link href="/">Mobile</Link>}
-        <button
-          type="button"
-          data-on={fixture ? "true" : "false"}
-          onClick={() => {
-            const next = fixture ? "live" : "fixture";
-            setMode(next);
-            try {
-              window.localStorage.setItem("glance-mode", next);
-            } catch {
-              /* ignore */
-            }
-          }}
-        >
-          {fixture ? "Fixture" : "Live"}
-        </button>
         <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
           Settings
         </button>
@@ -416,9 +397,9 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           <div className="spot num">{formatSpot(spot)}</div>
         </div>
         <div className="day-read">
-          <span className="k">{dayStatusLabel(dayStatus)}</span>
+          <span className="k">Day</span>
           <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>
-          <div className={`support num ${signedClass(dayPoints)}`}>{dayPoints == null ? "—" : `${formatSignedPts(dayPoints)} vs close`}</div>
+          <div className={`support num ${signedClass(dayPoints)}`}>{dayPoints == null ? "—" : `${formatSignedPts(dayPoints)} from the close`}</div>
         </div>
         <div>
           <span className="k">From open</span>
@@ -428,12 +409,12 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <div>
           <span className="k">Session range</span>
           <div className="hl num">
-            <span className="hl-px">H {formatSpot(high)}</span>{" "}
-            {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute} ET</span> : null}
+            <span className="hl-px">High {formatSpot(high)}</span>{" "}
+            {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute}</span> : null}
           </div>
           <div className="hl num">
-            <span className="hl-px">L {formatSpot(low)}</span>{" "}
-            {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute} ET</span> : null}
+            <span className="hl-px">Low {formatSpot(low)}</span>{" "}
+            {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute}</span> : null}
           </div>
           {spot != null && high != null && low != null ? (
             <div className="support num">
@@ -446,7 +427,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
           <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open</div>
           <div className="support num">
-            L {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · H{" "}
+            Low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · High{" "}
             {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
           </div>
         </div>
@@ -456,8 +437,8 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
         <section className="block" aria-label="Flow">
             <h2>
-              <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : ""}</span>
-              <span>{fixture ? "Age 30s · fixture" : formatAge(live.flowAgeSec)}</span>
+              <span>Flow now</span>
+              <span>{fixture ? "Age 30 seconds · sample" : formatAge(live.flowAgeSec)}</span>
             </h2>
             <div className="windows num">
               {(
@@ -481,7 +462,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <div className="chips">
               {trendOn && trend ? (
                 <div className={`trend num ${trend.direction < 0 ? "down" : "up"}`}>
-                  {trend.horizon}m {trend.direction < 0 ? "▼" : "▲"} {formatSignedPts(trend.move, 1)} pts · E {trend.efficiency.toFixed(2)}
+                  {trend.horizon} minutes {trend.direction < 0 ? "▼" : "▲"} {formatSignedPts(trend.move, 1)} points · efficiency {trend.efficiency.toFixed(2)}
                 </div>
               ) : (
                 <div className="trend" style={{ color: "#9aa6b8" }}>
@@ -491,7 +472,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <div className="pnf" style={{ visibility: pnf?.status === "tag" ? "visible" : "hidden" }}>
                 PRICE NOT FOLLOWING
                 <small className="num">
-                  {pnf?.side ? `5m · ${SIDE_LABEL[pnf.side]} ${formatGross(pnf.sideUsd)} · SPX ${formatSignedPts(pnf.delta5, 1)} pts` : "5m"}
+                  {pnf?.side ? `5 minutes · ${SIDE_LABEL[pnf.side]} ${formatGross(pnf.sideUsd)} · SPX ${formatSignedPts(pnf.delta5, 1)} points` : "5 minutes"}
                 </small>
               </div>
             </div>
@@ -508,16 +489,16 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 </tr>
               </thead>
               <tbody>
-                {row("5m", flow5)}
-                {row("15m", flow15)}
+                {row("5 minutes", flow5)}
+                {row("15 minutes", flow15)}
                 {row(fixture ? "Since 09:30" : "Day", flowSession)}
               </tbody>
             </table>
             <div className="nets num">
-              <span>5m net {formatNet(premiumNet(flow5))}</span>
-              <span>15m net {formatNet(premiumNet(flow15))}</span>
+              <span>5 minute net {formatNet(premiumNet(flow5))}</span>
+              <span>15 minute net {formatNet(premiumNet(flow15))}</span>
               <span>{fixture ? "Session" : "Day"} net {formatNet(premiumNet(flowSession))}</span>
-              {!fixture && live.flowUw ? <span>L1 est. {formatNet(premiumNet(live.flowL1Session))}</span> : null}
+              {!fixture && live.flowUw ? <span>Level 1 estimate {formatNet(premiumNet(live.flowL1Session))}</span> : null}
             </div>
           </section>
       </div>
@@ -538,9 +519,9 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               </tr>
             </thead>
             <tbody>
-              {wallRow("Call OI", "call", callOi, callOiOpen, fixture ? "open" : "")}
+              {wallRow("Call open interest", "call", callOi, callOiOpen, fixture ? "open" : "")}
               {wallRow("Call volume", "call", callVol, callVolOpen, fixture ? "open" : "")}
-              {wallRow("Put OI", "put", putOi, putOiOpen, fixture ? "open" : "")}
+              {wallRow("Put open interest", "put", putOi, putOiOpen, fixture ? "open" : "")}
               {wallRow("Put volume", "put", putVol, putVolOpen, fixture ? "open" : "")}
             </tbody>
           </table>
@@ -548,7 +529,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <section className="block levels" aria-label="Level map">
           <div className="meta-row">
             <span className="flip">Gamma flip {flip == null ? "none in range" : formatWall(flip)}</span>
-            <span className="num">{spot != null && flip != null ? `${formatSignedPts(spot - flip)} vs spot` : "—"}</span>
+            <span className="num">{spot != null && flip != null ? `${formatSignedPts(spot - flip)} from spot` : "—"}</span>
           </div>
           <div className="meta-row">
             <span>Low zone top {lowZone == null ? "—" : formatSpot(lowZone)}</span>
@@ -556,7 +537,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           </div>
           {zonesInverted ? <div className="support">Zone pair invalid</div> : null}
           <div className="gex-box num">
-            <span>GEX {gex == null ? "—" : `${formatNet(gex)} / 1%`}</span>
+            <span>Gamma exposure {gex == null ? "—" : `${formatNet(gex)} per 1%`}</span>
             <span>{env === "amplifying" ? "AMPLIFYING · model" : env === "damping" ? "STABILIZING · model" : "Model sign"}</span>
           </div>
           <div className="rail" aria-label="Price rail">
@@ -594,15 +575,49 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </section>
 
       <footer className="footer">
-        <span>{fixture ? "Synthetic fixture" : spotCaption === "Last completed minute" ? `Completed minute ${live.lastCloseMinute ?? ""}`.trim() : formatAge(live.spotAgeSec)}</span>
-        <span>0DTE</span>
+        <span>{fixture ? "Sample data is on" : spotCaption === "Last completed minute" ? `Completed minute ${live.lastCloseMinute ?? ""}`.trim() : formatAge(live.spotAgeSec)}</span>
+        <span>Expires today</span>
       </footer>
 
       {panel ? (
-        <aside className="sheet" role="dialog" aria-label={panel}>
-          <h3>{panel === "settings" ? "Settings" : "Details"}</h3>
+        <div
+          className="sheet-scrim"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setPanel(null);
+          }}
+        >
+        <aside
+          className="sheet"
+          role="dialog"
+          aria-label={panel}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="sheet-head">
+            <h3>{panel === "settings" ? "Settings" : "Details"}</h3>
+            <button type="button" onClick={() => setPanel(null)}>
+              Close
+            </button>
+          </div>
           {panel === "settings" ? (
             <>
+              <label>
+                Sample data
+                <button
+                  type="button"
+                  data-on={fixture ? "true" : "false"}
+                  onClick={() => {
+                    const next = fixture ? "live" : "fixture";
+                    setMode(next);
+                    try {
+                      window.localStorage.setItem("glance-mode", next);
+                    } catch {
+                      /* ignore */
+                    }
+                  }}
+                >
+                  {fixture ? "On" : "Off"}
+                </button>
+              </label>
               <label>
                 Trend detector
                 <button
@@ -618,11 +633,11 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                     }
                   }}
                 >
-                  {trendOn ? "ON" : "OFF"}
+                  {trendOn ? "On" : "Off"}
                 </button>
               </label>
               <label>
-                Gross side &gt; $M / 5m
+                Minimum millions in 5 minutes
                 <input
                   type="number"
                   min={0.1}
@@ -641,7 +656,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 />
               </label>
               <label>
-                Response &lt; SPX pts
+                SPX response under points
                 <input
                   type="number"
                   min={0.1}
@@ -659,25 +674,23 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                   }}
                 />
               </label>
-              <p>Five minutes is fixed. These thresholds describe the tag. They do not place or block an order.</p>
+              <p>Five minutes is fixed. These thresholds describe the tag. They do not place or block an order. Sample data replaces the live page until you turn it off.</p>
             </>
           ) : (
             <>
-              <p>Fixture numbers are the section 16.1 demonstration. Live mode never substitutes them.</p>
+              <p>Sample numbers are a demonstration. Live mode never substitutes them unless Sample data is on in Settings.</p>
               <ul>
                 <li>SPX and VIX come from the quote stream. Day change uses the quote close when that field is present.</li>
-                <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the RTH open.</li>
-                <li>Flow now and the day row are 1-minute premium bars since 09:30 ET. The age is now minus tape time. L1 est. is the separate streamer total.</li>
-                <li>Call OI and put OI are the strikes with the largest open-interest gamma. Call volume and put volume are the strikes with the largest volume gamma. One strike can sit on more than one row.</li>
-                <li>PRICE NOT FOLLOWING needs all four 5m gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
+                <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the regular-hours open.</li>
+                <li>Flow now and the day row are 1-minute premium bars since 09:30 Eastern. The age is now minus tape time. Level 1 estimate is the separate streamer total.</li>
+                <li>Call open interest and put open interest are the strikes with the largest open-interest gamma. Call volume and put volume are the strikes with the largest volume gamma. One strike can sit on more than one row.</li>
+                <li>PRICE NOT FOLLOWING needs all four 5-minute gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
                 <li>Flow connection: {fixture ? "fixture" : live.flowConnection}.</li>
               </ul>
             </>
           )}
-          <button type="button" onClick={() => setPanel(null)}>
-            Close
-          </button>
         </aside>
+        </div>
       ) : null}
     </div>
   );
