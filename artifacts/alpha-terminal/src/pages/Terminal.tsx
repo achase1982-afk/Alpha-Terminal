@@ -49,6 +49,7 @@ import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { AiBiasStrip } from "@/components/market-pulse/AiBiasStrip";
 import { BottomNav } from "@/components/BottomNav";
+import { MobileEdgeSearch } from "@/components/MobileEdgeSearch";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
 import StrategistStatusBar from "@/components/StrategistStatusBar";
 import { AiSubTabs, type AiSubTab } from "@/components/ai-tab/AiSubTabs";
@@ -204,7 +205,7 @@ function SearchOverlay(props: ComponentProps<typeof import("@/components/SearchO
 }
 
 
-type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "dashboard";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "dashboard";
 type ContextTab = MarketDataTab;
 
 function normalizeOptionDirection(
@@ -457,6 +458,7 @@ export default function TerminalPage() {
   const strategistUnviewedCount = Object.values(strategistJobsForBadge).filter(j => (j.status === 'done' || j.status === 'error') && !j.viewed).length;
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolledRaw, setIsScrolledRaw] = useState(false);
@@ -464,6 +466,7 @@ export default function TerminalPage() {
   const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
   const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
+  const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
@@ -476,7 +479,7 @@ export default function TerminalPage() {
         : "markets";
     try {
       const saved = sessionStorage.getItem("alpha_session_tab") as BottomTab | null;
-      const valid: BottomTab[] = ["portfolio", "markets", "ai", "search", "watchlist", "dashboard"];
+      const valid: BottomTab[] = ["portfolio", "markets", "ai", "watchlist", "dashboard"];
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
@@ -926,6 +929,12 @@ export default function TerminalPage() {
   useViewportShell();
   useUIThemeSync();
   const isWide = useIsTablet();
+  const symbolSearchOpen = isWide ? searchOpen : mobileSearchOpen;
+
+  useEffect(() => {
+    if (isWide || !showMobileEdgeSearch) setMobileSearchOpen(false);
+    if (!isWide) setSearchOpen(false);
+  }, [isWide, showMobileEdgeSearch]);
   const isThreePanel = useIsDesktop();
   const marketsMobileShellLock = activeBottom === "markets" && !isWide;
   const mobileTabUsesInnerScroll =
@@ -1381,7 +1390,7 @@ export default function TerminalPage() {
                     />
                   )}
                   {contextTab === "newsChat" && (
-                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                    <MarketNewsChatPanel hideMobileComposerDock={symbolSearchOpen} />
                   )}
                   {contextTab === "chart" && (
                     <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
@@ -1456,7 +1465,7 @@ export default function TerminalPage() {
                       />
                     )}
                     {contextTab === "newsChat" && (
-                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                    <MarketNewsChatPanel hideMobileComposerDock={symbolSearchOpen} />
                   )}
                   </div>
                 </div>
@@ -1529,7 +1538,7 @@ export default function TerminalPage() {
                     />
                   )}
                   {contextTab === "newsChat" && (
-                    <MarketNewsChatPanel hideMobileComposerDock={searchOpen} />
+                    <MarketNewsChatPanel hideMobileComposerDock={symbolSearchOpen} />
                   )}
                   {contextTab === "chart" && (
                     <>
@@ -1610,9 +1619,7 @@ export default function TerminalPage() {
           onTabChange={(tab) => {
           sidebarRef.current?.clearActivePage();
           setSidebarOpen(false);
-          if (tab === "search") {
-            setSearchOpen(true);
-          } else if (tab === "activeTrader") {
+          if (tab === "activeTrader") {
             const chrome = useAtChromeStore.getState();
             const wasOnOptionsChain =
               activeBottom === "markets" && contextTab === "options" && !chrome.subViewIsAt;
@@ -1631,16 +1638,20 @@ export default function TerminalPage() {
         }} />
       )}
 
-      <SearchOverlay
-        isOpen={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        onSelectSymbol={() => {
-          setSearchOpen(false);
-          // On the dashboard, unpinned widgets follow the new symbol in place —
-          // don't yank the user over to the Markets tab.
-          if (activeBottom !== "dashboard") setActiveBottom("markets");
-        }}
-      />
+      {isWide ? (
+        <SearchOverlay
+          isOpen={searchOpen}
+          onClose={() => setSearchOpen(false)}
+          onSelectSymbol={() => {
+            setSearchOpen(false);
+            // On the dashboard, unpinned widgets follow the new symbol in place —
+            // don't yank the user over to the Markets tab.
+            if (activeBottom !== "dashboard") setActiveBottom("markets");
+          }}
+        />
+      ) : showMobileEdgeSearch ? (
+        <MobileEdgeSearch onOpenChange={setMobileSearchOpen} />
+      ) : null}
       <InAppBrowser />
       <AtOrderDefaultsSheet
         open={unifiedDefaultsOpen}
