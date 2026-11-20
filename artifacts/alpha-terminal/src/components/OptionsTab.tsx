@@ -720,12 +720,25 @@ const DataCell = memo(function DataCell({
 
   const oiValue = isOI ? topVal : undefined;
 
+  const footnote =
+    asOfLabel
+      ? "stale"
+      : showPriceReason
+        ? showPriceReason
+        : showLockedFlag
+          ? "Locked"
+          : isVol && oiVal != null
+            ? `OI: ${fmtCompact(oiVal)}`
+            : isPrice && showInlineGreeks && deltaVal != null
+              ? `Δ${fmtNum(deltaVal, 2)}${thetaVal != null ? ` Θ${fmtNum(thetaVal, 2)}` : ""}`
+              : isPrice && !showInlineGreeks && bottomVal != null
+                ? `Size: ${fmtCompact(bottomVal)}`
+                : null;
+
   const inner = (
     <div
-      className="flex flex-col justify-center overflow-hidden"
+      className="relative flex h-full w-full items-center overflow-hidden"
       style={{
-        height: ROW_H,
-        minHeight: ROW_H,
         padding: isBid ? "0 2px 0 8px" : "0 2px",
         boxSizing: "border-box",
       }}
@@ -740,6 +753,7 @@ const DataCell = memo(function DataCell({
           color: textColor,
           opacity: isPrice && priceDimmed ? 0.72 : 1,
           fontVariantNumeric: "tabular-nums",
+          lineHeight: 1,
           ...(isPrice ? {} : { fontFamily: MONO }),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
@@ -748,53 +762,46 @@ const DataCell = memo(function DataCell({
         {isVol || isOI ? fmtCompact(topVal) : topStr}
         {isIV && topStr !== "\u2014" ? "%" : ""}
       </span>
-      {asOfLabel ? (
+      {footnote ? (
         <span
-          title={asOfLabel}
+          title={asOfLabel ?? undefined}
           style={{
+            position: "absolute",
+            left: isBid ? 8 : 2,
+            right: 2,
+            bottom: 1,
             fontSize: 8,
-            color: MUTED,
             lineHeight: 1,
+            color: isVol ? WHITE : isShaded ? "#a0a0a8" : MUTED,
+            fontVariantNumeric: "tabular-nums",
             whiteSpace: "nowrap",
             overflow: "hidden",
             textOverflow: "ellipsis",
+            pointerEvents: "none",
           }}
         >
-          stale
+          {footnote}
         </span>
       ) : null}
-      {showPriceReason ? (
-        <span style={{ fontSize: 8, color: MUTED, lineHeight: 1.1 }}>{showPriceReason}</span>
-      ) : null}
-      {showLockedFlag ? (
-        <span style={{ fontSize: 7, fontWeight: 600, color: MUTED, opacity: 0.85, letterSpacing: "0.04em" }}>Locked</span>
-      ) : null}
-
-      {isVol && oiVal != null && (
-        <span className="leading-none mt-0.5" style={{ fontSize: 10, color: WHITE, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
-          OI: {fmtCompact(oiVal)}
-        </span>
-      )}
-
-      {isPrice && showInlineGreeks && deltaVal != null ? (
-        <div className="flex gap-1 mt-0.5" style={{ fontSize: 10, color: isShaded ? "#a0a0a8" : GRAY, fontFamily: MONO, fontVariantNumeric: "tabular-nums", fontWeight: FW_LIGHT }}>
-          <span>{"Δ"}{fmtNum(deltaVal, 2)}</span>
-          {thetaVal != null && <span>{"Θ"}{fmtNum(thetaVal, 2)}</span>}
-        </div>
-      ) : isPrice && !showInlineGreeks ? (
-        <span
-          className="leading-none mt-0.5"
-          style={{ fontSize: 9, color: DIM, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}
-        >
-          {bottomVal != null ? <>Size: {fmtCompact(bottomVal)}</> : ""}
-        </span>
-      ) : null}
-
       {isOI && oiValue != null && maxOI != null && maxOI > 0 && (
-        <OIBar value={oiValue} max={maxOI} />
+        <span style={{ position: "absolute", left: 2, right: 2, bottom: 0 }}>
+          <OIBar value={oiValue} max={maxOI} />
+        </span>
       )}
     </div>
   );
+
+  const cellFrame: React.CSSProperties = {
+    display: "block",
+    width: "100%",
+    height: "100%",
+    margin: 0,
+    padding: 0,
+    border: "none",
+    background: "transparent",
+    fontVariantNumeric: "tabular-nums",
+    boxSizing: "border-box",
+  };
 
   if (col.isPrice && contract && (onSelect || onLongPress)) {
     return (
@@ -809,7 +816,7 @@ const DataCell = memo(function DataCell({
         aria-label={`${isBid ? "Bid" : "Ask"} ${topStr} strike ${contract.strike}${asOfLabel ? `, ${asOfLabel}` : ""}`}
         title={asOfLabel ?? undefined}
         className="at-ladder-num w-full text-left cursor-pointer select-none relative"
-        style={{ fontVariantNumeric: "tabular-nums", outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
+        style={{ ...cellFrame, outline: isSelected ? "2px solid #ffffff" : "none", outlineOffset: -1 }}
       >
         {inner}
       </button>
@@ -819,7 +826,7 @@ const DataCell = memo(function DataCell({
   return (
     <div
       className={isPrice ? "at-ladder-num relative" : "relative"}
-      style={{ fontVariantNumeric: "tabular-nums" }}
+      style={cellFrame}
     >
       {inner}
     </div>
@@ -1241,12 +1248,17 @@ function OptionsGrid({
                     className="flex"
                     style={{
                       height: ROW_H,
+                      minHeight: ROW_H,
+                      maxHeight: ROW_H,
+                      overflow: "hidden",
+                      boxSizing: "border-box",
+                      alignItems: "stretch",
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
                     }}
                   >
                     {columns.map(col => (
-                      <div key={col.id} style={{ width: colW }} className="shrink-0">
+                      <div key={col.id} style={{ width: colW, height: "100%", overflow: "hidden" }} className="shrink-0">
                         <DataCell
                           col={col}
                           contract={row.call}
@@ -1291,6 +1303,10 @@ function OptionsGrid({
                 data-chain-spot-row={spotRow ? "1" : undefined}
                 style={{
                   height: ROW_H,
+                  minHeight: ROW_H,
+                  maxHeight: ROW_H,
+                  overflow: "hidden",
+                  boxSizing: "border-box",
                   background: spotRow ? GOLD : AT_LADDER_STRIKE_BG,
                   borderBottom: `1px solid ${BORDER_ROW}`,
                 }}
@@ -1319,12 +1335,17 @@ function OptionsGrid({
                     className="flex"
                     style={{
                       height: ROW_H,
+                      minHeight: ROW_H,
+                      maxHeight: ROW_H,
+                      overflow: "hidden",
+                      boxSizing: "border-box",
+                      alignItems: "stretch",
                       borderBottom: `1px solid ${BORDER_ROW}`,
                       background: bg,
                     }}
                   >
                     {columns.map(col => (
-                      <div key={col.id} style={{ width: colW }} className="shrink-0">
+                      <div key={col.id} style={{ width: colW, height: "100%", overflow: "hidden" }} className="shrink-0">
                         <DataCell
                           col={col}
                           contract={row.put}
