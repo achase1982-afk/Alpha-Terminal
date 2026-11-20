@@ -29,7 +29,7 @@ interface SchwabAccountState {
   /** Apply accounts from the portfolio poll without redundant store updates. */
   syncAccountsFromStream: (accounts: SchwabAccountSummary[]) => void;
   /** One-shot REST load (picker fallback before first portfolio poll). */
-  refreshAccounts: () => Promise<void>;
+  refreshAccounts: (force?: boolean) => Promise<void>;
   loadPreferencesFromServer: () => Promise<void>;
   persistPreferences: () => Promise<void>;
   tradingAccountHash: () => string | null;
@@ -94,9 +94,11 @@ export const useSchwabAccountStore = create<SchwabAccountState>()(
         set((s) => applyAccountsList(accounts, s) ?? {});
       },
 
-      refreshAccounts: async () => {
+      refreshAccounts: async (force = false) => {
         try {
-          const res = await fetchWithAuth("/api/portfolio/accounts");
+          const res = await fetchWithAuth(
+            force ? "/api/portfolio/accounts?refresh=1" : "/api/portfolio/accounts",
+          );
           if (!res.ok) return;
           const data = (await res.json()) as SchwabAccountSummary[];
           if (!Array.isArray(data)) return;
