@@ -143,10 +143,10 @@ export function buildDeskNetPremiumGlance(
   const windowLabelStr = windowLabel(windowMs);
   const lastRx = agg.lastRxMs;
   const stale =
-    !opts?.sessionClosed &&
     agg.connection === "live" &&
     lastRx != null &&
     nowMs - lastRx > STALE_FLOW_RX_MS;
+  const closed = !!opts?.sessionClosed;
 
   if (agg.connection === "unsupported") {
     return {
@@ -159,33 +159,7 @@ export function buildDeskNetPremiumGlance(
         stale: false,
         noPrints: false,
         unsupported: true,
-        closed: !!opts?.sessionClosed,
-        windowMs,
-        windowLabel: windowLabelStr,
-        grossCallsBuy: 0,
-        grossCallsSell: 0,
-        grossPutsBuy: 0,
-        grossPutsSell: 0,
-        grossTapeBuy: 0,
-        grossTapeSell: 0,
-      },
-      scaleMax: scaleMaxIn,
-      hysteresis,
-    };
-  }
-
-  if (opts?.sessionClosed) {
-    return {
-      glance: {
-        streamKind: agg.mode === "index" ? "spx_options" : "underlying_tape",
-        streamNote: agg.mode === "index" ? null : "Underlying tape · not SPX option flow",
-        calls: null,
-        puts: null,
-        connection: "offline",
-        stale: false,
-        noPrints: false,
-        unsupported: false,
-        closed: true,
+        closed,
         windowMs,
         windowLabel: windowLabelStr,
         grossCallsBuy: 0,
@@ -211,7 +185,7 @@ export function buildDeskNetPremiumGlance(
         stale: false,
         noPrints: true,
         unsupported: false,
-        closed: false,
+        closed,
         windowMs,
         windowLabel: windowLabelStr,
         grossCallsBuy: 0,
@@ -303,7 +277,7 @@ export function buildDeskNetPremiumGlance(
       stale,
       noPrints: false,
       unsupported: false,
-      closed: false,
+      closed,
       windowMs,
       windowLabel: windowLabelStr,
       grossCallsBuy,
