@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 
@@ -11,7 +11,7 @@ export interface WebullStatus {
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const CLERK_TOKEN_TIMEOUT_MS = 3_000;
-const STATUS_POLL_MS = 2_500;
+const STATUS_POLL_MS = 10_000;
 const APPROVAL_WINDOW_MS = 5 * 60 * 1000;
 
 async function webullRequest(path: string, init?: RequestInit): Promise<Response> {
@@ -31,13 +31,24 @@ async function webullRequest(path: string, init?: RequestInit): Promise<Response
 export function useWebullConnect() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [status, setStatus] = useState<WebullStatus | null>(null);
+  const pollTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   const refreshAccounts = useSchwabAccountStore((s) => s.refreshAccounts);
+
+  const stopPolling = useCallback(() => {
+    if (pollTimerRef.current != null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+    if (mountedRef.current) setIsConnecting(false);
+  }, []);
 
   const fetchStatus = useCallback(async (): Promise<WebullStatus | null> => {
     try {
       const res = await webullRequest("/api/auth/webull/status");
       if (!res.ok) return null;
       const next = (await res.json()) as WebullStatus;
+      if (!mountedRef.current) return next;
       setStatus(next);
       if (next.connected) await refreshAccounts(true);
       return next;
@@ -51,52 +62,52 @@ export function useWebullConnect() {
   }, [fetchStatus]);
 
   useEffect(() => {
-    if (status && status.status !== "PENDING") {
-      setIsConnecting(false);
-    }
-  }, [status?.status]);
-
-  // A created token remains PENDING until the user approves Webull's 2FA
-  // prompt. Keep the button in its active state and poll through that window
-  // instead of snapping back to an apparently inert "Connect Webull" button.
-  useEffect(() => {
-    if (status?.status !== "PENDING") return;
-
-    setIsConnecting(true);
-    let cancelled = false;
-    let timer: number | null = null;
-    const deadline = Math.min(
-      status.expiresAt ?? Date.now() + APPROVAL_WINDOW_MS,
-      Date.now() + APPROVAL_WINDOW_MS,
-    );
-
-    const poll = async () => {
-      const next = await fetchStatus();
-      if (cancelled) return;
-      if (next?.connected) {
-        setIsConnecting(false);
-        return;
-      }
-      if (
-        next?.status === "EXPIRED" ||
-        next?.status === "INVALID" ||
-        Date.now() >= deadline
-      ) {
-        setIsConnecting(false);
-        return;
-      }
-      timer = window.setTimeout(poll, STATUS_POLL_MS);
-    };
-
-    timer = window.setTimeout(poll, STATUS_POLL_MS);
+    mountedRef.current = true;
     return () => {
-      cancelled = true;
-      if (timer != null) window.clearTimeout(timer);
+      mountedRef.current = false;
+      if (pollTimerRef.current != null) {
+        window.clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
     };
-  }, [fetchStatus, status?.expiresAt, status?.status]);
+  }, []);
+
+  const startPolling = useCallback(
+    (expiresAt?: number) => {
+      if (pollTimerRef.current != null) {
+        window.clearTimeout(pollTimerRef.current);
+      }
+      const deadline = Math.min(
+        expiresAt ?? Date.now() + APPROVAL_WINDOW_MS,
+        Date.now() + APPROVAL_WINDOW_MS,
+      );
+
+      const poll = async () => {
+        const next = await fetchStatus();
+        if (!mountedRef.current) return;
+        if (
+          next?.connected ||
+          next?.status === "EXPIRED" ||
+          next?.status === "INVALID" ||
+          Date.now() >= deadline
+        ) {
+          stopPolling();
+          return;
+        }
+        pollTimerRef.current = window.setTimeout(poll, STATUS_POLL_MS);
+      };
+
+      pollTimerRef.current = window.setTimeout(poll, STATUS_POLL_MS);
+    },
+    [fetchStatus, stopPolling],
+  );
 
   const connect = useCallback(async () => {
     if (isConnecting) return null;
+    if (pollTimerRef.current != null) {
+      window.clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
     setIsConnecting(true);
     try {
       const res = await webullRequest("/api/auth/webull/connect", { method: "POST" });
@@ -108,6 +119,7 @@ export function useWebullConnect() {
         setIsConnecting(false);
         return data;
       }
+      if (!mountedRef.current) return data;
       const next: WebullStatus = {
         configured: true,
         connected: data.status === "NORMAL",
@@ -118,7 +130,9 @@ export function useWebullConnect() {
       if (next.connected) {
         await refreshAccounts(true);
         setIsConnecting(false);
-      } else if (next.status !== "PENDING") {
+      } else if (next.status === "PENDING") {
+        startPolling(next.expiresAt);
+      } else {
         setIsConnecting(false);
       }
       return data;
@@ -126,12 +140,13 @@ export function useWebullConnect() {
       setIsConnecting(false);
       return null;
     }
-  }, [isConnecting, refreshAccounts]);
+  }, [isConnecting, refreshAccounts, startPolling]);
 
   return {
     connect,
     fetchStatus,
     isConnecting,
     isConnected: status?.connected === true,
+    status: status?.status ?? "NONE",
   };
 }

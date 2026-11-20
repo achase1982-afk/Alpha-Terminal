@@ -51,6 +51,28 @@ router.post("/connect", async (_req, res) => {
     return res.status(503).json({ error: "webull_not_configured" });
   }
   try {
+    const stored = await getWebullToken();
+    if (stored) {
+      try {
+        const checked = await webullCheckToken(stored.accessToken);
+        const checkedStatus = checked.status as WebullTokenStatus;
+        await persistWebullToken({
+          accessToken: checked.token || stored.accessToken,
+          expiresAt: Number(checked.expires_at ?? stored.expiresAt),
+          status: checkedStatus,
+        });
+        if (checkedStatus === "NORMAL" || checkedStatus === "PENDING") {
+          return res.json({
+            status: checkedStatus,
+            expiresAt: checked.expires_at,
+            message: "Approve the Webull OpenAPI verification in the app within 5 minutes.",
+          });
+        }
+      } catch (err) {
+        logger.warn({ err }, "Existing Webull token check failed before connect");
+      }
+    }
+
     const created = await webullCreateToken();
     await persistWebullToken({
       accessToken: created.token,

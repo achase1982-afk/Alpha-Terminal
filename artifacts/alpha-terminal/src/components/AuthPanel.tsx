@@ -58,6 +58,40 @@ export function AuthPanel() {
     onClick();
   };
 
+  const webullControl = webullConnected ? (
+    <div className="flex items-center gap-2.5">
+      <span className="relative flex h-2 w-2">
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00d166] opacity-75" />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00d166]" />
+      </span>
+      <span className="font-mono text-xs font-bold text-[#e4e4e7] tracking-wider">WEBULL</span>
+      <span className="font-mono text-[10px] text-[#00d166] tracking-wider">CONNECTED</span>
+    </div>
+  ) : (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => void connectWebull()}
+        disabled={webullConnecting}
+        className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
+      >
+        {webullConnecting ? (
+          <>
+            <Loader2 className="w-3 h-3 animate-spin" />
+            CONNECTING WEBULL…
+          </>
+        ) : (
+          "CONNECT WEBULL"
+        )}
+      </button>
+      {webullConnecting && (
+        <p className="font-mono text-[10px] text-zinc-500 leading-relaxed">
+          Open Webull → Menu → Messages → OpenAPI Notifications, then verify.
+        </p>
+      )}
+    </div>
+  );
+
   if (isConnected && serverTokenExpired) {
     return (
       <div className="space-y-3">
@@ -86,23 +120,7 @@ export function AuthPanel() {
             <>RECONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
           )}
         </a>
-        {!webullConnected && (
-          <button
-            type="button"
-            onClick={() => void connectWebull()}
-            disabled={webullConnecting}
-            className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-          >
-            {webullConnecting ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                CONNECTING WEBULL…
-              </>
-            ) : (
-              "CONNECT WEBULL"
-            )}
-          </button>
-        )}
+        {webullControl}
       </div>
     );
   }
@@ -132,23 +150,7 @@ export function AuthPanel() {
             )}
           </button>
         </div>
-        {!webullConnected && (
-          <button
-            type="button"
-            onClick={() => void connectWebull()}
-            disabled={webullConnecting}
-            className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-          >
-            {webullConnecting ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                CONNECTING WEBULL…
-              </>
-            ) : (
-              "CONNECT WEBULL"
-            )}
-          </button>
-        )}
+        {webullControl}
       </div>
     );
   }
@@ -180,23 +182,7 @@ export function AuthPanel() {
           <>CONNECT SCHWAB <ExternalLink className="w-3 h-3" /></>
         )}
       </a>
-      {!webullConnected && (
-        <button
-          type="button"
-          onClick={() => void connectWebull()}
-          disabled={webullConnecting}
-          className="flex items-center justify-center gap-2 w-full py-2 rounded border border-zinc-700 hover:border-[#FFB800]/50 hover:bg-[#FFB800]/5 transition-all font-mono text-xs text-zinc-300 hover:text-[#FFB800] tracking-wider disabled:opacity-50"
-        >
-          {webullConnecting ? (
-            <>
-              <Loader2 className="w-3 h-3 animate-spin" />
-              CONNECTING WEBULL…
-            </>
-          ) : (
-            "CONNECT WEBULL"
-          )}
-        </button>
-      )}
+      {webullControl}
     </div>
   );
 }
