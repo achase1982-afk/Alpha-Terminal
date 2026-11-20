@@ -381,6 +381,46 @@
   grid-column: 2;
 }
 
+.level-board {
+  justify-self: end;
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.level-line {
+  display: grid;
+  grid-template-columns: 11rem auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 14px;
+}
+
+.level-line-name {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.level-line-px {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.level-line-dist {
+  color: var(--glance-text-soft);
+  font-size: 20px;
+  text-align: right;
+}
+
+.level-gex {
+  margin-top: 4px;
+  color: var(--glance-text-soft);
+  font-size: 20px;
+}
+
 .wall-name {
   color: #fff;
   font-weight: 650;
@@ -1004,5 +1044,10 @@
   .pulse {
     display: flex;
     flex-direction: column;
+  }
+
+  .level-board {
+    width: 100%;
+    justify-self: stretch;
   }
 }
