@@ -101,7 +101,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   symbol,
   underlyingPrice,
   zones,
-  sessionClosed,
+  sessionClosed: _sessionClosed,
   skipNetwork,
   ladderHeatSource,
   expiryPickerLoading,
@@ -110,9 +110,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const mode = resolveAtGlanceMode(symbol);
   const showFlowStrip = mode === "index" && !stockTemplate && !skipNetwork;
   const { data: quote, restQuote } = useQuote(symbol);
-  const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
+  const { aggregate: flow, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
   const vixLevel = useAtVixQuote(showFlowStrip);
-  const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
 
@@ -302,8 +301,6 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           aggregate={flow}
           netPremium={netPremium}
           zones={zones}
-          forceDash={flowDashShell}
-          scopeLabel="Desk flow · symbol-wide classified premium"
         />
       ) : !stockTemplate ? (
         <div data-at-glance-flow-band style={{ padding: "4px 16px", fontSize: 12, color: AT_SECONDARY }}>
