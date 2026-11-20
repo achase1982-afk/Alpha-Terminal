@@ -529,6 +529,17 @@ function uwPayloadsEqual(
   );
 }
 
+/** Bars already seen this process, so a new flow-stream client gets the session before the next poll. */
+export function deskLiveFlowUwBarSnapshot(sym: string): NonNullable<ReturnType<typeof deskLiveFlowMapUwNetPremRow>>[] {
+  const want = sym.trim().toUpperCase().replace(/^\$/, "");
+  const out: NonNullable<ReturnType<typeof deskLiveFlowMapUwNetPremRow>>[] = [];
+  for (const bar of uwBarByKey.values()) {
+    if (bar && bar.sym === want) out.push(bar);
+  }
+  out.sort((a, b) => a.bar_start_ms - b.bar_start_ms);
+  return out;
+}
+
 export function deskLiveFlowOnUwNetPremRows(
   rows: unknown[],
   sym: string,

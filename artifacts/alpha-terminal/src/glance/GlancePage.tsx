@@ -24,6 +24,7 @@ import {
   type PnfResult,
   type TrendReading,
 } from "./math";
+import { dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { useGlanceLive } from "./useGlanceLive";
 import "./glance.css";
 
@@ -199,6 +200,9 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const spotCaption = fixture || streamedSpot != null ? "SPX" : live.lastClose != null ? "Last completed minute" : "SPX";
   const prev = fixture ? FIXTURE.previousClose : live.previousClose;
   const day = dayMove(spot, prev);
+  const dayPoints = fixture ? (day?.points ?? null) : live.dayPoints;
+  const dayPct = fixture ? (day?.percent ?? null) : live.dayPct;
+  const dayStatus = resolveDayStatus({ change: dayPoints, changePct: dayPct });
   const open = fixture ? FIXTURE.rthOpen : live.open;
   const fromOpen = fromOpenPoints(spot, open);
   const high = fixture ? FIXTURE.high : live.high;
@@ -390,10 +394,10 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           </span>
           <div className="spot num">{formatSpot(spot)}</div>
         </div>
-        <div>
-          <span className="k">{day == null ? "Day" : day.points < 0 ? "DAY DOWN" : day.points > 0 ? "DAY UP" : "Day"}</span>
-          <div className={`day-pct num ${signedClass(day?.points ?? null)}`}>{formatPct(day?.percent ?? null)}</div>
-          <div className={`support num ${signedClass(day?.points ?? null)}`}>{day == null ? "—" : `${formatSignedPts(day.points)} vs close`}</div>
+        <div className="day-read">
+          <span className="k">{dayStatusLabel(dayStatus)}</span>
+          <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>
+          <div className={`support num ${signedClass(dayPoints)}`}>{dayPoints == null ? "—" : `${formatSignedPts(dayPoints)} vs close`}</div>
         </div>
         <div>
           <span className="k">From open</span>
@@ -472,7 +476,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         </section>
         <section className="block" aria-label="Flow">
             <h2>
-              <span>Flow now · 1m · {fixture ? FIXTURE.scope : "L1 estimate"}</span>
+              <span>Flow now{fixture ? ` · ${FIXTURE.scope}` : live.flowUw ? " · UW" : ""}</span>
               <span>{fixture ? "Age 30s · fixture" : formatAge(live.flowAgeSec)}</span>
             </h2>
             <FlowSide name="Calls" sold={flow1.cs} bought={flow1.cb} soldHist={hist.cs} boughtHist={hist.cb} scale={scale} histMax={histMax} />
@@ -497,6 +501,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <span>5m net {formatNet(premiumNet(flow5))}</span>
               <span>15m net {formatNet(premiumNet(flow15))}</span>
               <span>{fixture ? "Session" : "Day"} net {formatNet(premiumNet(flowSession))}</span>
+              {!fixture && live.flowUw ? <span>Schwab L1 est. {formatNet(premiumNet(live.flowL1Session))}</span> : null}
             </div>
           </section>
       </div>
@@ -638,7 +643,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <ul>
                 <li>SPX and VIX come from the existing quote stream. Day change uses the quote close when that field is present.</li>
                 <li>Open, high, and low minutes come from Schwab 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the RTH open.</li>
-                <li>1m, 5m, and 15m amounts are the existing flow stream and are labeled L1 estimate. The day row is the calendar-day total, including premarket, not a verified since-09:30 sum.</li>
+                <li>Flow now and the day row are Unusual Whales 1-minute bars since 09:30 ET. The age is now minus tape time. Schwab L1 est. is the separate streamer estimate.</li>
                 <li>Call and put walls are the gamma snapshot’s single basis, shown on the OI rows. Volume rows stay blank rather than copying those strikes.</li>
                 <li>PRICE NOT FOLLOWING needs all four 5m gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
                 <li>Flow connection: {fixture ? "fixture" : live.flowConnection}. Gamma source: {fixture ? "fixture" : (live.gammaSource ?? "unavailable")}.</li>

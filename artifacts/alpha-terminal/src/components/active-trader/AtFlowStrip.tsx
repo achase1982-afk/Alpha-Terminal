@@ -56,37 +56,51 @@ export type AtFlowStripProps = {
   zones: ZoneModel;
 };
 
+function ageLabel(tapeMs: number | null): string {
+  if (tapeMs == null) return "";
+  const sec = Math.max(0, (Date.now() - tapeMs) / 1000);
+  if (sec < 90) return `Age ${Math.floor(sec)}s`;
+  return `Age ${Math.floor(sec / 60)}m`;
+}
+
 export const AtFlowStrip = memo(function AtFlowStrip({
-  windowSec,
   aggregate,
   netPremium,
   zones,
 }: AtFlowStripProps) {
   const [tab, setTab] = useState<AtFlowStripTab>(() => loadAtFlowStripTab());
   /** Show live feed figures even after hours; only blank when the stream kind is unsupported. */
-  const dash = netPremium.unsupported;
+  const uw = aggregate.uw;
+  const dash = uw ? false : netPremium.unsupported;
   const rx = aggregate.lastRxMs;
-  const freshBadge = formatFlowFreshnessBadge(resolveFlowFreshness(rx));
+  const freshBadge = uw ? null : formatFlowFreshnessBadge(resolveFlowFreshness(rx));
   const idx = aggregate.index;
 
-  const nowCb = netPremium.grossCallsBuy;
-  const nowCs = netPremium.grossCallsSell;
-  const nowPb = netPremium.grossPutsBuy;
-  const nowPs = netPremium.grossPutsSell;
-  const nowNet = flowPremiumNet(nowCb, nowCs, nowPb, nowPs);
+  const nowCb = uw ? uw.now.callBuy : netPremium.grossCallsBuy;
+  const nowCs = uw ? uw.now.callSell : netPremium.grossCallsSell;
+  const nowPb = uw ? uw.now.putBuy : netPremium.grossPutsBuy;
+  const nowPs = uw ? uw.now.putSell : netPremium.grossPutsSell;
+  const nowNet = uw ? uw.now.netCall - uw.now.netPut : flowPremiumNet(nowCb, nowCs, nowPb, nowPs);
 
-  const sessCb = idx?.callBuyDay ?? 0;
-  const sessCs = idx?.callSellDay ?? 0;
-  const sessPb = idx?.putBuyDay ?? 0;
-  const sessPs = idx?.putSellDay ?? 0;
-  const sessionNet = flowPremiumNet(sessCb, sessCs, sessPb, sessPs);
+  const sessCb = uw ? uw.day.callBuy : (idx?.callBuyDay ?? 0);
+  const sessCs = uw ? uw.day.callSell : (idx?.callSellDay ?? 0);
+  const sessPb = uw ? uw.day.putBuy : (idx?.putBuyDay ?? 0);
+  const sessPs = uw ? uw.day.putSell : (idx?.putSellDay ?? 0);
+  const sessionNet = uw ? uw.day.netCall - uw.day.netPut : flowPremiumNet(sessCb, sessCs, sessPb, sessPs);
+  const l1Net = idx
+    ? flowPremiumNet(idx.callBuyDay, idx.callSellDay, idx.putBuyDay, idx.putSellDay)
+    : 0;
 
-  const net5m = idx
-    ? flowPremiumNet(idx.callBuy5m, idx.callSell5m, idx.putBuy5m, idx.putSell5m)
-    : 0;
-  const net15m = idx
-    ? flowPremiumNet(idx.callBuy15m, idx.callSell15m, idx.putBuy15m, idx.putSell15m)
-    : 0;
+  const net5m = uw
+    ? uw.m5.netCall - uw.m5.netPut
+    : idx
+      ? flowPremiumNet(idx.callBuy5m, idx.callSell5m, idx.putBuy5m, idx.putSell5m)
+      : 0;
+  const net15m = uw
+    ? uw.m15.netCall - uw.m15.netPut
+    : idx
+      ? flowPremiumNet(idx.callBuy15m, idx.callSell15m, idx.putBuy15m, idx.putSell15m)
+      : 0;
   const flip = detectFlowFlipExperimental(sessionNet, net15m);
 
   function pickTab(next: AtFlowStripTab) {
@@ -119,7 +133,7 @@ export const AtFlowStrip = memo(function AtFlowStrip({
           <div className="at-flow-strip-now">
             <div className="at-flow-strip-now-head">
               <span data-at-flow-now="" style={{ fontWeight: 600, color: WHITE, fontSize: 12 }}>
-                Flow now · {windowSec}s
+                Flow now{uw ? ` · ${ageLabel(uw.tapeMs)}` : ""}
               </span>
               <span
                 className="num"
@@ -142,6 +156,9 @@ export const AtFlowStrip = memo(function AtFlowStrip({
               <span className="at-flow-buy">PB {fmtUsd(sessPb, dash)}</span>
               <span className="at-flow-sell">PS {fmtUsd(sessPs, dash)}</span>
             </div>
+            {uw ? (
+              <span style={{ color: "#a4a6aa", fontSize: 11 }}>Schwab L1 est. {fmtUsd(l1Net, false)}</span>
+            ) : null}
             <span className="sr-only">Window net {fmtUsd(nowNet, dash)}</span>
           </div>
         ) : null}
@@ -166,6 +183,11 @@ export const AtFlowStrip = memo(function AtFlowStrip({
             <span style={{ gridColumn: "1 / -1" }}>
               5m {fmtUsd(net5m, dash)} · 15m {fmtUsd(net15m, dash)}
             </span>
+            {uw ? (
+              <span style={{ gridColumn: "1 / -1", color: "#a4a6aa" }}>
+                Schwab L1 est. {fmtUsd(l1Net, false)}
+              </span>
+            ) : null}
           </div>
         ) : null}
 

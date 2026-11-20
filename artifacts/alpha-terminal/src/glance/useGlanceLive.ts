@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuote } from "@/hooks/useQuote";
+import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
+import type { DeskUwFlowSide } from "@/lib/active-trader/deskFlowAggregator";
 import { useDeskFlowStream } from "@/hooks/useDeskFlowStream";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { computeHighZoneBottom, computeLowZoneTop } from "@/lib/active-trader/spxRefZone";
@@ -121,6 +123,11 @@ export function sessionExtremes(bars: readonly MinuteBar[]): {
   };
 }
 
+function quadFromUw(side: DeskUwFlowSide | null | undefined): GrossQuad {
+  if (!side) return EMPTY;
+  return { cb: side.callBuy, cs: side.callSell, pb: side.putBuy, ps: side.putSell };
+}
+
 function quadFrom(index: DeskIndexFlowTotals | null, window: "1" | "5" | "15" | "day"): GrossQuad {
   if (!index) return EMPTY;
   if (window === "1") return { cb: index.callBuy1m, cs: index.callSell1m, pb: index.putBuy1m, ps: index.putSell1m };
@@ -230,7 +237,12 @@ export function useGlanceLive() {
   const flowIndex = flow.aggregate.connection === "live" ? flow.aggregate.index : indexRef.current;
   const flowObserved = flowIndex != null;
   const flowEnd = flow.aggregate.observationEndMs;
-  const flowAgeSec = flowEnd != null ? Math.max(0, (now - flowEnd) / 1000) : null;
+  const uw = flow.aggregate.uw;
+  const flowAgeSec = uw
+    ? Math.max(0, (now - uw.tapeMs) / 1000)
+    : flowEnd != null
+      ? Math.max(0, (now - flowEnd) / 1000)
+      : null;
   const spotAgeSec = quote?.tradeTimeMs != null ? Math.max(0, (now - quote.tradeTimeMs) / 1000) : null;
   const vixAgeSec = vix.data?.tradeTimeMs != null ? Math.max(0, (now - vix.data.tradeTimeMs) / 1000) : null;
   const lowZone = extremes.low != null ? computeLowZoneTop(extremes.low) : null;
@@ -239,14 +251,15 @@ export function useGlanceLive() {
   const lastBar = session.length ? session[session.length - 1]! : null;
   const traceBars = lastBar ? session.filter((bar) => bar.t >= lastBar.t - 30 * 60_000) : [];
   const minutes = flow.aggregate.recentMinutes;
+  const sessionChange = resolveAtHeaderSessionChange(quote ?? null, spx.restQuote, paintedSpot ?? quote?.last ?? null);
 
   return {
     spot: paintedSpot ?? quote?.last ?? null,
     lastClose: lastBar?.c ?? null,
     lastCloseMinute: lastBar ? formatEtMinute(lastBar.t) : null,
     previousClose: quote?.close ?? null,
-    dayPoints: quote?.change ?? null,
-    dayPct: quote?.changePct ?? null,
+    dayPoints: sessionChange.change,
+    dayPct: sessionChange.changePct,
     open: extremes.open,
     high: extremes.high,
     highMinute: extremes.highMinute,
@@ -260,10 +273,12 @@ export function useGlanceLive() {
     vixLow: vix.data?.low ?? null,
     vixHigh: vix.data?.high ?? null,
     vixAgeSec,
-    flow1: quadFrom(flowObserved ? flowIndex : null, "1"),
-    flow5: quadFrom(flowObserved ? flowIndex : null, "5"),
-    flow15: quadFrom(flowObserved ? flowIndex : null, "15"),
-    flowSession: quadFrom(flowObserved ? flowIndex : null, "day"),
+    flow1: uw ? quadFromUw(uw.now) : quadFrom(flowObserved ? flowIndex : null, "1"),
+    flow5: uw ? quadFromUw(uw.m5) : quadFrom(flowObserved ? flowIndex : null, "5"),
+    flow15: uw ? quadFromUw(uw.m15) : quadFrom(flowObserved ? flowIndex : null, "15"),
+    flowSession: uw ? quadFromUw(uw.day) : quadFrom(flowObserved ? flowIndex : null, "day"),
+    flowL1Session: quadFrom(flowObserved ? flowIndex : null, "day"),
+    flowUw: uw,
     flowHist: {
       cs: historySide(minutes, "callSell"),
       cb: historySide(minutes, "callBuy"),

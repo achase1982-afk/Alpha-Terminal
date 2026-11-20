@@ -7,6 +7,7 @@ import type {
   DeskPxFrame,
   DeskTape1s,
   DeskTape60s,
+  DeskUwNpBar,
 } from "./deskFlowFrameTypes";
 
 const MS_1M = 60_000;
@@ -69,6 +70,24 @@ export type DeskFlowMinute = {
   putSell: number;
 };
 
+export type DeskUwFlowSide = {
+  callBuy: number;
+  callSell: number;
+  putBuy: number;
+  putSell: number;
+  netCall: number;
+  netPut: number;
+};
+
+/** Unusual Whales 1-minute bars. Day is the sum of every RTH bar since 09:30 ET. */
+export type DeskUwFlow = {
+  tapeMs: number;
+  now: DeskUwFlowSide;
+  m5: DeskUwFlowSide;
+  m15: DeskUwFlowSide;
+  day: DeskUwFlowSide;
+};
+
 export type DeskFlowAggregate = {
   mode: AtGlanceMode;
   connection: DeskFlowConnection;
@@ -79,6 +98,8 @@ export type DeskFlowAggregate = {
   /** End of the newest premium bucket. Not the transport receive time. */
   observationEndMs: number | null;
   recentMinutes: DeskFlowMinute[];
+  /** Full-market UW tape. Null until the first uw_np_bar arrives. */
+  uw: DeskUwFlow | null;
 };
 
 type Flow1sBucket = Pick<DeskFlow1s, "bucket_ms" | "call_buy" | "call_sell" | "put_buy" | "put_sell">;
@@ -100,6 +121,16 @@ type DayBook = DaySide & {
   buckets: Map<number, DaySide>;
 };
 
+type UwBar = {
+  bar_start_ms: number;
+  callBuy: number | null;
+  callSell: number | null;
+  putBuy: number | null;
+  putSell: number | null;
+  netCall: number | null;
+  netPut: number | null;
+};
+
 type Internal = {
   mode: AtGlanceMode;
   nowMs: number;
@@ -110,6 +141,7 @@ type Internal = {
   tape1s: Tape1sBucket[];
   tape60s: Tape60sBar[];
   day: DayBook | null;
+  uwBars: UwBar[];
   livePx: DeskFlowLivePx | null;
   lastRxMs: number | null;
 };
@@ -121,9 +153,77 @@ const ET_YMD = new Intl.DateTimeFormat("en-CA", {
   day: "2-digit",
 });
 
+const ET_HM = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const RTH_OPEN_MIN = 9 * 60 + 30;
+const RTH_CLOSE_MIN = 16 * 60;
+
 /** America/New_York calendar date. Premarket prints stay on this cash-session day. */
 export function flowSessionDateEt(ms: number): string {
   return ET_YMD.format(new Date(ms));
+}
+
+function etMinuteOfDay(ms: number): number {
+  const parts = ET_HM.formatToParts(new Date(ms));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? "0");
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? "0");
+  return hour * 60 + minute;
+}
+
+function optFlow(n: number | null | undefined): number | null {
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+}
+
+function uwSide(bar: UwBar): DeskUwFlowSide {
+  const netCall = bar.netCall ?? (bar.callBuy ?? 0) - (bar.callSell ?? 0);
+  const netPut = bar.netPut ?? (bar.putBuy ?? 0) - (bar.putSell ?? 0);
+  return {
+    callBuy: bar.callBuy ?? (netCall > 0 ? netCall : 0),
+    callSell: bar.callSell ?? (netCall < 0 ? -netCall : 0),
+    putBuy: bar.putBuy ?? (netPut > 0 ? netPut : 0),
+    putSell: bar.putSell ?? (netPut < 0 ? -netPut : 0),
+    netCall,
+    netPut,
+  };
+}
+
+function sumUw(bars: readonly UwBar[]): DeskUwFlowSide {
+  const out: DeskUwFlowSide = { callBuy: 0, callSell: 0, putBuy: 0, putSell: 0, netCall: 0, netPut: 0 };
+  for (const bar of bars) {
+    const side = uwSide(bar);
+    out.callBuy += side.callBuy;
+    out.callSell += side.callSell;
+    out.putBuy += side.putBuy;
+    out.putSell += side.putSell;
+    out.netCall += side.netCall;
+    out.netPut += side.netPut;
+  }
+  return out;
+}
+
+function projectUw(bars: readonly UwBar[]): DeskUwFlow | null {
+  if (bars.length === 0) return null;
+  const latest = bars[bars.length - 1]!;
+  const sessionDate = flowSessionDateEt(latest.bar_start_ms);
+  const rth = bars.filter((bar) => {
+    if (flowSessionDateEt(bar.bar_start_ms) !== sessionDate) return false;
+    const minute = etMinuteOfDay(bar.bar_start_ms);
+    return minute >= RTH_OPEN_MIN && minute < RTH_CLOSE_MIN;
+  });
+  const source = rth.length > 0 ? rth : [latest];
+  const tape = source[source.length - 1]!;
+  return {
+    tapeMs: tape.bar_start_ms,
+    now: uwSide(tape),
+    m5: sumUw(source.filter((bar) => bar.bar_start_ms >= tape.bar_start_ms - 4 * MS_1M)),
+    m15: sumUw(source.filter((bar) => bar.bar_start_ms >= tape.bar_start_ms - 14 * MS_1M)),
+    day: sumUw(source),
+  };
 }
 
 function finiteFlow(n: number | null | undefined): number {
@@ -322,6 +422,27 @@ export function reduceDeskFlowFrame(state: Internal, frame: DeskFlowFrame): Inte
     return next;
   }
 
+  if (frame.type === "uw_np_bar") {
+    const f = frame as DeskUwNpBar;
+    if (typeof f.bar_start_ms !== "number" || !Number.isFinite(f.bar_start_ms)) return next;
+    const row: UwBar = {
+      bar_start_ms: f.bar_start_ms,
+      callBuy: optFlow(f.call_prem_bought),
+      callSell: optFlow(f.call_prem_sold),
+      putBuy: optFlow(f.put_prem_bought),
+      putSell: optFlow(f.put_prem_sold),
+      netCall: optFlow(f.net_call),
+      netPut: optFlow(f.net_put),
+    };
+    const sessionDate = flowSessionDateEt(f.bar_start_ms);
+    const kept = state.uwBars.filter(
+      (bar) => flowSessionDateEt(bar.bar_start_ms) === sessionDate && bar.bar_start_ms !== f.bar_start_ms,
+    );
+    next.uwBars = [...kept, row].sort((a, b) => a.bar_start_ms - b.bar_start_ms).slice(-500);
+    next.hadNonEmptyPrint = true;
+    return next;
+  }
+
   if (frame.type === "flow_60s") {
     const f = frame as DeskFlow60s;
     const row: Flow60sBar = {
@@ -379,6 +500,7 @@ export function deskFlowAggregatorMarkUnsupported(state: Internal): DeskFlowAggr
     lastRxMs: state.lastRxMs,
     observationEndMs: null,
     recentMinutes: [],
+    uw: null,
   };
 }
 
@@ -435,6 +557,7 @@ function project(state: Internal): DeskFlowAggregate {
     lastRxMs: state.lastRxMs,
     observationEndMs,
     recentMinutes,
+    uw: projectUw(state.uwBars),
   };
 }
 
@@ -484,6 +607,7 @@ export function createDeskFlowAggregatorInternal(mode: AtGlanceMode, nowMs = Dat
     tape1s: [],
     tape60s: [],
     day: null,
+    uwBars: [],
     livePx: null,
     lastRxMs: null,
   };
