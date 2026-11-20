@@ -53,7 +53,6 @@ export type AtFlowStripProps = {
   aggregate: DeskFlowAggregate;
   netPremium: DeskNetPremiumGlance;
   zones: ZoneModel;
-  forceDash: boolean;
 };
 
 export const AtFlowStrip = memo(function AtFlowStrip({
@@ -61,10 +60,10 @@ export const AtFlowStrip = memo(function AtFlowStrip({
   aggregate,
   netPremium,
   zones,
-  forceDash,
 }: AtFlowStripProps) {
   const [tab, setTab] = useState<AtFlowStripTab>(() => loadAtFlowStripTab());
-  const dash = forceDash || netPremium.stale || netPremium.closed || netPremium.unsupported;
+  /** Show live feed figures even after hours; only blank when the stream kind is unsupported. */
+  const dash = netPremium.unsupported;
   const rx = aggregate.lastRxMs;
   const freshBadge = formatFlowFreshnessBadge(resolveFlowFreshness(rx));
   const idx = aggregate.index;
@@ -114,68 +113,76 @@ export const AtFlowStrip = memo(function AtFlowStrip({
         ))}
       </div>
 
-      {tab === "now" ? (
-        <>
-          <div className="flex items-baseline justify-between gap-2" style={{ height: 16, marginBottom: 2 }}>
-            <span data-at-flow-now="" style={{ fontWeight: 600, color: WHITE, fontSize: 12 }}>
-              Flow now · {windowSec}s
+      <div className="at-flow-strip-body">
+        {tab === "now" ? (
+          <div className="at-flow-strip-now">
+            <div className="at-flow-strip-now-head">
+              <span data-at-flow-now="" style={{ fontWeight: 600, color: WHITE, fontSize: 12 }}>
+                Flow now · {windowSec}s
+              </span>
+              <span
+                className="num"
+                style={{
+                  ...NUM,
+                  fontSize: 12,
+                  color:
+                    sessionSign === "bearish" ? "#ff7164" : sessionSign === "bullish" ? "#5df1a0" : "#a4a6aa",
+                }}
+              >
+                Sess net {fmtUsd(sessionNet, dash)}
+              </span>
+            </div>
+            <FlowSideRow side="CALL" buy={nowCb} sell={nowCs} dash={dash} />
+            <FlowSideRow side="PUT" buy={nowPb} sell={nowPs} dash={dash} />
+            <span className="sr-only">Window net {fmtUsd(nowNet, dash)}</span>
+          </div>
+        ) : null}
+
+        {tab === "session" ? (
+          <div className="at-flow-strip-session-grid">
+            <span>
+              CB <b className="at-flow-buy">{fmtUsd(sessCb, dash)}</b>
             </span>
-            <span className="num" style={{ ...NUM, fontSize: 12, color: sessionSign === "bearish" ? "#ff7164" : sessionSign === "bullish" ? "#5df1a0" : "#a4a6aa" }}>
-              Sess net {fmtUsd(sessionNet, dash)}
+            <span>
+              CS <b className="at-flow-sell">{fmtUsd(sessCs, dash)}</b>
+            </span>
+            <span>
+              PB <b className="at-flow-buy">{fmtUsd(sessPb, dash)}</b>
+            </span>
+            <span>
+              PS <b className="at-flow-sell">{fmtUsd(sessPs, dash)}</b>
+            </span>
+            <span style={{ gridColumn: "1 / -1", fontWeight: 600, color: WHITE }}>
+              Since open net {fmtUsd(sessionNet, dash)} · {sessionSignLabel}
+            </span>
+            <span style={{ gridColumn: "1 / -1" }}>
+              5m {fmtUsd(net5m, dash)} · 15m {fmtUsd(net15m, dash)}
             </span>
           </div>
-          <FlowSideRow side="CALL" buy={nowCb} sell={nowCs} dash={dash} />
-          <FlowSideRow side="PUT" buy={nowPb} sell={nowPs} dash={dash} />
-          <h3 className="sr-only">Window net {fmtUsd(nowNet, dash)}</h3>
-        </>
-      ) : null}
+        ) : null}
 
-      {tab === "session" ? (
-        <div className="at-flow-strip-session-grid">
-          <span>
-            CB <b className="at-flow-buy">{fmtUsd(sessCb, dash)}</b>
-          </span>
-          <span>
-            CS <b className="at-flow-sell">{fmtUsd(sessCs, dash)}</b>
-          </span>
-          <span>
-            PB <b className="at-flow-buy">{fmtUsd(sessPb, dash)}</b>
-          </span>
-          <span>
-            PS <b className="at-flow-sell">{fmtUsd(sessPs, dash)}</b>
-          </span>
-          <span style={{ gridColumn: "1 / -1", fontWeight: 600, color: WHITE }}>
-            Since open net {fmtUsd(sessionNet, dash)} · {sessionSignLabel}
-          </span>
-          <span style={{ gridColumn: "1 / -1" }}>
-            5m {fmtUsd(net5m, dash)} · 15m {fmtUsd(net15m, dash)}
-          </span>
-        </div>
-      ) : null}
+        {tab === "levels" ? (
+          <div className="at-flow-strip-levels">
+            <span>
+              Call wall <b style={{ color: GOLD }}>{zones.callWall ?? "\u2014"}</b>
+            </span>
+            <span>
+              Put wall <b style={{ color: PUT_WALL }}>{zones.putWall ?? "\u2014"}</b>
+            </span>
+            <span>
+              Gamma flip{" "}
+              <b className="num" style={{ ...NUM, color: AT_LADDER_GAMMA }}>
+                {resolveGammaFlipDisplay(zones)}
+              </b>
+            </span>
+          </div>
+        ) : null}
+      </div>
 
-      {tab === "levels" ? (
-        <div className="at-flow-strip-levels">
-          <span>
-            Call wall <b style={{ color: GOLD }}>{zones.callWall ?? "\u2014"}</b>
-          </span>
-          <span>
-            Put wall <b style={{ color: PUT_WALL }}>{zones.putWall ?? "\u2014"}</b>
-          </span>
-          <span>
-            Gamma flip{" "}
-            <b className="num" style={{ ...NUM, color: AT_LADDER_GAMMA }}>
-              {resolveGammaFlipDisplay(zones)}
-            </b>
-          </span>
-        </div>
-      ) : null}
-
-      {flip || freshBadge ? (
-        <div className="at-flow-strip-footer">
-          {flip ? <span className="at-flow-strip-flags">FLIP · EXPERIMENTAL </span> : null}
-          {freshBadge ? <span data-at-flow-freshness="">{freshBadge}</span> : null}
-        </div>
-      ) : null}
+      <div className="at-flow-strip-footer" aria-live="polite">
+        {flip ? <span className="at-flow-strip-flags">FLIP · EXPERIMENTAL </span> : null}
+        {freshBadge ? <span data-at-flow-freshness="">{freshBadge}</span> : null}
+      </div>
     </div>
   );
 });

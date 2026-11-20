@@ -4,6 +4,9 @@
   font-variant-numeric: tabular-nums;
   font-size: 13px;
   box-sizing: border-box;
+  /* Tabs + body + footer — constant across Now / Session / Levels */
+  height: 120px;
+  overflow: hidden;
 }
 .at-flow-strip-tabs {
   display: flex;
@@ -12,6 +15,7 @@
   align-items: stretch;
   border-bottom: 1px solid #26262c;
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 .at-flow-strip-tabs button {
   flex: 1;
@@ -26,6 +30,11 @@
 .at-flow-strip-tabs button[aria-pressed="true"] {
   color: #f5f5f5;
   border-bottom-color: #f5c542;
+}
+.at-flow-strip-body {
+  height: 78px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .at-flow-strip-row {
   display: grid;
@@ -57,21 +66,49 @@
 .at-flow-buy { color: #4ee38a; font-weight: 600; white-space: nowrap; }
 .at-flow-sell { color: #ff5a5f; font-weight: 600; white-space: nowrap; text-align: right; }
 .at-flow-strip-footer {
-  margin-top: 4px;
+  height: 16px;
+  margin-top: 0;
   font-size: 11px;
   color: #a4a6aa;
-  line-height: 1.25;
+  line-height: 16px;
+  overflow: hidden;
+  white-space: nowrap;
 }
 .at-flow-strip-flags { color: #f5c542; font-weight: 600; }
 .at-flow-strip-session-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 2px 12px;
+  grid-template-rows: repeat(3, 20px);
+  gap: 0 12px;
+  align-items: center;
   font-size: 12px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.at-flow-strip-levels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  height: 100%;
+  box-sizing: border-box;
 }
 .at-flow-strip-levels span {
   display: flex;
   justify-content: space-between;
   height: 20px;
   align-items: center;
+}
+.at-flow-strip-now {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  box-sizing: border-box;
+}
+.at-flow-strip-now-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  height: 18px;
+  flex-shrink: 0;
 }
