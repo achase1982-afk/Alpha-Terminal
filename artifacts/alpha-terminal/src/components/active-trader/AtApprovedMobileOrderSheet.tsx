@@ -21,7 +21,7 @@ import {
 
 const SYS_FONT =
   'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif';
-const SHEET_BOTTOM_OFFSET = "calc(94px + max(env(safe-area-inset-bottom, 0px), 12px))";
+const SHEET_BOTTOM_OFFSET = "calc(86px + max(env(safe-area-inset-bottom, 0px), 12px))";
 
 const PEER_VALUE: CSSProperties = {
   fontSize: 17,

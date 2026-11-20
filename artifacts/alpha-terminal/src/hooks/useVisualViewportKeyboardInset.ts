@@ -162,8 +162,8 @@ export function useVisualViewportKeyboardInset(): number {
 /** Minimal seam between composer and keyboard (0 = flush). */
 const KEYBOARD_GAP_PX = 0;
 
-/** Reserve above bottom tab bar when keyboard is closed (nav padding + icons + 16px labels). */
-export const MOBILE_BOTTOM_NAV_RESERVE_PX = 96;
+/** Reserve above bottom tab bar when keyboard is closed (nav padding + icons + labels). */
+export const MOBILE_BOTTOM_NAV_RESERVE_PX = 88;
 
 /**
  * Height (px) of the software keyboard overlapping the layout viewport.
