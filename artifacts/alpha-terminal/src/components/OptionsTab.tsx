@@ -62,6 +62,7 @@ import {
 import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
   chainAtmRowOffCenter,
+  resolveChainAtmRow,
   scrollChainViewportToAtm,
 } from "@/lib/active-trader/atLadderScroll";
 import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
@@ -2231,6 +2232,38 @@ export function OptionsTab({
 
   const [chainSpotOffCenter, setChainSpotOffCenter] = useState(false);
 
+  // Recenter on a new ticker, a new strike count, or a fresh visit to the chain.
+  // Once the user scrolls or picks a strike on that view, leave their place alone.
+  const chainViewKey = `${symbol}|${strikeCount}`;
+  const chainViewKeyRef = useRef(chainViewKey);
+  const chainUserOwnedKeyRef = useRef<string | null>(null);
+  if (optionsSubView !== "chain" || chainViewKeyRef.current !== chainViewKey) {
+    chainViewKeyRef.current = chainViewKey;
+    chainUserOwnedKeyRef.current = null;
+  }
+  const chainDataFreshRef = useRef(true);
+  chainDataFreshRef.current = Boolean(fixtureChain) || !isPlaceholderData;
+  const noteChainUserWorking = useCallback(() => {
+    if (!chainDataFreshRef.current || optionsSubView !== "chain") return;
+    chainUserOwnedKeyRef.current = chainViewKeyRef.current;
+  }, [optionsSubView]);
+
+  const chainCenterSignal = useMemo(() => {
+    const open = groups.find((g) => expandedExps.has(g.expiration));
+    const strikes = open?.rows ?? [];
+    const spotIdx = findAtmStrikeIndex(strikes.map((r) => r.strike), underlyingPrice);
+    const spot = spotIdx >= 0 ? strikes[spotIdx]?.strike : "";
+    return [
+      chainViewKey,
+      optionsSubView,
+      groups.map((g) => g.expiration).join(","),
+      open?.expiration ?? "",
+      strikes.map((r) => r.strike).join(","),
+      spot,
+      fixtureChain || !isPlaceholderData ? "1" : "0",
+    ].join("|");
+  }, [chainViewKey, optionsSubView, groups, expandedExps, underlyingPrice, fixtureChain, isPlaceholderData]);
+
   const measureChainSpot = useCallback(() => {
     const el = chainScrollRef.current;
     if (!el || underlyingPrice == null) {
@@ -2241,9 +2274,50 @@ export function OptionsTab({
   }, [underlyingPrice, chainSheetPad]);
 
   const scrollChainToSpot = useCallback(() => {
+    chainUserOwnedKeyRef.current = null;
     scrollChainViewportToAtm(chainScrollRef.current, underlyingPrice, chainSheetPad, "auto");
     requestAnimationFrame(measureChainSpot);
   }, [underlyingPrice, chainSheetPad, measureChainSpot]);
+
+  useLayoutEffect(() => {
+    if (optionsSubView !== "chain") return;
+    let cancelled = false;
+    let frames = 0;
+    let raf = 0;
+    const attempt = () => {
+      if (cancelled) return;
+      if (chainUserOwnedKeyRef.current === chainViewKey) return;
+      if (!fixtureChain && isPlaceholderData) return;
+      const el = chainScrollRef.current;
+      const ready = !!el
+        && underlyingPrice != null
+        && el.clientHeight > 0
+        && resolveChainAtmRow(el, underlyingPrice) != null;
+      if (!ready) {
+        if (frames < 16) {
+          frames += 1;
+          raf = requestAnimationFrame(attempt);
+        }
+        return;
+      }
+      if (!chainAtmRowOffCenter(el, underlyingPrice, 56, chainSheetPad)) return;
+      scrollChainViewportToAtm(el, underlyingPrice, chainSheetPad, "auto");
+      raf = requestAnimationFrame(() => {
+        if (cancelled || chainUserOwnedKeyRef.current === chainViewKey) return;
+        const node = chainScrollRef.current;
+        if (!node || underlyingPrice == null) return;
+        if (chainAtmRowOffCenter(node, underlyingPrice, 56, chainSheetPad)) {
+          scrollChainViewportToAtm(node, underlyingPrice, chainSheetPad, "auto");
+        }
+        measureChainSpot();
+      });
+    };
+    attempt();
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [chainCenterSignal]);
 
   useEffect(() => {
     if (optionsSubView !== "chain") {
@@ -2257,13 +2331,28 @@ export function OptionsTab({
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(measureChainSpot);
     };
+    const onWheel = () => noteChainUserWorking();
+    const onTouchMove = () => noteChainUserWorking();
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target === el || target.closest("[data-chain-strike], [data-chain-strike-rail]")) {
+        noteChainUserWorking();
+      }
+    };
     el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("pointerdown", onPointerDown);
     measureChainSpot();
     return () => {
       el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("pointerdown", onPointerDown);
       cancelAnimationFrame(raf);
     };
-  }, [optionsSubView, measureChainSpot, data, groups.length]);
+  }, [optionsSubView, measureChainSpot, noteChainUserWorking, data, groups.length]);
 
   const chainStrikeSignature = useMemo(
     () =>
@@ -2539,6 +2628,7 @@ export function OptionsTab({
   }, []);
 
   const handleToggleLeg = useCallback((contract: Contract, type: "CALL" | "PUT", side: "bid" | "ask") => {
+    noteChainUserWorking();
     const key = makeLegKey(contract, type);
     withPreservedChainScroll(() => {
       setSelectedLegs((prev) => {
@@ -2566,7 +2656,7 @@ export function OptionsTab({
         return next;
       });
     });
-  }, [withPreservedChainScroll, rejectLegLimit]);
+  }, [noteChainUserWorking, withPreservedChainScroll, rejectLegLimit]);
 
   const handleLongPressCell = useCallback((target: LongPressTarget) => {
     setLongPressTarget(target);
