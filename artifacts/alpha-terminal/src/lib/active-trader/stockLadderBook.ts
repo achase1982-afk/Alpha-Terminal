@@ -112,6 +112,11 @@ const BID_HEAT_HIGH = [0, 209, 102] as const;
 const ASK_HEAT_LOW = [55, 26, 31] as const;
 const ASK_HEAT_HIGH = [242, 54, 69] as const;
 
+export function stockBookSizeIntensity(size: number | null, visiblePeak: number): number {
+  const denominator = Math.max(400, visiblePeak);
+  return size != null && size > 0 ? Math.min(1, size / denominator) : 0;
+}
+
 /** Actual displayed-book size heat. A 400-share level is fully lit unless the visible book is heavier. */
 export function stockBookSizeHeatColor(
   side: "bid" | "ask",
@@ -120,8 +125,7 @@ export function stockBookSizeHeatColor(
 ): string {
   const low = side === "bid" ? BID_HEAT_LOW : ASK_HEAT_LOW;
   const high = side === "bid" ? BID_HEAT_HIGH : ASK_HEAT_HIGH;
-  const denominator = Math.max(400, visiblePeak);
-  const t = size != null && size > 0 ? Math.min(1, size / denominator) : 0;
+  const t = stockBookSizeIntensity(size, visiblePeak);
   const channel = (index: 0 | 1 | 2) => Math.round(low[index] + (high[index] - low[index]) * t);
   return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
 }

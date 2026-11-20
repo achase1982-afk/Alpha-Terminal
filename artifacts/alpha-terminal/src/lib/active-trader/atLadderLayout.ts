@@ -13,11 +13,13 @@ export const AT_LADDER_GRID =
 export const AT_LADDER_STRIKE_COL_W = 96;
 
 /**
- * Six-column equity ladder:
- * volume | buy orders | bid size | price | ask size | sell orders.
+ * Equity ladder with the same exact centered 96px price rail as options/SPX:
+ * volume | bid size | price | ask size | (transparent balance rail).
+ * The final rail carries no data; it mirrors the volume lane so PRICE remains
+ * mathematically centered in every viewport.
  */
 export const AT_STOCK_LADDER_GRID =
-  `minmax(58px,1.15fr) minmax(46px,.8fr) minmax(52px,1fr) ${AT_LADDER_STRIKE_COL_W}px minmax(52px,1fr) minmax(46px,.8fr)`;
+  `minmax(58px,1fr) minmax(52px,1fr) ${AT_LADDER_STRIKE_COL_W}px minmax(52px,1fr) minmax(58px,1fr)`;
 
 /** Dull green behind bid size, dull red behind ask size (equity ladder size columns). */
 export const AT_STOCK_BID_BG = "#173b2a";
