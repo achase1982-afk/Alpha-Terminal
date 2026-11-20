@@ -256,7 +256,7 @@ const JournalFixtureDevPage = import.meta.env.DEV
   ? lazy(() => import("@/dev-only/JournalFixtureDevPage"))
   : null;
 
-const SpxGlancePage = lazy(() => import("@/glance/GlancePage"));
+const SpxGlancePage = lazy(() => import("@/glance/GlanceRoute"));
 
 function Router() {
   return (

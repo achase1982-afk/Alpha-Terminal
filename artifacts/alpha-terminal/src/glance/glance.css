@@ -3,14 +3,16 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: 44px 108px minmax(0, 1fr) 24px;
+  grid-template-rows: auto auto auto auto auto auto;
+  align-content: start;
   gap: 12px;
   padding: 0 24px;
   background: #0b0d11;
   color: #f8fafc;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0;
-  overflow: hidden;
+  overflow: auto;
+  font-size: 18px;
 }
 
 .glance,
@@ -40,30 +42,30 @@
 }
 
 .brand {
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
 }
 
 .brand em {
-  display: block;
-  margin-top: 1px;
+  display: inline;
+  margin-left: 6px;
   font-style: normal;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.18em;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
   color: #ffb800;
 }
 
 .cmd h1 {
   margin: 0;
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 650;
 }
 
 .cmd .sub {
   color: #9aa6b8;
-  font-size: 12px;
+  font-size: 18px;
 }
 
 .cmd .spacer {
@@ -78,7 +80,7 @@
   border-radius: 6px;
   background: #151a22;
   color: #e2e8f0;
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 650;
   text-decoration: none;
   display: inline-flex;
@@ -92,7 +94,7 @@
 
 .headline {
   display: grid;
-  grid-template-columns: minmax(240px, 300px) minmax(150px, 180px) minmax(160px, 190px) minmax(220px, 270px) minmax(220px, 1fr);
+  grid-template-columns: minmax(210px, 1.7fr) minmax(130px, 0.9fr) minmax(140px, 0.95fr) minmax(230px, 1.45fr) minmax(190px, 1.25fr);
   align-items: end;
   gap: 12px;
   border-top: 1px solid #232b38;
@@ -101,10 +103,14 @@
   min-width: 0;
 }
 
+.headline > div {
+  min-width: 0;
+}
+
 .headline .k {
   display: block;
   color: #9aa6b8;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 650;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -137,18 +143,23 @@
 .support {
   margin-top: 4px;
   color: #cbd5e1;
-  font-size: 14px;
+  font-size: 18px;
+  white-space: nowrap;
 }
 
 .hl {
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 500;
+}
+
+.hl-px {
+  white-space: nowrap;
 }
 
 .hl .when {
   margin-left: 6px;
   color: #9aa6b8;
-  font-size: 13px;
+  font-size: 18px;
 }
 
 .up {
@@ -159,22 +170,58 @@
   color: #ff6b74;
 }
 
-.main {
+.band,
+.levels-wrap {
   display: grid;
-  grid-template-columns: minmax(0, 720fr) minmax(0, 488fr);
-  gap: 24px;
-  min-height: 0;
+  gap: 16px;
+  min-width: 0;
 }
 
-.left {
+.band {
+  grid-template-columns: minmax(280px, 0.9fr) minmax(560px, 1.2fr);
+  align-items: start;
+}
+
+.levels-wrap {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.trace {
+  width: 100%;
+  height: 112px;
+  display: block;
+}
+
+.trace-empty {
+  height: 112px;
+  color: #9aa6b8;
+  font-size: 18px;
+}
+
+.pulse {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 140px;
-  gap: 12px;
-  min-height: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: center;
+  border-top: 1px solid #232b38;
+  padding: 8px 0;
+}
+
+.pulse-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: 18px;
+}
+
+.pulse-cell b {
+  font-size: 22px;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .block {
-  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -186,7 +233,7 @@
   display: flex;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 650;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -195,28 +242,29 @@
 
 .flow-row {
   display: grid;
-  grid-template-columns: 52px minmax(88px, 120px) minmax(0, 1fr) minmax(88px, 120px);
+  grid-template-columns: 72px minmax(168px, max-content) minmax(72px, 1fr) minmax(168px, max-content);
   gap: 8px;
   align-items: center;
-  height: 84px;
+  min-height: 78px;
 }
 
 .side-name {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 650;
   color: #cbd5e1;
 }
 
 .amt {
-  font-size: 30px;
+  font-size: 32px;
   line-height: 1;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .amt small {
   display: block;
   margin-top: 4px;
-  font-size: 12px;
+  font-size: 18px;
   color: #9aa6b8;
 }
 
@@ -240,15 +288,16 @@
   background: #0b0d11;
 }
 
-.track .sold {
+.track .bought {
   justify-self: end;
   height: 100%;
-  background: #f23645;
+  background: #00d166;
 }
 
-.track .bought {
+.track .sold {
+  justify-self: start;
   height: 100%;
-  background: #00d166;
+  background: #f23645;
 }
 
 .hist {
@@ -275,13 +324,14 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .table th {
   text-align: right;
   color: #9aa6b8;
-  font-size: 12px;
+  font-size: 18px;
+  white-space: nowrap;
   font-weight: 650;
   padding: 2px 6px;
 }
@@ -296,13 +346,19 @@
   text-align: right;
   padding: 2px 6px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .nets {
   display: flex;
-  gap: 14px;
-  font-size: 13px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 18px;
   color: #cbd5e1;
+}
+
+.nets span {
+  white-space: nowrap;
 }
 
 .traces {
@@ -325,20 +381,22 @@
 
 .windows {
   display: flex;
-  gap: 14px;
-  font-size: 16px;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 22px;
 }
 
 .windows span {
   color: #9aa6b8;
   margin-right: 4px;
-  font-size: 12px;
+  font-size: 18px;
 }
 
 .chips {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   min-height: 36px;
 }
 
@@ -350,8 +408,8 @@
 .pnf {
   background: #ffb800;
   color: #111;
-  font-size: 13px;
-  font-weight: 750;
+  font-size: 18px;
+  font-weight: 650;
   padding: 6px 8px;
   border-radius: 4px;
 }
@@ -370,13 +428,14 @@
 .levels td {
   text-align: right;
   padding: 4px 6px;
-  font-size: 14px;
+  font-size: 18px;
   border-bottom: 1px solid #1c2330;
+  white-space: nowrap;
 }
 
 .levels th {
   color: #9aa6b8;
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 650;
 }
 
@@ -385,8 +444,8 @@
   text-align: left;
 }
 
-.wall-now {
-  font-size: 28px;
+.levels td.wall-now {
+  font-size: 32px;
   font-weight: 500;
   line-height: 1;
 }
@@ -406,13 +465,18 @@
 .meta-row {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
-  font-size: 14px;
+  font-size: 18px;
+}
+
+.meta-row > span {
+  white-space: nowrap;
 }
 
 .rail {
   position: relative;
-  height: 92px;
+  height: 156px;
   margin-top: 4px;
   border-top: 1px solid #2a3342;
   border-bottom: 1px solid #2a3342;
@@ -422,14 +486,14 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 46px;
+  top: 78px;
   height: 1px;
   background: #2a3342;
 }
 
 .mark {
   position: absolute;
-  top: 40px;
+  top: 72px;
   width: 8px;
   height: 8px;
   border-radius: 999px;
@@ -441,7 +505,7 @@
   left: 50%;
   transform: translateX(-50%);
   font-style: normal;
-  font-size: 11px;
+  font-size: 18px;
   white-space: nowrap;
   color: #cbd5e1;
 }
@@ -451,11 +515,11 @@
 }
 
 .mark.lane-1 em {
-  top: 12px;
+  top: 16px;
 }
 
 .mark.lane-2 em {
-  top: -44px;
+  top: -78px;
 }
 
 .footer {
@@ -463,9 +527,9 @@
   align-items: center;
   justify-content: space-between;
   color: #9aa6b8;
-  font-size: 12px;
+  font-size: 18px;
   white-space: nowrap;
-  overflow: hidden;
+  min-height: 32px;
 }
 
 .sheet {
@@ -484,13 +548,13 @@
 
 .sheet h3 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .sheet p,
 .sheet li {
   color: #cbd5e1;
-  font-size: 13px;
+  font-size: 18px;
   line-height: 1.4;
 }
 
@@ -499,7 +563,7 @@
   justify-content: space-between;
   gap: 8px;
   margin: 8px 0;
-  font-size: 14px;
+  font-size: 18px;
 }
 
 .sheet input {
@@ -509,7 +573,7 @@
   border: 1px solid #2a3342;
   border-radius: 4px;
   padding: 8px;
-  font-size: 16px;
+  font-size: 18px;
 }
 
 .glance.glance-embedded {
@@ -521,7 +585,20 @@
   overflow: auto;
 }
 
-@media (max-width: 1100px) {
+@media (max-height: 760px) {
+  .glance {
+    gap: 8px;
+  }
+}
+
+.glance button,
+.glance a,
+.glance input,
+.glance small {
+  font-size: 18px;
+}
+
+@media (max-width: 760px) {
   .glance {
     position: absolute;
     overflow: auto;
@@ -530,13 +607,10 @@
   }
 
   .headline,
-  .main,
-  .left {
+  .band,
+  .levels-wrap,
+  .pulse {
     display: flex;
     flex-direction: column;
-  }
-
-  .spot {
-    font-size: 48px;
   }
 }
