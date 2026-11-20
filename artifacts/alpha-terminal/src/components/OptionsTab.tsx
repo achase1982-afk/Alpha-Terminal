@@ -34,8 +34,12 @@ import {
   AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
+  AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_WEIGHT,
+  AT_LADDER_THIN_SEP,
+  AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
+import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
@@ -706,11 +710,13 @@ const DataCell = memo(function DataCell({
   }, []);
 
   let textColor: string;
-  if (topStr === "\u2014") textColor = MUTED;
-  else if (isPrice && priceDimmed) textColor = AT_LADDER_PRICE_COLOR;
-  else if (priceDimmed) textColor = MUTED;
-  else if (isBid) textColor = DOWN;
-  else textColor = WHITE;
+  if (isPrice) {
+    textColor = AT_LADDER_PRICE_COLOR;
+  } else if (topStr === "\u2014") {
+    textColor = MUTED;
+  } else {
+    textColor = WHITE;
+  }
 
   const oiValue = isOI ? topVal : undefined;
 
@@ -732,7 +738,7 @@ const DataCell = memo(function DataCell({
           fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
           fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
-          opacity: isPrice && priceDimmed ? 0.72 : priceDimmed ? 0.75 : 1,
+          opacity: isPrice && priceDimmed ? 0.72 : 1,
           fontVariantNumeric: "tabular-nums",
           ...(isPrice ? {} : { fontFamily: MONO }),
         }}
@@ -1106,54 +1112,31 @@ function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: 
 }
 
 
-function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPrice: number | null }) {
-  const isATM = underlyingPrice != null && Math.abs(strike - underlyingPrice) < (underlyingPrice * 0.003);
-
-  let moneynessLabel: string | null = null;
-
-  if (underlyingPrice != null) {
-    const diff = strike - underlyingPrice;
-    const pct = (diff / underlyingPrice) * 100;
-    const absPct = Math.abs(pct);
-
-    if (absPct < 0.3) {
-      moneynessLabel = "ATM";
-    } else if (absPct < 10) {
-      moneynessLabel = `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%`;
-    }
-  }
-
+function StrikeCell({ strike, spotRow }: { strike: number; spotRow: boolean }) {
   return (
     <div
-      className="flex flex-col items-center justify-center"
+      className="relative flex h-full w-full items-center justify-center"
       style={{
-        height: ROW_H,
-        borderBottom: `1px solid rgba(0,0,0,0.25)`,
+        boxSizing: "border-box",
+        padding: `0 ${STRIKE_COL_PAD_X}px`,
+        fontVariantNumeric: "tabular-nums",
       }}
     >
       <span
         data-ui-audit="chain-strike-cell"
+        data-chain-spot-strike={spotRow ? "1" : undefined}
         style={{
           fontSize: strikeRailFontSize(strike),
-          fontWeight: AT_LADDER_STRIKE_WEIGHT,
-          color: "#000",
-          fontVariantNumeric: "tabular-nums",
-          letterSpacing: STRIKE_RAIL_LETTER_SPACING,
+          fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
+          color: spotRow ? AT_SPOT_PILL_TEXT : WHITE,
+          letterSpacing: spotRow ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
           lineHeight: STRIKE_RAIL_LINE_HEIGHT,
-          padding: `0 ${STRIKE_COL_PAD_X}px`,
-          width: "100%",
           whiteSpace: "nowrap",
           textAlign: "center",
-          overflow: "visible",
         }}
       >
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
-      {moneynessLabel && (
-        <span style={{ fontSize: 9, fontWeight: FW_LIGHT, color: "rgba(0,0,0,0.5)", fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
-          {moneynessLabel}
-        </span>
-      )}
     </div>
   );
 }
@@ -1188,6 +1171,13 @@ function OptionsGrid({
   chainQuoteTs: number;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
+
+  const spotStrike = useMemo(() => {
+    if (underlyingPrice == null || sortedRows.length === 0) return null;
+    const strikes = sortedRows.map((r) => r.strike);
+    const idx = findAtmStrikeIndex(strikes, underlyingPrice);
+    return idx >= 0 ? strikes[idx]! : null;
+  }, [sortedRows, underlyingPrice]);
 
   const transitionIdx = useMemo(() => {
     if (underlyingPrice == null) return -1;
@@ -1281,12 +1271,34 @@ function OptionsGrid({
           </div>
         )}
 
-        <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
-          {sortedRows.map((row) => (
-            <div key={row.strike} data-chain-strike={row.strike} data-chain-strike-rail style={{ height: ROW_H }}>
-              <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
-            </div>
-          ))}
+        <div
+          className="flex-none"
+          style={{
+            width: STRIKE_W,
+            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
+            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+            zIndex: 10,
+            position: "relative",
+          }}
+        >
+          {sortedRows.map((row) => {
+            const spotRow = spotStrike != null && row.strike === spotStrike;
+            return (
+              <div
+                key={row.strike}
+                data-chain-strike={row.strike}
+                data-chain-strike-rail
+                data-chain-spot-row={spotRow ? "1" : undefined}
+                style={{
+                  height: ROW_H,
+                  background: spotRow ? GOLD : AT_LADDER_STRIKE_BG,
+                  borderBottom: `1px solid ${BORDER_ROW}`,
+                }}
+              >
+                <StrikeCell strike={row.strike} spotRow={spotRow} />
+              </div>
+            );
+          })}
         </div>
 
         {showPuts && (
@@ -1480,7 +1492,18 @@ function OptionsChainHeader({
             <span data-ui-audit="chain-calls-hdr" style={{ fontSize: 12, letterSpacing: "0.08em", color: GRAY, fontFamily: MONO, fontWeight: FW_PREMIUM }}>CALLS</span>
           </div>
         )}
-        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}` }}>
+        <div
+          style={{
+            width: STRIKE_W,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
+            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+            background: AT_LADDER_STRIKE_BG,
+          }}
+        >
           {onBuildStrategy && (
             <button
               onClick={onBuildStrategy}
@@ -1529,7 +1552,18 @@ function OptionsChainHeader({
             </div>
           </div>
         )}
-        <div style={{ width: STRIKE_W, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", borderLeft: `1px solid ${BORDER}`, borderRight: `1px solid ${BORDER}`, background: "#111111" }}>
+        <div
+          style={{
+            width: STRIKE_W,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
+            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+            background: AT_LADDER_STRIKE_BG,
+          }}
+        >
           <span data-ui-audit="chain-strike-hdr" style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
         </div>
         {showPuts && (
