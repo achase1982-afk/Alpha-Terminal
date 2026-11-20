@@ -181,7 +181,7 @@ describe("LadderBody", () => {
     act(() => {
       useOptionsStreamStore.getState().mergeTicks([tick(target, { bid: 2.35, ask: target.ask! })]);
     });
-    expect(cell("call-bid-7330").textContent).toBe("▼2.35");
+    expect(cell("call-bid-7330").textContent).toBe("2.35");
     expect(counts).toEqual({ body: 0, row: 0, pair: 1, cell: 1 });
   });
 
