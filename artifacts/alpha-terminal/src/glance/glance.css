@@ -13,7 +13,7 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: auto auto minmax(280px, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(280px, 1fr) auto auto auto;
   align-content: stretch;
   gap: 4px;
   padding: 0 12px;
@@ -105,7 +105,7 @@
 
 .headline {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(140px, 0.9fr) minmax(180px, 1.2fr) minmax(180px, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: end;
   gap: 10px;
   border-top: 1px solid var(--glance-border);
@@ -221,7 +221,7 @@
 
 .cmd-quote-sym {
   color: #fff;
-  font-size: 18px;
+  font-size: 28px;
   font-weight: 600;
   line-height: 1;
 }
@@ -229,7 +229,7 @@
 .cmd-quote-name {
   margin-top: 2px;
   color: #ffb800;
-  font-size: 15px;
+  font-size: 25px;
   font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1.15;
@@ -241,33 +241,51 @@
 }
 
 .cmd-quote-last {
-  font-size: 22px;
+  font-size: 32px;
   font-weight: 500;
   line-height: 1;
 }
 
 .cmd-quote-chg {
   margin-top: 2px;
-  font-size: 18px;
+  font-size: 28px;
   font-weight: 500;
   line-height: 1.15;
   white-space: nowrap;
 }
 
-.band,
+/* iPhone 17 Pro Max logical width — Active Trader column on glance / iPad. */
+.glance-body {
+  display: grid;
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
+  gap: 8px 12px;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: hidden;
+  align-items: start;
+}
+
+.glance-body > .glance-ladder {
+  width: 100%;
+  max-width: 440px;
+  height: 100%;
+  min-height: 0;
+}
+
+.glance-desk {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+}
+
 .levels-wrap {
   display: grid;
   gap: 12px;
   min-width: 0;
-}
-
-.band {
-  height: auto;
-  min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: stretch;
 }
 
 .glance-ladder {
@@ -345,7 +363,7 @@
   min-height: 0;
 }
 
-.band > .block:not(.glance-ladder) {
+.glance-desk > .block {
   align-self: stretch;
   min-height: 0;
   overflow: auto;
@@ -890,7 +908,7 @@
   }
 
   .headline,
-  .band,
+  .glance-body,
   .levels-wrap,
   .pulse {
     display: flex;

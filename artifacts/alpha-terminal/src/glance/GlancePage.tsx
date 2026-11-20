@@ -254,8 +254,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const quotePct = fixture ? dayPct : (spxQuote.sessionChange.changePct ?? dayPct);
   const quoteName = quoteTitle("$SPX", fixture ? "S&P 500" : spxQuote.data?.description);
   const quoteChangeColor = quoteChange == null || quoteChange === 0 ? PRICE_FLAT : quoteChange > 0 ? PRICE_UP : PRICE_DOWN;
-  const open = fixture ? FIXTURE.rthOpen : live.open;
-  const fromOpen = fromOpenPoints(spot, open);
   const high = fixture ? FIXTURE.high : live.high;
   const low = fixture ? FIXTURE.low : live.low;
   const vix = fixture ? FIXTURE.vix : live.vix;
@@ -405,12 +403,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   return (
     <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
       <header className="cmd">
-        {embedded ? null : (
-          <div className="brand">
-            ALPHA
-            <em>TERMINAL</em>
-          </div>
-        )}
         <div className="cmd-quote" aria-label={formatDisplaySymbol("$SPX")}>
           <div className="cmd-quote-id">
             <span className="cmd-quote-sym">{formatDisplaySymbol("$SPX")}</span>
@@ -429,6 +421,12 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             </span>
           </div>
         </div>
+        {embedded ? null : (
+          <div className="brand">
+            ALPHA
+            <em>TERMINAL</em>
+          </div>
+        )}
         <span className="spacer" />
         {embedded ? null : <Link href="/">Mobile</Link>}
         <button type="button" onClick={() => setPanel(panel === "settings" ? null : "settings")}>
@@ -439,52 +437,44 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         </button>
       </header>
 
-      <section className="headline" aria-label="Market headline">
-        <div className="day-read">
-          <span className="k">SPX day</span>
-          <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>
-          <div className={`day-pts num ${signedClass(dayPoints)}`}>
-            {dayPoints == null ? "—" : `${formatSignedPts(dayPoints, 0)} points from the close`}
-          </div>
-        </div>
-        <div>
-          <span className="k">SPX from the open</span>
-          <div className={`open-pts num ${signedClass(fromOpen)}`}>
-            {fromOpen == null ? "—" : `${formatSignedPts(fromOpen, 0)} points`}
-          </div>
-          <div className="support num">Open {formatSpot(open)}</div>
-        </div>
-        <div>
-          <span className="k">Session high</span>
-          <div className="hl num">
-            <span className="hl-px">{formatSpot(high)}</span>{" "}
-            {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute}</span> : null}
-          </div>
-          <span className="k">Session low</span>
-          <div className="hl num">
-            <span className="hl-px">{formatSpot(low)}</span>{" "}
-            {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute}</span> : null}
-          </div>
-          {spot != null && high != null && low != null ? (
-            <div className="support num">
-              {formatSignedPts(high - spot, 0)} points under the high · {formatSignedPts(spot - low, 0)} points above the low
-            </div>
-          ) : null}
-        </div>
-        <div>
-          <span className="k">VIX</span>
-          <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
-          <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open</div>
-          <div className="support num">
-            VIX low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · VIX high{" "}
-            {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
-          </div>
-        </div>
-      </section>
-
-      <div className="band">
+      <div className="glance-body">
         <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
-        <section className="block" aria-label="Flow">
+        <div className="glance-desk">
+          <section className="headline" aria-label="Market headline">
+            <div>
+              <span className="k">Session high</span>
+              <div className="hl num">
+                <span className="hl-px">{formatSpot(high)}</span>{" "}
+                {fixture || live.highMinute ? (
+                  <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute}</span>
+                ) : null}
+              </div>
+              <span className="k">Session low</span>
+              <div className="hl num">
+                <span className="hl-px">{formatSpot(low)}</span>{" "}
+                {fixture || live.lowMinute ? (
+                  <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute}</span>
+                ) : null}
+              </div>
+              {spot != null && high != null && low != null ? (
+                <div className="support num">
+                  {formatSignedPts(high - spot, 0)} points under the high · {formatSignedPts(spot - low, 0)} points above the low
+                </div>
+              ) : null}
+            </div>
+            <div>
+              <span className="k">VIX</span>
+              <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
+              <div className={`support num ${signedClass(vixDelta)}`}>
+                {formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open
+              </div>
+              <div className="support num">
+                VIX low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · VIX high{" "}
+                {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
+              </div>
+            </div>
+          </section>
+          <section className="block" aria-label="Flow">
             <div className="windows num">
               {(
                 [
@@ -546,17 +536,15 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               {!fixture && live.flowUw ? <span>Level 1 estimate {formatNet(premiumNet(live.flowL1Session))}</span> : null}
             </div>
           </section>
+        </div>
       </div>
 
       <div className="levels-wrap">
         <section className="block levels" aria-label="Levels">
-          <h2>
-            <span>Levels</span>
-          </h2>
           <table>
             <thead>
               <tr>
-                <th>Wall</th>
+                <th scope="col" aria-hidden="true" />
                 <th>Strike</th>
                 <th>At open</th>
                 <th>Move</th>
