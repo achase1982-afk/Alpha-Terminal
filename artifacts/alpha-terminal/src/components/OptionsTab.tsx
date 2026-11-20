@@ -35,14 +35,16 @@ import {
   AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_CALLS_HDR,
   AT_LADDER_PUTS_HDR,
+  AT_LADDER_COL_HDR_H,
   AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_WEIGHT,
   AT_LADDER_THIN_SEP,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
+import { AT_HEADER_BG, AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import { findAtmStrikeIndex } from "@/lib/optionsSchwabKey";
 import {
-  COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
+  STRIKE_W, ROW_H, HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
   UP, DOWN, WHITE, GRAY, DIM, MUTED, ITM_OCEAN, SEL_BORDER_COLOR,
   MONO, FW_LIGHT, FW_NORMAL, FW_PREMIUM, noScrollbar,
@@ -1070,100 +1072,23 @@ function ColumnsEditorModal({ open, onClose }: { open: boolean; onClose: () => v
   );
 }
 
-function MetricsStrip({ groups, lastPrice, earningsInfo, isFetching, hasData }: {
-  groups: ExpirationGroup[];
-  lastPrice: number | null;
-  earningsInfo?: {
-    earningsDate?: string | null;
-    confirmed?: boolean;
-    time?: string | null;
-    epsEstimate?: string | null;
-    epsPrior?: string | null;
-    period?: string | null;
-    periodYear?: number | null;
-  };
-  isFetching: boolean;
-  hasData: boolean;
-}) {
-  const frontMonth = nearestTradableExpiration(groups) ?? (groups.length > 0 ? groups[0] : null);
-  const frontStats = useStreamingExpirationStats(frontMonth?.rows ?? [], lastPrice);
+/** Strike-count control width. Centered on the strike rail; the settings wheel sits just to its right. */
+const CHAIN_STRIKE_COUNT_W = 52;
 
-  const ticks = useOptionsStreamStore((s) => s.ticks);
-  const allRows = useMemo(() => groups.flatMap(g => g.rows), [groups]);
-  let totalCallVol = 0;
-  let totalPutVol = 0;
-  let totalCallOI = 0;
-  let totalPutOI = 0;
-  for (const row of allRows) {
-    const cTick = row.call?.streamKey ? ticks[row.call.streamKey] : undefined;
-    const pTick = row.put?.streamKey ? ticks[row.put.streamKey] : undefined;
-    totalCallVol += cTick?.volume ?? 0;
-    totalPutVol += pTick?.volume ?? 0;
-    totalCallOI += cTick?.openInterest ?? 0;
-    totalPutOI += pTick?.openInterest ?? 0;
-  }
+/**
+ * Wing tracks fill the side. Volume takes a wider share so "VOLUME" stays
+ * whole, with space on either side, next to BID and ASK.
+ */
+function chainWingTemplate(columns: { id: string }[]): string {
+  if (columns.length === 0) return "minmax(0, 1fr)";
+  return columns
+    .map((col) => (col.id === "vol" ? "minmax(0, 1.7fr)" : "minmax(0, 1fr)"))
+    .join(" ");
+}
 
-  const atmIV = frontStats.atmIV;
-  const expectedMove = frontStats.expectedMove;
-  const pcr = totalCallVol > 0
-    ? (totalPutVol / totalCallVol).toFixed(2)
-    : totalCallOI > 0
-      ? (totalPutOI / totalCallOI).toFixed(2)
-      : "\u2014";
-
-  const eDate = earningsInfo?.earningsDate;
-  let earnDisplay = "\u2014";
-  let earnColor = MUTED;
-  let earnTooltip = "";
-  if (eDate) {
-    const d = new Date(eDate + "T00:00:00");
-    if (!isNaN(d.getTime())) {
-      const mmdd = `${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
-      const timeSuffix = earningsInfo?.time ? ` ${earningsInfo.time}` : "";
-      earnDisplay = mmdd + timeSuffix;
-      const now = new Date();
-      const daysUntil = Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      if (daysUntil <= 7 && daysUntil >= 0) earnColor = GOLD;
-      else if (daysUntil < 0) earnColor = DIM;
-      else earnColor = WHITE;
-      const parts: string[] = [];
-      if (earningsInfo?.period && earningsInfo?.periodYear) parts.push(`${earningsInfo.period} ${earningsInfo.periodYear}`);
-      if (earningsInfo?.confirmed) parts.push("Confirmed");
-      else parts.push("Estimated");
-      if (earningsInfo?.epsEstimate) parts.push(`EPS Est: $${earningsInfo.epsEstimate}`);
-      if (earningsInfo?.epsPrior) parts.push(`EPS Prior: $${earningsInfo.epsPrior}`);
-      if (daysUntil >= 0) parts.push(`${daysUntil}d away`);
-      earnTooltip = parts.join(" \u2022 ");
-    }
-  }
-
-  return (
-    <div className="flex gap-2 items-center shrink-0" style={{ fontSize: 12, fontVariantNumeric: "tabular-nums", fontFamily: MONO, fontWeight: FW_LIGHT }}>
-      {isFetching && hasData && (
-        <span className="w-2 h-2 border border-amber-400 border-t-transparent rounded-full animate-spin" />
-      )}
-      <span>
-        <span style={{ color: DIM }}>IV </span>
-        <span style={{ color: atmIV != null ? GOLD : MUTED, fontWeight: FW_LIGHT }}>
-          {atmIV != null ? atmIV.toFixed(1) + "%" : "\u2014"}
-        </span>
-      </span>
-      <span>
-        <span style={{ color: DIM }}>MV </span>
-        <span style={{ color: expectedMove != null ? WHITE : MUTED, fontWeight: FW_LIGHT }}>
-          {expectedMove != null ? "\u00B1$" + expectedMove.toFixed(2) : "\u2014"}
-        </span>
-      </span>
-      <span>
-        <span style={{ color: DIM }}>P/C </span>
-        <span style={{ color: pcr !== "\u2014" ? (Number(pcr) > 1 ? DOWN : UP) : MUTED, fontWeight: FW_LIGHT }}>{pcr}</span>
-      </span>
-      <span title={earnTooltip}>
-        <span style={{ color: DIM }}>ERN </span>
-        <span style={{ color: earnColor, fontWeight: FW_LIGHT }}>{earnDisplay}</span>
-      </span>
-    </div>
-  );
+function chainColHeaderLabel(col: ColumnDef): string {
+  if (col.id === "vol") return "VOLUME";
+  return col.shortLabel;
 }
 
 
@@ -1208,7 +1133,6 @@ function OptionsGrid({
   showInlineGreeks,
   maxOI,
   accentHex,
-  colW = COL_W,
   chainQuoteTs,
 }: {
   rows: NormalizedRow[];
@@ -1222,7 +1146,6 @@ function OptionsGrid({
   showInlineGreeks: boolean;
   maxOI: number;
   accentHex: string;
-  colW?: number;
   chainQuoteTs: number;
 }) {
   const sortedRows = useMemo(() => [...rows].sort((a, b) => a.strike - b.strike), [rows]);
@@ -1244,7 +1167,7 @@ function OptionsGrid({
     return underlyingPrice > sortedRows[sortedRows.length - 1].strike + EPS;
   }, [underlyingPrice, sortedRows]);
 
-  const wingWidth = columns.length * colW;
+  const wingTemplate = chainWingTemplate(columns);
 
   const callWingRef = useRef<HTMLDivElement>(null);
   const putWingRef = useRef<HTMLDivElement>(null);
@@ -1255,12 +1178,57 @@ function OptionsGrid({
     return -1;
   }, [transitionIdx, priceAboveAll, sortedRows.length]);
 
-  const wingScrollStyle: React.CSSProperties = {
-    overflowX: "hidden",
-    overflowY: "hidden",
-    scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
-    msOverflowStyle: "none",
-    willChange: "transform",
+  const renderSide = (side: "call" | "put") => {
+    const isCall = side === "call";
+    const type = isCall ? "CALL" as const : "PUT" as const;
+    return sortedRows.map((row) => {
+      const contract = isCall ? row.call : row.put;
+      const legKey = contract ? makeLegKey(contract, type) : "";
+      const leg = legKey ? selectedLegs.get(legKey) : undefined;
+      const isSelected = !!leg;
+      const moneyness = classifyMoneyness(row.strike, underlyingPrice, isCall);
+      const bg = getRowBg(row.strike, underlyingPrice, isCall);
+      return (
+        <div
+          key={row.strike}
+          data-chain-strike={isCall ? row.strike : undefined}
+          style={{
+            display: "grid",
+            gridTemplateColumns: wingTemplate,
+            height: ROW_H,
+            minHeight: ROW_H,
+            maxHeight: ROW_H,
+            overflow: "hidden",
+            boxSizing: "border-box",
+            alignItems: "stretch",
+            borderBottom: `1px solid ${BORDER_ROW}`,
+            background: bg,
+          }}
+        >
+          {columns.map((col) => (
+            <div key={col.id} style={{ minWidth: 0, height: "100%", overflow: "hidden" }}>
+              <DataCell
+                col={col}
+                contract={contract}
+                chainQuoteTs={chainQuoteTs}
+                isSelected={isSelected && !!col.isPrice && leg?.side === col.id}
+                onSelect={col.isPrice && contract ? () => onToggleLeg(contract, type, col.id as "bid" | "ask") : undefined}
+                onLongPress={col.isPrice && contract ? (e) => onLongPressCell({
+                  contract,
+                  type,
+                  side: col.id === "bid" ? "SELL" : "BUY",
+                  x: e.clientX,
+                  y: e.clientY,
+                }) : undefined}
+                showInlineGreeks={showInlineGreeks}
+                maxOI={col.id === "oi" ? maxOI : undefined}
+                moneyness={moneyness}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    });
   };
 
   return (
@@ -1278,56 +1246,8 @@ function OptionsGrid({
         )}
 
         {showCalls && (
-          <div
-            ref={callWingRef}
-            style={{ ...wingScrollStyle, flex: 1 }}
-          >
-            <div style={{ minWidth: wingWidth }}>
-              {sortedRows.map((row) => {
-                const callKey = row.call ? makeLegKey(row.call, "CALL") : "";
-                const callLeg = callKey ? selectedLegs.get(callKey) : undefined;
-                const isCallSelected = !!callLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, true);
-                const bg = getRowBg(row.strike, underlyingPrice, true);
-                return (
-                  <div
-                    key={row.strike}
-                    data-chain-strike={row.strike}
-                    className="flex"
-                    style={{
-                      height: ROW_H,
-                      minHeight: ROW_H,
-                      maxHeight: ROW_H,
-                      overflow: "hidden",
-                      boxSizing: "border-box",
-                      alignItems: "stretch",
-                      borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: bg,
-                    }}
-                  >
-                    {columns.map(col => (
-                      <div key={col.id} style={{ width: colW, height: "100%", overflow: "hidden" }} className="shrink-0">
-                        <DataCell
-                          col={col}
-                          contract={row.call}
-                          chainQuoteTs={chainQuoteTs}
-                          isSelected={isCallSelected && col.isPrice && callLeg?.side === col.id}
-                          onSelect={col.isPrice && row.call ? () => onToggleLeg(row.call!, "CALL", col.id as "bid" | "ask") : undefined}
-                          onLongPress={col.isPrice && row.call ? (e) => onLongPressCell({
-                            contract: row.call!, type: "CALL",
-                            side: col.id === "bid" ? "SELL" : "BUY",
-                            x: e.clientX, y: e.clientY,
-                          }) : undefined}
-                          showInlineGreeks={showInlineGreeks}
-                          maxOI={col.id === "oi" ? maxOI : undefined}
-                          moneyness={moneyness}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+          <div ref={callWingRef} style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+            {renderSide("call")}
           </div>
         )}
 
@@ -1366,55 +1286,8 @@ function OptionsGrid({
         </div>
 
         {showPuts && (
-          <div
-            ref={putWingRef}
-            style={{ ...wingScrollStyle, flex: 1 }}
-          >
-            <div style={{ minWidth: wingWidth }}>
-              {sortedRows.map((row) => {
-                const putKey = row.put ? makeLegKey(row.put, "PUT") : "";
-                const putLeg = putKey ? selectedLegs.get(putKey) : undefined;
-                const isPutSelected = !!putLeg;
-                const moneyness = classifyMoneyness(row.strike, underlyingPrice, false);
-                const bg = getRowBg(row.strike, underlyingPrice, false);
-                return (
-                  <div
-                    key={row.strike}
-                    className="flex"
-                    style={{
-                      height: ROW_H,
-                      minHeight: ROW_H,
-                      maxHeight: ROW_H,
-                      overflow: "hidden",
-                      boxSizing: "border-box",
-                      alignItems: "stretch",
-                      borderBottom: `1px solid ${BORDER_ROW}`,
-                      background: bg,
-                    }}
-                  >
-                    {columns.map(col => (
-                      <div key={col.id} style={{ width: colW, height: "100%", overflow: "hidden" }} className="shrink-0">
-                        <DataCell
-                          col={col}
-                          contract={row.put}
-                          chainQuoteTs={chainQuoteTs}
-                          isSelected={isPutSelected && col.isPrice && putLeg?.side === col.id}
-                          onSelect={col.isPrice && row.put ? () => onToggleLeg(row.put!, "PUT", col.id as "bid" | "ask") : undefined}
-                          onLongPress={col.isPrice && row.put ? (e) => onLongPressCell({
-                            contract: row.put!, type: "PUT",
-                            side: col.id === "bid" ? "SELL" : "BUY",
-                            x: e.clientX, y: e.clientY,
-                          }) : undefined}
-                          showInlineGreeks={showInlineGreeks}
-                          maxOI={col.id === "oi" ? maxOI : undefined}
-                          moneyness={moneyness}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
+          <div ref={putWingRef} style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+            {renderSide("put")}
           </div>
         )}
       </div>
@@ -1425,7 +1298,7 @@ function OptionsGrid({
 function ExpirationSection({
   group, isOpen, onToggle, stickyTop, underlyingPrice,
   activeColumns, showCalls, showPuts, selectedLegs,
-  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex, colW = COL_W, chainQuoteTs,
+  onToggleLeg, onLongPressCell, showInlineGreeks, accentHex, chainQuoteTs,
 }: {
   group: ExpirationGroup;
   isOpen: boolean;
@@ -1440,7 +1313,6 @@ function ExpirationSection({
   onLongPressCell: (target: LongPressTarget) => void;
   showInlineGreeks: boolean;
   accentHex: string;
-  colW?: number;
   chainQuoteTs: number;
 }) {
   const live = useStreamingExpirationStats(group.rows, underlyingPrice);
@@ -1514,11 +1386,38 @@ function ExpirationSection({
           showInlineGreeks={showInlineGreeks}
           maxOI={live.maxOI || group.maxOI}
           accentHex={accentHex}
-          colW={colW}
           chainQuoteTs={chainQuoteTs}
         />
         </div>
       )}
+    </div>
+  );
+}
+
+function ChainColTitles({ columns, template }: { columns: ColumnDef[]; template: string }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minWidth: 0,
+        height: "100%",
+        display: "grid",
+        gridTemplateColumns: template,
+        alignItems: "center",
+      }}
+    >
+      {columns.map((col) => (
+        <span
+          key={col.id}
+          style={{
+            textAlign: "center",
+            whiteSpace: "nowrap",
+            lineHeight: 1,
+          }}
+        >
+          {chainColHeaderLabel(col)}
+        </span>
+      ))}
     </div>
   );
 }
@@ -1530,7 +1429,9 @@ function OptionsChainHeader({
   stickyTop,
   onColumnsEditor,
   onBuildStrategy,
-  colW = COL_W,
+  strikeControl,
+  onExitCustom,
+  showColumnHeader,
 }: {
   showCalls: boolean;
   showPuts: boolean;
@@ -1538,9 +1439,23 @@ function OptionsChainHeader({
   stickyTop: number;
   onColumnsEditor: () => void;
   onBuildStrategy?: () => void;
-  colW?: number;
+  strikeControl: React.ReactNode;
+  onExitCustom?: () => void;
+  showColumnHeader: boolean;
 }) {
-  const wingWidth = columns.length * colW;
+  const wingTemplate = chainWingTemplate(columns);
+  const iconBtn: React.CSSProperties = {
+    width: 28,
+    height: HEADER_H,
+    color: GRAY,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "transparent",
+    border: "none",
+    padding: 0,
+    flexShrink: 0,
+  };
 
   return (
     <>
@@ -1549,7 +1464,7 @@ function OptionsChainHeader({
           display: "flex",
           height: HEADER_H,
           background: BG_HEADER,
-          borderBottom: `1px solid ${BORDER}`,
+          borderBottom: showColumnHeader ? "none" : `1px solid ${BORDER}`,
           alignItems: "center",
           position: "sticky",
           top: stickyTop,
@@ -1557,7 +1472,7 @@ function OptionsChainHeader({
         }}
       >
         {showCalls && (
-          <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
             <span
               data-ui-audit="chain-calls-hdr"
               style={{ fontSize: 13, letterSpacing: "0.03em", color: AT_LADDER_CALLS_HDR, fontFamily: MONO, fontWeight: FW_PREMIUM }}
@@ -1570,33 +1485,51 @@ function OptionsChainHeader({
           style={{
             width: STRIKE_W,
             flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
-            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-            background: BG_HEADER,
+            position: "relative",
+            height: "100%",
+            zIndex: 3,
           }}
         >
-          {onBuildStrategy && (
-            <button
-              onClick={onBuildStrategy}
-              style={{ width: STRIKE_W / 2, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-              aria-label="Strategy builder"
-            >
-              <Layers className="w-3.5 h-3.5" />
-            </button>
-          )}
-          <button
-            onClick={onColumnsEditor}
-            style={{ width: onBuildStrategy ? STRIKE_W / 2 : STRIKE_W, height: HEADER_H, color: GRAY, display: "flex", alignItems: "center", justifyContent: "center" }}
-            aria-label="Edit columns"
+          <div
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%)",
+              width: CHAIN_STRIKE_COUNT_W,
+              display: "flex",
+              justifyContent: "center",
+            }}
           >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
+            {strikeControl}
+          </div>
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: `calc(50% + ${CHAIN_STRIKE_COUNT_W / 2 + 4}px)`,
+              height: "100%",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {onExitCustom && (
+              <button type="button" onClick={onExitCustom} aria-label="Exit custom mode" style={iconBtn}>
+                <X className="w-3 h-3" style={{ color: DIM }} />
+              </button>
+            )}
+            <button type="button" onClick={onColumnsEditor} aria-label="Edit columns" style={iconBtn}>
+              <Settings className="w-3.5 h-3.5" />
+            </button>
+            {onBuildStrategy && (
+              <button type="button" onClick={onBuildStrategy} aria-label="Strategy builder" style={iconBtn}>
+                <Layers className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
         {showPuts && (
-          <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
             <span
               data-ui-audit="chain-puts-hdr"
               style={{ fontSize: 13, letterSpacing: "0.03em", color: AT_LADDER_PUTS_HDR, fontFamily: MONO, fontWeight: FW_PREMIUM }}
@@ -1607,56 +1540,44 @@ function OptionsChainHeader({
         )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          height: SUB_HEADER_H,
-          background: "#111111",
-          borderBottom: `1px solid ${BORDER}`,
-          alignItems: "center",
-          position: "sticky",
-          top: stickyTop + HEADER_H,
-          zIndex: 45,
-          boxShadow: "0 2px 4px rgba(0,0,0,0.5)",
-        }}
-      >
-        {showCalls && (
-          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
-            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
-              {columns.map(col => (
-                <div key={col.id} style={{ width: colW, flexShrink: 0, padding: "0 4px" }}>
-                  <span style={{ fontSize: 11, color: DIM, fontFamily: MONO, fontWeight: FW_NORMAL, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+      {showColumnHeader && (
         <div
+          className="at-ladder-num"
           style={{
-            width: STRIKE_W,
-            flexShrink: 0,
             display: "flex",
+            height: AT_LADDER_COL_HDR_H,
+            background: AT_HEADER_BG,
+            borderTop: `1px solid ${AT_LADDER_THIN_SEP}`,
+            borderBottom: `1px solid ${BORDER}`,
             alignItems: "center",
-            justifyContent: "center",
-            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
-            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
-            background: "#111111",
+            position: "sticky",
+            top: stickyTop + HEADER_H,
+            zIndex: 45,
+            fontSize: 13,
+            color: AT_LABEL,
+            fontWeight: FW_LIGHT,
+            letterSpacing: "0.02em",
+            textTransform: "uppercase",
+            boxSizing: "border-box",
           }}
         >
-          <span data-ui-audit="chain-strike-hdr" style={{ fontSize: 9, color: WHITE, fontFamily: MONO, fontWeight: FW_PREMIUM, letterSpacing: "0.08em" }}>STRIKE</span>
-        </div>
-        {showPuts && (
-          <div style={{ flex: 1, overflow: "hidden", height: SUB_HEADER_H }}>
-            <div style={{ display: "flex", alignItems: "center", minWidth: wingWidth, height: SUB_HEADER_H }}>
-              {columns.map(col => (
-                <div key={col.id} style={{ width: colW, flexShrink: 0, padding: "0 4px" }}>
-                  <span style={{ fontSize: 10, color: DIM, fontFamily: MONO, fontWeight: FW_LIGHT, textTransform: "uppercase", letterSpacing: "0.08em" }}>{col.topLabel}</span>
-                </div>
-              ))}
-            </div>
+          {showCalls && <ChainColTitles columns={columns} template={wingTemplate} />}
+          <div
+            style={{
+              width: STRIKE_W,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <span data-ui-audit="chain-strike-hdr" style={{ color: AT_LABEL, fontWeight: 600, fontSize: 13 }}>
+              STRIKE
+            </span>
           </div>
-        )}
-      </div>
+          {showPuts && <ChainColTitles columns={columns} template={wingTemplate} />}
+        </div>
+      )}
     </>
   );
 }
@@ -1872,7 +1793,6 @@ export function OptionsTab({
     () => activeColumnIds.map(id => COLUMN_REGISTRY.find(c => c.id === id)).filter(Boolean) as ColumnDef[],
     [activeColumnIds]
   );
-  const CHAIN_COL_W = 62;
   const chainPriceColumns = useMemo(() => {
     const want = new Set(["bid", "ask", "vol"]);
     const cols = activeColumns.filter((c) => want.has(c.id));
@@ -2067,27 +1987,6 @@ export function OptionsTab({
     { symbol, ...(schwabAccessTokenForRequest(accessToken) ? { accessToken: schwabAccessTokenForRequest(accessToken)! } : {}) },
     { query: { enabled: chainApiEnabled } },
   );
-
-  const { data: earningsData } = useQuery({
-    queryKey: ["earnings-date", symbol],
-    queryFn: async () => {
-      const res = await fetchWithAuth(`/api/market/earnings-date?symbol=${encodeURIComponent(symbol)}`);
-      return res.json() as Promise<{
-        earningsDate?: string | null;
-        confirmed?: boolean;
-        time?: string | null;
-        epsEstimate?: string | null;
-        epsPrior?: string | null;
-        revenueEstimate?: string | null;
-        revenuePrior?: string | null;
-        period?: string | null;
-        periodYear?: number | null;
-        source?: string | null;
-      }>;
-    },
-    enabled: !!symbol,
-    staleTime: 30 * 60 * 1000,
-  });
 
   const underlyingPrice =
     streamQuote?.last ??
@@ -2967,7 +2866,7 @@ export function OptionsTab({
     [selectedLegs],
   );
 
-  const chainStickyHeader = HEADER_H + SUB_HEADER_H;
+  const chainStickyHeader = HEADER_H + (hasData ? AT_LADDER_COL_HDR_H : 0);
   const atChainLoading = !atLadderHasRows && (isLoadingEffective || isFetching);
   const atChainError = error
     ? "Option chain request failed"
@@ -3057,30 +2956,46 @@ export function OptionsTab({
       <>
       {!isFuturesSymbol && (
       <div className="relative flex flex-1 min-h-0 flex-col overflow-hidden">
+      <div className="relative flex-1 min-h-0 min-w-0">
       <div
-        className="flex items-center justify-between w-full pl-3 pr-2 shrink-0 z-40"
-        style={{ height: TOOLBAR_H, background: BG_EXP_BAR, borderBottom: `1px solid ${BORDER}`, fontFamily: MONO }}
+        ref={chainScrollRef}
+        data-options-chain-scroll
+        data-options-chain-selected-expiration={atExpiration ?? undefined}
+        className="relative h-full min-h-0 overflow-y-auto overscroll-y-none"
+        style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <span data-ui-audit="chain-strike-label" style={{ fontSize: 14, color: DIM, fontWeight: FW_NORMAL, fontFamily: MONO }}>Strike</span>
-          {isCustomMode ? (
-            <div className="flex items-center gap-1">
-              <Input
-                type="number" min={2} max={100} autoFocus
-                value={localCustomValue}
-                onChange={e => handleCustomStrikeChange(e.target.value)}
-                onKeyDown={e => { if (e.key === "Escape") handleExitCustomMode(); }}
-                className="w-[52px] h-6 px-1.5 border rounded text-white"
-                style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
-                placeholder="10"
-              />
-              <button onClick={handleExitCustomMode} className="p-0.5 rounded hover:bg-white/5 transition-colors" aria-label="Exit custom mode">
-                <X className="w-3 h-3" style={{ color: DIM }} />
-              </button>
-            </div>
+        <OptionsChainHeader
+          showCalls={showCalls}
+          showPuts={showPuts}
+          columns={chainPriceColumns}
+          stickyTop={0}
+          onColumnsEditor={() => setColumnsEditorOpen(true)}
+          onBuildStrategy={onOpenStrategyBuilder ? handleLayersClick : undefined}
+          showColumnHeader={hasData}
+          onExitCustom={isCustomMode ? handleExitCustomMode : undefined}
+          strikeControl={isCustomMode ? (
+            <Input
+              type="number"
+              min={2}
+              max={100}
+              autoFocus
+              value={localCustomValue}
+              onChange={(e) => handleCustomStrikeChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") handleExitCustomMode(); }}
+              aria-label="Custom strike count"
+              data-ui-audit="chain-strike-label"
+              className="h-6 px-1.5 border rounded text-white"
+              style={{ width: CHAIN_STRIKE_COUNT_W, fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+              placeholder="10"
+            />
           ) : (
             <Select value={strikeMode} onValueChange={handleStrikeModeChange}>
-              <SelectTrigger className="w-[52px] h-6 px-1.5 border rounded text-white" style={{ fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}>
+              <SelectTrigger
+                aria-label="How many strikes to view"
+                data-ui-audit="chain-strike-label"
+                className="h-6 px-1.5 border rounded text-white"
+                style={{ width: CHAIN_STRIKE_COUNT_W, fontSize: 14, background: "#111", borderColor: "#2a2a2a", fontFamily: MONO }}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -3091,34 +3006,7 @@ export function OptionsTab({
               </SelectContent>
             </Select>
           )}
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0 min-w-0" data-at-chain-toolbar-end>
-          <MetricsStrip
-            groups={groups}
-            lastPrice={underlyingPrice}
-            earningsInfo={{
-              earningsDate: earningsData?.earningsDate ?? quote?.nextEarningsDate,
-              confirmed: earningsData?.confirmed,
-              time: earningsData?.time,
-              epsEstimate: earningsData?.epsEstimate,
-              epsPrior: earningsData?.epsPrior,
-              period: earningsData?.period,
-              periodYear: earningsData?.periodYear,
-            }}
-            isFetching={isFetching}
-            hasData={hasData}
-          />
-        </div>
-      </div>
-
-      <div className="relative flex-1 min-h-0 min-w-0">
-      <div
-        ref={chainScrollRef}
-        data-options-chain-scroll
-        data-options-chain-selected-expiration={atExpiration ?? undefined}
-        className="relative h-full min-h-0 overflow-y-auto overscroll-y-none"
-        style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
-      >
+        />
         {isLoadingEffective && !data && (
           <div className="p-4 space-y-1">
             {Array.from({ length: strikeCount }).map((_, i) => (
@@ -3180,15 +3068,6 @@ export function OptionsTab({
 
         {hasData && (
           <div>
-            <OptionsChainHeader
-              showCalls={showCalls}
-              showPuts={showPuts}
-              columns={chainPriceColumns}
-              colW={CHAIN_COL_W}
-              stickyTop={0}
-              onColumnsEditor={() => setColumnsEditorOpen(true)}
-              onBuildStrategy={onOpenStrategyBuilder ? handleLayersClick : undefined}
-            />
             {groups.map(group => {
               const isOpen = expandedExps.has(group.expiration);
               return (
@@ -3200,7 +3079,6 @@ export function OptionsTab({
                   stickyTop={chainStickyHeader}
                   underlyingPrice={underlyingPrice}
                   activeColumns={chainPriceColumns}
-                  colW={CHAIN_COL_W}
                   showCalls={showCalls}
                   showPuts={showPuts}
                   selectedLegs={selectedLegs}
