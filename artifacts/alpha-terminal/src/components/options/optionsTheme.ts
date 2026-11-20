@@ -6,7 +6,8 @@ import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 export const COL_W = 74;
 export const STRIKE_W = STRIKE_COL_W;
-export const ROW_H = 40;
+/** Row pitch — aligned with `AT_LADDER_ROW_H` so chain cells match AT vertical density. */
+export const ROW_H = 34;
 export const TOOLBAR_H = 32;
 export const HEADER_H = 32;
 export const SUB_HEADER_H = 20;
@@ -29,6 +30,7 @@ export const DIM = "#52525b";
 export const MUTED = "#3f3f46";
 
 export const ITM_OCEAN = "rgba(180,140,50,0.22)";
+/** @deprecated OTM rows now use `CHAIN_OTM_ROW_BG` from strikeColumnChrome. */
 export const OTM_PURPLE = "rgba(168,130,255,0.04)";
 export const SEL_BORDER_COLOR = "#fbbf2480";
 

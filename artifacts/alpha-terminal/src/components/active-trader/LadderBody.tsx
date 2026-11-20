@@ -43,7 +43,12 @@ import {
   AT_LADDER_THIN_SEP,
   AT_SPOT_PILL_TEXT,
 } from "@/lib/active-trader/atLadderLayout";
-import { STRIKE_COL_PAD_X, strikeRailFontSize } from "@/lib/options/strikeColumnChrome";
+import {
+  STRIKE_COL_PAD_X,
+  STRIKE_RAIL_LETTER_SPACING,
+  STRIKE_RAIL_LINE_HEIGHT,
+  strikeRailFontSize,
+} from "@/lib/options/strikeColumnChrome";
 import type { LadderHeatCellView } from "@/lib/active-trader/atLadderVolumeHeatEngine";
 import { useAtLadderHeatCell, type AtLadderHeatStore } from "@/lib/active-trader/atLadderHeatStore";
 import type { AtLadderMode, AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
@@ -742,8 +747,8 @@ const LadderRowView = memo(function LadderRowView({
             border: "none",
             fontSize: strikeRailFontSize(row.strike),
             fontWeight: spotRow ? 500 : AT_LADDER_STRIKE_WEIGHT,
-            lineHeight: 1.05,
-            letterSpacing: spotRow ? "-0.02em" : "0.01em",
+            lineHeight: STRIKE_RAIL_LINE_HEIGHT,
+            letterSpacing: spotRow ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
           }}
         >
           <span style={{ whiteSpace: "nowrap" }}>
