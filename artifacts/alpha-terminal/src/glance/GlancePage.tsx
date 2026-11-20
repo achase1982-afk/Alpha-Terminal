@@ -133,10 +133,10 @@ function FlowSide({
 
 const RAIL_LABEL: Record<string, string> = {
   spot: "SPX",
-  callOi: "Call open interest",
-  putOi: "Put open interest",
-  callVol: "Call volume",
-  putVol: "Put volume",
+  callOi: "Call wall",
+  putOi: "Put wall",
+  callVol: "Call vol wall",
+  putVol: "Put vol wall",
   flip: "Gamma flip",
   high: "High",
   low: "Low",
@@ -557,17 +557,17 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             <thead>
               <tr>
                 <th>Wall</th>
-                <th>Now</th>
+                <th>Strike</th>
                 <th>At open</th>
                 <th>Move</th>
                 <th>Distance</th>
               </tr>
             </thead>
             <tbody>
-              {wallRow("Call open interest", "call", callOi, callOiOpen, fixture ? "open" : "")}
-              {wallRow("Call volume", "call", callVol, callVolOpen, fixture ? "open" : "")}
-              {wallRow("Put open interest", "put", putOi, putOiOpen, fixture ? "open" : "")}
-              {wallRow("Put volume", "put", putVol, putVolOpen, fixture ? "open" : "")}
+              {wallRow("Call wall", "call", callOi, callOiOpen, fixture ? "open" : "")}
+              {wallRow("Call volume wall", "call", callVol, callVolOpen, fixture ? "open" : "")}
+              {wallRow("Put wall", "put", putOi, putOiOpen, fixture ? "open" : "")}
+              {wallRow("Put volume wall", "put", putVol, putVolOpen, fixture ? "open" : "")}
             </tbody>
           </table>
         </section>
@@ -728,7 +728,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 <li>SPX and VIX come from the quote stream. Day change uses the quote close when that field is present.</li>
                 <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the regular-hours open.</li>
                 <li>Flow now and the day row are 1-minute premium bars since 09:30 Eastern. Level 1 estimate is the separate streamer total.</li>
-                <li>Call open interest and put open interest are the strikes with the largest open-interest gamma. Call volume and put volume are the strikes with the largest volume gamma. One strike can sit on more than one row.</li>
+                <li>Call wall and put wall are the strikes with the largest open-interest gamma. Call volume wall and put volume wall are the strikes with the largest volume gamma. The number is the strike, not a contract count. One strike can sit on more than one row.</li>
                 <li>PRICE NOT FOLLOWING needs all four 5-minute gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
                 <li>Flow connection: {fixture ? "fixture" : live.flowConnection}.</li>
               </ul>
