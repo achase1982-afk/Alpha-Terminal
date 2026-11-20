@@ -31,8 +31,8 @@ function expectBothSeries(calls: OptionsContract[]) {
   expect(pm.rows[0]?.call?.schwabSymbol).toBe(PM);
   expect(am.rows[0]?.call?.bid).toBe(calls.find((c) => c.schwabSymbol === AM)?.bid);
   expect(pm.rows[0]?.call?.ask).toBe(calls.find((c) => c.schwabSymbol === PM)?.ask);
-  expect(formatAtExpiryPickerButton(am.expiration)).toBe("Expiry 20 NOV AM ▾");
-  expect(formatAtExpiryPickerButton(pm.expiration)).toBe("Expiry 20 NOV PM ▾");
+  expect(formatAtExpiryPickerButton(am.expiration)).toBe("20 NOV AM ▾");
+  expect(formatAtExpiryPickerButton(pm.expiration)).toBe("20 NOV PM \u25be");
   expect(formatAtExpiryPickerListRow(am.expiration, 1)).toBe("20 NOV 2026 · 1DTE · AM");
   expect(formatAtExpiryPickerListRow(pm.expiration, 1)).toBe("20 NOV 2026 · 1DTE · PM");
   expect(formatAtExpiryPill(am.expiration, 1)).toBe("20 NOV · 1D AM");
@@ -97,7 +97,7 @@ describe("SPX AM and SPXW PM stay distinct", () => {
     expect(groups).toHaveLength(1);
     expect(groups[0]?.expiration).toBe(EXP);
     expect(groups[0]?.dateLabel).toBe("20 NOV 26");
-    expect(formatAtExpiryPickerButton(groups[0]!.expiration)).toBe("Expiry 20 NOV ▾");
+    expect(formatAtExpiryPickerButton(groups[0]!.expiration)).toBe("20 NOV \u25be");
     expect(formatAtExpiryPickerListRow(EXP, 1)).toBe("20 NOV 2026 · 1DTE");
   });
 });

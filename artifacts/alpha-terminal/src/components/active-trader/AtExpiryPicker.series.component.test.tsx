@@ -32,18 +32,18 @@ describe("AtExpiryPicker series choices", () => {
     );
 
     const trigger = screen.getByTestId("at-expiry-picker");
-    expect(trigger.textContent).toContain("Expiry 20 NOV AM");
+    expect(trigger.textContent).toContain("20 NOV AM");
     expect(trigger.getAttribute("data-at-expiry-selected")).toBe(AM);
 
     fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("option", { name: "20 NOV 2026 · 1DTE · PM" }));
     expect(picked).toEqual([PM]);
     expect(screen.getByTestId("at-expiry-picker").getAttribute("data-at-expiry-selected")).toBe(PM);
-    expect(screen.getByTestId("at-expiry-picker").textContent).toContain("Expiry 20 NOV PM");
+    expect(screen.getByTestId("at-expiry-picker").textContent).toContain("20 NOV PM");
 
     fireEvent.click(screen.getByTestId("at-expiry-picker"));
     fireEvent.click(screen.getByRole("option", { name: "20 NOV 2026 · 1DTE · AM" }));
     expect(picked).toEqual([PM, AM]);
-    expect(screen.getByTestId("at-expiry-picker").textContent).toContain("Expiry 20 NOV AM");
+    expect(screen.getByTestId("at-expiry-picker").textContent).toContain("20 NOV AM");
   });
 });

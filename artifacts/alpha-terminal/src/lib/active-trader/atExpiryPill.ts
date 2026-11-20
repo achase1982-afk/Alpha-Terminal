@@ -25,7 +25,7 @@ export function formatStrikeLevel(n: number | null): string {
   return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
-/** Labeled picker trigger, e.g. `Expiry 20 Nov ▾`. */
+/** Picker trigger, e.g. `20 NOV AM ▾`. */
 export function formatAtExpiryPickerButton(expiration: string): string {
   const d = parseExpDate(expiration);
   const dayMonth = d
@@ -33,7 +33,7 @@ export function formatAtExpiryPickerButton(expiration: string): string {
     : expiration.slice(0, 10);
   const settlement = settlementFromExpiration(expiration);
   const series = settlement ? ` ${settlement}` : "";
-  return `Expiry ${dayMonth}${series} ▾`;
+  return `${dayMonth}${series} \u25be`;
 }
 
 /** Dropdown row — year, DTE, and AM/PM when the contract root states it. */
