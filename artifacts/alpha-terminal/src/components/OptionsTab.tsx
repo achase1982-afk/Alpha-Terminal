@@ -1116,8 +1116,10 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
           fontFamily: MONO,
           lineHeight: 1,
           padding: `0 ${STRIKE_COL_PAD_X}px`,
-          maxWidth: "100%",
+          width: "100%",
+          whiteSpace: "nowrap",
           textAlign: "center",
+          overflow: "visible",
         }}
       >
         {strike % 1 === 0 ? strike : strike.toFixed(1)}

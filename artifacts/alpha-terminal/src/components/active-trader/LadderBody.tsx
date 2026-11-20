@@ -746,7 +746,9 @@ const LadderRowView = memo(function LadderRowView({
             letterSpacing: spotRow ? "-0.02em" : "0.01em",
           }}
         >
-          <span>{row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}</span>
+          <span style={{ whiteSpace: "nowrap" }}>
+            {row.strike % 1 === 0 ? row.strike : row.strike.toFixed(1)}
+          </span>
           {(positionCallQty != null || positionPutQty != null) && (
             <span className="flex items-center justify-center gap-0.5" style={{ marginTop: 1 }}>
               {positionCallQty != null ? <PositionQtyBadge qty={positionCallQty} side="call" /> : null}
