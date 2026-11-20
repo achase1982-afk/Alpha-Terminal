@@ -12,8 +12,18 @@ describe("resolveInstrumentClass", () => {
   });
 
   it("does not treat index or futures roots as equity", () => {
-    expect(resolveInstrumentClass(null, "$SPX")).toBe("unknown");
+    expect(resolveInstrumentClass(null, "$SPX")).toBe("index");
     expect(resolveInstrumentClass(null, "/ES")).toBe("futures");
+  });
+
+  it("resolves SPX as an index when the ticker changes", () => {
+    expect(resolveInstrumentClass(null, "SPX")).toBe("index");
+    expect(resolveInstrumentClass(undefined, "spx")).toBe("index");
+    expect(resolveInstrumentClass("EQUITY", "SPX")).toBe("index");
+    expect(resolveInstrumentClass(null, "SPXW")).toBe("index");
+    expect(stockTemplateAvailable(resolveInstrumentClass("EQUITY", "SPX"))).toBe(false);
+    expect(resolveInstrumentTemplate("SPX", resolveInstrumentClass("EQUITY", "SPX"))).toBe("options");
+    expect(resolveInstrumentTemplate("SPX", resolveInstrumentClass(null, "SPX"))).toBe("options");
   });
 });
 
