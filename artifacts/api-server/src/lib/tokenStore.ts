@@ -504,6 +504,20 @@ export function clearTokens(kind: "market" | "trader") {
   logger.info("TokenStore: cleared %s tokens", kind);
 }
 
+/**
+ * Clear the in-memory, disk, and DB copies before returning. Disconnect uses
+ * this variant so another API instance cannot rehydrate a token from the DB
+ * after the browser has cleared its local brokerage sentinel.
+ */
+export async function clearTokensAndWait(kind: "market" | "trader") {
+  clearTimer(kind);
+  store[kind] = undefined;
+  saveToDisk();
+  await persistKindToDb(kind);
+  authEstablishedInProcess[kind] = false;
+  logger.info("TokenStore: cleared persisted %s tokens", kind);
+}
+
 export function hasValidTokens(kind: "market" | "trader"): boolean {
   const ts = store[kind];
   if (!ts?.accessToken || !ts?.refreshToken) return false;
