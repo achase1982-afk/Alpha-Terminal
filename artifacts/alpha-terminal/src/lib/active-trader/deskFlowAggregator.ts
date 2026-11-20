@@ -10,6 +10,7 @@ import type {
 
 const MS_1M = 60_000;
 const MS_5M = 5 * MS_1M;
+const MS_15M = 15 * MS_1M;
 
 export type DeskIndexFlowTotals = {
   callBuy1m: number;
@@ -20,6 +21,10 @@ export type DeskIndexFlowTotals = {
   callSell5m: number;
   putBuy5m: number;
   putSell5m: number;
+  callBuy15m: number;
+  callSell15m: number;
+  putBuy15m: number;
+  putSell15m: number;
   callBuyHr: number;
   callSellHr: number;
   putBuyHr: number;
@@ -262,6 +267,7 @@ function project(state: Internal): DeskFlowAggregate {
 
   const m1 = sumFlow1sWindow(state.flow1s, nowMs, MS_1M);
   const recent5 = flow60sInRange(state.flow60s, nowMs - MS_5M, nowMs + 1);
+  const recent15 = flow60sInRange(state.flow60s, nowMs - MS_15M, nowMs + 1);
   const hrBars = flow60sInRange(state.flow60s, hourStartMs(nowMs), nowMs + MS_1M);
 
   const index: DeskIndexFlowTotals | null =
@@ -275,6 +281,10 @@ function project(state: Internal): DeskFlowAggregate {
           callSell5m: sumIndexBars(recent5, "call_sell"),
           putBuy5m: sumIndexBars(recent5, "put_buy"),
           putSell5m: sumIndexBars(recent5, "put_sell"),
+          callBuy15m: sumIndexBars(recent15, "call_buy"),
+          callSell15m: sumIndexBars(recent15, "call_sell"),
+          putBuy15m: sumIndexBars(recent15, "put_buy"),
+          putSell15m: sumIndexBars(recent15, "put_sell"),
           callBuyHr: sumIndexBars(hrBars, "call_buy"),
           callSellHr: sumIndexBars(hrBars, "call_sell"),
           putBuyHr: sumIndexBars(hrBars, "put_buy"),

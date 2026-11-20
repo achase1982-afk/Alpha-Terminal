@@ -1,7 +1,6 @@
 import { memo, useMemo, type CSSProperties } from "react";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
-import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import type { SpxKeepawayStats } from "@workspace/order-ticket-math";
 import { resolveAtGlanceMode } from "@/lib/active-trader/atGlanceMode";
 import { useThrottledNumber } from "@/lib/active-trader/useThrottledNumber";
@@ -15,13 +14,13 @@ import { LOW_ZONE_REF_TOOLTIP } from "@/lib/active-trader/atLowZoneSlot";
 import { formatRefZoneHalf, SPX_REF_ZONE_TOOLTIP } from "@/lib/active-trader/spxRefZone";
 import { dayStatusColor, dayStatusLabel, resolveDayStatus } from "@/lib/active-trader/atDayStatus";
 import { resolveAtHeaderSessionChange } from "@/lib/active-trader/atHeaderSessionChange";
-import { AtGlanceGrossFlow } from "./AtGlanceGrossFlow";
 import type { ActiveTraderTemplatePrefs } from "@/lib/active-trader/activeTraderPrefs";
 import type { SchwabInstruction } from "@/lib/active-trader/atSchwabOrderBuilder";
 import type { AtLadderHeatSourceMeta } from "@/lib/active-trader/useAtLadderVolumeHeat";
-import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
-import { AtStripTrial, AtStripTrialSelector, useAtStripTrial } from "./AtStripTrial";
+import { AtFlowStrip } from "./AtFlowStrip";
 import { AtExpiryPicker } from "./AtExpiryPicker";
+import { useAtVixQuote } from "@/hooks/useAtVixQuote";
+import { resolveGlanceFromOpenChange } from "@/lib/atQuoteSessionChange";
 
 export { AT_HEADER_BG };
 
@@ -35,7 +34,7 @@ const SPOT_PAINT_MS = 250;
 const LABEL_PX = 13;
 const VALUE_PX = 13;
 const SECTION_RULE = "#2b3033";
-const SPOT_COLOR = "#5df1a0";
+const SPOT_COLOR = WHITE;
 
 const cellLine: CSSProperties = {
   display: "flex",
@@ -109,10 +108,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   stockTemplate = false,
 }: AtGlanceTopProps) {
   const mode = resolveAtGlanceMode(symbol);
-  const trial = useAtStripTrial();
-  const showTrial = mode === "index" && !stockTemplate && !skipNetwork;
+  const showFlowStrip = mode === "index" && !stockTemplate && !skipNetwork;
   const { data: quote, restQuote } = useQuote(symbol);
   const { aggregate: flow, sessionClosed: flowSessionClosed, netPremium, flowWindowMs } = useDeskFlowStream(symbol, true);
+  const vixLevel = useAtVixQuote(showFlowStrip);
   const flowDashShell = Boolean(sessionClosed || flowSessionClosed);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
   const spotShown = useThrottledNumber(liveSpot, SPOT_PAINT_MS);
@@ -126,11 +125,16 @@ export const AtGlanceTop = memo(function AtGlanceTop({
 
   const spotLabel = formatAtGlanceSpot(symbol, spotShown);
   const symLabel = symbol.replace(/^\$/, "");
+  const fromOpenPts = resolveGlanceFromOpenChange(quote, spotShown, quote?.close ?? null, restQuote);
+  const fromOpenLabel =
+    fromOpenPts != null && Number.isFinite(fromOpenPts)
+      ? `${fromOpenPts >= 0 ? "+" : "\u2212"}${Math.abs(fromOpenPts).toFixed(2)} vs open`
+      : null;
+  const vixLabel = vixLevel != null && Number.isFinite(vixLevel) ? vixLevel.toFixed(1) : "\u2014";
 
   const sessionLevels = useAtGlanceSessionLevels(symbol, { skipNetwork });
 
   const flowWindowSec = Math.round(flowWindowMs / 1000);
-  const flipLabel = resolveGammaFlipDisplay(zones);
 
   const lowZoneVal =
     sessionLevels.lowZone.status === "value" ? formatRefZoneHalf(sessionLevels.lowZone.top) : "\u2014";
@@ -152,7 +156,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         boxSizing: "border-box",
       }}
     >
-      <span data-at-glance-chrome-version="anthony-v4" className="sr-only" aria-hidden />
+      <span data-at-glance-chrome-version="flow-strip-nov-19" className="sr-only" aria-hidden />
 
       <div
         className="flex items-center min-w-0 gap-2"
@@ -202,6 +206,16 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           >
             {dayLabel}
           </span>
+          {fromOpenLabel ? (
+            <span className="shrink-0 num" style={{ ...NUM_FEAT, fontSize: 12, color: AT_SECONDARY, whiteSpace: "nowrap" }}>
+              {fromOpenLabel}
+            </span>
+          ) : null}
+          {showFlowStrip ? (
+            <span className="shrink-0 num" data-at-vix-glance="" style={{ ...NUM_FEAT, fontSize: 12, color: AT_SECONDARY, whiteSpace: "nowrap" }}>
+              VIX {vixLabel}
+            </span>
+          ) : null}
         </div>
         {mode !== "futures" && !stockTemplate ? (
           <div className="shrink-0 ml-2 flex items-center justify-end" style={{ maxWidth: "42%" }}>
@@ -282,50 +296,25 @@ export const AtGlanceTop = memo(function AtGlanceTop({
         </div>
       ) : null}
 
-      {showTrial && <AtStripTrialSelector {...trial} />}
-      {showTrial && trial.layout > 0 ? (
-        <AtStripTrial layout={trial.layout} windowSeconds={flowWindowSec} zones={zones}
-          gross={!flowDashShell && !netPremium.stale && !netPremium.closed && netPremium.streamKind === "spx_options" && flow.connection === "live" ? [
-            netPremium.grossCallsBuy, netPremium.grossCallsSell,
-            netPremium.grossPutsBuy, netPremium.grossPutsSell,
-          ] : null}
+      {showFlowStrip ? (
+        <AtFlowStrip
+          windowSec={flowWindowSec}
+          aggregate={flow}
+          netPremium={netPremium}
+          zones={zones}
+          forceDash={flowDashShell}
+          scopeLabel="Desk flow · symbol-wide classified premium"
         />
-      ) : !stockTemplate ? <div
-        data-at-glance-flow-band
-        style={{
-          padding: "4px 16px 2px",
-          display: "flex",
-          flexDirection: "column",
-          boxSizing: "border-box",
-        }}
-      >
-        <div className="flex items-baseline justify-between gap-2 min-w-0 overflow-hidden" style={{ height: 18, lineHeight: 1 }}>
-          <span className="flex items-center min-w-0 overflow-hidden" style={{ flex: "1 1 auto" }}>
-            <span
-              data-at-flow-now
-              style={{ fontWeight: 600, color: WHITE, fontSize: 13, letterSpacing: 0, whiteSpace: "nowrap" }}
-            >
-              Flow now · {flowWindowSec}s
+      ) : !stockTemplate ? (
+        <div data-at-glance-flow-band style={{ padding: "4px 16px", fontSize: 12, color: AT_SECONDARY }}>
+          Flow strip unavailable for this symbol
+          {ladderHeatSource?.label ? (
+            <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>
+              {ladderHeatSource.label}
             </span>
-            {ladderHeatSource?.label ? <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>{ladderHeatSource.label}</span> : null}
-          </span>
-          <span
-            data-at-gamma-flip
-            className="num shrink-0 truncate"
-            style={{ ...NUM_FEAT, fontWeight: 600, color: AT_LADDER_GAMMA, fontSize: 13, whiteSpace: "nowrap" }}
-          >
-            Gamma flip {flipLabel}
-          </span>
+          ) : null}
         </div>
-
-        <div data-at-glance-flow-row style={{ marginTop: 2 }}>
-          <AtGlanceGrossFlow
-            glance={netPremium}
-            zones={zones}
-            forceDashAmounts={flowDashShell}
-          />
-        </div>
-      </div> : null}
+      ) : null}
     </header>
   );
 });
