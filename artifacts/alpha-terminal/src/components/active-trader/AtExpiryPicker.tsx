@@ -19,7 +19,7 @@ export const AtExpiryPicker = memo(function AtExpiryPicker({ loading }: { loadin
   const pickAtExpiration = useAtChromeStore((s) => s.pickAtExpiration);
 
   const buttonLabel = useMemo(() => {
-    if (!selectedExpiration) return loading ? "Expiry …" : "Expiry —";
+    if (!selectedExpiration) return loading ? "…" : "—";
     return formatAtExpiryPickerButton(selectedExpiration);
   }, [loading, selectedExpiration]);
 
@@ -41,7 +41,7 @@ export const AtExpiryPicker = memo(function AtExpiryPicker({ loading }: { loadin
       <SelectTrigger
         data-testid="at-expiry-picker"
         data-at-expiry-selected={selectedExpiration ?? ""}
-        className="h-7 max-w-[9.5rem] rounded-md px-1.5 text-[10px] font-medium shadow-none border [&>svg]:ml-0.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-80"
+        className="h-7 max-w-[7.25rem] rounded-md px-1 text-[10px] font-medium shadow-none border [&>svg]:ml-0.5 [&>svg]:h-3 [&>svg]:w-3 [&>svg]:opacity-80"
         style={{
           background: "rgba(255,255,255,0.04)",
           borderColor: "#3f3f46",
