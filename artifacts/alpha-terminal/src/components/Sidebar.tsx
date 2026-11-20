@@ -1133,6 +1133,7 @@ function UICustomizationPage() {
   const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
   const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
+  const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const animatePriceChanges = useUICustomizationStore((s) => s.animatePriceChanges);
   const hapticFeedback = useUICustomizationStore((s) => s.hapticFeedback);
   const reducedMotion = useUICustomizationStore((s) => s.reducedMotion);
@@ -1146,6 +1147,7 @@ function UICustomizationPage() {
   const setShowTickerTape = useUICustomizationStore((s) => s.setShowTickerTape);
   const setShowAiBiasStrip = useUICustomizationStore((s) => s.setShowAiBiasStrip);
   const setShowMiniCards = useUICustomizationStore((s) => s.setShowMiniCards);
+  const setShowMobileEdgeSearch = useUICustomizationStore((s) => s.setShowMobileEdgeSearch);
   const setAnimatePriceChanges = useUICustomizationStore((s) => s.setAnimatePriceChanges);
   const setHapticFeedback = useUICustomizationStore((s) => s.setHapticFeedback);
   const setReducedMotion = useUICustomizationStore((s) => s.setReducedMotion);
@@ -1251,6 +1253,14 @@ function UICustomizationPage() {
 
       <div className="border-t border-card-border pt-4 space-y-4">
         <Label className="text-[11px] font-bold tracking-[0.15em] text-muted-foreground uppercase">Display</Label>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className="text-sm text-white">Floating Search</span>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Phone only. Faint search button on the screen edge. Off hides phone search.</p>
+          </div>
+          <Switch checked={showMobileEdgeSearch} onCheckedChange={setShowMobileEdgeSearch} />
+        </div>
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Ticker Tape</span>
@@ -1564,7 +1574,7 @@ function SettingsHubPage({
       </SettingsHubSection>
 
       <SettingsHubSection title="Display">
-        <SettingsHubRow icon={<Palette />} label="Appearance" subtitle="Accent color, font size, chart style, grid density" onClick={() => onSelect("Appearance")} />
+        <SettingsHubRow icon={<Palette />} label="Appearance" subtitle="Accent, font, chart, and the phone search button" onClick={() => onSelect("Appearance")} />
         <SettingsHubRow icon={<LayoutDashboard />} label="Marquee" subtitle="Macro tickers, ticker tape symbols, scroll speed" onClick={() => onSelect("Marquee")} />
         <SettingsHubRow icon={<Bell />} label="Notifications" subtitle="In-app, push, system alerts" onClick={() => onSelect("Notifications")} />
       </SettingsHubSection>

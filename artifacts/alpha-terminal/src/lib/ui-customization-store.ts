@@ -25,6 +25,8 @@ interface UICustomizationState {
   showTickerTape: boolean;
   showAiBiasStrip: boolean;
   showMiniCards: boolean;
+  /** Phone-only faint edge magnifier. Off hides mobile ticker search entirely. */
+  showMobileEdgeSearch: boolean;
   animatePriceChanges: boolean;
   hapticFeedback: boolean;
   reducedMotion: boolean;
@@ -37,6 +39,7 @@ interface UICustomizationState {
   setShowTickerTape: (v: boolean) => void;
   setShowAiBiasStrip: (v: boolean) => void;
   setShowMiniCards: (v: boolean) => void;
+  setShowMobileEdgeSearch: (v: boolean) => void;
   setAnimatePriceChanges: (v: boolean) => void;
   setHapticFeedback: (v: boolean) => void;
   setReducedMotion: (v: boolean) => void;
@@ -53,6 +56,7 @@ const DEFAULTS = {
   showTickerTape: true,
   showAiBiasStrip: true,
   showMiniCards: true,
+  showMobileEdgeSearch: true,
   animatePriceChanges: true,
   hapticFeedback: true,
   reducedMotion: false,
@@ -71,6 +75,7 @@ export const useUICustomizationStore = create<UICustomizationState>()(
       setShowTickerTape: (showTickerTape) => set({ showTickerTape }),
       setShowAiBiasStrip: (showAiBiasStrip) => set({ showAiBiasStrip }),
       setShowMiniCards: (showMiniCards) => set({ showMiniCards }),
+      setShowMobileEdgeSearch: (showMobileEdgeSearch) => set({ showMobileEdgeSearch }),
       setAnimatePriceChanges: (animatePriceChanges) => set({ animatePriceChanges }),
       setHapticFeedback: (hapticFeedback) => set({ hapticFeedback }),
       setReducedMotion: (reducedMotion) => set({ reducedMotion }),
@@ -79,13 +84,14 @@ export const useUICustomizationStore = create<UICustomizationState>()(
     }),
     {
       name: "alpha-ui-customization",
-      version: 4,
+      version: 5,
       migrate: (persisted: any) => ({
         ...DEFAULTS,
         ...persisted,
         headerMode: persisted?.headerMode ?? "auto",
         showAiBiasStrip: persisted?.showAiBiasStrip ?? true,
         biasScrollSpeed: persisted?.biasScrollSpeed ?? "slow",
+        showMobileEdgeSearch: persisted?.showMobileEdgeSearch ?? true,
       }),
     }
   )

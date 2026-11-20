@@ -4,40 +4,45 @@ import {
   Activity,
   Briefcase,
   ChartCandlestick,
-  Search,
   ListOrdered,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "search" | "portfolio" | "watchlist" | "activeTrader";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader";
 
 const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
   scanner:      { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
   markets:      { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
   ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} /> },
-  search:       { label: "SEARCH",    icon: (c) => <Search className={c} /> },
   portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
   activeTrader: { label: "TRADER", icon: (c) => <ChartCandlestick className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "search"];
-const STORAGE_KEY = "alphaTerminalBottomNavOrder:v2";
+const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai"];
+const STORAGE_KEY = "alphaTerminalBottomNavOrder:v3";
+const LEGACY_STORAGE_KEY = "alphaTerminalBottomNavOrder:v2";
 const LONG_PRESS_MS = 450;
 const TAP_SLOP_PX = 18;
 
 function loadOrder(): BottomTab[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as BottomTab[];
-      if (
-        Array.isArray(parsed) &&
-        parsed.length === DEFAULT_ORDER.length &&
-        DEFAULT_ORDER.every((t) => parsed.includes(t)) &&
-        parsed.every((t) => DEFAULT_ORDER.includes(t))
-      ) return parsed;
+    for (const key of [STORAGE_KEY, LEGACY_STORAGE_KEY]) {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) continue;
+      const unique: BottomTab[] = [];
+      for (const item of parsed) {
+        if (typeof item !== "string" || !DEFAULT_ORDER.includes(item as BottomTab)) continue;
+        const tab = item as BottomTab;
+        if (!unique.includes(tab)) unique.push(tab);
+      }
+      // v2 stored a SEARCH tab. Drop it and keep a custom order of the remaining four.
+      if (unique.length === DEFAULT_ORDER.length) return unique;
     }
-  } catch {}
+  } catch {
+    /* ignore broken storage */
+  }
   return [...DEFAULT_ORDER];
 }
 
