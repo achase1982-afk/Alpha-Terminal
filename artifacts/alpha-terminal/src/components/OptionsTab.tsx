@@ -302,7 +302,10 @@ function strikeKey(v: number): string {
 }
 
 function seriesBucketKey(c: Contract): string {
-  return expirationSeriesKey(c.expiration, c.schwabSymbol || c.streamKey);
+  const key = expirationSeriesKey(c.expiration, c.schwabSymbol || c.streamKey);
+  if (seriesRootFromExpiration(key)) return key;
+  const ymd = key.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(ymd) ? ymd : key;
 }
 
 function placeSeriesContract(c: Contract): Contract {
