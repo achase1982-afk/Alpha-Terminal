@@ -43,6 +43,11 @@ import {
 } from "@/lib/active-trader/atLadderStrikeCount";
 import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
+  scrollViewportToNearestStrike,
+  viewportNearestStrikeOffCenter,
+} from "@/lib/active-trader/atLadderScroll";
+import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
+import {
   atLadderRestQuery,
   growAtLadderSide,
   mergeAtChainLegs,
@@ -1123,6 +1128,7 @@ function OptionsGrid({
                 return (
                   <div
                     key={row.strike}
+                    data-chain-strike={row.strike}
                     className="flex"
                     style={{
                       height: ROW_H,
@@ -1158,7 +1164,9 @@ function OptionsGrid({
 
         <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
           {sortedRows.map((row) => (
-            <StrikeCell key={row.strike} strike={row.strike} underlyingPrice={underlyingPrice} />
+            <div key={row.strike} data-chain-strike={row.strike} style={{ height: ROW_H }}>
+              <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
+            </div>
           ))}
         </div>
 
@@ -1993,6 +2001,41 @@ export function OptionsTab({
     );
   }, [data, underlyingPrice, symbol, expandedSpxBooks]);
 
+  const [chainSpotOffCenter, setChainSpotOffCenter] = useState(false);
+
+  const measureChainSpot = useCallback(() => {
+    const el = chainScrollRef.current;
+    if (!el || underlyingPrice == null) {
+      setChainSpotOffCenter(false);
+      return;
+    }
+    setChainSpotOffCenter(viewportNearestStrikeOffCenter(el, underlyingPrice, "data-chain-strike"));
+  }, [underlyingPrice]);
+
+  const scrollChainToSpot = useCallback(() => {
+    scrollViewportToNearestStrike(chainScrollRef.current, underlyingPrice, "data-chain-strike");
+  }, [underlyingPrice]);
+
+  useEffect(() => {
+    if (optionsSubView !== "chain") {
+      setChainSpotOffCenter(false);
+      return;
+    }
+    const el = chainScrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measureChainSpot);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    measureChainSpot();
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [optionsSubView, measureChainSpot, data, groups.length]);
+
   const atGroups = useMemo(() => {
     if (!data) return [];
     const calls = (data.calls ?? []) as Contract[];
@@ -2685,11 +2728,12 @@ export function OptionsTab({
         </div>
       </div>
 
+      <div className="relative flex-1 min-h-0 min-w-0">
       <div
         ref={chainScrollRef}
         data-options-chain-scroll
         data-options-chain-selected-expiration={atExpiration ?? undefined}
-        className="relative flex-1 min-h-0 overflow-y-auto overscroll-y-none"
+        className="relative h-full min-h-0 overflow-y-auto overscroll-y-none"
         style={{ background: BG, paddingBottom: selCount > 0 ? chainSheetPad : 0, WebkitOverflowScrolling: "touch" }}
       >
         {isLoadingEffective && !data && (
@@ -2794,6 +2838,12 @@ export function OptionsTab({
             <span className="text-[10px] tracking-widest" style={{ color: DIM, fontWeight: FW_LIGHT }}>NO OPTIONS DATA FOR THIS RANGE</span>
           </div>
         )}
+      </div>
+      <SpotRecenterPill
+        visible={!!hasData && chainSpotOffCenter}
+        onClick={scrollChainToSpot}
+        dataAttribute="data-options-chain-recenter"
+      />
       </div>
       {selCount > 0 && (
         <div

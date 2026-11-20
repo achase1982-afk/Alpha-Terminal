@@ -40,6 +40,7 @@ import type { SchwabAccountSummary, SchwabPosition } from "@/lib/schwab-account-
 import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
 import { toast } from "@/hooks/use-toast";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
+import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
 
 function fmtPx(price: number): string {
   return price.toFixed(2);
@@ -136,6 +137,7 @@ export function StockLadderBody({
   const [prices, setPrices] = useState<number[]>([]);
   const [actionBusy, setActionBusy] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [anchorOffCenter, setAnchorOffCenter] = useState(false);
   const tradingAccountHash = useSchwabAccountStore((s) =>
     s.orderTicketAccountHash ??
     (s.viewSelection !== "all" ? s.viewSelection : s.defaultTradingAccountHash),
@@ -249,6 +251,48 @@ export function StockLadderBody({
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [prices]);
+
+  const scrollStockToAnchor = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || anchor == null) return;
+    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${stockPriceKey(anchor)}"]`);
+    if (!row) return;
+    const top = row.offsetTop - el.clientHeight / 2 + row.offsetHeight / 2;
+    el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [anchor]);
+
+  const measureStockAnchor = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || anchor == null) {
+      setAnchorOffCenter(false);
+      return;
+    }
+    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${stockPriceKey(anchor)}"]`);
+    if (!row) {
+      setAnchorOffCenter(false);
+      return;
+    }
+    const cRect = el.getBoundingClientRect();
+    const tRect = row.getBoundingClientRect();
+    const rowCenter = tRect.top + tRect.height / 2 - cRect.top;
+    setAnchorOffCenter(Math.abs(rowCenter - el.clientHeight / 2) > 56);
+  }, [anchor]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(measureStockAnchor);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    measureStockAnchor();
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(raf);
+    };
+  }, [measureStockAnchor, prices.length]);
 
   const bidKey = book.bid ? stockPriceKey(book.bid.price) : null;
   const askKey = book.ask ? stockPriceKey(book.ask.price) : null;
@@ -511,7 +555,8 @@ export function StockLadderBody({
         <span className="text-center">ASK SIZE</span>
         <span aria-hidden />
       </div>
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" data-at-stock-scroll>
+      <div className="relative flex-1 min-h-0">
+      <div ref={scrollRef} className="h-full min-h-0 overflow-y-auto" data-at-stock-scroll>
         {prices.map((price) => {
           const key = stockPriceKey(price);
           const depthBid = bidSizes.get(key) ?? 0;
@@ -648,6 +693,12 @@ export function StockLadderBody({
             </div>
           );
         })}
+      </div>
+      <SpotRecenterPill
+        visible={anchorOffCenter && prices.length > 0}
+        onClick={scrollStockToAnchor}
+        dataAttribute="data-at-stock-recenter"
+      />
       </div>
       <div
         data-at-stock-draft

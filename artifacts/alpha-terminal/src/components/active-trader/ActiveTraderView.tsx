@@ -94,11 +94,13 @@ import {
 import {
   atLadderNudgeToClearSheet,
   atLadderRowFullyVisible,
+  atLadderRowOffsetFromBand,
   atLadderScrollShiftForRows,
   atLadderScrollTopForRow,
   atLadderVisibleRowRange,
   scrollAtLadderToStrikeAboveSheet,
 } from "@/lib/active-trader/atLadderScroll";
+import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
 import { AT_MOBILE_PEEK_MAX_PX } from "@/components/active-trader/AtMobileGlanceOrderSheet";
 import { useAtLiveZones } from "@/lib/active-trader/useAtLiveZones";
 import type { AtVerticalWidth } from "@/lib/active-trader/activeTraderPrefs";
@@ -1440,7 +1442,9 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       lastScrollTop = viewport.scrollTop;
 
       const spotIdx = cur.spotStrike != null ? strikes.indexOf(cur.spotStrike) : -1;
-      setSpotOutOfView(spotIdx >= 0 && !atLadderRowFullyVisible(spotIdx, viewport));
+      setSpotOutOfView(
+        spotIdx >= 0 && Math.abs(atLadderRowOffsetFromBand(spotIdx, viewport)) > 56,
+      );
 
       const range = atLadderVisibleRowRange({ ...viewport, viewportPx: el.clientHeight });
       if (!range) return;
@@ -1772,29 +1776,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
             <AtLadderSkeleton rowHeight={ladderRowH} message={ladderWaitMessage} />
           )}
         </div>
-        {spotOutOfView && ladderDataReady ? (
-          <button
-            type="button"
-            data-at-ladder-recenter
-            onClick={scrollLadderToSpot}
-            style={{
-              position: "absolute",
-              right: 8,
-              bottom: 12 + sheetPad + workingRowPad,
-              zIndex: 40,
-              fontFamily: MONO,
-              fontSize: 10,
-              fontWeight: 600,
-              padding: "6px 10px",
-              borderRadius: 999,
-              border: `1px solid ${BORDER_ROW}`,
-              background: "rgba(12,12,12,0.92)",
-              color: WHITE,
-            }}
-          >
-            Recenter
-          </button>
-        ) : null}
+        <SpotRecenterPill
+          visible={spotOutOfView && ladderDataReady}
+          onClick={scrollLadderToSpot}
+          dataAttribute="data-at-ladder-recenter"
+        />
         {workingOrder ? (
           <div
             data-at-working-order
