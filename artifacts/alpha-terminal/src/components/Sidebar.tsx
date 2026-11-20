@@ -41,6 +41,14 @@ import {
 } from "lucide-react";
 import { MarketCalendar } from "@/components/MarketCalendar";
 import { CatalystGatesSettingsPage } from "@/components/CatalystGatesSettingsPage";
+import {
+  neutralChipStyle,
+  neutralSegmentLabelStyle,
+  neutralSegmentStyle,
+  neutralTabUnderlineStyle,
+  NEUTRAL_TOGGLE_OFF,
+  NEUTRAL_TOGGLE_ON,
+} from "@/lib/ui/neutralSelection";
 import { AutoTraderSettingsPage } from "@/components/AutoTraderSettingsPage";
 import { TelemetryPage, useTelemetryCount } from "@/components/TelemetryPage";
 import { TelemetryLogsPanel } from "@/components/TelemetryLogsPanel";
@@ -141,7 +149,7 @@ function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label
       onClick={onClick}
       className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-card/50 transition-colors text-left group"
     >
-      <div className="text-white group-hover:text-primary transition-colors">
+      <div className="text-white group-hover:text-foreground transition-colors">
         {React.cloneElement(icon as React.ReactElement<any>, { className: "w-5 h-5" })}
       </div>
       <span className="font-bold text-[15px] text-white tracking-wide">{label}</span>
@@ -421,7 +429,7 @@ function ChartOptionsPage() {
             <button
               key={key}
               onClick={() => toggleOverlay(key)}
-              className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
+              className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-white border-[#71717a]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
             >
               {OVERLAY_LABELS[key] ?? key.toUpperCase()}
             </button>
@@ -436,7 +444,7 @@ function ChartOptionsPage() {
         <div className="flex items-center gap-2">
           <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Type</span>
           <Select value={contractType} onValueChange={(v) => setContractType(v as "ALL" | "CALL" | "PUT")}>
-            <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+            <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus-visible:ring-ring/40">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-card border-card-border font-mono text-[10px]">
@@ -488,7 +496,7 @@ function DisplayMarqueePage() {
               value={macroInputs[idx] ?? ""}
               onChange={(e) => { const u = [...macroInputs]; u[idx] = e.target.value.toUpperCase(); setMacroInputs(u); }}
               placeholder={["SPY", "QQQ", "IWM", "VIX"][idx]}
-              className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+              className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-ring/40 text-foreground"
               autoCapitalize="characters"
               autoCorrect="off"
               maxLength={8}
@@ -505,7 +513,7 @@ function DisplayMarqueePage() {
           value={tapeInput}
           onChange={(e) => setTapeInput(e.target.value.toUpperCase())}
           placeholder="SPY, QQQ, AAPL, TSLA..."
-          className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-primary/50 text-foreground"
+          className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-ring/40 text-foreground"
           autoCorrect="off"
         />
         <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2 mt-1">
@@ -589,7 +597,7 @@ function AiFeatureControl({ featureKey, label, icon }: {
             <select
               value={settings.model}
               onChange={(e) => setAiFeatureSetting(featureKey, 'model', e.target.value)}
-              className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+              className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
               style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
             >
               {ALL_MODELS.map((m) => (
@@ -725,7 +733,7 @@ function AiLabStrategistControl() {
               <select
                 value={aiLabStrategistConfig.analystModelProvider}
                 onChange={(e) => update('analystModelProvider', e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
@@ -739,7 +747,7 @@ function AiLabStrategistControl() {
               <select
                 value={aiLabStrategistConfig.analystModelName}
                 onChange={(e) => update('analystModelName', e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {analystModels.map((m) => (
@@ -793,7 +801,7 @@ function AiLabStrategistControl() {
               <select
                 value={aiLabStrategistConfig.skepticModelProvider}
                 onChange={(e) => update('skepticModelProvider', e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {Object.entries(PROVIDER_LABELS).map(([k, label]) => (
@@ -807,7 +815,7 @@ function AiLabStrategistControl() {
               <select
                 value={aiLabStrategistConfig.skepticModelName}
                 onChange={(e) => update('skepticModelName', e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {skepticModels.map((m) => (
@@ -901,7 +909,7 @@ function AiParametersPage() {
             setSetAllModel(model);
             setAllModels(model);
           }}
-          className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-zinc-400 focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+          className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-zinc-400 focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
           style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}
         >
           <option value="" disabled>Apply one model to all features...</option>
@@ -932,7 +940,7 @@ function AiParametersPage() {
             step={0.1}
             value={globalTemp}
             onChange={(e) => setAllTemps(parseFloat(e.target.value))}
-            className="flex-1 h-1.5 accent-[#FFB800] cursor-pointer"
+            className="flex-1 h-1.5 accent-zinc-400 cursor-pointer"
           />
           <span className="font-mono text-[10px] text-zinc-400 w-7 text-right">{globalTemp.toFixed(1)}</span>
         </div>
@@ -1050,7 +1058,7 @@ function MoversAiControl() {
               <select
                 value={moversProvider}
                 onChange={(e) => update("moversModelProvider", e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {Object.entries(MOVERS_PROVIDER_LABELS).map(([k, label]) => (
@@ -1066,7 +1074,7 @@ function MoversAiControl() {
               <select
                 value={aiLabStrategistConfig.moversModelName}
                 onChange={(e) => update("moversModelName", e.target.value)}
-                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-primary/50 appearance-none cursor-pointer"
+                className="w-full bg-card border border-card-border rounded-md px-2 py-2 font-mono text-[10px] text-white focus:outline-none focus:border-card-border/50 appearance-none cursor-pointer"
                 style={selectStyle}
               >
                 {moversModels.map((m) => (
@@ -1189,12 +1197,9 @@ function UICustomizationPage() {
               key={opt.key}
               onClick={() => setHeaderMode(opt.key)}
               className="flex-1 flex flex-col items-center gap-0.5 py-2.5 px-1 rounded-lg border transition-all"
-              style={{
-                borderColor: headerMode === opt.key ? "#fbbf24" : "#1a1a1a",
-                background: headerMode === opt.key ? "rgba(251,191,36,0.08)" : "transparent",
-              }}
+              style={neutralSegmentStyle(headerMode === opt.key)}
             >
-              <span className="text-[11px] font-bold" style={{ color: headerMode === opt.key ? "#fbbf24" : "#fff" }}>{opt.label}</span>
+              <span className="text-[11px]" style={neutralSegmentLabelStyle(headerMode === opt.key)}>{opt.label}</span>
               <span className="text-[8px] leading-tight text-center" style={{ color: "#71717a" }}>{opt.desc}</span>
             </button>
           ))}
@@ -1266,11 +1271,7 @@ function UICustomizationPage() {
                   key={speed}
                   onClick={() => setBiasScrollSpeed(speed)}
                   className="px-2 py-1 rounded text-[10px] font-mono font-semibold uppercase tracking-wider transition-colors"
-                  style={{
-                    background: biasScrollSpeed === speed ? "#FFB800" : "transparent",
-                    color: biasScrollSpeed === speed ? "#000" : "#71717a",
-                    border: biasScrollSpeed === speed ? "none" : "1px solid #2A2A2C",
-                  }}
+                  style={neutralChipStyle(biasScrollSpeed === speed)}
                 >
                   {speed}
                 </button>
@@ -1310,8 +1311,7 @@ function UICustomizationPage() {
       <div className="border-t border-card-border pt-4">
         <button
           onClick={resetDefaults}
-          className="flex items-center gap-2 text-sm font-semibold transition-colors hover:opacity-80"
-          style={{ color: "#fbbf24" }}
+          className="flex items-center gap-2 text-sm font-semibold text-foreground transition-colors hover:opacity-80"
         >
           <RotateCcw className="w-4 h-4" />
           Reset to Defaults
@@ -1597,7 +1597,7 @@ function AllowedStrategiesPage() {
               type="checkbox"
               checked={settings.allowedStrategies.includes(s)}
               onChange={() => toggleStrategy(s)}
-              className="rounded border-card-border bg-transparent accent-[#FFB800] w-4 h-4"
+              className="rounded border-card-border bg-transparent accent-zinc-400 w-4 h-4"
             />
             <span className="font-mono text-[11px] text-[#a1a1aa] group-hover:text-[#e4e4e7] transition-colors">
               {STRATEGY_LABELS[s]}
@@ -1663,7 +1663,7 @@ function MarketPulseDisplayPage() {
               <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider">Interval</span>
               <span className="font-mono text-[10px] text-primary tabular-nums">{settings.autoRefreshInterval}m</span>
             </div>
-            <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#FFB800", background: "#2A2A2C" }} />
+            <input type="range" min={2} max={30} step={1} value={settings.autoRefreshInterval} onChange={(e) => updateSetting("autoRefreshInterval", Number(e.target.value))} className="w-full h-1 rounded-full appearance-none cursor-pointer" style={{ accentColor: "#a1a1aa", background: "#2A2A2C" }} />
           </div>
         )}
       </div>
@@ -1710,7 +1710,7 @@ function MarketPulseDisplayPage() {
                     if (e.key === "Escape") setShowSuggestions(false);
                   }}
                   placeholder="Search or type symbol..."
-                  className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-primary focus:outline-none transition-colors"
+                  className="w-full h-7 px-2 rounded-md font-mono text-[11px] text-[#e4e4e7] placeholder:text-[#3f3f46] border border-[#2A2A2C] focus:border-card-border focus:outline-none transition-colors"
                   style={{ background: "#111113" }}
                 />
                 <button
@@ -1764,7 +1764,7 @@ function ChartOverlaysPage() {
           <button
             key={key}
             onClick={() => toggleOverlay(key)}
-            className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-[#FFB800] border-[#FFB800]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
+            className={`px-3 py-1.5 rounded-full font-mono text-[10px] font-semibold border transition-all duration-200 ${active ? "bg-[#1a1a1a] text-white border-[#71717a]" : "bg-[#1a1a1a] text-[#71717a] border-[#262626] hover:border-[#404040] hover:text-foreground"}`}
           >
             {OVERLAY_LABELS[key] ?? key.toUpperCase()}
           </button>
@@ -1784,7 +1784,7 @@ function OptionsChainDefaultsPage() {
       <div className="flex items-center gap-2">
         <span className="font-mono text-[9px] text-muted-foreground/70 uppercase tracking-wider whitespace-nowrap">Type</span>
         <Select value={contractType} onValueChange={(v) => setContractType(v as "ALL" | "CALL" | "PUT")}>
-          <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus:ring-primary/50">
+          <SelectTrigger className="font-mono text-[10px] bg-card border-card-border h-8 focus-visible:ring-ring/40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent className="bg-card border-card-border font-mono text-[10px]">
@@ -1828,10 +1828,7 @@ function UnifiedTelemetryPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className="px-4 py-2 font-mono text-[11px] font-bold tracking-wider transition-colors border-b-2"
-            style={{
-              color: tab === t.key ? "#FFB800" : "#71717a",
-              borderColor: tab === t.key ? "#FFB800" : "transparent",
-            }}
+            style={neutralTabUnderlineStyle(tab === t.key)}
           >
             {t.label}
           </button>
@@ -1908,7 +1905,7 @@ function SidebarToggle({ label, icon, checked, onChange }: { label: string; icon
         type="button"
         onClick={onChange}
         className="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200"
-        style={{ background: checked ? "#FFB800" : "#2A2A2C" }}
+        style={{ background: checked ? NEUTRAL_TOGGLE_ON : NEUTRAL_TOGGLE_OFF }}
       >
         <span className="inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200" style={{ transform: checked ? "translateX(16px) translateY(2px)" : "translateX(2px) translateY(2px)" }} />
       </button>

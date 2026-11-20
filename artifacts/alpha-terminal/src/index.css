@@ -81,7 +81,8 @@
 
   --border: 0 0% 15%;
   --input: 0 0% 10%;
-  --ring: 43 100% 50%;
+  /* Neutral focus ring — not gold (gold is brand accent, not tap/focus chrome). */
+  --ring: 0 0% 55%;
 
   --radius: 0.5rem;
 }
@@ -189,6 +190,13 @@
 
   input, textarea, select {
     font-size: 16px !important;
+  }
+
+  button,
+  a,
+  [role="button"],
+  [role="tab"] {
+    -webkit-tap-highlight-color: transparent;
   }
   
   ::-webkit-scrollbar { width: 6px; height: 6px; }
