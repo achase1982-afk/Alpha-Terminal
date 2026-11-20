@@ -512,6 +512,15 @@
   font-size: 16px;
 }
 
+.glance.glance-embedded {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  height: auto;
+  min-height: 0;
+  overflow: auto;
+}
+
 @media (max-width: 1100px) {
   .glance {
     position: absolute;

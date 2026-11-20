@@ -117,7 +117,7 @@ function spark(values: readonly number[], color: string) {
   );
 }
 
-export default function GlancePage() {
+export default function GlancePage({ embedded = false }: { embedded?: boolean }) {
   const live = useGlanceLive();
   const [mode, setMode] = useState<Mode>(readMode);
   const [trendOn, setTrendOn] = useState(() => {
@@ -148,8 +148,9 @@ export default function GlancePage() {
   const [lastPnf, setLastPnf] = useState<PnfResult | null>(null);
 
   useEffect(() => {
+    if (embedded) return;
     document.title = "Alpha Terminal · SPX 0DTE Glance";
-  }, []);
+  }, [embedded]);
 
   const fixture = mode === "fixture";
   const spot = fixture ? FIXTURE.spot : live.spot;
@@ -306,16 +307,18 @@ export default function GlancePage() {
   const env = fixture ? "amplifying" : live.zones?.env;
 
   return (
-    <div className="glance" data-testid="spx-glance" data-mode={mode}>
+    <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
       <header className="cmd">
-        <div className="brand">
-          ALPHA
-          <em>TERMINAL</em>
-        </div>
+        {embedded ? null : (
+          <div className="brand">
+            ALPHA
+            <em>TERMINAL</em>
+          </div>
+        )}
         <h1>SPX 0DTE Glance</h1>
         <span className="sub">ET</span>
         <span className="spacer" />
-        <Link href="/">Mobile</Link>
+        {embedded ? null : <Link href="/">Mobile</Link>}
         <button
           type="button"
           data-on={fixture ? "true" : "false"}
