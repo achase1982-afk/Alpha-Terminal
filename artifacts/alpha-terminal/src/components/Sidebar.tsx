@@ -139,8 +139,10 @@ export interface SidebarHandle {
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
-  onNavigate?: (dest: "markets" | "portfolio" | "ai-pulse" | "ai-strategist") => void;
+  onNavigate?: (dest: "markets" | "portfolio" | "ai" | "ai-pulse" | "ai-strategist") => void;
   onToggle?: () => void;
+  strategistRunningCount?: number;
+  strategistUnviewedCount?: number;
 }
 
 function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label: string; onClick: () => void; badge?: number }) {
@@ -173,7 +175,19 @@ function MenuRow({ icon, label, onClick, badge }: { icon: React.ReactNode; label
   );
 }
 
-export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({ isOpen, onClose, onNavigate }, ref) {
+export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar({
+  isOpen,
+  onClose,
+  onNavigate,
+  strategistRunningCount = 0,
+  strategistUnviewedCount = 0,
+}, ref) {
+  const strategistMenuBadge =
+    strategistRunningCount > 0
+      ? strategistRunningCount
+      : strategistUnviewedCount > 0
+        ? strategistUnviewedCount
+        : undefined;
   const { signOut } = useAuthSignOutSafe();
   const [activePage, setActivePage] = useState<SidebarPage>(null);
   const telemetryCount = useTelemetryCount();
@@ -284,6 +298,12 @@ export const Sidebar = forwardRef<SidebarHandle, SidebarProps>(function Sidebar(
               <div className="flex flex-col pb-2">
                 <MenuRow icon={<CalendarDays />} label="Calendar" onClick={() => { setActivePage("Calendar"); onClose(); }} />
                 <MenuRow icon={<Briefcase />} label="Portfolio" onClick={() => { onNavigate?.("portfolio"); handleCloseAll(); }} />
+                <MenuRow
+                  icon={<BrainCircuit />}
+                  label="AI Trades"
+                  badge={strategistMenuBadge}
+                  onClick={() => { onNavigate?.("ai"); handleCloseAll(); }}
+                />
               </div>
 
               <div className="mx-5 border-b border-card-border/50" />

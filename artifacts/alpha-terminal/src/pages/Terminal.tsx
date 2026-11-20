@@ -1307,12 +1307,15 @@ export default function TerminalPage() {
           ref={sidebarRef}
           isOpen={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
+          strategistRunningCount={strategistRunningCount}
+          strategistUnviewedCount={strategistUnviewedCount}
           onNavigate={(dest) => {
             const chrome = useAtChromeStore.getState();
             chrome.leaveActiveTrader();
             chrome.requestOptionsSubView("chain");
             if (dest === "markets") setActiveBottom("markets");
             else if (dest === "portfolio") setActiveBottom("portfolio");
+            else if (dest === "ai") { setActiveBottom("ai"); setAiSubTab("pulse"); }
             else if (dest === "ai-pulse") { setActiveBottom("ai"); setAiSubTab("pulse"); }
             else if (dest === "ai-strategist") { setActiveBottom("ai"); setAiSubTab("strategist"); }
           }}
@@ -1620,8 +1623,6 @@ export default function TerminalPage() {
       {!isWide && (
         <BottomNav
           activeTab={atOptionsChrome ? "activeTrader" : activeBottom === "dashboard" ? "markets" : activeBottom}
-          strategistRunningCount={strategistRunningCount}
-          strategistUnviewedCount={strategistUnviewedCount}
           onTabChange={(tab) => {
           sidebarRef.current?.clearActivePage();
           setSidebarOpen(false);
@@ -1638,7 +1639,6 @@ export default function TerminalPage() {
             const chrome = useAtChromeStore.getState();
             chrome.leaveActiveTrader();
             chrome.requestOptionsSubView("chain");
-            if (tab === "ai") setAiSubTab("pulse");
             setActiveBottom(tab);
           }
         }} />

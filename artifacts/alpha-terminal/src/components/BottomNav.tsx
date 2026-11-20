@@ -20,27 +20,46 @@ const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.
   insights:     { label: "INSIGHTS",  icon: (c) => <LineChart className={c} /> },
 };
 
-const DEFAULT_ORDER: BottomTab[] = ["watchlist", "markets", "activeTrader", "ai", "insights"];
-const STORAGE_KEY = "alphaTerminalBottomNavOrder:v3";
-const LEGACY_STORAGE_KEY = "alphaTerminalBottomNavOrder:v2";
+/** Mobile bottom bar slots — AI hub lives in the hamburger menu instead. */
+const MOBILE_BOTTOM_SLOTS: BottomTab[] = ["watchlist", "markets", "activeTrader", "portfolio", "insights"];
+const DEFAULT_ORDER: BottomTab[] = MOBILE_BOTTOM_SLOTS;
+const STORAGE_KEY = "alphaTerminalBottomNavOrder:v4";
+const LEGACY_STORAGE_KEYS = [
+  "alphaTerminalBottomNavOrder:v3",
+  "alphaTerminalBottomNavOrder:v2",
+] as const;
 const LONG_PRESS_MS = 450;
 const TAP_SLOP_PX = 18;
 
+function migrateTabId(item: string): BottomTab | null {
+  const mapped = item === "ai" ? "portfolio" : item;
+  if (typeof mapped !== "string" || !MOBILE_BOTTOM_SLOTS.includes(mapped as BottomTab)) return null;
+  return mapped as BottomTab;
+}
+
 function loadOrder(): BottomTab[] {
   try {
-    for (const key of [STORAGE_KEY, LEGACY_STORAGE_KEY]) {
+    for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) continue;
       const unique: BottomTab[] = [];
       for (const item of parsed) {
-        if (typeof item !== "string" || !DEFAULT_ORDER.includes(item as BottomTab)) continue;
-        const tab = item as BottomTab;
-        if (!unique.includes(tab)) unique.push(tab);
+        const tab = migrateTabId(item);
+        if (!tab || unique.includes(tab)) continue;
+        unique.push(tab);
       }
-      // v2 stored a SEARCH tab. Drop it and keep a custom order of the remaining four.
-      if (unique.length === DEFAULT_ORDER.length) return unique;
+      for (const slot of MOBILE_BOTTOM_SLOTS) {
+        if (!unique.includes(slot)) unique.push(slot);
+      }
+      if (unique.length === MOBILE_BOTTOM_SLOTS.length) {
+        const order = unique.slice(0, MOBILE_BOTTOM_SLOTS.length);
+        if (key !== STORAGE_KEY) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
+        }
+        return order;
+      }
     }
   } catch {
     /* ignore broken storage */
@@ -58,20 +77,11 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
 interface BottomNavProps {
   activeTab: BottomTab;
   onTabChange: (tab: BottomTab) => void;
-  /**
-   * When the user leaves the AI hub, show a persistent cue on the AI tab that
-   * Strategist work is still running or a new result is waiting (server-side
-   * jobs continue; polling survives tab changes — see `strategistPoller`).
-   */
-  strategistRunningCount?: number;
-  strategistUnviewedCount?: number;
 }
 
 export function BottomNav({
   activeTab,
   onTabChange,
-  strategistRunningCount = 0,
-  strategistUnviewedCount = 0,
 }: BottomNavProps) {
   const [order, setOrder] = useState<BottomTab[]>(loadOrder);
   const [jiggling, setJiggling] = useState(false);
@@ -314,14 +324,6 @@ export function BottomNav({
           style.animationDelay = `${i * 70}ms`;
         }
 
-        const showStrategistBadge =
-          tabId === "ai" &&
-          activeTab !== "ai" &&
-          (strategistRunningCount > 0 || strategistUnviewedCount > 0);
-        const badgeIsRunning = strategistRunningCount > 0;
-        const badgeNumber = badgeIsRunning ? strategistRunningCount : strategistUnviewedCount;
-        const showBadgeNumber = badgeNumber > 1;
-
         return (
           <div
             key={tabId}
@@ -339,42 +341,10 @@ export function BottomNav({
               isBeingDragged ? "bnav-dragging" : "",
             ].join(" ")}
             style={style}
-            aria-label={
-              showStrategistBadge
-                ? badgeIsRunning
-                  ? `AI — ${strategistRunningCount} Strategist ${strategistRunningCount === 1 ? "analysis" : "analyses"} in progress`
-                  : `AI — ${strategistUnviewedCount} new Strategist ${strategistUnviewedCount === 1 ? "result" : "results"}`
-                : `${def.label} tab`
-            }
+            aria-label={`${def.label} tab`}
             aria-current={isActive ? "page" : undefined}
           >
             {def.icon("h-6 w-6 shrink-0")}
-            {showStrategistBadge && (
-              <span
-                className={badgeIsRunning ? "animate-pulse" : ""}
-                style={{
-                  position: "absolute",
-                  top: 2,
-                  right: 6,
-                  minWidth: showBadgeNumber ? 14 : 7,
-                  height: showBadgeNumber ? 14 : 7,
-                  padding: showBadgeNumber ? "0 3px" : 0,
-                  borderRadius: 9999,
-                  background: badgeIsRunning ? "#FFB800" : "#00d166",
-                  boxShadow: badgeIsRunning ? "0 0 6px #FFB800" : "0 0 4px #00d166",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 9,
-                  fontWeight: 800,
-                  fontFamily: "ui-monospace, monospace",
-                  color: "#0c0c0c",
-                  lineHeight: 1,
-                }}
-              >
-                {showBadgeNumber ? badgeNumber : ""}
-              </span>
-            )}
             <span className="max-w-full truncate text-center text-[8.5px] font-mono font-bold uppercase tracking-wide leading-none">
               {def.label}
             </span>
