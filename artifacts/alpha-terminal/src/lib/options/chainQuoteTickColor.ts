@@ -2,14 +2,16 @@ import type { QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
 import { UP, DOWN } from "@/components/options/optionsTheme";
 import { CHAIN_LADDER_CELL_COLOR } from "@/lib/options/strikeColumnChrome";
 
-/** Bid/ask resting + tick flash colors (Thinkorswim-style: bid red, ask green). */
+/**
+ * Quote text color follows the websocket price move on that cell.
+ * A quiet or dead quote stays off-white. An up tick is green, a down tick is red.
+ * Bid and ask are not painted by side.
+ */
 export function chainLivePriceColor(
-  side: "bid" | "ask",
+  _side: "bid" | "ask",
   arrow: QuoteArrow,
   dimmed: boolean,
 ): string {
-  if (dimmed) return CHAIN_LADDER_CELL_COLOR;
-  if (arrow === "up") return UP;
-  if (arrow === "down") return DOWN;
-  return side === "bid" ? DOWN : UP;
+  if (dimmed || arrow == null) return CHAIN_LADDER_CELL_COLOR;
+  return arrow === "up" ? UP : DOWN;
 }

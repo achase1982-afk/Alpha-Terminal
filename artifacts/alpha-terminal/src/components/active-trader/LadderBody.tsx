@@ -30,7 +30,6 @@ import {
   AT_LADDER_GUTTER_X,
   AT_LADDER_LEG_TAG_SIZE,
   AT_LADDER_PANEL_BG,
-  AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
   AT_LADDER_ROW_H,
@@ -362,7 +361,7 @@ const QuoteCell = memo(function QuoteCell({
                   pointerEvents: "none",
                   padding: "0 4px",
                 }
-              : { color: AT_LADDER_PRICE_COLOR, pointerEvents: "none", padding: "0 4px" }
+              : { pointerEvents: "none", padding: "0 4px" }
           }
         >
           <PriceWithMove text={unavailableReason ?? fmtPx(price)} arrow={arrow} />
