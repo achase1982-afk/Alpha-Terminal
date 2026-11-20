@@ -5,6 +5,12 @@ import { Search, X } from "lucide-react";
 import { useTerminalStore } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
+import {
+  installPwaKeyboardSession,
+  isUserKeyboardSession,
+  noteKeyboardGesture,
+  subscribeKeyboardDismiss,
+} from "@/hooks/pwaKeyboardSession";
 import { useBottomInputDock } from "@/hooks/useVisualViewportKeyboardInset";
 
 /**
@@ -244,7 +250,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
   anchorRef.current = anchor;
 
   const { dockBottomPx, remeasure } = useBottomInputDock(open, focused, 72, 0);
-  const keyboardUp = open && (focused || dockBottomPx >= 48);
+  const keyboardUp = open && isUserKeyboardSession() && (focused || dockBottomPx >= 48);
   const typed = inputVal.trim().toUpperCase();
   const rows = !open || !typed ? [] : hits.length > 0 ? hits : [{ symbol: typed, name: "" }];
 
@@ -267,9 +273,21 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
   }, [open, focused]);
 
   useEffect(() => {
-    const input = inputRef.current;
+    installPwaKeyboardSession();
+    return subscribeKeyboardDismiss(() => {
+      // App switch. Blur before unmounting so iOS releases the keyboard inset,
+      // then drop the field so it is not restored focused on the next open.
+      inputRef.current?.blur();
+      flushSync(() => {
+        setFocused(false);
+        setOpen(false);
+      });
+    });
+  }, []);
+
+  useEffect(() => {
     return () => {
-      input?.blur();
+      inputRef.current?.blur();
       if (holdTimerRef.current != null) window.clearTimeout(holdTimerRef.current);
       if (flingRef.current != null) cancelAnimationFrame(flingRef.current);
     };
@@ -381,7 +399,10 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
   const openSearch = () => {
     lockPlacement();
     // The input has to be on screen before focus(), still inside this tap,
-    // or iOS will not open the keyboard.
+    // or iOS will not open the keyboard. noteKeyboardGesture marks that tap so
+    // a resume from another app — which also focuses fields, with no tap —
+    // is not treated as typing.
+    noteKeyboardGesture();
     flushSync(() => {
       setInputVal("");
       setHits([]);
@@ -610,14 +631,14 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
         />
       )}
 
+      {open && (
       <div
         data-edge-search-dock
         className="fixed z-[10060]"
         style={{
           left: 8,
           right: 8,
-          bottom: !open ? -720 : keyboardUp ? dockBottomPx : 0,
-          opacity: open ? 1 : 0,
+          bottom: keyboardUp ? dockBottomPx : 0,
           paddingBottom: keyboardUp ? 0 : "max(10px, env(safe-area-inset-bottom, 0px))",
         }}
       >
@@ -666,7 +687,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
             <input
               ref={inputRef}
               value={inputVal}
-              tabIndex={open ? 0 : -1}
+              tabIndex={0}
               onChange={(e) => {
                 setInputVal(e.target.value.toUpperCase());
                 setHits([]);
@@ -699,6 +720,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
                 onClick={() => {
                   setInputVal("");
                   setHits([]);
+                  noteKeyboardGesture();
                   inputRef.current?.focus({ preventScroll: true });
                 }}
               >
@@ -708,6 +730,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
           </div>
         </form>
       </div>
+      )}
     </>,
     document.body,
   );

@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  installPwaKeyboardSession,
+  isUserKeyboardSession,
+  subscribeKeyboardSession,
+} from "@/hooks/pwaKeyboardSession";
 
 export interface VisualViewportComposerMetrics {
   /**
@@ -203,6 +208,43 @@ export interface BottomInputDockMetrics {
 
 const KEYBOARD_OPEN_OVERLAP_PX = 48;
 
+export interface BottomInputDockResolution {
+  dockBottomPx: number;
+  scrollPaddingBottomPx: number;
+}
+
+/**
+ * Where a thumb-zone field sits.
+ *
+ * A live typing session follows the keyboard overlap. Overlap left behind by an
+ * iOS app switch (the visual viewport stays short, the keys do not come back)
+ * is ignored, so the field is not stranded in the blank band.
+ */
+export function resolveBottomInputDock(args: {
+  userSession: boolean;
+  inputFocused: boolean;
+  overlapPx: number;
+  idleBottomPx: number;
+  dockHeightPx: number;
+}): BottomInputDockResolution {
+  const h = Math.max(56, args.dockHeightPx);
+  const overlap = args.userSession ? Math.max(0, args.overlapPx) : 0;
+  const focused = args.userSession && args.inputFocused;
+  const keyboardOpen = overlap >= KEYBOARD_OPEN_OVERLAP_PX;
+  if (focused || keyboardOpen) {
+    const bottomInset = overlap + KEYBOARD_GAP_PX;
+    return {
+      dockBottomPx: bottomInset,
+      scrollPaddingBottomPx: h + bottomInset + 12,
+    };
+  }
+  const bottom = args.idleBottomPx;
+  return {
+    dockBottomPx: bottom,
+    scrollPaddingBottomPx: h + bottom + 8,
+  };
+}
+
 /**
  * Tracks `visualViewport` for a thumb-zone input dock: flush on the keyboard when focused /
  * keyboard open, otherwise `idleBottomPx` above the layout bottom (0 for full-screen sheets).
@@ -226,30 +268,26 @@ export function useBottomInputDock(
   const updateRef = useRef<() => void>(() => {});
 
   useEffect(() => {
+    installPwaKeyboardSession();
     if (!enabled) return;
     const vv = window.visualViewport;
     if (!vv) return;
 
     const update = () => {
-      const h = Math.max(56, heightRef.current);
-      const gap = KEYBOARD_GAP_PX;
-      const focused = focusedRef.current;
-      const overlap = measureKeyboardOverlapPx();
-      const keyboardOpen = overlap >= KEYBOARD_OPEN_OVERLAP_PX;
-
-      if (focused || keyboardOpen) {
-        const bottomInset = Math.max(0, overlap) + gap;
-        setDockBottomPx(bottomInset);
-        setScrollPaddingBottomPx(h + bottomInset + 12);
-      } else {
-        const bottom = idleRef.current;
-        setDockBottomPx(bottom);
-        setScrollPaddingBottomPx(h + bottom + 8);
-      }
+      const next = resolveBottomInputDock({
+        userSession: isUserKeyboardSession(),
+        inputFocused: focusedRef.current,
+        overlapPx: measureKeyboardOverlapPx(),
+        idleBottomPx: idleRef.current,
+        dockHeightPx: heightRef.current,
+      });
+      setDockBottomPx(next.dockBottomPx);
+      setScrollPaddingBottomPx(next.scrollPaddingBottomPx);
     };
 
     updateRef.current = update;
     update();
+    const unsubSession = subscribeKeyboardSession(update);
 
     vv.addEventListener("resize", update);
     vv.addEventListener("scroll", update);
@@ -257,6 +295,7 @@ export function useBottomInputDock(
     window.addEventListener("orientationchange", update);
 
     return () => {
+      unsubSession();
       vv.removeEventListener("resize", update);
       vv.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
