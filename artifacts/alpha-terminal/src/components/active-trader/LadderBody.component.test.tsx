@@ -340,12 +340,12 @@ describe("LadderBody", () => {
   it("draws prices regular and strikes semibold at mockup sizes, with fixed-width figures", () => {
     const { cell, view } = setup();
     expect(view.container.querySelector("[data-at-ladder-body]")!.classList.contains("at-ladder-num")).toBe(true);
-    expect(cell("call-bid-7330").style.fontWeight).toBe("400");
+    expect(cell("call-bid-7330").style.fontWeight).toBe("450");
     expect(cell("call-bid-7330").style.fontVariantNumeric).toBe("tabular-nums");
-    expect(cell("call-bid-7330").style.fontSize).toBe("16px");
+    expect(cell("call-bid-7330").style.fontSize).toBe("15px");
     const strike = view.container.querySelector<HTMLElement>('[data-at-strike="7330"] > div')!;
     expect(strike.style.fontWeight).toBe("500");
-    expect(strike.style.fontSize).toBe("14px");
+    expect(strike.style.fontSize).toBe("16px");
     const spotCell = view.container.querySelector<HTMLElement>('[data-at-strike="7320"]')!;
     expect(spotCell.style.background).toMatch(/rgb\(251,\s*191,\s*36\)|#fbbf24/i);
     const spot = spotCell.querySelector<HTMLElement>("div")!;
@@ -378,7 +378,7 @@ describe("LadderBody", () => {
     expect(chip.style.background).toBe("transparent");
     expect(chip.style.borderRadius).toBe("5px");
     expect(chip.textContent).toContain("BUY");
-    expect(cell("call-ask-7330").style.fontSize).toBe("16px");
+    expect(cell("call-ask-7330").style.fontSize).toBe("15px");
   });
 
   it("leaves quiet pairs uncolored and scales live volume heat", () => {

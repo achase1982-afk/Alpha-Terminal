@@ -23,7 +23,13 @@ import { Reorder } from "framer-motion";
 import { useShallow } from "zustand/react/shallow";
 import { buildChainHoldSignature } from "@/lib/streamHoldSig";
 import { useChainOptionHold } from "@/hooks/useChainOptionHold";
-import { STRIKE_COL_FONT_SIZE, STRIKE_COL_FONT_WEIGHT } from "@/lib/options/strikeColumnChrome";
+import {
+  CHAIN_LADDER_CELL_FONT_SIZE,
+  CHAIN_LADDER_CELL_FONT_WEIGHT,
+  STRIKE_COL_FONT_WEIGHT,
+  STRIKE_COL_PAD_X,
+  strikeRailFontSize,
+} from "@/lib/options/strikeColumnChrome";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
   BG, BG_HEADER, BG_EXP_BAR, BORDER, BORDER_ROW, GOLD, GOLD_DIM,
@@ -701,8 +707,8 @@ const DataCell = memo(function DataCell({
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         data-chain-quote-reason={priceReason ?? undefined}
         style={{
-          fontSize: isPrice ? 15 : 12,
-          fontWeight: isPrice ? FW_PREMIUM : FW_LIGHT,
+          fontSize: isPrice ? CHAIN_LADDER_CELL_FONT_SIZE : 12,
+          fontWeight: isPrice ? CHAIN_LADDER_CELL_FONT_WEIGHT : FW_LIGHT,
           color: textColor,
           opacity: priceDimmed ? 0.75 : 1,
           fontVariantNumeric: "tabular-nums",
@@ -1097,7 +1103,20 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         borderBottom: `1px solid rgba(0,0,0,0.25)`,
       }}
     >
-      <span data-ui-audit="chain-strike-cell" style={{ fontSize: STRIKE_COL_FONT_SIZE, fontWeight: STRIKE_COL_FONT_WEIGHT, color: "#000", fontVariantNumeric: "tabular-nums", fontFamily: MONO, lineHeight: 1 }}>
+      <span
+        data-ui-audit="chain-strike-cell"
+        style={{
+          fontSize: strikeRailFontSize(strike),
+          fontWeight: STRIKE_COL_FONT_WEIGHT,
+          color: "#000",
+          fontVariantNumeric: "tabular-nums",
+          fontFamily: MONO,
+          lineHeight: 1,
+          padding: `0 ${STRIKE_COL_PAD_X}px`,
+          maxWidth: "100%",
+          textAlign: "center",
+        }}
+      >
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (

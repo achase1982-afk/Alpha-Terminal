@@ -1,5 +1,6 @@
 import {
-  STRIKE_COL_FONT_SIZE,
+  CHAIN_LADDER_CELL_FONT_SIZE,
+  CHAIN_LADDER_CELL_FONT_WEIGHT,
   STRIKE_COL_FONT_WEIGHT,
   STRIKE_COL_W,
 } from "@/lib/options/strikeColumnChrome";
@@ -49,11 +50,11 @@ export const AT_SPOT_PILL_TEXT = "#0a0a0a";
 
 /** Premium text — mockup cool off-white ~#d4d6d7. */
 export const AT_LADDER_PRICE_COLOR = "#d4d6d7";
-export const AT_LADDER_PRICE_SIZE = 16;
-export const AT_LADDER_PRICE_WEIGHT = 400;
+export const AT_LADDER_PRICE_SIZE = CHAIN_LADDER_CELL_FONT_SIZE;
+export const AT_LADDER_PRICE_WEIGHT = CHAIN_LADDER_CELL_FONT_WEIGHT;
 
-/** Center strike — matched to options chain strike column. */
-export const AT_LADDER_STRIKE_SIZE = STRIKE_COL_FONT_SIZE;
+/** Center strike — use `strikeRailFontSize(strike)` at render time. */
+export const AT_LADDER_STRIKE_SIZE = 16;
 export const AT_LADDER_STRIKE_WEIGHT = STRIKE_COL_FONT_WEIGHT;
 
 /** BUY / SELL under a selected premium. */
