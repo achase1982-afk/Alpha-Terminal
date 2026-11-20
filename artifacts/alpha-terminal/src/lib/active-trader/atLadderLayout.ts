@@ -1,4 +1,5 @@
 import {
+  CHAIN_LADDER_CELL_COLOR,
   CHAIN_LADDER_CELL_FONT_SIZE,
   CHAIN_LADDER_CELL_FONT_WEIGHT,
   STRIKE_COL_FONT_WEIGHT,
@@ -48,8 +49,8 @@ export const AT_LADDER_THIN_SEP = "#2d3236";
 export const AT_SPOT_PILL = "#fdcb35";
 export const AT_SPOT_PILL_TEXT = "#0a0a0a";
 
-/** Premium text — mockup cool off-white ~#d4d6d7. */
-export const AT_LADDER_PRICE_COLOR = "#d4d6d7";
+/** Premium text — shared with options chain bid/ask cells. */
+export const AT_LADDER_PRICE_COLOR = CHAIN_LADDER_CELL_COLOR;
 export const AT_LADDER_PRICE_SIZE = CHAIN_LADDER_CELL_FONT_SIZE;
 export const AT_LADDER_PRICE_WEIGHT = CHAIN_LADDER_CELL_FONT_WEIGHT;
 

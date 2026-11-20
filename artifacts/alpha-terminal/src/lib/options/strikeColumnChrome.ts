@@ -10,6 +10,8 @@ export const STRIKE_COL_FONT_WEIGHT = 500;
 /** Bid / ask / primary quote numbers in wing cells (matches AT ladder). */
 export const CHAIN_LADDER_CELL_FONT_SIZE = 16;
 export const CHAIN_LADDER_CELL_FONT_WEIGHT = 450;
+/** Cool off-white premium text — same token as `AT_LADDER_PRICE_COLOR`. */
+export const CHAIN_LADDER_CELL_COLOR = "#d4d6d7";
 
 /** Center strike rail typography — shared chain + AT. */
 export const STRIKE_RAIL_LETTER_SPACING = "0.01em";
