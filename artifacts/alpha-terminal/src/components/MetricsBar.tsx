@@ -8,7 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRef, useEffect, useState, useLayoutEffect, useCallback } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
-import { formatDayRangeLabel } from "@/lib/formatDayRange";
 import { APP_SURFACE } from "@/lib/theme/appSurface";
 
 const UP_COLOR   = "#00d166";
@@ -18,13 +17,6 @@ const FLAT_COLOR = "#9CA3AF";
 function fmtPrice(n: number | null, digits = 2): string {
   if (n == null || isNaN(n)) return "—";
   return n.toFixed(digits);
-}
-
-function fmtVol(n: number | null): string {
-  if (n == null || isNaN(n)) return "—";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`;
-  return n.toLocaleString();
 }
 
 interface MetricsBarProps {
@@ -197,51 +189,11 @@ function HeaderSkeleton() {
   );
 }
 
-export function VolumeBar() {
-  const { streamPrices } = useTerminalStore(useShallow((s) => ({ streamPrices: s.streamPrices })));
-  const symbol = useActiveSymbol();
-  const { data: quote } = useQuote(symbol);
-  const vol = streamPrices[symbol]?.volume ?? quote?.volume ?? null;
-  const dayHigh = streamPrices[symbol]?.high ?? quote?.high ?? null;
-  const dayLow = streamPrices[symbol]?.low ?? quote?.low ?? null;
-  const dayRangeLabel = formatDayRangeLabel(dayHigh, dayLow, quote?.change ?? null);
-  const wk52High = quote?.fiftyTwoWeekHigh ?? null;
-  const wk52Low = quote?.fiftyTwoWeekLow ?? null;
-
-  return (
-    <div
-      className="w-full grid grid-cols-3 px-3 sm:px-6 border-b border-card-border py-1.5"
-      style={{ background: HEADER_BG }}
-    >
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Volume</span>
-        <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">{fmtVol(vol)}</span>
-      </div>
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">Day Range</span>
-        <span data-ui-audit="metrics-day-range" className="font-mono tabular-nums text-[13px] font-medium leading-none whitespace-nowrap text-zinc-300">
-          {dayRangeLabel}
-        </span>
-      </div>
-      <div className="flex flex-col items-center gap-0.5">
-        <span className="text-[9px] tracking-[0.12em] text-zinc-500 font-semibold leading-none">52W Range</span>
-        <span className="font-mono tabular-nums text-zinc-300 text-[13px] font-medium leading-none">
-          {wk52Low != null ? `$${fmtPrice(wk52Low)} — $${fmtPrice(wk52High)}` : "—"}
-        </span>
-      </div>
-    </div>
-  );
-}
-
 export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: MetricsBarProps) {
   const { accessToken, streamPrices } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, streamPrices: s.streamPrices })));
   // Widget pin wins inside the dashboard; global symbol everywhere else.
   const symbol = useActiveSymbol();
   const { data: quote, isLoading, source } = useQuote(symbol);
-  const streamQ = streamPrices[symbol];
-  const dayHigh = streamQ?.high ?? quote?.high ?? null;
-  const dayLow = streamQ?.low ?? quote?.low ?? null;
-  const dayRangeLabel = formatDayRangeLabel(dayHigh, dayLow, quote?.change ?? null);
   const tickColor = useTickColor(symbol, quote?.last ?? null);
   const bidTickColor = useTickColor(`${symbol}__bid`, quote?.bid ?? null);
   const askTickColor = useTickColor(`${symbol}__ask`, quote?.ask ?? null);
@@ -510,38 +462,6 @@ export function MetricsBar({ compact = false, onOpenTearSheet, onTrade }: Metric
           )}
         </div>
 
-      </div>
-
-      <div className="hidden sm:flex items-center justify-center gap-6 mt-2 pt-2 border-t border-zinc-800/60">
-        <div className="flex flex-col items-center shrink-0 gap-0.5">
-          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Volume</span>
-          <span className={`font-mono tabular-nums text-zinc-300 text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
-            {fmtVol(quote?.volume ?? null)}
-          </span>
-        </div>
-
-        <div className="w-px h-8 bg-zinc-800 shrink-0 hidden md:block" />
-
-        <div className="hidden md:flex flex-col items-center shrink-0 gap-0.5">
-          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">Day Range</span>
-          <span
-            data-ui-audit="metrics-day-range"
-            className={`font-mono tabular-nums text-[13px] font-medium whitespace-nowrap ${opacityCls} ${transitionCls} text-zinc-300`}
-          >
-            {dayRangeLabel}
-          </span>
-        </div>
-
-        <div className="w-px h-8 bg-zinc-800 shrink-0 hidden lg:block" />
-
-        <div className="hidden lg:flex flex-col items-center shrink-0 gap-0.5">
-          <span className="text-[10px] tracking-[0.1em] text-zinc-500 font-semibold">52W Range</span>
-          <span className={`font-mono tabular-nums text-zinc-300 text-[13px] font-medium ${opacityCls} ${transitionCls}`}>
-            {quote?.fiftyTwoWeekLow != null
-              ? `$${fmtPrice(quote.fiftyTwoWeekLow)} — $${fmtPrice(quote.fiftyTwoWeekHigh)}`
-              : "—"}
-          </span>
-        </div>
       </div>
     </div>
   );

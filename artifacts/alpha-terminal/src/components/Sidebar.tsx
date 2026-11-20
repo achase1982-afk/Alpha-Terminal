@@ -5,7 +5,7 @@ import { useOptionsSettingsStore } from "@/lib/options-store";
 import { useMarketPulseStore } from "@/stores/marketPulseStore";
 import type { MarketPulseSettings, AllowedStrategy } from "@/types/marketPulse";
 import { STRATEGY_LABELS, ALL_STRATEGIES, ALL_PULSE_INDICATORS } from "@/types/marketPulse";
-import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode, type BiasScrollSpeed } from "@/lib/ui-customization-store";
+import { useUICustomizationStore, ACCENT_COLORS, type ThemeAccent, type FontSize, type ChartStyle, type GridDensity, type HeaderMode } from "@/lib/ui-customization-store";
 import { AuthPanel } from "./AuthPanel";
 import { StrategistSettingsPanel } from "./StrategistSettingsPanel";
 import { StrategistTelemetryPanel } from "./StrategistTelemetryPanel";
@@ -32,7 +32,7 @@ import {
   Star, Activity, Briefcase, Bell,
   Zap, LineChart, LayoutDashboard, BrainCircuit,
   ChevronLeft, ChevronRight, Trash2, Plus, RotateCcw, BarChart2,
-  SlidersHorizontal, Gauge, ListOrdered, CalendarDays, Palette,
+  SlidersHorizontal, Gauge, CalendarDays, Palette,
   AlertTriangle, Settings2, Settings, ArrowLeft, FlaskConical,
   Stethoscope, Layers, Coins, ShieldAlert, User as UserIcon, Sparkles,
   RefreshCw,
@@ -469,16 +469,13 @@ function ChartOptionsPage() {
 }
 
 function DisplayMarqueePage() {
-  const { macroSymbols, setMacroSymbols, tickerTapeSymbols, setTickerTapeSymbols, tapeSpeed, setTapeSpeed } = useTerminalStore(useShallow((s) => ({ macroSymbols: s.macroSymbols, setMacroSymbols: s.setMacroSymbols, tickerTapeSymbols: s.tickerTapeSymbols, setTickerTapeSymbols: s.setTickerTapeSymbols, tapeSpeed: s.tapeSpeed, setTapeSpeed: s.setTapeSpeed })));
+  const { macroSymbols, setMacroSymbols } = useTerminalStore(useShallow((s) => ({ macroSymbols: s.macroSymbols, setMacroSymbols: s.setMacroSymbols })));
   const [macroInputs, setMacroInputs] = useState<string[]>(macroSymbols);
-  const [tapeInput, setTapeInput] = useState(tickerTapeSymbols.join(", "));
   const [saved, setSaved] = useState(false);
 
   const handleSave = () => {
     const validMacro = macroInputs.map((s) => s.trim().toUpperCase()).filter(Boolean);
     setMacroSymbols(validMacro.length > 0 ? validMacro : macroSymbols);
-    const tapeParsed = tapeInput.split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
-    if (tapeParsed.length > 0) setTickerTapeSymbols(tapeParsed);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -502,28 +499,6 @@ function DisplayMarqueePage() {
               maxLength={8}
             />
           ))}
-        </div>
-      </div>
-
-      <div className="border-t border-card-border pt-4 space-y-2">
-        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2">
-          <ListOrdered className="w-3 h-3" /> Marquee Setup
-        </Label>
-        <Input
-          value={tapeInput}
-          onChange={(e) => setTapeInput(e.target.value.toUpperCase())}
-          placeholder="SPY, QQQ, AAPL, TSLA..."
-          className="font-mono uppercase text-xs h-8 bg-card border-card-border focus-visible:ring-ring/40 text-foreground"
-          autoCorrect="off"
-        />
-        <Label className="font-mono text-[9px] text-[#71717a] uppercase tracking-widest font-medium flex items-center gap-2 mt-1">
-          <Gauge className="w-3 h-3" /> Scroll Speed
-        </Label>
-        <div className="flex items-center gap-2">
-          <span className="text-[9px] text-muted-foreground/60">Fast</span>
-          <input type="range" min={5} max={60} step={1} value={tapeSpeed} onChange={(e) => setTapeSpeed(Number(e.target.value))} className="flex-1 h-1.5 accent-primary cursor-pointer" />
-          <span className="text-[9px] text-muted-foreground/60">Slow</span>
-          <span className="font-mono text-[10px] text-primary w-6 text-right tabular-nums">{tapeSpeed}s</span>
         </div>
       </div>
 
@@ -1130,28 +1105,22 @@ function UICustomizationPage() {
   const fontSize = useUICustomizationStore((s) => s.fontSize);
   const defaultChartStyle = useUICustomizationStore((s) => s.defaultChartStyle);
   const gridDensity = useUICustomizationStore((s) => s.gridDensity);
-  const showTickerTape = useUICustomizationStore((s) => s.showTickerTape);
-  const showAiBiasStrip = useUICustomizationStore((s) => s.showAiBiasStrip);
   const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const animatePriceChanges = useUICustomizationStore((s) => s.animatePriceChanges);
   const hapticFeedback = useUICustomizationStore((s) => s.hapticFeedback);
   const reducedMotion = useUICustomizationStore((s) => s.reducedMotion);
   const headerMode = useUICustomizationStore((s) => s.headerMode);
-  const biasScrollSpeed = useUICustomizationStore((s) => s.biasScrollSpeed);
   const setAccentColor = useUICustomizationStore((s) => s.setAccentColor);
   const setFontSize = useUICustomizationStore((s) => s.setFontSize);
   const setDefaultChartStyle = useUICustomizationStore((s) => s.setDefaultChartStyle);
   const setGridDensity = useUICustomizationStore((s) => s.setGridDensity);
   const setHeaderMode = useUICustomizationStore((s) => s.setHeaderMode);
-  const setShowTickerTape = useUICustomizationStore((s) => s.setShowTickerTape);
-  const setShowAiBiasStrip = useUICustomizationStore((s) => s.setShowAiBiasStrip);
   const setShowMiniCards = useUICustomizationStore((s) => s.setShowMiniCards);
   const setShowMobileEdgeSearch = useUICustomizationStore((s) => s.setShowMobileEdgeSearch);
   const setAnimatePriceChanges = useUICustomizationStore((s) => s.setAnimatePriceChanges);
   const setHapticFeedback = useUICustomizationStore((s) => s.setHapticFeedback);
   const setReducedMotion = useUICustomizationStore((s) => s.setReducedMotion);
-  const setBiasScrollSpeed = useUICustomizationStore((s) => s.setBiasScrollSpeed);
   const resetDefaults = useUICustomizationStore((s) => s.resetDefaults);
 
   const accents: { key: ThemeAccent; label: string }[] = [
@@ -1261,34 +1230,6 @@ function UICustomizationPage() {
           </div>
           <Switch checked={showMobileEdgeSearch} onCheckedChange={setShowMobileEdgeSearch} />
         </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white">Ticker Tape</span>
-          <Switch checked={showTickerTape} onCheckedChange={setShowTickerTape} />
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-white">AI Bias Bar</span>
-          <Switch checked={showAiBiasStrip} onCheckedChange={setShowAiBiasStrip} />
-        </div>
-
-        {showAiBiasStrip && (
-          <div className="flex items-center justify-between pl-4">
-            <span className="text-sm text-zinc-400">Bias Scroll Speed</span>
-            <div className="flex gap-1">
-              {(["off", "slow", "normal", "fast"] as BiasScrollSpeed[]).map((speed) => (
-                <button
-                  key={speed}
-                  onClick={() => setBiasScrollSpeed(speed)}
-                  className="px-2 py-1 rounded text-[10px] font-mono font-semibold uppercase tracking-wider transition-colors"
-                  style={neutralChipStyle(biasScrollSpeed === speed)}
-                >
-                  {speed}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         <div className="flex items-center justify-between">
           <span className="text-sm text-white">Index Mini Cards</span>
@@ -1575,7 +1516,7 @@ function SettingsHubPage({
 
       <SettingsHubSection title="Display">
         <SettingsHubRow icon={<Palette />} label="Appearance" subtitle="Accent, font, chart, and the phone search button" onClick={() => onSelect("Appearance")} />
-        <SettingsHubRow icon={<LayoutDashboard />} label="Marquee" subtitle="Macro tickers, ticker tape symbols, scroll speed" onClick={() => onSelect("Marquee")} />
+        <SettingsHubRow icon={<LayoutDashboard />} label="Marquee" subtitle="Macro tickers" onClick={() => onSelect("Marquee")} />
         <SettingsHubRow icon={<Bell />} label="Notifications" subtitle="In-app, push, system alerts" onClick={() => onSelect("Notifications")} />
       </SettingsHubSection>
 
