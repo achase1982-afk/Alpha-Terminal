@@ -34,7 +34,9 @@ import {
   AT_LADDER_PRICE_COLOR,
   AT_LADDER_PRICE_SIZE,
   AT_LADDER_PRICE_WEIGHT,
+  AT_LADDER_STRIKE_BG,
   AT_LADDER_STRIKE_WEIGHT,
+  AT_LADDER_THIN_SEP,
 } from "@/lib/active-trader/atLadderLayout";
 import {
   COL_W, STRIKE_W, ROW_H, TOOLBAR_H, HEADER_H, SUB_HEADER_H,
@@ -706,11 +708,13 @@ const DataCell = memo(function DataCell({
   }, []);
 
   let textColor: string;
-  if (topStr === "\u2014") textColor = MUTED;
-  else if (isPrice && priceDimmed) textColor = AT_LADDER_PRICE_COLOR;
-  else if (priceDimmed) textColor = MUTED;
-  else if (isBid) textColor = DOWN;
-  else textColor = WHITE;
+  if (isPrice) {
+    textColor = AT_LADDER_PRICE_COLOR;
+  } else if (topStr === "\u2014") {
+    textColor = MUTED;
+  } else {
+    textColor = WHITE;
+  }
 
   const oiValue = isOI ? topVal : undefined;
 
@@ -732,9 +736,14 @@ const DataCell = memo(function DataCell({
           fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
           fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
-          opacity: isPrice && priceDimmed ? 0.72 : priceDimmed ? 0.75 : 1,
+          opacity: isPrice && priceDimmed ? 0.72 : 1,
           fontVariantNumeric: "tabular-nums",
-          ...(isPrice ? {} : { fontFamily: MONO }),
+          ...(isPrice
+            ? {
+                letterSpacing: STRIKE_RAIL_LETTER_SPACING,
+                lineHeight: STRIKE_RAIL_LINE_HEIGHT,
+              }
+            : { fontFamily: MONO }),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -1128,7 +1137,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
       className="flex flex-col items-center justify-center"
       style={{
         height: ROW_H,
-        borderBottom: `1px solid rgba(0,0,0,0.25)`,
+        borderBottom: `1px solid ${AT_LADDER_THIN_SEP}`,
       }}
     >
       <span
@@ -1136,7 +1145,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         style={{
           fontSize: strikeRailFontSize(strike),
           fontWeight: AT_LADDER_STRIKE_WEIGHT,
-          color: "#000",
+          color: WHITE,
           fontVariantNumeric: "tabular-nums",
           letterSpacing: STRIKE_RAIL_LETTER_SPACING,
           lineHeight: STRIKE_RAIL_LINE_HEIGHT,
@@ -1150,7 +1159,7 @@ function StrikeCell({ strike, underlyingPrice }: { strike: number; underlyingPri
         {strike % 1 === 0 ? strike : strike.toFixed(1)}
       </span>
       {moneynessLabel && (
-        <span style={{ fontSize: 9, fontWeight: FW_LIGHT, color: "rgba(0,0,0,0.5)", fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
+        <span style={{ fontSize: 9, fontWeight: FW_LIGHT, color: GRAY, fontFamily: MONO, lineHeight: 1, marginTop: 2 }}>
           {moneynessLabel}
         </span>
       )}
@@ -1281,7 +1290,17 @@ function OptionsGrid({
           </div>
         )}
 
-        <div className="flex-none" style={{ width: STRIKE_W, background: accentHex, borderLeft: `1px solid ${accentHex}`, borderRight: `1px solid ${accentHex}`, zIndex: 10, position: "relative" }}>
+        <div
+          className="flex-none"
+          style={{
+            width: STRIKE_W,
+            background: AT_LADDER_STRIKE_BG,
+            borderLeft: `1px solid ${AT_LADDER_THIN_SEP}`,
+            borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+            zIndex: 10,
+            position: "relative",
+          }}
+        >
           {sortedRows.map((row) => (
             <div key={row.strike} data-chain-strike={row.strike} data-chain-strike-rail style={{ height: ROW_H }}>
               <StrikeCell strike={row.strike} underlyingPrice={underlyingPrice} />
