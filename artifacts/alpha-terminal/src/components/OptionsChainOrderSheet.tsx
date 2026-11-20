@@ -297,7 +297,12 @@ export function OptionsChainOrderSheet({
    * the ticket math far more often than the numbers can be read.
    */
   const legSymbols = useMemo(
-    () => [...new Set(legs.map((l) => l.schwabSymbol).filter(Boolean))].sort(),
+    () =>
+      [
+        ...new Set(
+          legs.flatMap((l) => [l.schwabSymbol, l.streamKey].filter((key): key is string => !!key)),
+        ),
+      ].sort(),
     [legs],
   );
   const optionTicks = useOptionTicksForKeys(legSymbols, TICKET_TICK_MS);
@@ -326,12 +331,18 @@ export function OptionsChainOrderSheet({
   const [orderType, setOrderType] = useState<"LIMIT" | "MARKET">("LIMIT");
 
   const pricedLegs = useMemo(
-    () => legs.map((leg) => mergeLegStreamQuotes(leg, optionTicks[leg.schwabSymbol])),
+    () =>
+      legs.map((leg) =>
+        mergeLegStreamQuotes(
+          leg,
+          optionTicks[leg.schwabSymbol] ?? (leg.streamKey ? optionTicks[leg.streamKey] : undefined),
+        ),
+      ),
     [legs, optionTicks],
   );
 
   useEffect(() => {
-    const symbols = legs.map((l) => l.schwabSymbol).filter(Boolean);
+    const symbols = legs.flatMap((l) => [l.schwabSymbol, l.streamKey].filter((key): key is string => !!key));
     if (symbols.length > 0 && subscribeOptionSymbols) {
       void subscribeOptionSymbols([...new Set(symbols)]);
     }
@@ -979,7 +990,8 @@ export function OptionsChainOrderSheet({
         }}
         limitLocked={limitLocked}
         onLimitLockedChange={(locked) => {
-          if (locked) limitUserEditedRef.current = true;
+          // Lock freezes the working price. Unlock follows the live quote again.
+          limitUserEditedRef.current = locked;
           setLimitLocked(locked);
         }}
         onNudgeLimit={nudgePrice}
@@ -1667,6 +1679,7 @@ export function legsFromChainSelection(
       vega?: number;
       iv?: number;
       contractTs?: number;
+      quoteTimeMs?: number;
     };
     type: "CALL" | "PUT";
     side: "bid" | "ask";
@@ -1708,7 +1721,9 @@ export function legsFromChainSelection(
       vega: l.contract.vega,
       iv: l.contract.iv,
       schwabSymbol,
+      streamKey: l.contract.streamKey?.trim() || undefined,
       contractTs: l.contract.contractTs,
+      quoteTimeMs: l.contract.quoteTimeMs,
     };
     for (const [idx, slice] of slices.entries()) {
       rows.push({

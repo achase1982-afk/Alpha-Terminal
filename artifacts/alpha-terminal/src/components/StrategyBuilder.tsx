@@ -63,7 +63,11 @@ export interface StrategyLeg {
   vega?: number;
   iv?: number;
   schwabSymbol: string;
+  /** Ladder stream key when it differs from `schwabSymbol`. */
+  streamKey?: string;
   contractTs?: number;
+  /** Exchange quote time. The chain fetch time stays on `contractTs` only. */
+  quoteTimeMs?: number;
 }
 
 interface StrategyTemplate {

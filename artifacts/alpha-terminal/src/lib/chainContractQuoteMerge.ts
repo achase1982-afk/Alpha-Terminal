@@ -58,6 +58,7 @@ export function mergeChainContractWithStream(
       schwabSymbol: key,
       bid: contract.bid,
       ask: contract.ask,
+      quoteTimeMs: contract.quoteTimeMs,
       contractTs: chainFetchedAt,
     },
     tick ?? undefined,

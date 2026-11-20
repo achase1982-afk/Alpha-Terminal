@@ -1136,8 +1136,11 @@ export const ActiveTraderView = memo(function ActiveTraderView({
         theta: q.theta,
         vega: q.vega,
         iv: q.iv,
-        contractTs: chainQuoteTs,
-      } as OptionsContract & { contractTs?: number };
+        // The chain fetch time is not a quote. A newer socket quote must win
+        // over a cached chain snapshot whose fetch stamp is wall-clock "now".
+        contractTs: q.quoteTimeMs ?? tick?.quoteTime ?? tick?.ts ?? l.contract.quoteTimeMs,
+        quoteTimeMs: q.quoteTimeMs ?? l.contract.quoteTimeMs,
+      } as OptionsContract & { contractTs?: number; quoteTimeMs?: number };
       const qty = legQuantities.get(key) ?? 1;
       return {
         key,

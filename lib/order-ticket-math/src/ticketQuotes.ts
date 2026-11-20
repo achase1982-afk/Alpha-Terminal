@@ -6,6 +6,8 @@ export interface StreamOptionTick {
   ask?: number | null;
   last?: number | null;
   ts?: number;
+  /** Schwab quoteTimeInLong (ms). Compared ahead of the receive timestamp. */
+  quoteTime?: number | null;
   delta?: number | null;
   gamma?: number | null;
   theta?: number | null;
@@ -60,15 +62,21 @@ export function mergeLegStreamQuotes<
     vega?: number | null;
     iv?: number | null;
     contractTs?: number;
+    /** Exchange quote time for the stored leg. A chain fetch time is not a quote time. */
+    quoteTimeMs?: number;
   },
 >(leg: T, tick: StreamOptionTick | null | undefined): T {
   if (!leg.schwabSymbol) return leg;
+  const quoteMs = (value: number | null | undefined) =>
+    value != null && Number.isFinite(value) && value > 0 ? value : undefined;
   const pair = resolvePairedBidAsk({
     streamBid: tick?.bid ?? undefined,
     streamAsk: tick?.ask ?? undefined,
     streamTs: tick?.ts,
+    streamQuoteTime: quoteMs(tick?.quoteTime),
     contractBid: leg.bid ?? undefined,
     contractAsk: leg.ask ?? undefined,
+    contractQuoteTime: quoteMs(leg.quoteTimeMs),
     contractTs: leg.contractTs,
   });
   const greek = (kind: "delta" | "gamma" | "theta" | "vega" | "iv", raw: number | null | undefined) =>
