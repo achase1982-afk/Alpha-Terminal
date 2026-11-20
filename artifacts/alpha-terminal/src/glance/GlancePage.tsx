@@ -82,18 +82,18 @@ function FlowSide({
   return (
     <div className="flow-row">
       <div className="side-name">{name}</div>
-      <div className="amt down num">
-        ▼ {moneyOr(sold)}
-        <History values={soldHist} color="#f23645" max={histMax} />
-      </div>
-      <div className="track" aria-hidden>
-        <span className="sold" style={{ width: `${soldW}%` }} />
-        <span className="bought" style={{ width: `${boughtW}%` }} />
-        <i />
-      </div>
       <div className="amt up num">
         ▲ {moneyOr(bought)}
         <History values={boughtHist} color="#00d166" max={histMax} />
+      </div>
+      <div className="track" aria-hidden>
+        <span className="bought" style={{ width: `${boughtW}%` }} />
+        <span className="sold" style={{ width: `${soldW}%` }} />
+        <i />
+      </div>
+      <div className="amt down num">
+        ▼ {moneyOr(sold)}
+        <History values={soldHist} color="#f23645" max={histMax} />
       </div>
     </div>
   );
@@ -321,10 +321,10 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
     return (
       <tr>
         <td>{label}</td>
-        <td className="down num">{moneyOr(quad.cs)}</td>
         <td className="up num">{moneyOr(quad.cb)}</td>
-        <td className="down num">{moneyOr(quad.ps)}</td>
+        <td className="down num">{moneyOr(quad.cs)}</td>
         <td className="up num">{moneyOr(quad.pb)}</td>
+        <td className="down num">{moneyOr(quad.ps)}</td>
       </tr>
     );
   }
@@ -403,23 +403,25 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         <div>
           <span className="k">Session range</span>
           <div className="hl num">
-            H {formatSpot(high)} {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute} ET</span> : null}
+            <span className="hl-px">H {formatSpot(high)}</span>{" "}
+            {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute} ET</span> : null}
           </div>
           <div className="hl num">
-            L {formatSpot(low)} {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute} ET</span> : null}
+            <span className="hl-px">L {formatSpot(low)}</span>{" "}
+            {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute} ET</span> : null}
           </div>
           {spot != null && high != null && low != null ? (
-            <div className="support num">
-              {formatSignedPts(high - spot, 1)} below high · {formatSignedPts(spot - low, 1)} above low
-            </div>
+            <>
+              <div className="support num">{formatSignedPts(high - spot, 1)} below high</div>
+              <div className="support num">{formatSignedPts(spot - low, 1)} above low</div>
+            </>
           ) : null}
         </div>
         <div>
           <span className="k">VIX {fixture || live.vixAgeSec != null ? formatAge(fixture ? 12 : live.vixAgeSec) : ""}</span>
           <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
-          <div className={`support num ${signedClass(vixDelta)}`}>
-            {formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open
-          </div>
+          <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)}</div>
+          <div className="support">from open</div>
           <div className="support num">
             L {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · H{" "}
             {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
@@ -479,10 +481,10 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <thead>
                 <tr>
                   <th>Window</th>
-                  <th>Calls sold</th>
                   <th>Calls bought</th>
-                  <th>Puts sold</th>
+                  <th>Calls sold</th>
                   <th>Puts bought</th>
+                  <th>Puts sold</th>
                 </tr>
               </thead>
               <tbody>
