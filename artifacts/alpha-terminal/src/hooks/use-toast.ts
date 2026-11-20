@@ -6,7 +6,12 @@ import type {
 } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+/** Time to keep a dismissed toast mounted for Radix exit animations. */
+const TOAST_REMOVE_DELAY = 5000
+/** How long an open toast stays visible before auto-dismiss. */
+const TOAST_DURATION = 5000
+
+const dismissTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
 type ToasterToast = ToastProps & {
   id: string
@@ -137,9 +142,9 @@ function dispatch(action: Action) {
   })
 }
 
-type Toast = Omit<ToasterToast, "id">
+type Toast = Omit<ToasterToast, "id"> & { duration?: number }
 
-function toast({ ...props }: Toast) {
+function toast({ duration = TOAST_DURATION, ...props }: Toast) {
   const id = genId()
 
   const update = (props: ToasterToast) =>
@@ -147,19 +152,35 @@ function toast({ ...props }: Toast) {
       type: "UPDATE_TOAST",
       toast: { ...props, id },
     })
-  const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id })
+  const dismiss = () => {
+    const pending = dismissTimeouts.get(id)
+    if (pending) {
+      clearTimeout(pending)
+      dismissTimeouts.delete(id)
+    }
+    dispatch({ type: "DISMISS_TOAST", toastId: id })
+  }
 
   dispatch({
     type: "ADD_TOAST",
     toast: {
       ...props,
       id,
+      duration,
       open: true,
       onOpenChange: (open) => {
         if (!open) dismiss()
       },
     },
   })
+
+  dismissTimeouts.set(
+    id,
+    setTimeout(() => {
+      dismissTimeouts.delete(id)
+      dismiss()
+    }, duration),
+  )
 
   return {
     id: id,
@@ -188,4 +209,4 @@ function useToast() {
   }
 }
 
-export { useToast, toast }
+export { TOAST_DURATION, useToast, toast }
