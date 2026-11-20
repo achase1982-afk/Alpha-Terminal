@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { useQuote } from "@/hooks/useQuote";
 import { formatAtGlanceSpot } from "@/lib/active-trader/atGlanceSpotFormat";
+import { useAtVixQuote } from "@/hooks/useAtVixQuote";
 import { MorningEvents, OvernightLine } from "@/components/insights/MorningGlance";
 import { BG, BORDER, DIM, GOLD, GRAY, PUT_WALL, WHITE } from "@/components/options/optionsTheme";
 import {
@@ -39,8 +40,10 @@ const FUTS = [
 ] as const;
 
 const NUM: CSSProperties = { fontVariantNumeric: "tabular-nums" };
-
-type CutId = "hour" | "hold" | "dte" | "day";
+/** Active Trader ladder cell size. Nothing on this page goes smaller. */
+const CELL = 16;
+const ARCH = 18;
+const TITLE = 22;
 
 function futuresSession(now: Date): "cash" | "overnight" | "closed" {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -105,7 +108,6 @@ export function InsightsView(props: {
   const [accountOpen, setAccountOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const [cut, setCut] = useState<CutId>("hour");
   const [now, setNow] = useState(() => Date.now());
   const requestSeq = useRef(0);
   const periodRef = useRef(period);
@@ -155,7 +157,7 @@ export function InsightsView(props: {
   }, [load]);
 
   useEffect(() => {
-    void props.subscribeEquitySymbols?.(["/ES", "/YM", "/NQ"]);
+    void props.subscribeEquitySymbols?.(["/ES", "/YM", "/NQ", "VIX", "$VIX"]);
   }, [props.subscribeEquitySymbols]);
 
   useEffect(() => {
@@ -192,22 +194,23 @@ export function InsightsView(props: {
           {paper ? (
             <span aria-hidden style={{ width: 8, height: 8, borderRadius: 8, background: PUT_WALL, flexShrink: 0 }} />
           ) : null}
-          <span style={{ fontSize: 15, fontWeight: 600, color: "#f4f4f5", letterSpacing: -0.2 }}>{accountLabel}</span>
+          <span style={{ fontSize: ARCH, fontWeight: 600, color: "#f4f4f5", letterSpacing: -0.2 }}>{accountLabel}</span>
           <ChevronDown className="h-4 w-4 shrink-0" style={{ color: "#71717a" }} />
         </button>
         {paper ? (
-          <div style={{ padding: "0 12px 8px", color: PUT_WALL, fontSize: 12, fontWeight: 600, letterSpacing: 0.4 }}>
+          <div style={{ padding: "0 12px 8px", color: PUT_WALL, fontSize: CELL, fontWeight: 600, letterSpacing: 0.4 }}>
             PAPER SANDBOX · Simulated fills
           </div>
         ) : null}
         <div style={{ padding: "2px 12px 0" }}>
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.8, color: GOLD }}>
+          <div style={{ fontSize: ARCH, fontWeight: 600, letterSpacing: 0.4, color: GOLD }}>
             FUTURES · {sessionLabel}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, padding: "6px 0 2px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px 16px", padding: "10px 0 4px" }}>
             {FUTS.map((fut) => (
               <FuturesQuote key={fut.symbol} symbol={fut.symbol} name={fut.name} />
             ))}
+            <VixQuote />
           </div>
           <OvernightLine session={session} />
         </div>
@@ -230,7 +233,7 @@ export function InsightsView(props: {
                   borderBottom: on ? `2px solid ${GOLD}` : "2px solid transparent",
                   background: "transparent",
                   color: on ? WHITE : GRAY,
-                  fontSize: 12,
+                  fontSize: CELL,
                   fontWeight: 600,
                   cursor: "pointer",
                 }}
@@ -240,17 +243,17 @@ export function InsightsView(props: {
             );
           })}
         </div>
-        {syncNote ? <div style={{ padding: "0 12px 8px", color: DIM, fontSize: 11 }}>{syncNote}</div> : null}
+        {syncNote ? <div style={{ padding: "0 12px 8px", color: DIM, fontSize: CELL }}>{syncNote}</div> : null}
       </div>
 
-      {loading && !payload ? <div style={{ padding: 16, color: GRAY, fontSize: 13 }}>Loading</div> : null}
+      {loading && !payload ? <div style={{ padding: 16, color: GRAY, fontSize: CELL }}>Loading</div> : null}
       {error ? (
         <div style={{ padding: 16 }}>
-          <div style={{ color: GRAY, fontSize: 13 }}>{error}</div>
+          <div style={{ color: GRAY, fontSize: CELL }}>{error}</div>
           <button
             type="button"
             onClick={() => void load(period, accountId)}
-            style={{ minHeight: 44, marginTop: 4, padding: "0 4px", background: "transparent", border: "none", color: GOLD, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+            style={{ minHeight: 44, marginTop: 4, padding: "0 4px", background: "transparent", border: "none", color: GOLD, fontSize: CELL, fontWeight: 600, cursor: "pointer" }}
           >
             Retry
           </button>
@@ -258,7 +261,7 @@ export function InsightsView(props: {
       ) : null}
 
       {payload?.empty ? (
-        <div style={{ padding: "16px 12px", color: GRAY, fontSize: 13 }}>{payload.emptyMessage ?? EMPTY_CLOSED}</div>
+        <div style={{ padding: "16px 12px", color: GRAY, fontSize: CELL }}>{payload.emptyMessage ?? EMPTY_CLOSED}</div>
       ) : null}
 
       {payload && !payload.empty && payload.headline ? (
@@ -267,12 +270,9 @@ export function InsightsView(props: {
           infoOpen={infoOpen}
           onInfo={() => setInfoOpen((open) => !open)}
           openKey={openKey}
-          cut={cut}
           onOpen={(key) => {
             setOpenKey((current) => (current === key ? null : key));
-            setCut("hour");
           }}
-          onCut={setCut}
         />
       ) : null}
 
@@ -297,7 +297,7 @@ export function InsightsView(props: {
                   paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
                 }}
               >
-                <div style={{ padding: "12px 12px 4px", fontSize: 11, fontWeight: 600, letterSpacing: 0.6, color: GRAY }}>
+                <div style={{ padding: "12px 12px 4px", fontSize: ARCH, fontWeight: 600, letterSpacing: 0.4, color: GRAY }}>
                   ACCOUNT
                 </div>
                 {books.map((book) => {
@@ -322,7 +322,7 @@ export function InsightsView(props: {
                         border: "none",
                         borderTop: `1px solid ${BORDER}`,
                         color: WHITE,
-                        fontSize: 14,
+                        fontSize: CELL,
                         fontWeight: selected ? 600 : 400,
                         textAlign: "left",
                         cursor: "pointer",
@@ -333,7 +333,7 @@ export function InsightsView(props: {
                         style={{ width: 8, height: 8, borderRadius: 8, background: book.paper ? PUT_WALL : UP, flexShrink: 0 }}
                       />
                       <span style={{ flex: 1, minWidth: 0 }}>{book.label}</span>
-                      {selected ? <span style={{ color: GOLD, fontSize: 12 }}>Selected</span> : null}
+                      {selected ? <span style={{ color: GOLD, fontSize: CELL }}>Selected</span> : null}
                     </button>
                   );
                 })}
@@ -352,12 +352,30 @@ function FuturesQuote({ symbol, name }: { symbol: string; name: string }) {
   const change = sessionChange.change;
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: GRAY, fontWeight: 600 }}>{name}</div>
-      <div style={{ ...NUM, fontSize: 14, color: WHITE, fontWeight: 600, whiteSpace: "nowrap" }}>
+      <div style={{ fontSize: CELL, color: GRAY, fontWeight: 600 }}>{name}</div>
+      <div style={{ ...NUM, fontSize: ARCH, color: WHITE, fontWeight: 600, lineHeight: 1.2 }}>
         {formatAtGlanceSpot(symbol, last)}
       </div>
-      <div style={{ ...NUM, fontSize: 12, fontWeight: 600, color: toneColor(change), whiteSpace: "nowrap" }}>
+      <div style={{ ...NUM, fontSize: CELL, fontWeight: 600, color: toneColor(change), lineHeight: 1.3 }}>
         {points(change, symbol)}
+      </div>
+    </div>
+  );
+}
+
+function VixQuote() {
+  const { data, sessionChange } = useQuote("$VIX");
+  const restLast = useAtVixQuote(true);
+  const last = data?.last ?? data?.extendedLast ?? data?.regularLast ?? restLast;
+  const change = sessionChange.change;
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: CELL, color: GRAY, fontWeight: 600 }}>VIX</div>
+      <div style={{ ...NUM, fontSize: ARCH, color: WHITE, fontWeight: 600, lineHeight: 1.2 }}>
+        {formatAtGlanceSpot("$VIX", last)}
+      </div>
+      <div style={{ ...NUM, fontSize: CELL, fontWeight: 600, color: toneColor(change), lineHeight: 1.3 }}>
+        {points(change, "$VIX")}
       </div>
     </div>
   );
@@ -368,9 +386,7 @@ function Results(props: {
   infoOpen: boolean;
   onInfo: () => void;
   openKey: string | null;
-  cut: CutId;
   onOpen: (key: string) => void;
-  onCut: (cut: CutId) => void;
 }) {
   const { payload } = props;
   const headline = payload.headline;
@@ -384,22 +400,21 @@ function Results(props: {
     : signedPct(comparison.benchmarkReturn);
   const equity = payload.assetClasses.find((row) => row.key === "equity");
   const options = payload.assetClasses.find((row) => row.key === "option");
-  const maxAbs = Math.max(1, ...payload.strategies.map((row) => Math.abs(row.netPnl)));
   const takeaway = payload.takeaway;
 
   return (
-    <div style={{ padding: "12px 12px 28px", minWidth: 0 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: 0.8, color }}>{headline.label}</div>
-      <div style={{ ...NUM, fontSize: 22, fontWeight: 400, color, lineHeight: 1.15, marginTop: 2 }}>
+    <div style={{ padding: "16px 12px 32px", minWidth: 0 }}>
+      <div style={{ fontSize: ARCH, fontWeight: 600, letterSpacing: 0.4, color }}>{headline.label}</div>
+      <div style={{ ...NUM, fontSize: TITLE, fontWeight: 600, color, lineHeight: 1.2, marginTop: 4 }}>
         {money(headline.netPnl)}
       </div>
-      <div style={{ fontSize: 11, color: GRAY, marginTop: 2 }}>
+      <div style={{ fontSize: CELL, color: GRAY, marginTop: 4, lineHeight: 1.35 }}>
         Net after fees · {headline.closedTrades} closed
       </div>
       <Sparkline points={payload.account?.curve ?? []} color={color} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 8, minWidth: 0 }}>
-        <div style={{ ...NUM, fontSize: 11, color: GRAY, minWidth: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, minWidth: 0 }}>
+        <div style={{ ...NUM, fontSize: CELL, color: GRAY, minWidth: 0, lineHeight: 1.35 }}>
           vs S&P 500 · Acct {acct} · SPY {spy}
         </div>
         <button
@@ -411,11 +426,10 @@ function Results(props: {
             flexShrink: 0,
             width: 44,
             height: 44,
-            margin: "-10px -8px -10px 0",
             background: "transparent",
             border: "none",
             color: GOLD,
-            fontSize: 12,
+            fontSize: CELL,
             fontWeight: 700,
             cursor: "pointer",
           }}
@@ -424,30 +438,35 @@ function Results(props: {
         </button>
       </div>
       {props.infoOpen ? (
-        <p style={{ margin: "0 0 4px", color: GRAY, fontSize: 12, lineHeight: 1.45 }}>{comparison.footnote}</p>
+        <p style={{ margin: "0 0 8px", color: GRAY, fontSize: CELL, lineHeight: 1.4 }}>{comparison.footnote}</p>
       ) : null}
       {comparison.openPositions > 0 ? (
-        <div style={{ ...NUM, fontSize: 11, color: DIM, marginTop: 2 }}>
+        <div style={{ ...NUM, fontSize: CELL, color: DIM, marginTop: 4, lineHeight: 1.35 }}>
           {comparison.openPositions} open · unrealized {money(comparison.unrealizedPnl)} at mid, not in the figure above
         </div>
       ) : null}
 
       {metrics ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", marginTop: 12, borderTop: `1px solid ${BORDER}` }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", marginTop: 16, borderTop: `1px solid ${BORDER}` }}>
             <Metric label="Expectancy" value={money(metrics.expectancy)} color={toneColor(metrics.expectancy)} />
             <Metric label="Profit factor" value={pf(metrics.profitFactor)} />
             <Metric label="% closed positive" value={pctClosed(metrics.pctClosedPositive)} last />
           </div>
-          <div style={{ ...NUM, fontSize: 11, color: GRAY, padding: "8px 0", borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
-            Avg gain {money(metrics.avgGain)} · Avg loss {money(metrics.avgLoss)} · Closed DD {money(metrics.maxDrawdown)} · Fees {unsignedMoney(metrics.fees)}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", borderTop: `1px solid ${BORDER}`, borderBottom: `1px solid ${BORDER}` }}>
+            <Metric label="Avg gain" value={money(metrics.avgGain)} color={toneColor(metrics.avgGain)} />
+            <Metric label="Avg loss" value={money(metrics.avgLoss)} color={toneColor(metrics.avgLoss)} />
+            <Metric label="Closed DD" value={money(metrics.maxDrawdown)} color={toneColor(metrics.maxDrawdown)} last />
+          </div>
+          <div style={{ ...NUM, fontSize: CELL, color: GRAY, padding: "10px 0", lineHeight: 1.35 }}>
+            Fees {unsignedMoney(metrics.fees)}
           </div>
         </>
       ) : null}
 
       {equity || options ? (
-        <div style={{ paddingTop: 12 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div style={{ paddingTop: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <AssetStat label="Equities" net={equity?.netPnl ?? null} trades={equity?.trades ?? 0} expectancy={equity?.expectancy ?? null} />
             <AssetStat label="Options" net={options?.netPnl ?? null} trades={options?.trades ?? 0} expectancy={options?.expectancy ?? null} />
           </div>
@@ -459,17 +478,17 @@ function Results(props: {
         <div
           style={{
             display: "flex",
-            gap: 14,
+            gap: 20,
             overflowX: "auto",
-            margin: "12px -12px 0",
-            padding: "0 12px",
+            margin: "16px -12px 0",
+            padding: "0 12px 4px",
             scrollbarWidth: "none",
           }}
         >
           {payload.underlyings.map((row) => (
-            <div key={row.symbol} style={{ flex: "0 0 auto", minHeight: 44, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: WHITE }}>{row.symbol}</div>
-              <div style={{ ...NUM, fontSize: 12, color: toneColor(row.netPnl) }}>
+            <div key={row.symbol} style={{ flex: "0 0 auto", minHeight: 48, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+              <div style={{ fontSize: CELL, fontWeight: 600, color: WHITE }}>{row.symbol}</div>
+              <div style={{ ...NUM, fontSize: CELL, color: toneColor(row.netPnl), lineHeight: 1.3 }}>
                 {money(row.netPnl)}
                 <span style={{ color: GRAY, fontWeight: 400 }}> · {row.trades}</span>
               </div>
@@ -478,7 +497,7 @@ function Results(props: {
         </div>
       ) : null}
 
-      <div style={{ marginTop: 4 }}>
+      <div style={{ marginTop: 8 }}>
         {payload.strategies.map((row) => {
           const open = props.openKey === row.key;
           const slice = payload.byStrategy[row.key];
@@ -491,10 +510,10 @@ function Results(props: {
                 style={{
                   display: "grid",
                   gridTemplateColumns: "minmax(0,1fr) auto",
-                  gap: 8,
+                  gap: 12,
                   width: "100%",
-                  minHeight: 44,
-                  padding: "8px 0",
+                  minHeight: 64,
+                  padding: "12px 0",
                   background: "transparent",
                   border: "none",
                   color: WHITE,
@@ -503,36 +522,28 @@ function Results(props: {
                 }}
               >
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {row.label}
-                    </span>
+                  <span style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+                    <span style={{ fontSize: ARCH, fontWeight: 600, lineHeight: 1.25 }}>{row.label}</span>
                     {row.trades < 10 ? (
-                      <span style={{ flexShrink: 0, fontSize: 11, color: DIM }}>n={row.trades}</span>
+                      <span style={{ flexShrink: 0, fontSize: CELL, color: DIM }}>n={row.trades}</span>
                     ) : null}
                   </span>
-                  <span style={{ ...NUM, display: "block", fontSize: 11, color: GRAY, marginTop: 2 }}>
+                  <span style={{ ...NUM, display: "block", fontSize: CELL, color: GRAY, marginTop: 4, lineHeight: 1.3 }}>
                     {row.trades} {row.trades === 1 ? "trade" : "trades"} · exp {money(row.expectancy)}
                   </span>
-                  <span aria-hidden style={{ display: "block", height: 3, marginTop: 6, background: TRACK }}>
-                    <span style={{ display: "block", height: "100%", width: `${Math.max(4, (Math.abs(row.netPnl) / maxAbs) * 100)}%`, background: toneColor(row.netPnl) }} />
-                  </span>
                 </span>
-                <span style={{ ...NUM, fontSize: 13, fontWeight: 600, color: toneColor(row.netPnl), alignSelf: "center" }}>
+                <span style={{ ...NUM, fontSize: ARCH, fontWeight: 600, color: toneColor(row.netPnl), alignSelf: "center", lineHeight: 1.2 }}>
                   {money(row.netPnl)}
-                  <span style={{ color: GRAY, fontWeight: 400, marginLeft: 4 }}>{open ? "\u2039" : "\u203a"}</span>
                 </span>
               </button>
-              {open && slice ? (
-                <StrategyCuts slice={slice} cut={props.cut} onCut={props.onCut} />
-              ) : null}
+              {open && slice ? <StrategyDetail slice={slice} /> : null}
             </div>
           );
         })}
       </div>
 
       {takeaway ? (
-        <p style={{ margin: "12px 0 0", color: GRAY, fontSize: 12, lineHeight: 1.45 }}>{takeaway}</p>
+        <p style={{ margin: "16px 0 0", color: GRAY, fontSize: CELL, lineHeight: 1.4 }}>{takeaway}</p>
       ) : null}
     </div>
   );
@@ -540,9 +551,9 @@ function Results(props: {
 
 function Metric(props: { label: string; value: string; color?: string; last?: boolean }) {
   return (
-    <div style={{ padding: "8px 8px 8px 0", borderRight: props.last ? "none" : `1px solid ${BORDER}`, minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: GRAY }}>{props.label}</div>
-      <div style={{ ...NUM, fontSize: 13, fontWeight: 600, color: props.color ?? WHITE, marginTop: 2 }}>{props.value}</div>
+    <div style={{ padding: "12px 8px 12px 0", borderRight: props.last ? "none" : `1px solid ${BORDER}`, minWidth: 0 }}>
+      <div style={{ fontSize: CELL, color: GRAY, lineHeight: 1.3 }}>{props.label}</div>
+      <div style={{ ...NUM, fontSize: ARCH, fontWeight: 600, color: props.color ?? WHITE, marginTop: 4, lineHeight: 1.2 }}>{props.value}</div>
     </div>
   );
 }
@@ -550,9 +561,9 @@ function Metric(props: { label: string; value: string; color?: string; last?: bo
 function AssetStat(props: { label: string; net: number | null; trades: number; expectancy: number | null }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 11, color: GRAY }}>{props.label}</div>
-      <div style={{ ...NUM, fontSize: 14, fontWeight: 600, color: toneColor(props.net) }}>{money(props.net)}</div>
-      <div style={{ ...NUM, fontSize: 11, color: GRAY }}>
+      <div style={{ fontSize: CELL, color: GRAY }}>{props.label}</div>
+      <div style={{ ...NUM, fontSize: ARCH, fontWeight: 600, color: toneColor(props.net), lineHeight: 1.2 }}>{money(props.net)}</div>
+      <div style={{ ...NUM, fontSize: CELL, color: GRAY, lineHeight: 1.35 }}>
         {props.trades} {props.trades === 1 ? "trade" : "trades"} · exp {money(props.expectancy)}
       </div>
     </div>
@@ -564,11 +575,17 @@ function SplitBar({ left, right }: { left: number; right: number }) {
   const b = Math.abs(right);
   if (a + b === 0) return null;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: `${a}fr ${b}fr`, gap: 2, height: 4, marginTop: 8, background: "transparent" }}>
+    <div style={{ display: "grid", gridTemplateColumns: `${a}fr ${b}fr`, gap: 3, height: 6, marginTop: 10 }}>
       <div style={{ background: toneColor(left) }} />
       <div style={{ background: toneColor(right) }} />
     </div>
   );
+}
+
+function monthLabel(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "America/New_York" }).format(date).toUpperCase();
 }
 
 function Sparkline({ points: curve, color }: { points: CurvePoint[]; color: string }) {
@@ -578,105 +595,84 @@ function Sparkline({ points: curve, color }: { points: CurvePoint[]; color: stri
   const max = Math.max(0, ...vals);
   const span = max - min || 1;
   const w = 400;
-  const h = 36;
-  const d = vals
-    .map((value, index) => {
-      const x = (index / (vals.length - 1)) * w;
-      const y = h - ((value - min) / span) * (h - 2) - 1;
-      return `${index === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
-  const zeroY = h - ((0 - min) / span) * (h - 2) - 1;
+  const h = 120;
+  const coords = vals.map((value, index) => {
+    const x = (index / (vals.length - 1)) * w;
+    const y = h - ((value - min) / span) * (h - 8) - 4;
+    return { x, y };
+  });
+  const line = coords.map((point, index) => `${index === 0 ? "M" : "L"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const area = `${line} L${w},${h} L0,${h} Z`;
+  const zeroY = h - ((0 - min) / span) * (h - 8) - 4;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={36} preserveAspectRatio="none" aria-hidden style={{ display: "block", marginTop: 8 }}>
-      <line x1={0} x2={w} y1={zeroY} y2={zeroY} stroke={TRACK} strokeWidth={1} />
-      <path d={d} fill="none" stroke={color} strokeWidth={1.75} vectorEffect="non-scaling-stroke" />
-    </svg>
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: CELL, color: GRAY, lineHeight: 1.3 }}>Cumulative realized P/L</div>
+      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={120} preserveAspectRatio="none" aria-hidden style={{ display: "block", marginTop: 8 }}>
+        <line x1={0} x2={w} y1={zeroY} y2={zeroY} stroke={TRACK} strokeWidth={1} />
+        <path d={area} fill={color} opacity={0.22} />
+        <path d={line} fill="none" stroke={color} strokeWidth={2.5} vectorEffect="non-scaling-stroke" />
+      </svg>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: CELL, color: GRAY, marginTop: 4 }}>
+        <span>{monthLabel(curve[0].at)}</span>
+        <span>{monthLabel(curve[curve.length - 1].at)}</span>
+      </div>
+    </div>
   );
 }
 
-function StrategyCuts(props: { slice: InsightSlice; cut: CutId; onCut: (cut: CutId) => void }) {
-  const tabs: { id: CutId; label: string }[] = [
-    { id: "hour", label: "Hour" },
-    { id: "hold", label: "Hold" },
-    { id: "dte", label: "DTE" },
-    { id: "day", label: "Day" },
-  ];
-  const hourly = props.slice.hourCuts ?? [];
-  const summary = props.cut === "hour" ? props.slice.timeCuts : [];
-  const rows = props.cut === "hour"
-    ? hourly
-    : props.cut === "hold"
-      ? props.slice.holdingCuts
-      : props.cut === "dte"
-        ? (props.slice.dteCuts ?? [])
-        : props.slice.dayCuts;
-  const maxAbs = Math.max(1, ...summary.map((row) => Math.abs(row.netPnl)), ...rows.map((row) => Math.abs(row.netPnl)));
-  const hold = props.slice.holdSummary;
+function withTrades(rows: CutStat[] | undefined): CutStat[] {
+  return (rows ?? []).filter((row) => row.trades > 0);
+}
+
+function StrategyDetail({ slice }: { slice: InsightSlice }) {
+  const hours = withTrades(slice.hourCuts);
+  const groups: { title: string; rows: CutStat[] }[] = [
+    { title: "Time of day", rows: hours.length > 0 ? hours : withTrades(slice.timeCuts) },
+    { title: "Hold", rows: withTrades(slice.holdingCuts) },
+    { title: "DTE", rows: withTrades(slice.dteCuts) },
+    { title: "Day", rows: withTrades(slice.dayCuts) },
+  ].filter((group) => group.rows.length > 0);
+  const hold = slice.holdSummary;
 
   return (
-    <div style={{ padding: "0 0 10px" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)" }}>
-        {tabs.map((tab) => {
-          const on = props.cut === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => props.onCut(tab.id)}
-              aria-pressed={on}
-              style={{
-                minHeight: 44,
-                background: "transparent",
-                border: "none",
-                borderBottom: on ? `2px solid ${GOLD}` : "2px solid transparent",
-                color: on ? WHITE : GRAY,
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-      {props.cut === "hold" && hold ? (
-        <div style={{ ...NUM, fontSize: 11, color: GRAY, paddingTop: 8 }}>
+    <div style={{ padding: "0 0 8px 0" }}>
+      {hold && (hold.avgPositiveMin != null || hold.avgNegativeMin != null) ? (
+        <div style={{ ...NUM, fontSize: CELL, color: GRAY, lineHeight: 1.4, paddingBottom: 8 }}>
           Avg positive hold {holdPhrase(hold.avgPositiveMin)} · Avg negative hold {holdPhrase(hold.avgNegativeMin)}
         </div>
       ) : null}
-      {summary.map((row) => (
-        <CutRow key={row.key} row={row} maxAbs={maxAbs} />
-      ))}
-      {rows.length === 0 && summary.length === 0 ? (
-        <div style={{ padding: "8px 0", color: GRAY, fontSize: 12 }}>{EMPTY_CLOSED}</div>
+      {groups.length === 0 ? (
+        <div style={{ padding: "8px 0", color: GRAY, fontSize: CELL }}>{EMPTY_CLOSED}</div>
       ) : (
-        rows.map((row) => <CutRow key={row.key} row={row} maxAbs={maxAbs} />)
+        groups.map((group) => (
+          <div key={group.title} style={{ paddingTop: 8 }}>
+            <div style={{ fontSize: ARCH, fontWeight: 600, color: WHITE, lineHeight: 1.3 }}>{group.title}</div>
+            {group.rows.map((row) => (
+              <CutRow key={`${group.title}-${row.key}`} row={row} />
+            ))}
+          </div>
+        ))
       )}
-      {props.slice.recordedLine ? (
-        <div style={{ fontSize: 11, color: DIM, paddingTop: 6 }}>{props.slice.recordedLine}</div>
+      {slice.recordedLine ? (
+        <div style={{ fontSize: CELL, color: DIM, paddingTop: 8, lineHeight: 1.4 }}>{slice.recordedLine}</div>
       ) : null}
-      {props.slice.perspective ? (
-        <p style={{ margin: "8px 0 0", color: GRAY, fontSize: 12, lineHeight: 1.45 }}>{props.slice.perspective}</p>
+      {slice.perspective ? (
+        <p style={{ margin: "8px 0 0", color: GRAY, fontSize: CELL, lineHeight: 1.4 }}>{slice.perspective}</p>
       ) : null}
     </div>
   );
 }
 
-function CutRow({ row, maxAbs }: { row: CutStat; maxAbs: number }) {
+function CutRow({ row }: { row: CutStat }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1.3fr) auto", gap: 8, padding: "7px 0", borderTop: `1px solid ${BORDER}` }}>
+    <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "10px 0", borderTop: `1px solid ${BORDER}` }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: WHITE }}>{row.label}</div>
-        <div style={{ ...NUM, fontSize: 11, color: GRAY }}>
+        <div style={{ fontSize: CELL, color: WHITE, lineHeight: 1.3 }}>{row.label}</div>
+        <div style={{ ...NUM, fontSize: CELL, color: GRAY, lineHeight: 1.3 }}>
           {row.trades} {row.trades === 1 ? "trade" : "trades"} · exp {money(row.expectancy)}
         </div>
-        <div aria-hidden style={{ height: 3, marginTop: 5, background: TRACK }}>
-          <div style={{ height: "100%", width: `${Math.max(4, (Math.abs(row.netPnl) / maxAbs) * 100)}%`, background: toneColor(row.netPnl) }} />
-        </div>
       </div>
-      <div style={{ ...NUM, fontSize: 13, fontWeight: 600, color: toneColor(row.netPnl), alignSelf: "center" }}>{money(row.netPnl)}</div>
+      <div style={{ ...NUM, fontSize: ARCH, fontWeight: 600, color: toneColor(row.netPnl), flexShrink: 0 }}>{money(row.netPnl)}</div>
     </div>
   );
 }

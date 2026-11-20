@@ -6,8 +6,12 @@ import { BORDER, DIM, GOLD, GRAY, WHITE } from "@/components/options/optionsThem
 import type { PositionView } from "@/components/journal/journalModel";
 
 const NUM = { fontVariantNumeric: "tabular-nums" } as const;
+const CELL = 16;
+const ARCH = 18;
+const UP = "#4ee38a";
+const DOWN = "#ff5a5f";
 
-const FLAT_POINTS: Record<string, number> = { "/ES": 4, "/YM": 30, "/NQ": 15 };
+const FLAT_POINTS: Record<string, number> = { "/ES": 4, "/YM": 30, "/NQ": 15, "$VIX": 0.15 };
 
 const INDEX = new Set([
   "SPY", "QQQ", "IWM", "DIA", "SPX", "SPXW", "NDX", "NDXP", "RUT", "RUTW",
@@ -134,22 +138,33 @@ function openBook(positions: PositionView[]): { symbols: Set<string>; index: boo
   return { symbols, index };
 }
 
-function direction(symbol: string, change: number | null): string {
-  const name = symbol === "/ES" ? "S&P" : symbol === "/YM" ? "Dow" : "Nasdaq";
-  if (change == null || !Number.isFinite(change)) return `${name} —`;
-  if (Math.abs(change) < (FLAT_POINTS[symbol] ?? 1)) return `${name} flat`;
-  return `${name} ${change > 0 ? "up" : "down"}`;
+function direction(symbol: string, change: number | null): { name: string; word: string; color: string } {
+  const name = symbol === "/ES" ? "S&P" : symbol === "/YM" ? "Dow" : symbol === "/NQ" ? "Nasdaq" : "VIX";
+  if (change == null || !Number.isFinite(change)) return { name, word: "—", color: GRAY };
+  if (Math.abs(change) < (FLAT_POINTS[symbol] ?? 0.15)) return { name, word: "flat", color: GRAY };
+  const up = change > 0;
+  return { name, word: up ? "up" : "down", color: up ? UP : DOWN };
 }
 
 export function OvernightLine(props: { session: "cash" | "overnight" | "closed" }) {
   const es = useQuote("/ES").sessionChange.change;
   const ym = useQuote("/YM").sessionChange.change;
   const nq = useQuote("/NQ").sessionChange.change;
-  if (es == null && ym == null && nq == null) return null;
+  const vix = useQuote("$VIX").sessionChange.change;
+  if (es == null && ym == null && nq == null && vix == null) return null;
   const since = props.session === "cash" ? "Since yesterday's close" : "Since the cash close";
+  const parts = [direction("/ES", es), direction("/YM", ym), direction("/NQ", nq), direction("$VIX", vix)];
   return (
-    <div style={{ ...NUM, fontSize: 11, color: GRAY, paddingBottom: 8 }}>
-      {since} · {direction("/ES", es)} · {direction("/YM", ym)} · {direction("/NQ", nq)}
+    <div style={{ ...NUM, fontSize: CELL, color: GRAY, lineHeight: 1.4, paddingBottom: 10 }}>
+      <div>{since}</div>
+      <div>
+        {parts.map((part, index) => (
+          <span key={part.name}>
+            {index > 0 ? " · " : ""}
+            {part.name} <span style={{ color: part.color, fontWeight: 700 }}>{part.word}</span>
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -261,20 +276,22 @@ export function MorningEvents(props: { now: number; positions: PositionView[] })
   }, [book.index, book.symbols, earnings, econ, horizon, today]);
 
   if (lines == null) {
-    return <div style={{ fontSize: 11, color: DIM, padding: "0 12px 8px" }}>Calendar</div>;
+    return <div style={{ fontSize: CELL, color: DIM, padding: "0 12px 10px" }}>Calendar</div>;
   }
 
   return (
     <div style={{ padding: "0 12px 8px", borderTop: `1px solid ${BORDER}` }}>
-      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.8, color: GOLD, paddingTop: 8 }}>TODAY</div>
+      <div style={{ fontSize: ARCH, fontWeight: 600, letterSpacing: 0.4, color: GOLD, paddingTop: 10 }}>TODAY</div>
       {lines.length === 0 ? (
-        <div style={{ fontSize: 12, color: GRAY, padding: "4px 0 2px" }}>Nothing scheduled that moves the tape today.</div>
+        <div style={{ fontSize: CELL, color: GRAY, lineHeight: 1.4, padding: "6px 0 4px" }}>Nothing scheduled that moves the tape today.</div>
       ) : (
         lines.map((line) => (
-          <div key={line.key} style={{ display: "flex", gap: 8, alignItems: "baseline", minHeight: 22, paddingTop: 3 }}>
-            <span style={{ ...NUM, width: 64, flexShrink: 0, fontSize: 11, color: GRAY }}>{line.when || "Today"}</span>
-            <span style={{ fontSize: 13, color: WHITE, fontWeight: 600, minWidth: 0 }}>{line.title}</span>
-            {line.note ? <span style={{ fontSize: 11, color: DIM, whiteSpace: "nowrap" }}>{line.note}</span> : null}
+          <div key={line.key} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "8px 0" }}>
+            <span style={{ ...NUM, width: 88, flexShrink: 0, fontSize: CELL, color: GRAY, lineHeight: 1.35 }}>{line.when || "Today"}</span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: CELL, color: WHITE, fontWeight: 600, lineHeight: 1.35 }}>{line.title}</span>
+              {line.note ? <span style={{ display: "block", fontSize: CELL, color: DIM, lineHeight: 1.35 }}>{line.note}</span> : null}
+            </span>
           </div>
         ))
       )}
