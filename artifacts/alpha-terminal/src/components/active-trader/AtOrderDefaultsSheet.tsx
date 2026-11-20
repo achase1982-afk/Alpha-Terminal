@@ -3,6 +3,9 @@ import { createPortal } from "react-dom";
 import { Check, ChevronDown, X } from "lucide-react";
 import {
   applyOrderDefaults,
+  AT_STRATEGY_BUILDS,
+  AT_STRATEGY_WIDTHS,
+  strategyBuildLabel,
   type ActiveTraderTemplatePrefs,
   type AtAccountKind,
   type AtAdvancedRoute,
@@ -99,6 +102,14 @@ export function describeOrderDefaults(
       ? "Orders send without a review step."
       : "You review the order before it is sent.",
   );
+  const strategy = prefs.strategyBuild ?? "off";
+  if (strategy === "off") {
+    parts.push("Tapping a strike adds that leg.");
+  } else {
+    parts.push(
+      `Tapping a strike builds a ${strategyBuildLabel(strategy).toLowerCase()}, ${prefs.verticalWidth} points between the legs.`,
+    );
+  }
   return parts.join(" ");
 }
 
@@ -543,29 +554,48 @@ export const AtOrderDefaultsSheet = memo(function AtOrderDefaultsSheet({
               ))}
             </ChoiceRow>
             <ChoiceRow
-              label="Ladder mode"
-              value={draft.ladderMode === "vertical" ? "Vertical" : "Single"}
-              open={menu === "ladder"}
-              onToggle={() => setMenu(menu === "ladder" ? null : "ladder")}
+              label="Strategy"
+              value={strategyBuildLabel(draft.strategyBuild)}
+              open={menu === "strategy"}
+              onToggle={() => setMenu(menu === "strategy" ? null : "strategy")}
               nested
             >
-              <MenuItem
-                label="Single"
-                selected={draft.ladderMode === "single"}
-                onPick={() => {
-                  patch({ ladderMode: "single" });
-                  setMenu(null);
-                }}
-              />
-              <MenuItem
-                label="Vertical"
-                selected={draft.ladderMode === "vertical"}
-                onPick={() => {
-                  patch({ ladderMode: "vertical" });
-                  setMenu(null);
-                }}
-              />
+              {AT_STRATEGY_BUILDS.map((opt) => (
+                <MenuItem
+                  key={opt.value}
+                  label={opt.label}
+                  selected={(draft.strategyBuild ?? "off") === opt.value}
+                  onPick={() => {
+                    patch({ strategyBuild: opt.value });
+                    setMenu(null);
+                  }}
+                />
+              ))}
             </ChoiceRow>
+            {(draft.strategyBuild ?? "off") !== "off" ? (
+              <ChoiceRow
+                label="Leg distance"
+                value={`${draft.verticalWidth} pt`}
+                open={menu === "width"}
+                onToggle={() => setMenu(menu === "width" ? null : "width")}
+                nested
+              >
+                {AT_STRATEGY_WIDTHS.map((width) => (
+                  <MenuItem
+                    key={width}
+                    label={`${width} pt`}
+                    selected={draft.verticalWidth === width}
+                    onPick={() => {
+                      patch({ verticalWidth: width });
+                      setMenu(null);
+                    }}
+                  />
+                ))}
+              </ChoiceRow>
+            ) : null}
+            <p style={{ margin: "8px 20px 0 32px", color: MUTED, fontSize: 13, lineHeight: 1.4 }}>
+              Off adds each strike you tap. A strategy fills that structure from the strike you tap, and the next strike moves it.
+            </p>
             <p style={{ margin: "8px 20px 0 32px", color: MUTED, fontSize: 13, lineHeight: 1.4 }}>
               Take profit is always the closing side. A buy to open is closed with a sell to close. A sell to open is closed with a buy to close.
             </p>

@@ -19,6 +19,7 @@ import {
   WHITE,
 } from "@/components/options/optionsTheme";
 import { ladderStrikeZoneTag } from "@/lib/active-trader/atGlanceWallDisplay";
+import type { AtStrategyBuild } from "@/lib/active-trader/activeTraderPrefs";
 import { useQuoteMoveArrows, type QuoteArrow } from "@/lib/active-trader/useQuoteMoveArrows";
 import { chainLivePriceColor } from "@/lib/options/chainQuoteTickColor";
 import { useOptionsStreamStore } from "@/lib/options-stream-store";
@@ -96,7 +97,15 @@ interface LadderBodyProps {
   verticalWidth: AtVerticalWidth;
   rowByStrike: Map<number, LadderRowModel>;
   rowHeight?: number;
-  onVerticalTap: (payload: {
+  /** Only an explicit strategy default replaces the picked legs. `off` selects the cell. */
+  strategyBuild?: AtStrategyBuild;
+  onStrategyTap?: (target: {
+    contract: OptionsContract;
+    type: "CALL" | "PUT";
+    side: "BUY" | "SELL";
+    strike: number;
+  }) => void;
+  onVerticalTap?: (payload: {
     anchorStrike: number;
     farStrike: number;
     type: "CALL" | "PUT";
@@ -925,8 +934,9 @@ type PressGesture = {
 export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
   renderProbe("body");
   const rowHeight = props.rowHeight ?? AT_LADDER_ROW_H;
-  const { rows, selection, onQuoteTap, onVerticalTap, ladderMode, verticalWidth, rowByStrike } = props;
-  const vertical = ladderMode === "vertical";
+  const { rows, selection, onQuoteTap, onStrategyTap, ladderMode, verticalWidth, rowByStrike } = props;
+  const strategyBuild = props.strategyBuild ?? "off";
+  const vertical = ladderMode === "vertical" && strategyBuild !== "off" && strategyBuild !== "iron-condor";
   const clockMinute = useMinuteClock();
 
   const strikes = useMemo(() => rows.map((r) => r.strike), [rows]);
@@ -968,8 +978,8 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
     return map;
   }, [rows]);
 
-  const latest = useRef({ cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth });
-  latest.current = { cellTargets, onQuoteTap, onVerticalTap, vertical, verticalWidth };
+  const latest = useRef({ cellTargets, onQuoteTap, onStrategyTap, strategyBuild });
+  latest.current = { cellTargets, onQuoteTap, onStrategyTap, strategyBuild };
   const gestureRef = useRef<PressGesture | null>(null);
   const lastPointerHandledAtRef = useRef(-Infinity);
   /** A rejected or canceled pointer gesture still emits a click. Swallow that click. */
@@ -998,14 +1008,10 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
     const cur = latest.current;
     const target = cur.cellTargets.get(cellKey);
     if (!target) return;
-    if (cur.vertical) {
-      cur.onVerticalTap({
-        anchorStrike: target.strike,
-        farStrike: verticalStrikes(target.strike, cur.verticalWidth, target.type).far,
-        type: target.type,
-        side: target.side,
-        nearContract: target.contract,
-      });
+    // A saved vertical ladder mode is not a strategy default. Free taps stay free
+    // until Strategy is set in order defaults.
+    if (cur.strategyBuild !== "off") {
+      cur.onStrategyTap?.(target);
       return;
     }
     cur.onQuoteTap(target.contract, target.type, target.side);
