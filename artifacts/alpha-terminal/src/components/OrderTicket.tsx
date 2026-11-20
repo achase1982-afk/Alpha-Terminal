@@ -1398,9 +1398,15 @@ export function OrderTicket({
     if (submitInFlightRef.current || stage === "submitting") return;
     if (!atSendLive) return;
     if (futuresOrderBlocked) return;
-    const targetAccountHashes = selectedAccountHashes.filter((hash) =>
+    const selectedTargets = selectedAccountHashes.filter((hash) =>
       eligibleOrderAccountHashes.includes(hash),
     );
+    const targetAccountHashes =
+      selectedTargets.length > 0
+        ? selectedTargets
+        : accountHash
+          ? [accountHash]
+          : [];
     if (targetAccountHashes.length === 0 || !isValid) return;
     if (!isCloseOrder && preTradeGate.shouldBlockSubmit) return;
     if (atTemplatePlan?.validationError) return;
@@ -1541,7 +1547,7 @@ export function OrderTicket({
       setSubmitInFlight(false);
     }
   }, [
-    buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
+    accountHash, buildSchwabOrder, symbol, side, pulseData, submittedLimit, isMultiLeg, strategyIsCredit,
     strategyLegs, quantity, isOption, isCloseOrder, preTradeGate.shouldBlockSubmit, preTradeEnabled, preTradeBlockOnRed,
     overallRisk, riskChecks, ticketEconomics, stage, atTemplatePlan?.validationError, atTemplatePrefs, isValid,
     futuresOrderBlocked, atSendLive, selectedAccountHashes, eligibleOrderAccountHashes,
