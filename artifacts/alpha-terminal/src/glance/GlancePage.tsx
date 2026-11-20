@@ -286,8 +286,8 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const putOi = fixture ? FIXTURE.walls.putOi.now : (live.zones?.putWall ?? null);
   const callOiOpen = fixture ? FIXTURE.walls.callOi.open : null;
   const putOiOpen = fixture ? FIXTURE.walls.putOi.open : null;
-  const callVol = fixture ? FIXTURE.walls.callVol.now : null;
-  const putVol = fixture ? FIXTURE.walls.putVol.now : null;
+  const callVol = fixture ? FIXTURE.walls.callVol.now : (live.zones?.callWallVol ?? null);
+  const putVol = fixture ? FIXTURE.walls.putVol.now : (live.zones?.putWallVol ?? null);
   const callVolOpen = fixture ? FIXTURE.walls.callVol.open : null;
   const putVolOpen = fixture ? FIXTURE.walls.putVol.open : null;
   const flip = fixture ? FIXTURE.flip : (live.zones?.flip ?? null);
@@ -529,7 +529,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
         </section>
         <section className="block levels" aria-label="Level map">
           <div className="meta-row">
-            <span className="flip">Gamma flip {formatWall(flip)}</span>
+            <span className="flip">Gamma flip {flip == null ? "none in range" : formatWall(flip)}</span>
             <span className="num">{spot != null && flip != null ? `${formatSignedPts(spot - flip)} vs spot` : "—"}</span>
           </div>
           <div className="meta-row">

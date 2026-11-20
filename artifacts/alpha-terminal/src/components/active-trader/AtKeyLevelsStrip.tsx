@@ -5,6 +5,7 @@ import {
 } from "@/components/options/optionsTheme";
 import type { ZoneModel } from "@/lib/active-trader/zonesModel";
 import { formatGexUsd } from "@/lib/active-trader/zonesModel";
+import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
 import { useFlashOnChange } from "@/hooks/useFlashOnChange";
 
 interface AtKeyLevelsStripProps {
@@ -119,7 +120,7 @@ export const AtKeyLevelsStrip = memo(function AtKeyLevelsStrip({
       {
         key: "flip",
         label: "Flip",
-        value: flip != null ? flip.toFixed(0) : "—",
+        value: resolveGammaFlipDisplay(zones),
         sub: ptsFromSpot(flip, spot),
         valueColor: GAMMA_SCENARIO,
         tintBg: `${GAMMA_SCENARIO}16`,
@@ -137,7 +138,7 @@ export const AtKeyLevelsStrip = memo(function AtKeyLevelsStrip({
         flash: flashGex,
       },
     ],
-    [cw, pw, flip, gex, spot, flashCw, flashPw, flashFlip, flashGex, gexColor, accentHex, zones.env],
+    [cw, pw, flip, gex, spot, flashCw, flashPw, flashFlip, flashGex, gexColor, accentHex, zones],
   );
 
   return (

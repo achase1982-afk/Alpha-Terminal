@@ -7,6 +7,7 @@ import { detectFlowFlipExperimental, flowPremiumNet, flowPremiumNetSign } from "
 import { formatFlowFreshnessBadge, resolveFlowFreshness } from "@/lib/active-trader/atFlowStripFreshness";
 import { loadAtFlowStripTab, saveAtFlowStripTab, type AtFlowStripTab } from "@/lib/active-trader/atFlowStripTab";
 import { resolveGammaFlipDisplay } from "@/lib/active-trader/atGlanceWallDisplay";
+import { formatStrikeLevel } from "@/lib/active-trader/atExpiryPill";
 import { AT_LADDER_GAMMA } from "@/lib/active-trader/atLadderLayout";
 import { GOLD, PUT_WALL, WHITE } from "@/components/options/optionsTheme";
 import "./AtFlowStrip.css";
@@ -171,11 +172,21 @@ export const AtFlowStrip = memo(function AtFlowStrip({
         {tab === "levels" ? (
           <div className="at-flow-strip-levels">
             <span>
-              Call wall <b style={{ color: GOLD }}>{zones.callWall ?? "\u2014"}</b>
+              Call wall <b style={{ color: GOLD }}>{formatStrikeLevel(zones.callWall)}</b>
             </span>
             <span>
-              Put wall <b style={{ color: PUT_WALL }}>{zones.putWall ?? "\u2014"}</b>
+              Put wall <b style={{ color: PUT_WALL }}>{formatStrikeLevel(zones.putWall)}</b>
             </span>
+            {zones.callWallVol != null || zones.putWallVol != null ? (
+              <>
+                <span>
+                  Call vol <b style={{ color: GOLD }}>{formatStrikeLevel(zones.callWallVol ?? null)}</b>
+                </span>
+                <span>
+                  Put vol <b style={{ color: PUT_WALL }}>{formatStrikeLevel(zones.putWallVol ?? null)}</b>
+                </span>
+              </>
+            ) : null}
             <span>
               Gamma flip{" "}
               <b className="num" style={{ ...NUM, color: AT_LADDER_GAMMA }}>

@@ -57,7 +57,8 @@ export function resolvePutWallDisplay(zones: ZoneModel): WallColumnDisplay {
 }
 
 export function resolveGammaFlipDisplay(zones: ZoneModel): string {
-  if (zones.flip == null || !Number.isFinite(zones.flip)) return "\u2014";
+  if (zones.wallsRollLabel) return "\u2014";
+  if (zones.flip == null || !Number.isFinite(zones.flip)) return "none in range";
   return formatStrikeLevel(Math.round(zones.flip));
 }
 

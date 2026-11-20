@@ -549,10 +549,13 @@ function StrikeSideTag({
   marker,
   color,
   lines,
+  nudge = 0,
 }: {
   marker: "gamma-flip" | "call-wall" | "put-wall";
   color: string;
   lines: readonly [string, string];
+  /** Vertical offset when call and put walls share the strike. */
+  nudge?: number;
 }) {
   return (
     <div
@@ -565,7 +568,7 @@ function StrikeSideTag({
         right: "100%",
         marginRight: 2,
         top: "50%",
-        transform: "translateY(-50%)",
+        transform: nudge === 0 ? "translateY(-50%)" : `translateY(calc(-50% + ${nudge}px))`,
         color,
         fontSize: 7,
         fontWeight: 700,
@@ -808,13 +811,15 @@ const LadderRowView = memo(function LadderRowView({
             marker="call-wall"
             color={GOLD}
             lines={["CALL", "WALL"]}
+            nudge={putWallRow ? -8 : 0}
           />
         ) : null}
-        {putWallRow && !gammaFlipRow && !callWallRow ? (
+        {putWallRow && !gammaFlipRow ? (
           <StrikeSideTag
             marker="put-wall"
             color={PUT_WALL}
             lines={["PUT", "WALL"]}
+            nudge={callWallRow ? 8 : 0}
           />
         ) : null}
         <div
