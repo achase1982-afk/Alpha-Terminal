@@ -244,7 +244,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
   anchorRef.current = anchor;
 
   const { dockBottomPx, remeasure } = useBottomInputDock(open, focused, 72, 0);
-  const keyboardOpen = open && dockBottomPx >= 48;
+  const keyboardUp = open && (focused || dockBottomPx >= 48);
   const typed = inputVal.trim().toUpperCase();
   const rows = !open || !typed ? [] : hits.length > 0 ? hits : [{ symbol: typed, name: "" }];
 
@@ -541,9 +541,9 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
             width: BUTTON_PX,
             height: BUTTON_PX,
             zIndex: jiggling ? 90 : 70,
-            color: jiggling || pressed ? "rgba(255,255,255,0.98)" : "rgba(255,255,255,0.9)",
-            background: jiggling ? "rgba(32, 32, 36, 0.78)" : pressed ? "rgba(22, 22, 24, 0.62)" : "rgba(22, 22, 24, 0.46)",
-            border: jiggling ? "1px solid rgba(255,255,255,0.55)" : "1px solid rgba(255,255,255,0.32)",
+            color: "rgba(255,255,255,0.96)",
+            background: jiggling ? "rgba(32, 32, 36, 0.86)" : pressed ? "rgba(22, 22, 24, 0.76)" : "rgba(22, 22, 24, 0.64)",
+            border: jiggling ? "1px solid rgba(255,255,255,0.62)" : "1px solid rgba(255,255,255,0.42)",
             boxShadow: jiggling ? "0 8px 24px rgba(0,0,0,0.45)" : "0 4px 18px rgba(0,0,0,0.3)",
             backdropFilter: "blur(14px)",
             WebkitBackdropFilter: "blur(14px)",
@@ -588,9 +588,9 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
         style={{
           left: 8,
           right: 8,
-          bottom: !open ? -720 : keyboardOpen ? dockBottomPx + 4 : 0,
+          bottom: !open ? -720 : keyboardUp ? dockBottomPx : 0,
           opacity: open ? 1 : 0,
-          paddingBottom: !open || keyboardOpen ? 8 : "max(10px, env(safe-area-inset-bottom, 0px))",
+          paddingBottom: keyboardUp ? 0 : "max(10px, env(safe-area-inset-bottom, 0px))",
         }}
       >
         <form
