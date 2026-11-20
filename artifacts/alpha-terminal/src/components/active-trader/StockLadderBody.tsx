@@ -31,6 +31,7 @@ import {
   stockBookSizeHeatColor,
   stockLadderAnchor,
   stockLadderPrices,
+  stockLadderSpotKey,
   stockPriceKey,
   stockSizeByPrice,
   stockVolumeHeatColor,
@@ -229,6 +230,7 @@ export function StockLadderBody({
     stockBestPrice(depthBids, "bid"),
     stockBestPrice(depthAsks, "ask"),
   );
+  const spotKey = useMemo(() => stockLadderSpotKey(anchor), [anchor]);
   useEffect(() => {
     if (anchor == null) return;
     setPrices((prev) => {
@@ -263,20 +265,20 @@ export function StockLadderBody({
 
   const scrollStockToAnchor = useCallback(() => {
     const el = scrollRef.current;
-    if (!el || anchor == null) return;
-    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${stockPriceKey(anchor)}"]`);
+    if (!el || spotKey == null) return;
+    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${spotKey}"]`);
     if (!row) return;
     const top = row.offsetTop - el.clientHeight / 2 + row.offsetHeight / 2;
     el.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
-  }, [anchor]);
+  }, [spotKey]);
 
   const measureStockAnchor = useCallback(() => {
     const el = scrollRef.current;
-    if (!el || anchor == null) {
+    if (!el || spotKey == null) {
       setAnchorOffCenter(false);
       return;
     }
-    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${stockPriceKey(anchor)}"]`);
+    const row = el.querySelector<HTMLElement>(`[data-at-stock-price="${spotKey}"]`);
     if (!row) {
       setAnchorOffCenter(false);
       return;
@@ -285,7 +287,7 @@ export function StockLadderBody({
     const tRect = row.getBoundingClientRect();
     const rowCenter = tRect.top + tRect.height / 2 - cRect.top;
     setAnchorOffCenter(Math.abs(rowCenter - el.clientHeight / 2) > 56);
-  }, [anchor]);
+  }, [spotKey]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -595,7 +597,7 @@ export function StockLadderBody({
           const bidIntensity = stockBookSizeIntensity(bidSize, bidPeak);
           const askIntensity = stockBookSizeIntensity(askSize, askPeak);
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
-          const spotRow = anchor != null && stockPriceKey(anchor) === key;
+          const spotRow = spotKey != null && spotKey === key;
           return (
             <div
               key={key}
