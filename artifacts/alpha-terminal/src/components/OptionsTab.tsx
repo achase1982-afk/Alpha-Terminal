@@ -61,8 +61,8 @@ import {
 } from "@/lib/active-trader/atLadderStrikeCount";
 import { useOptionsExpiryStore } from "@/lib/options/optionsExpiryStore";
 import {
-  scrollViewportToNearestStrike,
-  viewportNearestStrikeOffCenter,
+  chainAtmRowOffCenter,
+  scrollChainViewportToAtm,
 } from "@/lib/active-trader/atLadderScroll";
 import { SpotRecenterPill } from "@/components/options/SpotRecenterPill";
 import {
@@ -2235,20 +2235,13 @@ export function OptionsTab({
       setChainSpotOffCenter(false);
       return;
     }
-    setChainSpotOffCenter(
-      viewportNearestStrikeOffCenter(el, underlyingPrice, "data-chain-strike-rail", 56, chainSheetPad),
-    );
+    setChainSpotOffCenter(chainAtmRowOffCenter(el, underlyingPrice, 56, chainSheetPad));
   }, [underlyingPrice, chainSheetPad]);
 
   const scrollChainToSpot = useCallback(() => {
-    scrollViewportToNearestStrike(
-      chainScrollRef.current,
-      underlyingPrice,
-      "data-chain-strike-rail",
-      chainSheetPad,
-      "auto",
-    );
-  }, [underlyingPrice, chainSheetPad]);
+    scrollChainViewportToAtm(chainScrollRef.current, underlyingPrice, chainSheetPad, "auto");
+    requestAnimationFrame(measureChainSpot);
+  }, [underlyingPrice, chainSheetPad, measureChainSpot]);
 
   useEffect(() => {
     if (optionsSubView !== "chain") {
