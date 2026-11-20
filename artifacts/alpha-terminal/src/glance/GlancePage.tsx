@@ -170,13 +170,11 @@ function PriceTrace({ points }: { points: readonly { t: number; c: number }[] })
 function PulseQuote({ symbol, quote }: { symbol: string; quote: ReturnType<typeof useQuote> }) {
   const last = quote.data?.last;
   const pct = quote.data?.changePct;
-  const age = quote.data?.tradeTimeMs != null ? formatAge(Math.max(0, (Date.now() - quote.data.tradeTimeMs) / 1000)) : "Age —";
   return (
     <div className="pulse-cell">
       <span className="k">{symbol}</span>
       <b className="num">{last == null ? "—" : last.toFixed(2)}</b>
       <span className={`num ${signedClass(pct ?? null)}`}>{pct == null ? "day unavailable" : `${formatPct(pct)} day`}</span>
-      <span className="sub">{age}</span>
     </div>
   );
 }
@@ -398,10 +396,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
 
       <section className="headline" aria-label="Market headline">
         <div>
-          <span className="k">
-            {spotCaption}
-            {fixture || live.spotAgeSec != null ? ` ${formatAge(fixture ? 12 : live.spotAgeSec)}` : ""}
-          </span>
+          <span className="k">{spotCaption}</span>
           <div
             className="spot num"
             data-at-spot-tick={fixture ? "flat" : spotTick.side}
@@ -411,37 +406,42 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
           </div>
         </div>
         <div className="day-read">
-          <span className="k">Day</span>
+          <span className="k">SPX day</span>
           <div className={`day-pct num ${signedClass(dayPct)}`}>{formatPct(dayPct)}</div>
-          <div className={`support num ${signedClass(dayPoints)}`}>{dayPoints == null ? "—" : `${formatSignedPts(dayPoints)} from the close`}</div>
+          <div className={`day-pts num ${signedClass(dayPoints)}`}>
+            {dayPoints == null ? "—" : `${formatSignedPts(dayPoints, 0)} points from the close`}
+          </div>
         </div>
         <div>
-          <span className="k">From open</span>
-          <div className={`open-pts num ${signedClass(fromOpen)}`}>{formatSignedPts(fromOpen, 2)}</div>
+          <span className="k">SPX from the open</span>
+          <div className={`open-pts num ${signedClass(fromOpen)}`}>
+            {fromOpen == null ? "—" : `${formatSignedPts(fromOpen, 0)} points`}
+          </div>
           <div className="support num">Open {formatSpot(open)}</div>
         </div>
         <div>
-          <span className="k">Session range</span>
+          <span className="k">Session high</span>
           <div className="hl num">
-            <span className="hl-px">High {formatSpot(high)}</span>{" "}
+            <span className="hl-px">{formatSpot(high)}</span>{" "}
             {fixture || live.highMinute ? <span className="when">{fixture ? FIXTURE.highMinute : live.highMinute}</span> : null}
           </div>
+          <span className="k">Session low</span>
           <div className="hl num">
-            <span className="hl-px">Low {formatSpot(low)}</span>{" "}
+            <span className="hl-px">{formatSpot(low)}</span>{" "}
             {fixture || live.lowMinute ? <span className="when">{fixture ? FIXTURE.lowMinute : live.lowMinute}</span> : null}
           </div>
           {spot != null && high != null && low != null ? (
             <div className="support num">
-              {formatSignedPts(high - spot, 1)} high · {formatSignedPts(spot - low, 1)} low
+              {formatSignedPts(high - spot, 0)} points under the high · {formatSignedPts(spot - low, 0)} points above the low
             </div>
           ) : null}
         </div>
         <div>
-          <span className="k">VIX {fixture || live.vixAgeSec != null ? formatAge(fixture ? 12 : live.vixAgeSec) : ""}</span>
+          <span className="k">VIX</span>
           <div className="vix-px num">{vix == null ? "—" : vix.toFixed(2)}</div>
           <div className={`support num ${signedClass(vixDelta)}`}>{formatSignedPts(vixDelta)} · {formatPct(vixPct)} from open</div>
           <div className="support num">
-            Low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · High{" "}
+            VIX low {fixture ? FIXTURE.vixLow.toFixed(2) : live.vixLow == null ? "—" : live.vixLow.toFixed(2)} · VIX high{" "}
             {fixture ? FIXTURE.vixHigh.toFixed(2) : live.vixHigh == null ? "—" : live.vixHigh.toFixed(2)}
           </div>
         </div>
@@ -450,10 +450,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       <div className="band">
         <GlanceLadder spot={spot} callWall={callOi} putWall={putOi} flip={flip} />
         <section className="block" aria-label="Flow">
-            <h2>
-              <span>Flow now</span>
-              <span>{fixture ? "Age 30 seconds · sample" : formatAge(live.flowAgeSec)}</span>
-            </h2>
             <div className="windows num">
               {(
                 [
@@ -589,7 +585,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </section>
 
       <footer className="footer">
-        <span>{fixture ? "Sample data is on" : spotCaption === "Last completed minute" ? `Completed minute ${live.lastCloseMinute ?? ""}`.trim() : formatAge(live.spotAgeSec)}</span>
+        <span>{fixture ? "Sample data is on" : spotCaption === "Last completed minute" ? `Completed minute ${live.lastCloseMinute ?? ""}`.trim() : ""}</span>
         <span>Expires today</span>
       </footer>
 
@@ -696,7 +692,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
               <ul>
                 <li>SPX and VIX come from the quote stream. Day change uses the quote close when that field is present.</li>
                 <li>Open, high, and low minutes come from 1-minute bars when that route returns them. A bar that does not start at 09:30 is not labeled the regular-hours open.</li>
-                <li>Flow now and the day row are 1-minute premium bars since 09:30 Eastern. The age is now minus tape time. Level 1 estimate is the separate streamer total.</li>
+                <li>Flow now and the day row are 1-minute premium bars since 09:30 Eastern. Level 1 estimate is the separate streamer total.</li>
                 <li>Call wall and put wall are the strikes with the largest open-interest gamma. Call volume wall and put volume wall are the strikes with the largest volume gamma. The number is the strike, not a contract count. One strike can sit on more than one row.</li>
                 <li>PRICE NOT FOLLOWING needs all four 5-minute gross amounts and a matching 5-minute SPX change. The last evaluated result stays visible when a newer window is incomplete.</li>
                 <li>Flow connection: {fixture ? "fixture" : live.flowConnection}.</li>

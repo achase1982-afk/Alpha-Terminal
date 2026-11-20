@@ -139,6 +139,14 @@
   font-weight: 500;
 }
 
+.day-pts {
+  margin-top: 2px;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 .open-pts,
 .vix-px {
   font-size: 28px;
