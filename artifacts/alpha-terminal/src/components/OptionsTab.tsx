@@ -749,12 +749,20 @@ const DataCell = memo(function DataCell({
                 ? `Size: ${fmtCompact(bottomVal)}`
                 : null;
 
+  // Vol cell stacks volume over open interest. Same ladder face as bid/ask,
+  // one point larger than the previous 12 / 8, with the pair centered.
+  const volOiStack = isVol;
   const inner = (
     <div
-      className="relative flex h-full w-full items-center overflow-hidden"
+      className={
+        volOiStack
+          ? "relative flex h-full w-full min-w-0 flex-col items-center justify-center overflow-hidden"
+          : "relative flex h-full w-full items-center overflow-hidden"
+      }
       style={{
-        padding: isBid ? "0 2px 0 8px" : "0 2px",
+        padding: isBid ? "0 2px 0 8px" : volOiStack ? "1px 2px" : "0 2px",
         boxSizing: "border-box",
+        gap: volOiStack ? 4 : undefined,
       }}
     >
       <span
@@ -762,13 +770,21 @@ const DataCell = memo(function DataCell({
         data-ui-audit={isPrice ? "chain-bid-cell" : undefined}
         data-chain-quote-reason={priceReason ?? undefined}
         style={{
-          fontSize: isPrice ? AT_LADDER_PRICE_SIZE : 12,
-          fontWeight: isPrice ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
+          fontSize: isPrice ? AT_LADDER_PRICE_SIZE : volOiStack ? 13 : 12,
+          fontWeight: isPrice || volOiStack ? AT_LADDER_PRICE_WEIGHT : FW_LIGHT,
           color: textColor,
           opacity: isPrice && priceDimmed ? 0.72 : 1,
           fontVariantNumeric: "tabular-nums",
           lineHeight: 1,
-          ...(isPrice ? {} : { fontFamily: MONO }),
+          ...(isPrice || volOiStack ? {} : { fontFamily: MONO }),
+          ...(volOiStack
+            ? {
+                width: "100%",
+                minWidth: 0,
+                textAlign: "center" as const,
+                letterSpacing: "0.04em",
+              }
+            : {}),
         }}
         data-chain-quote-as-of={asOfLabel ?? undefined}
         data-chain-quote-locked={showLockedFlag ? "1" : undefined}
@@ -779,20 +795,38 @@ const DataCell = memo(function DataCell({
       {footnote ? (
         <span
           title={asOfLabel ?? undefined}
-          style={{
-            position: "absolute",
-            left: isBid ? 8 : 2,
-            right: 2,
-            bottom: 1,
-            fontSize: 8,
-            lineHeight: 1,
-            color: isVol ? WHITE : isShaded ? "#a0a0a8" : MUTED,
-            fontVariantNumeric: "tabular-nums",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            pointerEvents: "none",
-          }}
+          style={
+            volOiStack
+              ? {
+                  width: "100%",
+                  minWidth: 0,
+                  fontSize: 9,
+                  fontWeight: AT_LADDER_PRICE_WEIGHT,
+                  lineHeight: 1,
+                  letterSpacing: "0.04em",
+                  textAlign: "center",
+                  color: WHITE,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  pointerEvents: "none",
+                }
+              : {
+                  position: "absolute",
+                  left: isBid ? 8 : 2,
+                  right: 2,
+                  bottom: 1,
+                  fontSize: 8,
+                  lineHeight: 1,
+                  color: isShaded ? "#a0a0a8" : MUTED,
+                  fontVariantNumeric: "tabular-nums",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  pointerEvents: "none",
+                }
+          }
         >
           {footnote}
         </span>
@@ -839,7 +873,7 @@ const DataCell = memo(function DataCell({
 
   return (
     <div
-      className={isPrice ? "at-ladder-num relative" : "relative"}
+      className={isPrice || isVol ? "at-ladder-num relative" : "relative"}
       style={cellFrame}
     >
       {inner}
