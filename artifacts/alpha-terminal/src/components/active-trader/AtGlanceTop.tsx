@@ -32,7 +32,7 @@ const NUM_FEAT: CSSProperties = {
 const LABEL_PX = 13;
 const VALUE_PX = 13;
 const SECTION_RULE = "#2b3033";
-/** Match `.at-flow-strip` height so stock/options template toggle does not resize glance chrome. */
+/** Options fallback shell matches `.at-flow-strip` height. Stock template does not reserve it. */
 const EQUITY_FLOW_BAND_MIN_H = 120;
 
 const cellLine: CSSProperties = {
@@ -67,7 +67,7 @@ export type AtGlanceTopProps = {
   };
   ladderHeatSource?: AtLadderHeatSourceMeta;
   expiryPickerLoading?: boolean;
-  /** Equity or ETF share ladder. Hides option expiry picker and SPX zone refs (flow band shell stays mounted). */
+  /** Equity or ETF share ladder. Hides option chrome and the empty flow band. */
   stockTemplate?: boolean;
 };
 
@@ -116,12 +116,24 @@ export const AtGlanceTop = memo(function AtGlanceTop({
   const vixLevel = useAtVixQuote(showVix);
   const spotTick = useSpotQuoteTickColor(symbol, quote, flow.livePx);
   const liveSpot = useGlanceSpotPrice(symbol, underlyingPrice, flow.livePx);
-  const spotShown = spotTick.price ?? liveSpot;
+  const quoteSpot = quote?.last ?? quote?.regularLast ?? quote?.extendedLast ?? null;
+  const spotShown = stockTemplate && quoteSpot != null ? quoteSpot : (spotTick.price ?? liveSpot);
+  const priorClose = quote?.close ?? null;
 
-  const sessionChange = useMemo(
-    () => resolveAtHeaderSessionChange(quote, restQuote, spotShown),
-    [quote, restQuote, spotShown],
-  );
+  const sessionChange = useMemo(() => {
+    if (
+      stockTemplate &&
+      spotShown != null &&
+      priorClose != null &&
+      Number.isFinite(spotShown) &&
+      Number.isFinite(priorClose) &&
+      priorClose !== 0
+    ) {
+      const change = spotShown - priorClose;
+      return { change, changePct: (change / priorClose) * 100 };
+    }
+    return resolveAtHeaderSessionChange(quote, restQuote, spotShown);
+  }, [stockTemplate, quote, restQuote, spotShown, priorClose]);
   const dayStatus = resolveDayStatus(sessionChange);
   const dayLabel = dayStatusLabel(dayStatus);
 
@@ -170,7 +182,10 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           lineHeight: 1,
         }}
       >
-        <div className="flex items-baseline min-w-0 flex-1 overflow-hidden" style={{ gap: 6 }}>
+        <div
+          className={`flex items-baseline min-w-0 flex-1 ${stockTemplate ? "" : "overflow-hidden"}`}
+          style={{ gap: 6 }}
+        >
           <span
             data-at-glance-symbol
             className="shrink-0 font-semibold text-white tracking-tight whitespace-nowrap"
@@ -178,13 +193,15 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           >
             {symLabel}
           </span>
-          <span
-            data-at-instrument-category={categoryLabel}
-            className="shrink-0"
-            style={{ fontSize: 11, fontWeight: 600, color: AT_SECONDARY, letterSpacing: "0.02em", whiteSpace: "nowrap" }}
-          >
-            {categoryLabel}
-          </span>
+          {stockTemplate ? null : (
+            <span
+              data-at-instrument-category={categoryLabel}
+              className="shrink-0"
+              style={{ fontSize: 11, fontWeight: 600, color: AT_SECONDARY, letterSpacing: "0.02em", whiteSpace: "nowrap" }}
+            >
+              {categoryLabel}
+            </span>
+          )}
           <span className="inline-flex items-baseline" style={{ gap: 4 }}>
             <span
               className="num"
@@ -227,12 +244,8 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             </span>
           ) : null}
         </div>
-        {mode !== "futures" ? (
-          <div
-            className="shrink-0 ml-2 flex items-center justify-end"
-            style={{ maxWidth: "42%", visibility: stockTemplate ? "hidden" : "visible" }}
-            aria-hidden={stockTemplate}
-          >
+        {mode !== "futures" && !stockTemplate ? (
+          <div className="shrink-0 ml-2 flex items-center justify-end" style={{ maxWidth: "42%" }}>
             <AtExpiryPicker loading={expiryPickerLoading} />
           </div>
         ) : null}
@@ -317,10 +330,16 @@ export const AtGlanceTop = memo(function AtGlanceTop({
           netPremium={netPremium}
           zones={zones}
         />
+      ) : stockTemplate ? (
+        ladderHeatSource?.label ? (
+          <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>
+            {ladderHeatSource.label}
+          </span>
+        ) : null
       ) : mode !== "futures" ? (
         <div
           data-at-glance-flow-band
-          data-at-equity-flow-shell={stockTemplate ? "stock" : "options"}
+          data-at-equity-flow-shell="options"
           style={{
             padding: "4px 16px",
             fontSize: 12,
@@ -329,7 +348,7 @@ export const AtGlanceTop = memo(function AtGlanceTop({
             boxSizing: "border-box",
           }}
         >
-          {stockTemplate ? null : "Flow strip unavailable for this symbol"}
+          Flow strip unavailable for this symbol
           {ladderHeatSource?.label ? (
             <span className="sr-only" data-at-ladder-heat-source data-at-ladder-heat-fresh={ladderHeatSource.sourceFresh ? "1" : "0"}>
               {ladderHeatSource.label}

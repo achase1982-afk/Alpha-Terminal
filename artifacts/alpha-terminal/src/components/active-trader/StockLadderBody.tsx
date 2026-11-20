@@ -482,7 +482,7 @@ export function StockLadderBody({
           gap: STOCK_ACTION_BTN_GAP,
           minHeight: 44,
           padding: STOCK_ACTION_BAR_PAD,
-          background: "#050606",
+          background: AT_HEADER_BG,
           borderBottom: `1px solid ${BORDER}`,
         }}
       >
