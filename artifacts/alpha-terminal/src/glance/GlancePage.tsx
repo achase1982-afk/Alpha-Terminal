@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useQuote } from "@/hooks/useQuote";
+import { useSpotQuoteTickColor } from "@/lib/active-trader/atSpotDirection";
 import { FIXTURE, fixtureHistory } from "./fixture";
 import { GlanceLadder } from "./GlanceLadder";
 import {
@@ -178,6 +179,7 @@ function PulseQuote({ symbol, quote }: { symbol: string; quote: ReturnType<typeo
 
 export default function GlancePage({ embedded = false }: { embedded?: boolean }) {
   const live = useGlanceLive();
+  const spxQuote = useQuote("$SPX");
   const spy = useQuote("SPY");
   const qqq = useQuote("QQQ");
   const iwm = useQuote("IWM");
@@ -215,6 +217,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   }, [embedded]);
 
   const fixture = mode === "fixture";
+  const spotTick = useSpotQuoteTickColor("$SPX", fixture ? null : spxQuote.data, null);
   const streamedSpot = fixture ? FIXTURE.spot : live.spot;
   const spot = streamedSpot ?? (fixture ? FIXTURE.spot : live.lastClose);
   const spotCaption = fixture || streamedSpot != null ? "SPX" : live.lastClose != null ? "Last completed minute" : "SPX";
@@ -413,7 +416,13 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
             {spotCaption}
             {fixture || live.spotAgeSec != null ? ` ${formatAge(fixture ? 12 : live.spotAgeSec)}` : ""}
           </span>
-          <div className="spot num">{formatSpot(spot)}</div>
+          <div
+            className="spot num"
+            data-at-spot-tick={fixture ? "flat" : spotTick.side}
+            style={{ color: fixture ? "#fff" : spotTick.color }}
+          >
+            {formatSpot(spot)}
+          </div>
         </div>
         <div className="day-read">
           <span className="k">{dayStatusLabel(dayStatus)}</span>
