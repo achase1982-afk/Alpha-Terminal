@@ -13,12 +13,11 @@ export const AT_LADDER_GRID =
 export const AT_LADDER_STRIKE_COL_W = 96;
 
 /**
- * Equity ladder: 4 columns per side + center price bar.
- * Per side, from the price bar outward: size | orders (blank) | order qty (blank) | accumulated volume.
- * Change `AT_STOCK_SIDE_COL_COUNT` / this template to drop to 3 per side later.
+ * Six-column equity ladder:
+ * volume | buy orders | bid size | price | ask size | sell orders.
  */
-export const AT_STOCK_SIDE_COL_COUNT = 4;
-export const AT_STOCK_LADDER_GRID = `repeat(${AT_STOCK_SIDE_COL_COUNT}, minmax(0,1fr)) ${AT_LADDER_STRIKE_COL_W}px repeat(${AT_STOCK_SIDE_COL_COUNT}, minmax(0,1fr))`;
+export const AT_STOCK_LADDER_GRID =
+  `minmax(58px,1.15fr) minmax(46px,.8fr) minmax(52px,1fr) ${AT_LADDER_STRIKE_COL_W}px minmax(52px,1fr) minmax(46px,.8fr)`;
 
 /** Dull green behind bid size, dull red behind ask size (equity ladder size columns). */
 export const AT_STOCK_BID_BG = "#173b2a";

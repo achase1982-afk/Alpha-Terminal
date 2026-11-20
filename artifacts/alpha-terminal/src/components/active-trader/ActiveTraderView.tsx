@@ -112,7 +112,6 @@ import {
   AT_LADDER_PUTS_HDR,
   AT_LADDER_ROW_H,
   AT_LADDER_THIN_SEP,
-  AT_STOCK_LADDER_GRID,
 } from "@/lib/active-trader/atLadderLayout";
 import { AT_HEADER_BG, AT_ORDER_PANEL_BG } from "@/lib/active-trader/atChromeContrast";
 import { AtLadderSkeleton } from "./AtLadderSkeleton";
@@ -1590,57 +1589,7 @@ export const ActiveTraderView = memo(function ActiveTraderView({
 
       {stockTemplate ? (
         <div className="flex flex-1 min-h-0 flex-col" data-at-stock-template>
-          <div
-            className="grid items-center shrink-0"
-            style={{
-              height: AT_LADDER_GROUP_HDR_H,
-              gridTemplateColumns: AT_STOCK_LADDER_GRID,
-              background: AT_HEADER_BG,
-              borderBottom: `1px solid ${BORDER}`,
-            }}
-          >
-            <span /><span /><span /><span />
-            <span className="flex items-center justify-center">
-              <AtInstrumentModePill template="stock" onToggle={toggleTemplate} />
-            </span>
-            <span /><span /><span /><span />
-          </div>
-          <div
-            className="grid items-center shrink-0 at-ladder-num"
-            style={{
-              height: AT_LADDER_COL_HDR_H,
-              gridTemplateColumns: AT_STOCK_LADDER_GRID,
-              fontSize: 9,
-              color: AT_LABEL,
-              fontWeight: 600,
-              letterSpacing: "0.02em",
-              background: AT_HEADER_BG,
-              borderBottom: `1px solid ${BORDER}`,
-            }}
-          >
-            <span
-              className="flex flex-col items-center justify-center text-center"
-              style={{ fontSize: 8, lineHeight: 1 }}
-              title="Accumulated volume today"
-            >
-              <span>ACC</span><span>VOL</span>
-            </span>
-            <span className="text-center">QTY</span>
-            <span className="text-center">ORD</span>
-            <span className="text-center">BID SIZE</span>
-            <span className="text-center" style={{ fontSize: 11 }}>PRICE</span>
-            <span className="text-center">ASK SIZE</span>
-            <span className="text-center">ORD</span>
-            <span className="text-center">QTY</span>
-            <span
-              className="flex flex-col items-center justify-center text-center"
-              style={{ fontSize: 8, lineHeight: 1 }}
-              title="Accumulated volume today"
-            >
-              <span>ACC</span><span>VOL</span>
-            </span>
-          </div>
-          <StockLadderBody symbol={symbol} />
+          <StockLadderBody symbol={symbol} onToggleTemplate={toggleTemplate} />
         </div>
       ) : null}
 

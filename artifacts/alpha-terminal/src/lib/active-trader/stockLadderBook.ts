@@ -107,6 +107,25 @@ export function stockVolumeHeatColor(intensity: number): string | undefined {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+const BID_HEAT_LOW = [17, 45, 31] as const;
+const BID_HEAT_HIGH = [0, 209, 102] as const;
+const ASK_HEAT_LOW = [55, 26, 31] as const;
+const ASK_HEAT_HIGH = [242, 54, 69] as const;
+
+/** Actual displayed-book size heat. A 400-share level is fully lit unless the visible book is heavier. */
+export function stockBookSizeHeatColor(
+  side: "bid" | "ask",
+  size: number | null,
+  visiblePeak: number,
+): string {
+  const low = side === "bid" ? BID_HEAT_LOW : ASK_HEAT_LOW;
+  const high = side === "bid" ? BID_HEAT_HIGH : ASK_HEAT_HIGH;
+  const denominator = Math.max(400, visiblePeak);
+  const t = size != null && size > 0 ? Math.min(1, size / denominator) : 0;
+  const channel = (index: 0 | 1 | 2) => Math.round(low[index] + (high[index] - low[index]) * t);
+  return `rgb(${channel(0)}, ${channel(1)}, ${channel(2)})`;
+}
+
 export function stockBestPrice(levels: readonly StockLevel[], side: "bid" | "ask"): number | null {
   let best: number | null = null;
   for (const level of levels) {

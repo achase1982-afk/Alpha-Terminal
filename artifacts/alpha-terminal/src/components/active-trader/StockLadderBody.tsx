@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AtInstrumentModePill } from "./AtInstrumentModePill";
 import { AT_LABEL } from "@/lib/active-trader/atChromeContrast";
 import {
   readStockDraft,
@@ -10,8 +11,8 @@ import {
 import {
   AT_LADDER_STRIKE_BG,
   AT_LADDER_THIN_SEP,
-  AT_STOCK_ASK_BG,
-  AT_STOCK_BID_BG,
+  AT_LADDER_COL_HDR_H,
+  AT_LADDER_GROUP_HDR_H,
   AT_STOCK_LADDER_GRID,
   AT_LADDER_ROW_H,
 } from "@/lib/active-trader/atLadderLayout";
@@ -19,6 +20,7 @@ import { useEquityTapeStore } from "@/lib/active-trader/equityTapeStore";
 import {
   reduceStockTop,
   stockBestPrice,
+  stockBookSizeHeatColor,
   stockLadderAnchor,
   stockLadderPrices,
   stockPriceKey,
@@ -31,6 +33,11 @@ import {
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import type { LiveQuote } from "@/lib/store";
 import { useTerminalStore } from "@/lib/store";
+import { usePortfolioStreamStore, type PortfolioOrder } from "@/lib/portfolio-stream-store";
+import { useSchwabAccountStore } from "@/lib/schwab-account-store";
+import type { SchwabAccountSummary, SchwabPosition } from "@/lib/schwab-account-types";
+import { AT_HEADER_BG } from "@/lib/active-trader/atChromeContrast";
+import { toast } from "@/hooks/use-toast";
 import { BORDER, WHITE } from "@/components/options/optionsTheme";
 
 function fmtPx(price: number): string {
@@ -59,7 +66,59 @@ type EquityTapeSeedResponse = {
   volumeByPrice?: Record<string, Record<string, number>>;
 };
 
-export function StockLadderBody({ symbol }: { symbol: string }) {
+type StockInstruction = "BUY" | "SELL_SHORT" | "SELL" | "BUY_TO_COVER";
+
+type StockReportedOrder = PortfolioOrder;
+
+const ACTIVE_ORDER_STATUSES = new Set([
+  "ACCEPTED",
+  "AWAITING_CONDITION",
+  "AWAITING_MANUAL_REVIEW",
+  "AWAITING_PARENT_ORDER",
+  "AWAITING_STOP_CONDITION",
+  "AWAITING_UR_OUT",
+  "PENDING_ACTIVATION",
+  "QUEUED",
+  "WORKING",
+]);
+
+function stockOrderPayload(input: {
+  symbol: string;
+  instruction: StockInstruction;
+  shares: number;
+  orderType: "LIMIT" | "MARKET";
+  price?: number;
+}): Record<string, unknown> {
+  return {
+    orderType: input.orderType,
+    session: input.orderType === "LIMIT" ? "SEAMLESS" : "NORMAL",
+    duration: "DAY",
+    orderStrategyType: "SINGLE",
+    ...(input.orderType === "LIMIT" && input.price != null
+      ? { price: Number(input.price.toFixed(2)) }
+      : {}),
+    orderLegCollection: [
+      {
+        instruction: input.instruction,
+        quantity: input.shares,
+        instrument: { symbol: input.symbol, assetType: "EQUITY" },
+      },
+    ],
+  };
+}
+
+async function responseMessage(res: Response): Promise<string> {
+  const data = (await res.json().catch(() => null)) as { message?: string; error?: string } | null;
+  return data?.message ?? data?.error ?? `Request failed (${res.status})`;
+}
+
+export function StockLadderBody({
+  symbol,
+  onToggleTemplate,
+}: {
+  symbol: string;
+  onToggleTemplate: () => void;
+}) {
   const upper = symbol.toUpperCase();
   const quote = useTerminalStore((s) => {
     return (s.streamPrices[upper] ?? s.streamPrices[upper.replace(/^\$/, "")]) as LiveQuote | undefined;
@@ -71,7 +130,15 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   const [book, setBook] = useState<StockTopBook>(EMPTY_STOCK_TOP);
   const [draft, setDraft] = useState<AtStockDraft>(() => readStockDraft(symbol));
   const [prices, setPrices] = useState<number[]>([]);
+  const [actionBusy, setActionBusy] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const tradingAccountHash = useSchwabAccountStore((s) =>
+    s.orderTicketAccountHash ??
+    (s.viewSelection !== "all" ? s.viewSelection : s.defaultTradingAccountHash),
+  );
+  const accounts = usePortfolioStreamStore((s) => s.accounts);
+  const reportedOrders = usePortfolioStreamStore((s) => s.orders as StockReportedOrder[]);
+  const setReportedOrders = usePortfolioStreamStore((s) => s.setOrders);
 
   useEffect(() => {
     setDraft(readStockDraft(symbol));
@@ -114,6 +181,16 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   );
   const bidSizes = useMemo(() => stockSizeByPrice(depthBids), [depthBids]);
   const askSizes = useMemo(() => stockSizeByPrice(depthAsks), [depthAsks]);
+  const bidPeak = useMemo(() => {
+    let max = book.bid?.size ?? 0;
+    for (const size of bidSizes.values()) max = Math.max(max, size);
+    return max;
+  }, [bidSizes, book.bid?.size]);
+  const askPeak = useMemo(() => {
+    let max = book.ask?.size ?? 0;
+    for (const size of askSizes.values()) max = Math.max(max, size);
+    return max;
+  }, [askSizes, book.ask?.size]);
   const printShares = useMemo(() => stockSizeByPrice(prints), [prints]);
   /** Accumulated volume per price: session accumulation, falling back to the recent print window. */
   const accumShares = useMemo(() => {
@@ -132,6 +209,28 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
     }
     return max;
   }, [accumShares, prices]);
+
+  const orderQtyByPrice = useMemo(() => {
+    const buy = new Map<string, number>();
+    const sell = new Map<string, number>();
+    for (const order of reportedOrders) {
+      if (!ACTIVE_ORDER_STATUSES.has((order.status ?? "").toUpperCase())) continue;
+      if (order.price == null || !(order.price > 0)) continue;
+      const leg = order.legs?.find(
+        (item) =>
+          item.symbol?.trim().toUpperCase() === upper &&
+          (item.assetType ?? "").toUpperCase() === "EQUITY",
+      );
+      if (!leg) continue;
+      const qty = order.remainingQuantity ?? 0;
+      if (!(qty > 0)) continue;
+      const key = stockPriceKey(order.price);
+      const instruction = (leg.instruction ?? "").toUpperCase();
+      const target = instruction.startsWith("BUY") ? buy : sell;
+      target.set(key, (target.get(key) ?? 0) + qty);
+    }
+    return { buy, sell };
+  }, [reportedOrders, upper]);
 
   const anchor = stockLadderAnchor(
     book,
@@ -175,16 +274,273 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
   const askKey = book.ask ? stockPriceKey(book.ask.price) : null;
   const notional = useMemo(() => stockLimitNotional(draft), [draft]);
 
-  const apply = (next: AtStockDraft) => {
+  const apply = useCallback((next: AtStockDraft) => {
     setDraft(writeStockDraft(symbol, next));
-  };
+  }, [symbol]);
 
-  const tapSide = (side: AtStockSide, price: number) => {
+  const fetchCurrentOrders = useCallback(async (): Promise<StockReportedOrder[]> => {
+    if (!tradingAccountHash) return [];
+    const res = await fetchWithAuth(
+      `/api/portfolio/orders?accountHash=${encodeURIComponent(tradingAccountHash)}&accountIdentity=1&days=2`,
+    );
+    if (!res.ok) throw new Error(await responseMessage(res));
+    const data = (await res.json()) as { orders?: StockReportedOrder[] };
+    const next = Array.isArray(data.orders) ? data.orders : [];
+    setReportedOrders(next);
+    return next;
+  }, [setReportedOrders, tradingAccountHash]);
+
+  useEffect(() => {
+    void fetchCurrentOrders().catch(() => {});
+  }, [fetchCurrentOrders]);
+
+  const placeStockOrder = useCallback(async (
+    instruction: StockInstruction,
+    orderType: "LIMIT" | "MARKET",
+    price?: number,
+  ) => {
+    if (!tradingAccountHash || actionBusy) return;
+    const shares = Math.max(1, draft.shares);
+    const busyKey = `${instruction}-${orderType}`;
+    setActionBusy(busyKey);
+    try {
+      const res = await fetchWithAuth("/api/portfolio/place-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountHash: tradingAccountHash,
+          order: stockOrderPayload({ symbol: upper, instruction, shares, orderType, price }),
+        }),
+      });
+      if (!res.ok) throw new Error(await responseMessage(res));
+      toast({
+        title: `${instruction.replaceAll("_", " ")} sent`,
+        description: `${shares} ${upper}${price != null ? ` @ ${price.toFixed(2)}` : " at market"}`,
+      });
+      window.setTimeout(() => void fetchCurrentOrders().catch(() => {}), 500);
+    } catch (error) {
+      toast({
+        title: "Order rejected",
+        description: error instanceof Error ? error.message : "Unable to place order",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }, [actionBusy, draft.shares, fetchCurrentOrders, tradingAccountHash, upper]);
+
+  const tapLimit = useCallback((side: AtStockSide, price: number) => {
     apply({ ...draft, side, limitPrice: price });
-  };
+    void placeStockOrder(side === "BUY" ? "BUY" : "SELL_SHORT", "LIMIT", price);
+  }, [apply, draft, placeStockOrder]);
+
+  const cancelWorkingOrders = useCallback(async (): Promise<number> => {
+    if (!tradingAccountHash) return 0;
+    const live = await fetchCurrentOrders();
+    const cancelable = live.filter((order) =>
+      ACTIVE_ORDER_STATUSES.has((order.status ?? "").toUpperCase()),
+    );
+    let canceled = 0;
+    for (const order of cancelable) {
+      const res = await fetchWithAuth("/api/portfolio/cancel-order", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountHash: tradingAccountHash,
+          orderId: String(order.orderId),
+        }),
+      });
+      if (res.ok) canceled += 1;
+    }
+    await fetchCurrentOrders();
+    return canceled;
+  }, [fetchCurrentOrders, tradingAccountHash]);
+
+  const handleCancelAll = useCallback(async () => {
+    if (!tradingAccountHash || actionBusy) return;
+    setActionBusy("cancel");
+    try {
+      const canceled = await cancelWorkingOrders();
+      toast({
+        title: canceled > 0 ? "Orders canceled" : "No working orders",
+        description: canceled > 0 ? `${canceled} pending order${canceled === 1 ? "" : "s"} canceled` : undefined,
+      });
+    } catch (error) {
+      toast({
+        title: "Cancel failed",
+        description: error instanceof Error ? error.message : "Unable to cancel orders",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }, [actionBusy, cancelWorkingOrders, tradingAccountHash]);
+
+  const handleFlatten = useCallback(async () => {
+    if (!tradingAccountHash || actionBusy) return;
+    setActionBusy("flatten");
+    try {
+      await cancelWorkingOrders();
+      const res = await fetchWithAuth("/api/portfolio/accounts");
+      if (!res.ok) throw new Error(await responseMessage(res));
+      const freshAccounts = (await res.json()) as SchwabAccountSummary[];
+      const account =
+        freshAccounts.find((item) => item.hashValue === tradingAccountHash) ??
+        accounts.find((item) => item.hashValue === tradingAccountHash);
+      const positions = (account?.positions ?? []).filter(
+        (position: SchwabPosition) =>
+          position.assetType.toUpperCase() === "EQUITY" &&
+          (position.longQuantity > 0 || position.shortQuantity > 0),
+      );
+      let closed = 0;
+      for (const position of positions) {
+        const instruction: StockInstruction =
+          position.shortQuantity > 0 ? "BUY_TO_COVER" : "SELL";
+        const shares =
+          position.shortQuantity > 0 ? position.shortQuantity : position.longQuantity;
+        const closeRes = await fetchWithAuth("/api/portfolio/place-order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            accountHash: tradingAccountHash,
+            order: stockOrderPayload({
+              symbol: position.symbol,
+              instruction,
+              shares,
+              orderType: "MARKET",
+            }),
+          }),
+        });
+        if (closeRes.ok) closed += 1;
+      }
+      toast({
+        title: closed > 0 ? "Flatten orders sent" : "No equity positions",
+        description: closed > 0 ? `${closed} market closing order${closed === 1 ? "" : "s"} sent` : undefined,
+      });
+    } catch (error) {
+      toast({
+        title: "Flatten failed",
+        description: error instanceof Error ? error.message : "Unable to flatten positions",
+        variant: "destructive",
+      });
+    } finally {
+      setActionBusy(null);
+    }
+  }, [accounts, actionBusy, cancelWorkingOrders, tradingAccountHash]);
 
   return (
     <div className="flex flex-col flex-1 min-h-0" data-at-stock-ladder={symbol}>
+      <div
+        className="grid grid-cols-4 shrink-0"
+        data-at-stock-actions
+        style={{
+          height: 44,
+          background: "#050606",
+          borderBottom: `1px solid ${BORDER}`,
+        }}
+      >
+        <button
+          type="button"
+          disabled={!tradingAccountHash || !!actionBusy}
+          onClick={() => void placeStockOrder("BUY", "MARKET")}
+          style={{
+            border: "none",
+            borderRight: `1px solid ${BORDER}`,
+            background: "rgba(0, 209, 102, 0.15)",
+            color: "#82f2b6",
+            fontSize: 10,
+            fontWeight: 750,
+            letterSpacing: "0.03em",
+          }}
+        >
+          BUY AT MARKET
+        </button>
+        <button
+          type="button"
+          disabled={!tradingAccountHash || !!actionBusy}
+          onClick={() => void placeStockOrder("SELL_SHORT", "MARKET")}
+          style={{
+            border: "none",
+            borderRight: `1px solid ${BORDER}`,
+            background: "rgba(242, 54, 69, 0.15)",
+            color: "#ff929b",
+            fontSize: 10,
+            fontWeight: 750,
+            letterSpacing: "0.03em",
+          }}
+        >
+          SELL AT MARKET
+        </button>
+        <button
+          type="button"
+          disabled={!tradingAccountHash || !!actionBusy}
+          onClick={() => void handleCancelAll()}
+          style={{
+            border: "none",
+            borderRight: `1px solid ${BORDER}`,
+            background: "#111315",
+            color: WHITE,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {actionBusy === "cancel" ? "CANCELING" : "CANCEL"}
+        </button>
+        <button
+          type="button"
+          disabled={!tradingAccountHash || !!actionBusy}
+          onClick={() => void handleFlatten()}
+          style={{
+            border: "none",
+            background: actionBusy === "flatten" ? "rgba(251,191,36,0.18)" : "#111315",
+            color: actionBusy === "flatten" ? "#fbd46c" : WHITE,
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.04em",
+          }}
+        >
+          {actionBusy === "flatten" ? "FLATTENING" : "FLATTEN"}
+        </button>
+      </div>
+      <div
+        className="grid items-center shrink-0"
+        style={{
+          height: AT_LADDER_GROUP_HDR_H,
+          gridTemplateColumns: AT_STOCK_LADDER_GRID,
+          background: AT_HEADER_BG,
+          borderBottom: `1px solid ${BORDER}`,
+        }}
+      >
+        <span />
+        <span />
+        <span />
+        <span className="flex items-center justify-center">
+          <AtInstrumentModePill template="stock" onToggle={onToggleTemplate} />
+        </span>
+        <span />
+        <span />
+      </div>
+      <div
+        className="grid items-center shrink-0 at-ladder-num"
+        style={{
+          height: AT_LADDER_COL_HDR_H,
+          gridTemplateColumns: AT_STOCK_LADDER_GRID,
+          fontSize: 8,
+          color: AT_LABEL,
+          fontWeight: 650,
+          letterSpacing: "0.02em",
+          background: AT_HEADER_BG,
+          borderBottom: `1px solid ${BORDER}`,
+        }}
+      >
+        <span className="text-center">VOL</span>
+        <span className="text-center">ORDERS</span>
+        <span className="text-center">BID SIZE</span>
+        <span className="text-center" style={{ fontSize: 11 }}>PRICE</span>
+        <span className="text-center">ASK SIZE</span>
+        <span className="text-center">ORDERS</span>
+      </div>
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" data-at-stock-scroll>
         {prices.map((price) => {
           const key = stockPriceKey(price);
@@ -195,12 +551,10 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
           const traded = accumShares.get(key) ?? 0;
           const intensity = accumPeak > 0 ? traded / accumPeak : 0;
           const volumeHeat = stockVolumeHeatColor(intensity);
+          const volumeFill = `${Math.round(intensity * 100)}%`;
+          const buyOrderQty = orderQtyByPrice.buy.get(key) ?? 0;
+          const sellOrderQty = orderQtyByPrice.sell.get(key) ?? 0;
           const selected = draft.limitPrice != null && stockPriceKey(draft.limitPrice) === key;
-          const volumeCellStyle = {
-            background: volumeHeat ?? "transparent",
-            color: WHITE,
-            fontSize: 10,
-          } as const;
           return (
             <div
               key={key}
@@ -216,24 +570,59 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
                 boxSizing: "border-box",
               }}
             >
-              {/* Bid side, outermost -> price: accumulated volume | order qty (blank) | orders (blank) | bid size */}
+              {/* One real volume-at-price profile: fill and hue both scale with the actual print total. */}
               <span
-                data-at-stock-bid-volume={key}
-                aria-label={traded > 0 ? `Bid-side accumulated volume ${fmtSize(traded)} shares` : undefined}
+                data-at-stock-volume={key}
+                aria-label={traded > 0 ? `Accumulated volume ${fmtSize(traded)} shares` : undefined}
                 title={traded > 0 ? `${fmtSize(traded)} shares today` : undefined}
-                className="flex items-center justify-center h-full num"
-                style={volumeCellStyle}
+                className="relative flex items-center justify-center h-full num overflow-hidden"
+                style={{
+                  color: WHITE,
+                  fontSize: 10,
+                  background: "#07101a",
+                  borderRight: `1px solid ${AT_LADDER_THIN_SEP}`,
+                }}
               >
-                {traded > 0 ? fmtVolume(traded) : ""}
+                {volumeHeat ? (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0"
+                    style={{
+                      width: volumeFill,
+                      background: volumeHeat,
+                      transition: "width 180ms cubic-bezier(.16,1,.3,1), background-color 180ms ease-out",
+                    }}
+                  />
+                ) : null}
+                <span className="relative z-[1]">{traded > 0 ? fmtVolume(traded) : ""}</span>
               </span>
-              <span data-at-stock-bid-order-qty={key} className="h-full" />
-              <span data-at-stock-bid-order={key} className="h-full" />
+              <span
+                data-at-stock-buy-orders={key}
+                className="flex items-center justify-center h-full num"
+                style={{
+                  color: buyOrderQty > 0 ? "#8af0b0" : WHITE,
+                  fontSize: 11,
+                  background: "#090b0c",
+                  borderRight: `1px solid ${BORDER}`,
+                }}
+              >
+                {buyOrderQty > 0 ? fmtSize(buyOrderQty) : ""}
+              </span>
               <button
                 type="button"
                 data-at-stock-bid={key}
+                aria-label={`Buy ${draft.shares} ${upper} limit at ${key}${bidSize != null ? `; bid size ${fmtSize(bidSize)}` : ""}`}
+                disabled={!tradingAccountHash || !!actionBusy}
                 className="h-full text-center num"
-                style={{ color: WHITE, fontSize: 12, background: AT_STOCK_BID_BG, border: "none", padding: "0 2px" }}
-                onClick={() => bidSize != null && book.bid && tapSide("SELL", book.bid.price)}
+                style={{
+                  color: WHITE,
+                  fontSize: 12,
+                  background: stockBookSizeHeatColor("bid", bidSize, bidPeak),
+                  border: "none",
+                  padding: "0 2px",
+                  transition: "background-color 140ms ease-out",
+                }}
+                onClick={() => tapLimit("BUY", price)}
               >
                 {bidSize != null ? fmtSize(bidSize) : ""}
               </button>
@@ -257,26 +646,35 @@ export function StockLadderBody({ symbol }: { symbol: string }) {
               >
                 {fmtPx(price)}
               </button>
-              {/* Ask side, price -> outermost: ask size | orders (blank) | order qty (blank) | accumulated volume */}
               <button
                 type="button"
                 data-at-stock-ask={key}
+                aria-label={`Sell short ${draft.shares} ${upper} limit at ${key}${askSize != null ? `; ask size ${fmtSize(askSize)}` : ""}`}
+                disabled={!tradingAccountHash || !!actionBusy}
                 className="h-full text-center num"
-                style={{ color: WHITE, fontSize: 12, background: AT_STOCK_ASK_BG, border: "none", padding: "0 2px" }}
-                onClick={() => askSize != null && book.ask && tapSide("BUY", book.ask.price)}
+                style={{
+                  color: WHITE,
+                  fontSize: 12,
+                  background: stockBookSizeHeatColor("ask", askSize, askPeak),
+                  border: "none",
+                  padding: "0 2px",
+                  transition: "background-color 140ms ease-out",
+                }}
+                onClick={() => tapLimit("SELL", price)}
               >
                 {askSize != null ? fmtSize(askSize) : ""}
               </button>
-              <span data-at-stock-ask-order={key} className="h-full" />
-              <span data-at-stock-ask-order-qty={key} className="h-full" />
               <span
-                data-at-stock-ask-volume={key}
-                aria-label={traded > 0 ? `Ask-side accumulated volume ${fmtSize(traded)} shares` : undefined}
-                title={traded > 0 ? `${fmtSize(traded)} shares today` : undefined}
+                data-at-stock-sell-orders={key}
                 className="flex items-center justify-center h-full num"
-                style={volumeCellStyle}
+                style={{
+                  color: sellOrderQty > 0 ? "#ff9a93" : WHITE,
+                  fontSize: 11,
+                  background: "#090b0c",
+                  borderLeft: `1px solid ${BORDER}`,
+                }}
               >
-                {traded > 0 ? fmtVolume(traded) : ""}
+                {sellOrderQty > 0 ? fmtSize(sellOrderQty) : ""}
               </span>
             </div>
           );
