@@ -120,9 +120,11 @@ async function responseMessage(res: Response): Promise<string> {
 export function StockLadderBody({
   symbol,
   onToggleTemplate,
+  onOpenStockTicket,
 }: {
   symbol: string;
   onToggleTemplate: () => void;
+  onOpenStockTicket?: (draft: { side: AtStockSide; quantity: number; limitPrice?: number | null }) => void;
 }) {
   const upper = symbol.toUpperCase();
   const quote = useTerminalStore((s) => {
@@ -348,8 +350,12 @@ export function StockLadderBody({
 
   const tapLimit = useCallback((side: AtStockSide, price: number) => {
     apply({ ...draft, side, limitPrice: price });
+    if (onOpenStockTicket) {
+      onOpenStockTicket({ side, quantity: Math.max(1, draft.shares), limitPrice: price });
+      return;
+    }
     void placeStockOrder(side === "BUY" ? "BUY" : "SELL_SHORT", "LIMIT", price);
-  }, [apply, draft, placeStockOrder]);
+  }, [apply, draft, onOpenStockTicket, placeStockOrder]);
 
   const cancelWorkingOrders = useCallback(async (): Promise<number> => {
     if (!tradingAccountHash) return 0;
@@ -458,7 +464,13 @@ export function StockLadderBody({
         <button
           type="button"
           disabled={!tradingAccountHash || !!actionBusy}
-          onClick={() => void placeStockOrder("BUY", "MARKET")}
+          onClick={() => {
+            if (onOpenStockTicket) {
+              onOpenStockTicket({ side: "BUY", quantity: Math.max(1, draft.shares), limitPrice: null });
+              return;
+            }
+            void placeStockOrder("BUY", "MARKET");
+          }}
           style={{
             border: "none",
             borderRight: `1px solid ${BORDER}`,
@@ -469,12 +481,18 @@ export function StockLadderBody({
             letterSpacing: "0.03em",
           }}
         >
-          BUY AT MARKET
+          BUY STOCK
         </button>
         <button
           type="button"
           disabled={!tradingAccountHash || !!actionBusy}
-          onClick={() => void placeStockOrder("SELL_SHORT", "MARKET")}
+          onClick={() => {
+            if (onOpenStockTicket) {
+              onOpenStockTicket({ side: "SELL", quantity: Math.max(1, draft.shares), limitPrice: null });
+              return;
+            }
+            void placeStockOrder("SELL_SHORT", "MARKET");
+          }}
           style={{
             border: "none",
             borderRight: `1px solid ${BORDER}`,
@@ -485,7 +503,7 @@ export function StockLadderBody({
             letterSpacing: "0.03em",
           }}
         >
-          SELL AT MARKET
+          SELL STOCK
         </button>
         <button
           type="button"
@@ -656,7 +674,14 @@ export function StockLadderBody({
                   boxShadow: selected ? `inset 0 0 0 1px ${WHITE}` : "none",
                   padding: 0,
                 }}
-                onClick={() => apply({ ...draft, limitPrice: price })}
+                onClick={() => {
+                  apply({ ...draft, limitPrice: price });
+                  onOpenStockTicket?.({
+                    side: draft.side,
+                    quantity: Math.max(1, draft.shares),
+                    limitPrice: price,
+                  });
+                }}
               >
                 {fmtPx(price)}
               </button>

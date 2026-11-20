@@ -4,6 +4,7 @@ import {
   buildAtSchwabOrderJson,
   buildAtSpreadSchwabOrder,
   type AtOrderBuildInput,
+  type SchwabEquityInstruction,
   type SchwabInstruction,
 } from "./atSchwabOrderBuilder";
 
@@ -14,6 +15,13 @@ export interface ChainSheetOrderLeg {
   expiration?: string;
   delta?: number | null;
   iv?: number | null;
+}
+
+export interface ChainSheetEquityOrderLeg {
+  symbol: string;
+  instruction: SchwabEquityInstruction;
+  quantity: number;
+  isClosing?: boolean;
 }
 
 function daysToExpiry(expiration: string | undefined, now = Date.now()): number | null {
@@ -94,6 +102,7 @@ export function buildChainSheetSchwabOrder(input: {
   prefs?: ActiveTraderTemplatePrefs;
   primaryInstruction?: SchwabInstruction;
   legs: ChainSheetOrderLeg[];
+  equityLeg?: ChainSheetEquityOrderLeg;
   quantityMultiplier: number;
   limitPrice: number;
   isCredit: boolean;
@@ -107,11 +116,6 @@ export function buildChainSheetSchwabOrder(input: {
 }): Record<string, unknown> {
   const prefs = input.prefs;
   const visible = input.visibleOrderType ?? "LIMIT";
-  const resolved = resolveVisibleChainOrderType({
-    visible,
-    isCredit: input.isCredit,
-    legCount: input.legs.length,
-  });
   const duration =
     prefs?.entryDuration === "GOOD_TILL_CANCEL"
       ? "GOOD_TILL_CANCEL"
@@ -121,6 +125,85 @@ export function buildChainSheetSchwabOrder(input: {
           ? "GOOD_TILL_CANCEL"
           : "DAY";
   const session = prefs?.session ?? "NORMAL";
+  const resolvedEntry =
+    visible === "MARKET"
+      ? "MARKET"
+      : prefs?.schwabEntryType && prefs.schwabEntryType !== "MARKET"
+        ? prefs.schwabEntryType
+        : "LIMIT";
+
+  if (input.equityLeg) {
+    const eqSymbol = input.equityLeg.symbol.replace(/^\$/, "").trim().toUpperCase();
+    const eqQty = Math.max(1, Math.floor(input.equityLeg.quantity) || 1);
+    const isClosing =
+      Boolean(input.equityLeg.isClosing) ||
+      input.equityLeg.instruction === "SELL" ||
+      input.equityLeg.instruction === "BUY_TO_COVER";
+    const effectivePrefs: ActiveTraderTemplatePrefs | undefined = prefs
+      ? isClosing
+        ? {
+            ...prefs,
+            template: "Single",
+            advancedRoute: "SINGLE",
+            takeProfit: { ...prefs.takeProfit, enabled: false },
+            stopLoss: { ...prefs.stopLoss, enabled: false },
+          }
+        : prefs
+      : undefined;
+
+    if (!effectivePrefs || !wantsAdvancedOrder(effectivePrefs)) {
+      const orderType = visible === "MARKET" ? "MARKET" : "LIMIT";
+      const resolvedSession = orderType === "MARKET" && session === "SEAMLESS" ? "NORMAL" : session;
+      const order: Record<string, unknown> = {
+        orderType,
+        session: resolvedSession,
+        duration,
+        orderStrategyType: "SINGLE",
+        orderLegCollection: [
+          {
+            instruction: input.equityLeg.instruction,
+            quantity: eqQty,
+            instrument: { symbol: eqSymbol, assetType: "EQUITY" },
+          },
+        ],
+        price: orderType === "MARKET" || input.limitPrice <= 0 ? undefined : Number(input.limitPrice.toFixed(2)),
+      };
+      if (effectivePrefs?.routing && effectivePrefs.routing !== "BEST") {
+        order.requestedDestination = effectivePrefs.routing;
+      }
+      return order;
+    }
+
+    return buildAtSchwabOrderJson({
+      template: effectivePrefs.template,
+      assetType: "EQUITY",
+      symbol: eqSymbol,
+      underlyingSymbol: eqSymbol,
+      primaryInstruction: input.equityLeg.instruction,
+      quantity: eqQty,
+      limitPrice: input.limitPrice,
+      takeProfit: effectivePrefs.takeProfit,
+      stopLoss: effectivePrefs.stopLoss,
+      entryOrderType: visible === "MARKET" ? "MKT" : "LIMIT",
+      entryDuration: duration,
+      exitDuration: effectivePrefs.exitDuration,
+      stopLossOrderType: effectivePrefs.stopLossOrderType,
+      stopLimitOffset: effectivePrefs.stopLimitOffset,
+      session,
+      advancedRoute: effectivePrefs.advancedRoute,
+      schwabEntryType: resolvedEntry,
+      routing: effectivePrefs.routing,
+      trailOffset: effectivePrefs.trailOffset,
+      trailLinkType: effectivePrefs.trailLinkType,
+      isSpread: false,
+    });
+  }
+
+  const resolved = resolveVisibleChainOrderType({
+    visible,
+    isCredit: input.isCredit,
+    legCount: input.legs.length,
+  });
   if (!prefs || !wantsAdvancedOrder(prefs) || input.legs.length === 0) {
     return netOrder({
       orderType: resolved.orderType,
@@ -162,7 +245,7 @@ export function buildChainSheetSchwabOrder(input: {
     stopLimitOffset: prefs.stopLimitOffset,
     session,
     advancedRoute: prefs.advancedRoute,
-    schwabEntryType: visible === "MARKET" ? "MARKET" : "LIMIT",
+    schwabEntryType: input.legs.length === 1 ? resolvedEntry : visible === "MARKET" ? "MARKET" : "LIMIT",
     routing: prefs.routing,
     trailOffset: prefs.trailOffset,
     trailLinkType: prefs.trailLinkType,

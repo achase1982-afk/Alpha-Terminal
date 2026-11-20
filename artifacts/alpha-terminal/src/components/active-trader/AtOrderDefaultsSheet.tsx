@@ -170,6 +170,11 @@ export type AtOrderDefaultsSheetProps = {
   onWindowSecChange: (v: 30 | 60 | 300) => void;
   onClose: () => void;
   onSave: (prefs: ActiveTraderTemplatePrefs) => void;
+  /** Active order draft hook to validate the current ticket with AI Strategist. */
+  onSendToStrategist?: (opts: { thesis?: string }) => Promise<void> | void;
+  strategistBusy?: boolean;
+  strategistError?: string | null;
+  strategistSummary?: string | null;
 };
 
 export const AtOrderDefaultsSheet = memo(function AtOrderDefaultsSheet({
@@ -180,11 +185,17 @@ export const AtOrderDefaultsSheet = memo(function AtOrderDefaultsSheet({
   onWindowSecChange,
   onClose,
   onSave,
+  onSendToStrategist,
+  strategistBusy = false,
+  strategistError = null,
+  strategistSummary = null,
 }: AtOrderDefaultsSheetProps) {
   const [draft, setDraft] = useState(() => applyOrderDefaults(prefs));
   const [menu, setMenu] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [riskOpen, setRiskOpen] = useState(false);
+  const [strategistOpen, setStrategistOpen] = useState(false);
+  const [strategistThesis, setStrategistThesis] = useState("");
   const [amountEditing, setAmountEditing] = useState<"takeProfit" | "stopLoss" | null>(null);
 
   useEffect(() => {
@@ -193,6 +204,8 @@ export const AtOrderDefaultsSheet = memo(function AtOrderDefaultsSheet({
     setMenu(null);
     setAdvancedOpen(false);
     setRiskOpen(false);
+    setStrategistOpen(false);
+    setStrategistThesis("");
     setAmountEditing(null);
   }, [open, prefs]);
 
@@ -591,6 +604,91 @@ export const AtOrderDefaultsSheet = memo(function AtOrderDefaultsSheet({
           <p style={{ margin: "4px 20px 12px", color: MUTED, fontSize: 14, lineHeight: 1.45 }}>
             {describeOrderDefaults(draft, primaryInstruction)} Risk is priced on the confirmation from the live limit.
           </p>
+        ) : null}
+
+        <button
+          type="button"
+          data-at-strategist-toggle
+          onClick={() => setStrategistOpen((v) => !v)}
+          style={disclosureStyle}
+          aria-expanded={strategistOpen}
+        >
+          <span style={labelStyle}>AI Strategist review</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 14, fontWeight: 500, color: onSendToStrategist ? "#5ad1c0" : MUTED }}>
+              {onSendToStrategist ? "Ready" : "Draft slot"}
+            </span>
+            <ChevronDown size={18} color={MUTED} style={{ transform: strategistOpen ? "rotate(180deg)" : undefined }} />
+          </span>
+        </button>
+        {strategistOpen ? (
+          <div data-at-strategist-panel style={{ padding: "10px 20px 14px", borderBottom: `1px solid ${LINE}` }}>
+            {onSendToStrategist ? (
+              <>
+                {strategistSummary ? (
+                  <p style={{ margin: "0 0 8px", color: TEXT, fontSize: 13, fontWeight: 500 }}>
+                    {strategistSummary}
+                  </p>
+                ) : null}
+                <p style={{ margin: "0 0 8px", color: MUTED, fontSize: 13, lineHeight: 1.4 }}>
+                  Have AI Strategist evaluate this order draft (legs, risk, and live quote) instead of sending straight to your broker.
+                </p>
+                <textarea
+                  aria-label="Strategist trade thesis"
+                  value={strategistThesis}
+                  onChange={(e) => setStrategistThesis(e.target.value)}
+                  placeholder="Optional thesis or notes for AI Strategist…"
+                  rows={2}
+                  style={{
+                    width: "100%",
+                    borderRadius: 10,
+                    border: "1px solid #3a3a3c",
+                    background: FIELD,
+                    color: TEXT,
+                    fontFamily: FONT,
+                    fontSize: 14,
+                    padding: "8px 10px",
+                    resize: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                {strategistError ? (
+                  <p style={{ margin: "6px 0 0", color: "#ff4d4d", fontSize: 13, lineHeight: 1.35 }}>
+                    {strategistError}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  data-at-send-to-strategist
+                  disabled={strategistBusy}
+                  onClick={() => void onSendToStrategist({ thesis: strategistThesis })}
+                  style={{
+                    marginTop: 10,
+                    width: "100%",
+                    height: 44,
+                    borderRadius: 12,
+                    border: "1px solid rgba(90, 209, 192, 0.45)",
+                    background: "rgba(90, 209, 192, 0.14)",
+                    color: "#5ad1c0",
+                    fontFamily: FONT,
+                    fontSize: 15,
+                    fontWeight: 600,
+                    cursor: strategistBusy ? "default" : "pointer",
+                    opacity: strategistBusy ? 0.6 : 1,
+                  }}
+                >
+                  {strategistBusy ? "Sending to Strategist…" : "Send draft to AI Strategist"}
+                </button>
+              </>
+            ) : (
+              <p
+                data-at-strategist-placeholder
+                style={{ margin: 0, color: MUTED, fontSize: 13, lineHeight: 1.45 }}
+              >
+                Open an equity or options order draft on the bottom ticket to validate the trade with AI Strategist before sending to your broker.
+              </p>
+            )}
+          </div>
         ) : null}
 
         <div style={{ padding: "18px 20px 8px" }}>

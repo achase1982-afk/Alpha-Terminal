@@ -11,9 +11,14 @@ export function buildAtTriggerConfirmSummary(params: {
   quantity: number;
   optionSymbol: string;
   underlyingSymbol: string;
+  assetType?: "OPTION" | "EQUITY";
 }): TriggerConfirmSummary | null {
   if (params.legs.length < 2) return null;
-  const contractLine = parseOccOptionContractLine(params.optionSymbol, params.underlyingSymbol);
+  const isEquity = params.assetType === "EQUITY";
+  const cleanUnderlying = params.underlyingSymbol.replace(/^\$/, "").trim().toUpperCase();
+  const contractLine = isEquity
+    ? `${cleanUnderlying} SHARES`
+    : parseOccOptionContractLine(params.optionSymbol, params.underlyingSymbol);
   const orders = params.legs.map((leg, idx) => {
     const orderNumber = idx + 1;
     const instruction = leg.instruction as SchwabInstruction;
@@ -26,7 +31,8 @@ export function buildAtTriggerConfirmSummary(params: {
       contractLine,
       limitPrice: leg.price ?? 0,
       orderType: (leg.orderType === "STOP" ? "STOP" : "LIMIT") as "LIMIT" | "STOP",
-      contractCountForFees: params.quantity,
+      contractCountForFees: isEquity ? 0 : params.quantity,
+      assetType: params.assetType ?? "OPTION",
     };
   });
 
@@ -38,7 +44,9 @@ export function buildAtTriggerConfirmSummary(params: {
 
   let breakevenLines: string[] | undefined;
   const entry = params.legs[0];
-  if (entry.price != null && entry.instruction.startsWith("BUY_TO_OPEN")) {
+  if (isEquity && entry?.price != null && entry.price > 0) {
+    breakevenLines = [`Break-even: $${entry.price.toFixed(2)} / sh`];
+  } else if (entry.price != null && entry.instruction.startsWith("BUY_TO_OPEN")) {
     const occ = parseOccOptionContractLine(params.optionSymbol, params.underlyingSymbol);
     const strikeMatch = occ.match(/(\d+(?:\.\d+)?)\s+(CALL|PUT)/);
     if (strikeMatch) {

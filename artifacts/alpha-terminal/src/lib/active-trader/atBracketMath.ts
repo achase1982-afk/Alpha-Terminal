@@ -55,6 +55,7 @@ function modeToPriceDelta(
   entryPrice: number,
   quantity: number,
   premiumStdev: number | null | undefined,
+  assetType?: "OPTION" | "EQUITY",
 ): number | null {
   switch (mode) {
     case "percent":
@@ -62,8 +63,9 @@ function modeToPriceDelta(
     case "points":
       return signedOffset;
     case "dollars": {
-      const contracts = Math.max(1, quantity);
-      return signedOffset / (contracts * 100);
+      const units = Math.max(1, quantity);
+      const multiplier = assetType === "EQUITY" ? 1 : 100;
+      return signedOffset / (units * multiplier);
     }
     case "stdev": {
       if (premiumStdev == null || !(premiumStdev > 0)) return null;
@@ -102,13 +104,21 @@ export function computeBracketPrices(input: BracketPriceInput): {
 
   let takeProfit: number | null = null;
   if (input.tp.enabled && entry > 0) {
-    const delta = modeToPriceDelta(input.tp.mode, input.tp.offset, entry, input.quantity, input.premiumStdev);
+    const delta = modeToPriceDelta(
+      input.tp.mode,
+      input.tp.offset,
+      entry,
+      input.quantity,
+      input.premiumStdev,
+      input.assetType,
+    );
     if (delta != null) {
       const raw = long ? entry + Math.abs(delta) : entry - Math.abs(delta);
       takeProfit = roundAtPremium(raw, input);
       if (takeProfit != null) {
         const sym = input.underlyingSymbol ?? "SPX";
-        const tick = optionPremiumTickForSymbol(sym, entry) ?? 0.01;
+        const tick =
+          input.assetType === "EQUITY" ? 0.01 : (optionPremiumTickForSymbol(sym, entry) ?? 0.01);
         if (long && takeProfit <= entry) {
           takeProfit = roundAtPremium(entry + tick, input);
         } else if (!long && takeProfit >= entry) {
@@ -120,7 +130,14 @@ export function computeBracketPrices(input: BracketPriceInput): {
 
   let stopLoss: number | null = null;
   if (input.sl.enabled && entry > 0) {
-    const delta = modeToPriceDelta(input.sl.mode, input.sl.offset, entry, input.quantity, input.premiumStdev);
+    const delta = modeToPriceDelta(
+      input.sl.mode,
+      input.sl.offset,
+      entry,
+      input.quantity,
+      input.premiumStdev,
+      input.assetType,
+    );
     if (delta != null) {
       const magnitude = Math.abs(delta);
       const raw = long ? entry - magnitude : entry + magnitude;

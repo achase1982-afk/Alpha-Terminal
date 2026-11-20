@@ -90,6 +90,7 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import {
   OptionsChainOrderSheet,
   legsFromChainSelection,
+  type StrategistSheetDispatchResult,
 } from "@/components/OptionsChainOrderSheet";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
 import { getFuturesEsFixtureOverride } from "@/lib/dev-only/futuresEsFixtureBridge";
@@ -1579,6 +1580,7 @@ interface OptionsTabProps {
   onTradeSingle?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
   onOpenStrategyBuilder?: (strikes: number[], expirations: { label: string; value: string }[], chainData: Map<string, { bid?: number; ask?: number; delta?: number; gamma?: number; theta?: number; vega?: number; iv?: number; contractTs?: number; quoteTimeMs?: number }>, preSelectedLegs?: { contract: Contract; type: "CALL" | "PUT"; side?: "bid" | "ask" }[]) => void;
   onActiveTraderReview?: (contract: Contract, side: "BUY" | "SELL", type: "CALL" | "PUT") => void;
+  onSendToStrategist?: (ticker?: string) => void;
 }
 
 export type { Contract as OptionsContract };
@@ -1590,6 +1592,7 @@ export function OptionsTab({
   onTradeSingle,
   onOpenStrategyBuilder,
   onActiveTraderReview,
+  onSendToStrategist,
 }: OptionsTabProps) {
   const atFixtureOverride = import.meta.env.DEV ? getAtFixtureOverride() : null;
   const chainFixtureOverride = import.meta.env.DEV ? getChainOrderFixtureOverride() : null;
@@ -2738,6 +2741,12 @@ export function OptionsTab({
     [atFixtureOverride?.tapStrike, atFixtureOverride?.scene],
   );
 
+  const chainStrategistRef = useRef<
+    ((opts: { thesis?: string }) => Promise<StrategistSheetDispatchResult>) | null
+  >(null);
+  const [chainStrategistBusy, setChainStrategistBusy] = useState(false);
+  const [chainStrategistError, setChainStrategistError] = useState<string | null>(null);
+
   return (
     <div
       style={{ background: BG }}
@@ -2768,6 +2777,7 @@ export function OptionsTab({
           onSheetCollapsedChange={setSheetCollapsed}
           restoredSheetSession={restoredSheetSession}
           onSheetSessionPersist={persistSheetSession}
+          onSendToStrategist={onSendToStrategist}
         />
       )}
       {optionsSubView === "chain" && (
@@ -2988,6 +2998,7 @@ export function OptionsTab({
             restoredSheetSession={restoredSheetSession}
             onSheetSessionPersist={persistSheetSession}
             onAdvancedOrders={() => setChainDefaultsOpen(true)}
+            strategistHandlerRef={chainStrategistRef}
             atBracketDraft={{ prefs: chainOrderPrefs, primaryInstruction: chainDefaultsInstruction }}
           />
         </div>
@@ -2998,7 +3009,31 @@ export function OptionsTab({
         primaryInstruction={chainDefaultsInstruction}
         windowSec={chainDefaultsWindowSec}
         onWindowSecChange={setChainDefaultsWindowSec}
-        onClose={() => setChainDefaultsOpen(false)}
+        onSendToStrategist={
+          selCount > 0
+            ? async ({ thesis }) => {
+                const fn = chainStrategistRef.current;
+                if (!fn) return;
+                setChainStrategistBusy(true);
+                setChainStrategistError(null);
+                const res = await fn({ thesis });
+                setChainStrategistBusy(false);
+                if (!res.ok) {
+                  setChainStrategistError(res.error);
+                  return;
+                }
+                setChainDefaultsOpen(false);
+                handleClearSelection();
+                onSendToStrategist?.(res.ticker);
+              }
+            : undefined
+        }
+        strategistBusy={chainStrategistBusy}
+        strategistError={chainStrategistError}
+        onClose={() => {
+          setChainStrategistError(null);
+          setChainDefaultsOpen(false);
+        }}
         onSave={(next) => {
           setChainOrderPrefs(next);
           saveActiveTraderPrefs(chainOrderSymbolClass, next);

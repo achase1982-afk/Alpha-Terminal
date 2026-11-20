@@ -22,12 +22,16 @@ export function buildChainSheetAtBracketConfirm(input: {
   limitPrice: number;
   optionSymbol: string;
   underlyingSymbol: string;
+  assetType?: "OPTION" | "EQUITY";
+  quantityOverride?: number;
 }): ChainSheetAtBracketConfirm {
   if (!bracketDraftActive(input.prefs)) {
     return { mode: "single" };
   }
 
-  const isSpread = input.legCount > 1;
+  const assetType = input.assetType ?? "OPTION";
+  const effectiveQty = input.quantityOverride ?? input.prefs.qty;
+  const isSpread = assetType === "OPTION" && input.legCount > 1;
 
   if (isSpread && input.prefs.stopLoss?.enabled) {
     return {
@@ -48,11 +52,11 @@ export function buildChainSheetAtBracketConfirm(input: {
 
   const buildInput: AtOrderBuildInput = {
     template: input.prefs.template,
-    assetType: "OPTION",
+    assetType,
     symbol: input.optionSymbol,
     underlyingSymbol: input.underlyingSymbol,
     primaryInstruction: input.primaryInstruction,
-    quantity: input.prefs.qty,
+    quantity: effectiveQty,
     limitPrice: input.limitPrice,
     takeProfit: input.prefs.takeProfit,
     stopLoss: input.prefs.stopLoss,
@@ -86,9 +90,10 @@ export function buildChainSheetAtBracketConfirm(input: {
 
   const summary = buildAtTriggerConfirmSummary({
     legs: planned.legs,
-    quantity: input.prefs.qty,
+    quantity: effectiveQty,
     optionSymbol: input.optionSymbol,
     underlyingSymbol: input.underlyingSymbol,
+    assetType,
   });
 
   if (!summary) {
@@ -103,6 +108,6 @@ export function buildChainSheetAtBracketConfirm(input: {
     mode: "trigger",
     summary,
     primaryInstruction: input.primaryInstruction,
-    quantity: input.prefs.qty,
+    quantity: effectiveQty,
   };
 }
