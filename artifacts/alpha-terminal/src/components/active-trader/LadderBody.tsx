@@ -305,7 +305,7 @@ const QuoteCell = memo(function QuoteCell({
         borderRight: "none",
         borderBottom: "none",
         boxSizing: "border-box",
-        padding: "0 0 9px",
+        padding: 0,
         overflow: "hidden",
         touchAction: "manipulation",
         WebkitTapHighlightColor: "transparent",
@@ -474,24 +474,6 @@ const ContractPair = memo(function ContractPair({
       data-at-quote-heat-contracts={vertical ? undefined : heatView.contracts30s}
       data-at-quote-volume={volumeText}
     >
-      <span
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 2,
-          height: 9,
-          lineHeight: "9px",
-          textAlign: "center",
-          fontSize: 8,
-          fontVariantNumeric: "tabular-nums",
-          color: "#c5ced4",
-          pointerEvents: "none",
-        }}
-      >
-        {volumeText}
-      </span>
       <QuoteCell
         cellKey={contract ? atLadderQuoteCellKey(contract, type, "bid") : null}
         legKey={legKey}
