@@ -1,27 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useTerminalStore, useActiveWatchlist } from "@/lib/store";
 import { useQuote } from "@/hooks/useQuote";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
-
-function fmtPrice(v: number | null): string {
-  if (v == null) return "—";
-  return v >= 1000 ? v.toFixed(0) : v.toFixed(2);
-}
-
-function fmtPct(v: number | null): string {
-  if (v == null) return "—";
-  const sign = v > 0 ? "+" : "";
-  return `${sign}${v.toFixed(2)}%`;
-}
-
-function changeColor(v: number | null): string {
-  if (v == null) return "#71717a";
-  if (v > 0) return "#26a69a";
-  if (v < 0) return "#f23645";
-  return "#71717a";
-}
+import { useMediaQuery } from "@/hooks/useMediaQuery";
+import {
+  measureKeyboardOverlapPx,
+  useVisualViewportComposerMetrics,
+} from "@/hooks/useVisualViewportKeyboardInset";
 
 function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash: boolean }) {
   const BadgeIcon = isInWatchlist ? MinusCircle : PlusCircle;
@@ -52,7 +39,15 @@ function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash
   );
 }
 
-function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () => void }) {
+function SymbolLivePreview({
+  sym,
+  onNavigate,
+  className = "",
+}: {
+  sym: string;
+  onNavigate: () => void;
+  className?: string;
+}) {
   const exact = sym.trim().toUpperCase();
   const [lookup, setLookup] = useState(exact);
   const [instrumentName, setInstrumentName] = useState<{ symbol: string; name: string | null } | null>(null);
@@ -116,7 +111,7 @@ function SymbolLivePreview({ sym, onNavigate }: { sym: string; onNavigate: () =>
 
   return (
     <div
-      className="mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-3"
+      className={`mx-4 mb-2 px-3 py-2 rounded-lg flex items-center gap-3 ${className}`}
       style={{ background: "#18181B", border: "1px solid #FFB800/30", borderColor: "rgba(255,184,0,0.25)" }}
     >
       <div
@@ -168,8 +163,6 @@ function RecentRow({
     setTimeout(() => setFlash(false), 400);
   }, [sym, isInWatchlist, addToWatchlist, removeFromWatchlist]);
 
-  const cColor = changeColor(quoteData?.changePct ?? null);
-
   return (
     <div
       className="flex items-center px-4 py-1.5 gap-3"
@@ -204,24 +197,135 @@ function RecentRow({
   );
 }
 
+function SearchForm({
+  inputRef,
+  inputVal,
+  setInputVal,
+  onSubmit,
+  onFocus,
+  onBlur,
+  className = "",
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputVal: string;
+  setInputVal: (v: string) => void;
+  onSubmit: (e: React.FormEvent) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  className?: string;
+}) {
+  return (
+    <form onSubmit={onSubmit} className={`flex items-center gap-2 ${className}`}>
+      <div className="relative flex-1">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+        <input
+          ref={inputRef}
+          value={inputVal}
+          onChange={e => setInputVal(e.target.value.toUpperCase())}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          placeholder="TICKER SYMBOL..."
+          enterKeyHint="go"
+          className="w-full h-10 pl-10 pr-3 rounded-lg border border-[#2A2A2C] bg-[#18181B] font-mono text-sm text-foreground
+            placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 transition-colors uppercase"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+        />
+      </div>
+      <button
+        type="submit"
+        className="h-10 px-5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors shrink-0"
+        style={{ background: "#FFB800", color: "#0c0c0c" }}
+      >
+        GO
+      </button>
+    </form>
+  );
+}
+
 interface SearchOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectSymbol: (sym: string) => void;
 }
 
+/** Oldest → newest so the freshest ticker sits just above the thumb-zone search bar. */
+function recentForBottomDock(recentSymbols: string[]): string[] {
+  return [...recentSymbols]
+    .map(s => s.replace(/^\$/, ""))
+    .reverse();
+}
+
 export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlayProps) {
   const { symbol, setSymbol, recentSymbols } = useTerminalStore(useShallow((s) => ({ symbol: s.symbol, setSymbol: s.setSymbol, recentSymbols: s.recentSymbols })));
   const [inputVal, setInputVal] = useState("");
+  const [inputFocused, setInputFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dockRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [dockHeightPx, setDockHeightPx] = useState(72);
   const exactInput = inputVal.trim().toUpperCase();
+  const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const { dockBottomPx, remeasure, resetBaseline } = useVisualViewportComposerMetrics(0, {
+    composerFocused: narrowMobile && inputFocused,
+  });
 
   useEffect(() => {
     if (isOpen) {
       setInputVal("");
-      setTimeout(() => inputRef.current?.focus(), 350);
+      setInputFocused(false);
+      resetBaseline();
+      remeasure();
+      const t = window.setTimeout(() => {
+        inputRef.current?.focus();
+        remeasure();
+      }, 350);
+      return () => window.clearTimeout(t);
     }
-  }, [isOpen]);
+    setInputFocused(false);
+    resetBaseline();
+    return undefined;
+  }, [isOpen, remeasure, resetBaseline]);
+
+  useLayoutEffect(() => {
+    if (!narrowMobile || !isOpen) return;
+    const el = dockRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > 0) setDockHeightPx(h);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => ro?.disconnect();
+  }, [narrowMobile, isOpen, exactInput, dockBottomPx]);
+
+  useEffect(() => {
+    if (!narrowMobile || !isOpen) return;
+    const vv = window.visualViewport;
+    const bump = () => remeasure();
+    vv?.addEventListener("resize", bump);
+    vv?.addEventListener("scroll", bump);
+    return () => {
+      vv?.removeEventListener("resize", bump);
+      vv?.removeEventListener("scroll", bump);
+    };
+  }, [narrowMobile, isOpen, remeasure]);
+
+  const scrollListToEnd = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && narrowMobile) scrollListToEnd();
+  }, [isOpen, narrowMobile, recentSymbols.length, scrollListToEnd]);
 
   // Esc closes the overlay (it opens via Cmd/Ctrl+K on desktop, so it must
   // also close from the keyboard — otherwise the full-screen sheet keeps
@@ -256,7 +360,47 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
     onSelectSymbol(clean);
   };
 
-  const cleanSymbol = (sym: string) => sym.replace(/^\$/, "");
+  const navigateFromPreview = () => {
+    inputRef.current?.blur();
+    setSymbol(exactInput);
+    setInputVal("");
+    onSelectSymbol(exactInput);
+  };
+
+  const recentBottomOrder = recentForBottomDock(recentSymbols);
+
+  const mobileScrollPad = dockHeightPx + dockBottomPx + 8;
+
+  const keyboardOpen = narrowMobile && measureKeyboardOverlapPx() >= 48;
+
+  const recentListBody = (
+    <>
+      {recentSymbols.length > 0 ? (
+        <div className={narrowMobile ? "pb-1" : ""}>
+          <div className="flex items-center justify-between px-4 pb-2">
+            <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
+              RECENTLY VIEWED
+            </span>
+          </div>
+          {(narrowMobile ? recentBottomOrder : recentSymbols.map(s => s.replace(/^\$/, ""))).map(sym => (
+            <RecentRow
+              key={sym}
+              sym={sym}
+              isActive={symbol === sym}
+              onTap={() => handleQuickSelect(sym)}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Search className="w-10 h-10 text-zinc-700 mb-3" />
+          <p className="font-mono text-xs text-zinc-500 tracking-wider">
+            TYPE A TICKER SYMBOL TO GET STARTED
+          </p>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -294,76 +438,77 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
           </button>
         </div>
 
-        <div className="px-4 pt-4 pb-2">
-          <form onSubmit={handleSubmit} className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <input
-                ref={inputRef}
-                value={inputVal}
-                onChange={e => setInputVal(e.target.value.toUpperCase())}
-                placeholder="TICKER SYMBOL..."
-                className="w-full h-10 pl-10 pr-3 rounded-lg border border-[#2A2A2C] bg-[#18181B] font-mono text-sm text-foreground
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#FFB800]/50 transition-colors uppercase"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="characters"
-                spellCheck={false}
+        {narrowMobile ? (
+          <>
+            <div
+              ref={scrollRef}
+              className="flex-1 min-h-0 overflow-y-auto flex flex-col"
+              style={{
+                paddingBottom: mobileScrollPad,
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              <div className="mt-auto w-full">
+                {recentListBody}
+              </div>
+            </div>
+
+            <div
+              ref={dockRef}
+              className="fixed left-0 right-0 z-[902] bg-card border-t border-card-border px-4 pt-3 pb-3"
+              style={{
+                bottom: dockBottomPx,
+                paddingBottom: keyboardOpen
+                  ? 10
+                  : "max(12px, env(safe-area-inset-bottom, 0px))",
+              }}
+            >
+              {exactInput ? (
+                <SymbolLivePreview
+                  sym={exactInput}
+                  onNavigate={navigateFromPreview}
+                  className="mx-0"
+                />
+              ) : null}
+              <SearchForm
+                inputRef={inputRef}
+                inputVal={inputVal}
+                setInputVal={setInputVal}
+                onSubmit={handleSubmit}
+                onFocus={() => {
+                  setInputFocused(true);
+                  remeasure();
+                }}
+                onBlur={() => {
+                  setInputFocused(false);
+                  remeasure();
+                }}
               />
             </div>
-            <button
-              type="submit"
-              className="h-10 px-5 rounded-lg font-mono text-xs font-bold tracking-wider transition-colors shrink-0"
-              style={{ background: "#FFB800", color: "#0c0c0c" }}
-            >
-              GO
-            </button>
-          </form>
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="px-4 pt-4 pb-2">
+              <SearchForm
+                inputRef={inputRef}
+                inputVal={inputVal}
+                setInputVal={setInputVal}
+                onSubmit={handleSubmit}
+              />
+            </div>
 
-        {exactInput && (
-          <SymbolLivePreview
-            sym={exactInput}
-            onNavigate={() => {
-              inputRef.current?.blur();
-              setSymbol(exactInput);
-              setInputVal("");
-              onSelectSymbol(exactInput);
-            }}
-          />
+            {exactInput && (
+              <SymbolLivePreview
+                sym={exactInput}
+                onNavigate={navigateFromPreview}
+              />
+            )}
+
+            <div className="flex-1 overflow-y-auto pb-8">
+              {recentListBody}
+            </div>
+          </>
         )}
-
-        <div className="flex-1 overflow-y-auto pb-8">
-          {recentSymbols.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between px-4 pb-2">
-                <span className="font-mono text-[13px] text-zinc-400 uppercase tracking-widest font-bold">
-                  RECENTLY VIEWED
-                </span>
-              </div>
-              {recentSymbols.map(sym => {
-                const clean = cleanSymbol(sym);
-                return (
-                  <RecentRow
-                    key={clean}
-                    sym={clean}
-                    isActive={symbol === clean}
-                    onTap={() => handleQuickSelect(sym)}
-                  />
-                );
-              })}
-            </div>
-          )}
-
-          {recentSymbols.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <Search className="w-10 h-10 text-zinc-700 mb-3" />
-              <p className="font-mono text-xs text-zinc-500 tracking-wider">
-                TYPE A TICKER SYMBOL TO GET STARTED
-              </p>
-            </div>
-          )}
-        </div>
       </div>
     </>
   );
