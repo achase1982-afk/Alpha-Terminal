@@ -11,7 +11,7 @@ import {
 
 const BASE = `https://${webullApiHost()}`;
 
-type WebullMethod = "GET" | "POST";
+export type WebullMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 function accountsPath(path: string): boolean {
   return path === "/trading/accounts/list";
@@ -32,7 +32,7 @@ export async function webullSignedFetch<T = unknown>(opts: {
   method: WebullMethod;
   path: string;
   query?: Record<string, string>;
-  body?: Record<string, unknown> | unknown[];
+  body?: unknown;
   /** Token-auth endpoints (trading). Omit for /auth/tokens/* */
   withAccessToken?: boolean;
   accessTokenOverride?: string;

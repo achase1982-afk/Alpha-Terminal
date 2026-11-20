@@ -1,5 +1,13 @@
 import { Router, type IRouter } from "express";
-import { webullSignedFetch } from "../lib/webull/webullClient.js";
+import { WebullApiError, webullSignedFetch } from "../lib/webull/webullClient.js";
+import {
+  normalizeWebullQuery,
+  parseWebullMethod,
+  validateWebullEntitledPath,
+  WEBULL_HTTP_METHODS,
+  WEBULL_HTTP_NAMESPACES,
+  WebullCapabilityError,
+} from "../lib/webull/webullCapabilities.js";
 import {
   getWebullToken,
   isWebullTradingReady,
@@ -27,6 +35,86 @@ async function requireNormalToken(res: Parameters<typeof router.get>[1] extends 
   }
   return token;
 }
+
+router.get("/capabilities", async (_req, res) => {
+  const token = await getWebullToken();
+  return res.json({
+    configured: webullCredentialsConfigured(),
+    connected: isWebullTradingReady(token),
+    authentication: {
+      tokenCreate: "/api/auth/webull/connect",
+      tokenStatus: "/api/auth/webull/status",
+      tokenDelete: "/api/auth/webull/disconnect",
+    },
+    invocation: {
+      endpoint: "/api/webull/invoke",
+      methods: WEBULL_HTTP_METHODS,
+      namespaces: WEBULL_HTTP_NAMESPACES,
+      accessTokenAppliedServerSide: true,
+      appSecretExposed: false,
+      additionalAccounts: "Pass any account_id returned by /trading/accounts/list.",
+    },
+  });
+});
+
+/**
+ * Signed gateway for every HTTP endpoint in the Webull Trading and Market
+ * Data products. The host and top-level namespaces are fixed server-side, so
+ * callers get all granted capabilities without access to credentials or an
+ * arbitrary outbound proxy.
+ */
+router.post("/invoke", async (req, res) => {
+  if (!tradingReady(res)) return;
+  const token = await requireNormalToken(res);
+  if (!token) return;
+
+  try {
+    const payload = (req.body ?? {}) as {
+      method?: unknown;
+      path?: unknown;
+      query?: unknown;
+      body?: unknown;
+    };
+    const method = parseWebullMethod(payload.method ?? "GET");
+    const path = validateWebullEntitledPath(payload.path);
+    const query = normalizeWebullQuery(payload.query);
+    const data = await webullSignedFetch({
+      method,
+      path,
+      query,
+      body: payload.body,
+      withAccessToken: true,
+    });
+    return res.json(data);
+  } catch (err) {
+    if (err instanceof WebullCapabilityError) {
+      return res.status(400).json({ error: err.message });
+    }
+    if (err instanceof WebullApiError) {
+      let message = "Webull rejected the request.";
+      try {
+        const parsed = JSON.parse(err.body) as { message?: unknown; error_code?: unknown };
+        const detail =
+          typeof parsed.message === "string"
+            ? parsed.message
+            : typeof parsed.error_code === "string"
+              ? parsed.error_code
+              : "";
+        if (detail) message = detail.slice(0, 400);
+      } catch {
+        const detail = err.body.trim();
+        if (detail) message = detail.slice(0, 400);
+      }
+      return res.status(err.status).json({
+        error: "webull_api_error",
+        upstreamStatus: err.status,
+        message,
+      });
+    }
+    logger.error({ err }, "Webull entitled endpoint invocation failed");
+    return res.status(502).json({ error: "webull_api_error" });
+  }
+});
 
 router.get("/trading/accounts/list", async (_req, res) => {
   if (!tradingReady(res)) return;
