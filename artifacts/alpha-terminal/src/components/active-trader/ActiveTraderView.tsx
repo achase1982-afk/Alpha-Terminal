@@ -1096,9 +1096,8 @@ export const ActiveTraderView = memo(function ActiveTraderView({
       setTradeContext(null);
       setSelected({ contract: payload.nearContract, type: payload.type });
       setTradeStripStrike(payload.anchorStrike);
-      setCollapsed(false);
     },
-    [prefs.verticalWidth, rowByStrike, selection, publishDraft, setCollapsed],
+    [prefs.verticalWidth, rowByStrike, selection, publishDraft],
   );
 
   useEffect(() => {
@@ -1295,6 +1294,26 @@ export const ActiveTraderView = memo(function ActiveTraderView({
     document.addEventListener("pointerdown", closeIfOutside, true);
     return () => document.removeEventListener("pointerdown", closeIfOutside, true);
   }, [settingsOpen]);
+
+  // An open ticket stays in progress. A tap on the ladder, the strike column,
+  // or anywhere else outside the sheet drops it to the peek handle.
+  useEffect(() => {
+    if (stockTemplate || collapsed || !hasLegs) return;
+    const pullDown = (event: Event) => {
+      const node = event.target;
+      if (!(node instanceof Element)) return;
+      if (
+        node.closest(
+          "[data-at-order-sheet], [data-at-order-defaults], [data-at-settings-expanded], [data-at-advanced-order-trigger], [data-radix-popper-content-wrapper], [role='listbox'], [role='dialog']",
+        )
+      ) {
+        return;
+      }
+      setCollapsed(true);
+    };
+    document.addEventListener("pointerdown", pullDown, true);
+    return () => document.removeEventListener("pointerdown", pullDown, true);
+  }, [stockTemplate, collapsed, hasLegs, setCollapsed]);
 
   const expiryLabel = primary?.dateLabel ?? "\u2014";
   const underlyingSymbol = symbol.replace(/^\$/, "").toUpperCase();
