@@ -94,7 +94,7 @@
 
 .headline {
   display: grid;
-  grid-template-columns: minmax(210px, 1.7fr) minmax(130px, 0.9fr) minmax(140px, 0.95fr) minmax(230px, 1.45fr) minmax(190px, 1.25fr);
+  grid-template-columns: minmax(210px, 1.7fr) minmax(220px, 1.1fr) minmax(140px, 0.95fr) minmax(230px, 1.45fr) minmax(190px, 1.25fr);
   align-items: end;
   gap: 12px;
   border-top: 1px solid #232b38;
@@ -121,6 +121,16 @@
   line-height: 0.9;
   font-weight: 500;
   color: #fff;
+}
+
+.day-read {
+  min-width: max-content;
+  overflow: visible;
+}
+
+.day-read .k,
+.day-pct {
+  white-space: nowrap;
 }
 
 .day-pct {

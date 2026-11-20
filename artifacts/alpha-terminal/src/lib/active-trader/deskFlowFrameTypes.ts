@@ -87,6 +87,18 @@ export type DeskPxFrame = DeskFlowFrameBase & {
   ask?: number | null;
 };
 
+/** Unusual Whales 1-minute net-premium bar. tape time is bar_start_ms (UTC epoch). */
+export type DeskUwNpBar = DeskFlowFrameBase & {
+  type: "uw_np_bar";
+  bar_start_ms: number;
+  call_prem_bought?: number | null;
+  call_prem_sold?: number | null;
+  put_prem_bought?: number | null;
+  put_prem_sold?: number | null;
+  net_call?: number | null;
+  net_put?: number | null;
+};
+
 export type DeskFlowFrame =
   | DeskFlow1s
   | DeskFlow60s
@@ -96,6 +108,7 @@ export type DeskFlowFrame =
   | DeskTape60s
   | DeskTapeHeartbeat
   | DeskPxFrame
+  | DeskUwNpBar
   | DeskFlowFrameBase;
 
 export function parseDeskFlowFrame(raw: unknown): DeskFlowFrame | null {

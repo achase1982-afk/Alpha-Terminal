@@ -1,11 +1,11 @@
 import type { Request } from "express";
 import { parseDeskFlowSymbol } from "../desk/deskLiveFlowSymbol.js";
 import { deskLiveFlowCanSubscribe } from "../desk/deskLiveFlowLimits.js";
-import { registerDeskLiveFlowSse } from "../desk/deskLiveFlowHub.js";
+import { registerDeskLiveFlowSse, wrapDeskLiveFlowFrame } from "../desk/deskLiveFlowHub.js";
 import { deskLiveFlowEnabled } from "../desk/deskLiveFlowConfig.js";
 import { DESK_LIVE_FLOW_SSE_HEARTBEAT_MS } from "../desk/deskLiveFlowConfig.js";
 import { buildDeskHealthFeeds } from "../desk/deskFeedFreshness.js";
-import { deskLiveFlowPublishDaySnapshot } from "../desk/deskLiveFlowEngine.js";
+import { deskLiveFlowPublishDaySnapshot, deskLiveFlowUwBarSnapshot } from "../desk/deskLiveFlowEngine.js";
 
 export const AT_FLOW_STREAMS_PER_CLIENT = 3;
 
@@ -102,6 +102,14 @@ export function handleAtFlowStream(req: Request, res: import("express").Response
 
   registerDeskLiveFlowSse(res, parsed.parsed.sym, parsed.parsed.kind);
   deskLiveFlowPublishDaySnapshot(parsed.parsed.sym);
+  for (const bar of deskLiveFlowUwBarSnapshot(parsed.parsed.sym)) {
+    try {
+      const frame = wrapDeskLiveFlowFrame(bar, bar.bar_start_ms, bar.polled_at_ms);
+      res.write(`data: ${JSON.stringify(frame)}\n\n`);
+    } catch {
+      break;
+    }
+  }
   const meta: FlowMetaState = { sessionClosed: null };
   const publish = () => {
     try {
