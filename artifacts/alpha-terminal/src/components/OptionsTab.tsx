@@ -2364,6 +2364,7 @@ export function OptionsTab({
   }, [symbol]);
 
   useEffect(() => {
+    if (optionsSubView !== "at") return;
     const pool = expiryCatalog.length ? expiryCatalog : tradableAtGroups;
     if (!pool.length) return;
     if (atExpiration && pool.some((g) => g.expiration === atExpiration)) return;
@@ -2373,16 +2374,7 @@ export function OptionsTab({
       nearestTradableExpiration(pool, expiryNowMs)?.expiration ??
       null;
     if (resolved && resolved !== atExpiration) setAtExpiration(resolved);
-  }, [expiryCatalog, tradableAtGroups, atExpiration, symbol, expiryNowMs, setAtExpiration]);
-
-  useEffect(() => {
-    if (optionsSubView === "chain" && atExpiration) {
-      setExpandedExps((prev) => {
-        if (prev.size === 1 && prev.has(atExpiration)) return prev;
-        return new Set([atExpiration]);
-      });
-    }
-  }, [optionsSubView, atExpiration]);
+  }, [optionsSubView, expiryCatalog, tradableAtGroups, atExpiration, symbol, expiryNowMs, setAtExpiration]);
 
   const trySelectExpiry = useCallback(
     (exp: string) => {
