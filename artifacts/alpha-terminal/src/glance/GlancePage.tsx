@@ -6,25 +6,18 @@ import { formatDisplaySymbol } from "@/lib/formatDisplaySymbol";
 import { FIXTURE, fixtureHistory } from "./fixture";
 import { GlanceLadder } from "./GlanceLadder";
 import {
-  assignRailLanes,
   dayMove,
   formatGross,
-  formatNet,
   formatPct,
   formatSignedPts,
   formatSpot,
   formatWall,
   fromOpenPoints,
   pathStats,
-  premiumNet,
   priceNotFollowing,
-  railLabelShift,
-  railPositions,
   resolveTrend,
   SIDE_LABEL,
   wallDistance,
-  wallDrift,
-  type GrossQuad,
   type PnfResult,
   type TrendReading,
 } from "./math";
@@ -137,21 +130,32 @@ function FlowSide({
   );
 }
 
-const RAIL_LABEL: Record<string, string> = {
-  spot: "SPX",
-  callOi: "Call wall",
-  putOi: "Put wall",
-  callVol: "Call vol wall",
-  putVol: "Put vol wall",
-  flip: "Gamma flip",
-  high: "High",
-  low: "Low",
-};
+function pointsFromSpot(level: number | null, mark: number | null): string {
+  const dist = wallDistance(level, mark);
+  if (dist == null) return "—";
+  if (Math.abs(dist) < 0.5) return "at spot";
+  const pts = Math.abs(dist).toFixed(0);
+  return dist > 0 ? `${pts} above spot` : `${pts} below spot`;
+}
 
-/** Even lanes sit above the dot, odd lanes below, one row apart. */
-function railLabelTop(lane: number): number {
-  const row = Math.floor(lane / 2);
-  return lane % 2 === 0 ? -(20 + row * 22) : 12 + row * 22;
+function LevelLine({
+  name,
+  tone,
+  price,
+  distance,
+}: {
+  name: string;
+  tone: string;
+  price: string;
+  distance: string;
+}) {
+  return (
+    <div className="level-line">
+      <span className="level-line-name">{name}</span>
+      <span className={`level-line-px num ${tone}`}>{price}</span>
+      <span className="level-line-dist num">{distance}</span>
+    </div>
+  );
 }
 
 function spark(values: readonly number[], color: string) {
@@ -270,8 +274,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
 
   const flow1 = fixture ? FIXTURE.flow.m1 : live.flow1;
   const flow5 = fixture ? FIXTURE.flow.m5 : live.flow5;
-  const flow15 = fixture ? FIXTURE.flow.m15 : live.flow15;
-  const flowSession = fixture ? FIXTURE.flow.session : live.flowSession;
   const windows = fixture ? FIXTURE.windows : live.windows;
 
   const fixtureM10 = pathStats(FIXTURE.closes.slice(-11));
@@ -344,62 +346,14 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
 
   const callOi = fixture ? FIXTURE.walls.callOi.now : (live.zones?.callWall ?? null);
   const putOi = fixture ? FIXTURE.walls.putOi.now : (live.zones?.putWall ?? null);
-  const callOiOpen = fixture ? FIXTURE.walls.callOi.open : null;
-  const putOiOpen = fixture ? FIXTURE.walls.putOi.open : null;
   const flip = fixture ? FIXTURE.flip : (live.zones?.flip ?? null);
   const lowZone = fixture ? FIXTURE.lowZoneTop : live.lowZone;
   const highZone = fixture ? FIXTURE.highZoneBottom : live.highZone;
   const zonesInverted = lowZone != null && highZone != null && lowZone >= highZone;
 
-  const rail = useMemo(() => {
-    const points = [
-      { id: "spot", price: spot },
-      callOi != null ? { id: "callOi", price: callOi } : null,
-      putOi != null ? { id: "putOi", price: putOi } : null,
-      flip != null ? { id: "flip", price: flip } : null,
-      high != null ? { id: "high", price: high } : null,
-      low != null ? { id: "low", price: low } : null,
-    ].filter((p): p is { id: string; price: number } => p != null);
-    return railPositions(spot, points);
-  }, [callOi, flip, high, low, putOi, spot]);
-  const railLanes = assignRailLanes(rail, 0.32);
   const tracePoints = fixture
     ? FIXTURE.closes.map((c, i) => ({ t: i * 60_000, c }))
     : live.traceBars.map((bar) => ({ t: bar.t, c: bar.c }));
-
-  const tracePx = fixture ? FIXTURE.closes : live.closes;
-  const traceNet = fixture
-    ? [FIXTURE.nets.session ?? 0, (FIXTURE.nets.session ?? 0) * 0.4, FIXTURE.nets.m15 ?? 0, FIXTURE.nets.m5 ?? 0]
-    : [];
-
-  function row(label: string, quad: GrossQuad) {
-    return (
-      <tr>
-        <td>{label}</td>
-        <td className="up num">{moneyOr(quad.cb)}</td>
-        <td className="down num">{moneyOr(quad.cs)}</td>
-        <td className="up num">{moneyOr(quad.pb)}</td>
-        <td className="down num">{moneyOr(quad.ps)}</td>
-      </tr>
-    );
-  }
-
-  function wallRow(label: string, tone: string, now: number | null, baseline: number | null, baselineNote: string) {
-    const dist = wallDistance(now, spot);
-    const drift = wallDrift(now, baseline);
-    return (
-      <tr>
-        <td className="wall-name">{label}</td>
-        <td className={`wall-now num ${tone}`}>{formatWall(now)}</td>
-        <td className="num">{baseline == null ? "—" : `${formatWall(baseline)} ${baselineNote}`}</td>
-        <td className="num">{formatSignedPts(drift, 0)}</td>
-        <td className="num">{formatSignedPts(dist, 2)}</td>
-      </tr>
-    );
-  }
-
-  const gex = fixture ? FIXTURE.gex : (live.zones?.netGexUsdPer1Pct ?? null);
-  const env = fixture ? "amplifying" : live.zones?.env;
 
   return (
     <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
@@ -535,89 +489,33 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
                 </small>
               </div>
             </div>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Window</th>
-                  <th>Calls bought</th>
-                  <th>Calls sold</th>
-                  <th>Puts bought</th>
-                  <th>Puts sold</th>
-                </tr>
-              </thead>
-              <tbody>
-                {row("5 minutes", flow5)}
-                {row("15 minutes", flow15)}
-                {row(fixture ? "Since 09:30" : "Day", flowSession)}
-              </tbody>
-            </table>
-            <div className="nets num">
-              <span>5 minute net {formatNet(premiumNet(flow5))}</span>
-              <span>15 minute net {formatNet(premiumNet(flow15))}</span>
-              <span>{fixture ? "Session" : "Day"} net {formatNet(premiumNet(flowSession))}</span>
-              {!fixture && live.flowUw ? <span>Level 1 estimate {formatNet(premiumNet(live.flowL1Session))}</span> : null}
-            </div>
           </section>
         </div>
       </div>
 
-      <div className="levels-wrap">
-        <section className="block levels" aria-label="Level map">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col" aria-hidden="true" />
-                <th>Strike</th>
-                <th>At open</th>
-                <th>Move</th>
-                <th>Distance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {wallRow("Call wall", "call", callOi, callOiOpen, fixture ? "open" : "")}
-              {wallRow("Put wall", "put", putOi, putOiOpen, fixture ? "open" : "")}
-            </tbody>
-          </table>
-          <div className="meta-row">
-            <span className="flip">Gamma flip {flip == null ? "none in range" : formatWall(flip)}</span>
-            <span className="num">{spot != null && flip != null ? `${formatSignedPts(spot - flip)} from spot` : "—"}</span>
-          </div>
-          <div className="meta-row">
-            <span>Low zone top {lowZone == null ? "—" : formatSpot(lowZone)}</span>
-            <span>High zone bottom {highZone == null ? "—" : formatSpot(highZone)}</span>
-          </div>
-          {zonesInverted ? <div className="support">Zone pair invalid</div> : null}
-          <div className="gex-box num">
-            <span>Gamma exposure {gex == null ? "—" : `${formatNet(gex)} per 1%`}</span>
-            <span>{env === "amplifying" ? "AMPLIFYING · model" : env === "damping" ? "STABILIZING · model" : "Model sign"}</span>
-          </div>
-          <div className="rail" aria-label="Price rail">
-            <i className="axis" />
-            {rail.map((mark, index) => {
-              const lane = railLanes[index] ?? 0;
-              const color =
-                mark.id === "spot" ? "#fff" : mark.id.startsWith("call") ? "#fbbf24" : mark.id.startsWith("put") ? "#14b8a6" : mark.id === "flip" ? "#a78bfa" : "#94a3b8";
-              const label = RAIL_LABEL[mark.id] ?? mark.id;
-              return (
-                <span
-                  key={mark.id}
-                  className="mark"
-                  style={{
-                    left: `${mark.x * 100}%`,
-                    background: color,
-                    ["--shift" as string]: railLabelShift(mark.x),
-                    ["--lift" as string]: `${railLabelTop(lane)}px`,
-                  }}
-                  title={`${label} ${formatSpot(mark.price)}`}
-                >
-                  <em>{label}</em>
-                </span>
-              );
-            })}
-          </div>
-          {spot == null && rail.length > 0 ? <div className="support">SPX last not received</div> : null}
-        </section>
-      </div>
+      <section className="level-board" aria-label="Levels">
+        <LevelLine name="Call wall" tone="call" price={formatWall(callOi)} distance={pointsFromSpot(callOi, spot)} />
+        <LevelLine name="Put wall" tone="put" price={formatWall(putOi)} distance={pointsFromSpot(putOi, spot)} />
+        <LevelLine
+          name="Gamma flip"
+          tone="flip"
+          price={flip == null ? "—" : formatWall(flip)}
+          distance={pointsFromSpot(flip, spot)}
+        />
+        <LevelLine
+          name="Low zone top"
+          tone=""
+          price={lowZone == null ? "—" : formatSpot(lowZone)}
+          distance={pointsFromSpot(lowZone, spot)}
+        />
+        <LevelLine
+          name="High zone bottom"
+          tone=""
+          price={highZone == null ? "—" : formatSpot(highZone)}
+          distance={pointsFromSpot(highZone, spot)}
+        />
+        {zonesInverted ? <div className="support">Zone pair invalid</div> : null}
+      </section>
 
       <section className="pulse" aria-label="Market context">
         <PulseQuote symbol="ES" quote={es} />
