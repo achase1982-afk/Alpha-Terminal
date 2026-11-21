@@ -23,7 +23,7 @@ export function ConnectBrokerPrompt({ label, compact, fontSize }: { label: strin
         fontSize: fontSize ?? (compact ? 10 : 13),
         color: isNavigating ? "#FFB800" : "#71717a",
         textTransform: "uppercase",
-        background: "rgba(17,17,19,0.92)",
+        background: "hsl(var(--secondary))",
         border: "none",
         padding: compact ? "10px 14px" : "14px 18px",
         borderRadius: 12,

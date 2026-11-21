@@ -14,9 +14,10 @@ import {
   type PositionView,
 } from "./journalModel";
 
+/** Match app shell `bg-background` / portfolio grays (not legacy jet black). */
 const C = {
-  bg: "#0c0c0c",
-  card: "#18181b",
+  bg: "hsl(var(--background))",
+  card: "hsl(var(--secondary))",
   border: "#27272a",
   text: "#e4e4e7",
   muted: "#a1a1aa",
@@ -96,7 +97,7 @@ export function JournalScreen(props: {
     ?? (accountId === "paper_sandbox" ? "Paper Sandbox" : accountId === "all_live" ? "All Live" : "Account");
 
   return (
-    <div ref={rootRef} data-journal-root="" style={{ color: C.text, fontFamily: "inherit", fontSize: 16 }}>
+    <div ref={rootRef} data-journal-root="" className="bg-background min-h-full" style={{ color: C.text, fontFamily: "inherit", fontSize: 16, background: C.bg }}>
       {props.exampleBanner && (
         <div style={{ background: "#FFB800", color: "#1a1400", textAlign: "center", fontSize: 16, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
           EXAMPLE DATA — NOT ACCOUNT FIGURES
@@ -132,7 +133,7 @@ export function JournalScreen(props: {
         )}
         <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
           {PERIODS.map((period) => (
-            <button key={period.id} type="button" onClick={() => props.onPeriod(period.id)} style={{ ...pill, minHeight: 44, background: props.period === period.id ? "#27272a" : "transparent" }}>
+            <button key={period.id} type="button" onClick={() => props.onPeriod(period.id)} style={{ ...pill, minHeight: 44, background: props.period === period.id ? C.card : "transparent" }}>
               {period.label}
             </button>
           ))}
@@ -318,7 +319,7 @@ function Drilldown(props: { payload: InsightsPayload; strategy: string; onTrades
       <MetricStrip metrics={slice.metrics} />
       <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
         {(["hour", "hold", "dte", "day"] as const).map((key) => (
-          <button key={key} type="button" onClick={() => setTab(key)} style={{ ...pill, minHeight: 44, background: tab === key ? "#27272a" : "transparent" }}>{key === "hour" ? "Hour" : key === "hold" ? "Hold" : key === "dte" ? "DTE" : "Day"}</button>
+          <button key={key} type="button" onClick={() => setTab(key)} style={{ ...pill, minHeight: 44, background: tab === key ? C.card : "transparent" }}>{key === "hour" ? "Hour" : key === "hold" ? "Hold" : key === "dte" ? "DTE" : "Day"}</button>
         ))}
       </div>
       {tab === "hold" && hold && (
@@ -387,12 +388,12 @@ function TradesList(props: { payload: InsightsPayload; period: JournalPeriod; qu
       </div>
       <div style={{ display: "flex", gap: 6, overflowX: "auto", marginTop: 8 }}>
         {(["all", "positive", "negative", "options", "equities", "open"] as const).map((key) => (
-          <button key={key} type="button" onClick={() => setFilter(key)} style={{ ...pill, background: filter === key ? "#27272a" : "transparent" }}>{key === "all" ? "All" : key === "positive" ? "Positive" : key === "negative" ? "Negative" : key === "options" ? "Options" : key === "equities" ? "Equities" : "Open"}</button>
+          <button key={key} type="button" onClick={() => setFilter(key)} style={{ ...pill, background: filter === key ? C.card : "transparent" }}>{key === "all" ? "All" : key === "positive" ? "Positive" : key === "negative" ? "Negative" : key === "options" ? "Options" : key === "equities" ? "Equities" : "Open"}</button>
         ))}
       </div>
       <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
         {([["newest", "Newest"], ["top_gain", "Top Win"], ["top_loss", "Top Loss"]] as const).map(([key, label]) => (
-          <button key={key} type="button" onClick={() => setSort(key)} style={{ ...pill, background: sort === key ? "#27272a" : "transparent" }}>{label}</button>
+          <button key={key} type="button" onClick={() => setSort(key)} style={{ ...pill, background: sort === key ? C.card : "transparent" }}>{label}</button>
         ))}
         <button type="button" onClick={() => setScope(scope === "all" ? "period" : "all")} style={pill}>{scope === "all" ? "All History" : props.period.toUpperCase()}</button>
       </div>
@@ -450,7 +451,7 @@ function Segmented(props: { value: JournalView; onChange: (view: JournalView) =>
   return (
     <div style={{ display: "flex", background: C.card, borderRadius: 8, padding: 2 }}>
       {(["insights", "trades"] as const).map((view) => (
-        <button key={view} type="button" onClick={() => props.onChange(view)} style={{ minHeight: 44, padding: "0 12px", border: "none", borderRadius: 6, background: props.value === view ? "#3f3f46" : "transparent", color: C.text, cursor: "pointer" }}>
+        <button key={view} type="button" onClick={() => props.onChange(view)} style={{ minHeight: 44, padding: "0 12px", border: "none", borderRadius: 6, background: props.value === view ? "hsl(var(--muted))" : "transparent", color: C.text, cursor: "pointer" }}>
           {view === "insights" ? "Insights" : "Trades"}
         </button>
       ))}
@@ -484,12 +485,12 @@ function CsvSheet(props: {
     <Sheet title="Import CSV" onClose={props.onClose}>
       <div style={{ display: "flex", gap: 6, padding: "0 12px", flexWrap: "wrap" }}>
         {FORMATS.map((item) => (
-          <button key={item.id} type="button" onClick={() => setFormat(item.id)} style={{ ...pill, background: format === item.id ? "#27272a" : "transparent" }}>{item.label}</button>
+          <button key={item.id} type="button" onClick={() => setFormat(item.id)} style={{ ...pill, background: format === item.id ? C.card : "transparent" }}>{item.label}</button>
         ))}
       </div>
       <div style={{ display: "flex", gap: 6, padding: "8px 12px", flexWrap: "wrap" }}>
         {props.books.map((book) => (
-          <button key={book.id} type="button" onClick={() => setAccountId(book.id)} style={{ ...pill, background: accountId === book.id ? "#27272a" : "transparent" }}>{book.label}</button>
+          <button key={book.id} type="button" onClick={() => setAccountId(book.id)} style={{ ...pill, background: accountId === book.id ? C.card : "transparent" }}>{book.label}</button>
         ))}
       </div>
       <label style={{ ...pill, margin: "0 12px" }}>
