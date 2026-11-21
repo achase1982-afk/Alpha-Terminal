@@ -1,7 +1,7 @@
 import { Loader2 } from "lucide-react";
 import { useBrokerConnect } from "../hooks/useBrokerConnect";
 
-export function ConnectBrokerPrompt({ label, compact }: { label: string; compact?: boolean }) {
+export function ConnectBrokerPrompt({ label, compact, fontSize }: { label: string; compact?: boolean; fontSize?: number }) {
   const { oauthUrl, isNavigating, onClick } = useBrokerConnect();
   const disabled = !oauthUrl || isNavigating;
 
@@ -20,7 +20,7 @@ export function ConnectBrokerPrompt({ label, compact }: { label: string; compact
       role="button"
       className="font-mono tracking-wider text-center transition-all cursor-pointer hover:text-[#FFB800] active:scale-[0.98] flex items-center justify-center gap-2 mx-auto no-underline"
       style={{
-        fontSize: compact ? 10 : 13,
+        fontSize: fontSize ?? (compact ? 10 : 13),
         color: isNavigating ? "#FFB800" : "#71717a",
         textTransform: "uppercase",
         background: "rgba(17,17,19,0.92)",
