@@ -1021,12 +1021,31 @@
   font-size: 18px;
 }
 
+/* Skinny desktop: keep the wide arrangement and scale it into the pane.
+   inset on the far edges is released so the pre-zoom box can be 1/scale wide. */
+.glance[data-fit-scale] {
+  zoom: var(--glance-scale, 1);
+  top: 0;
+  left: 0;
+  right: auto;
+  bottom: auto;
+  width: calc(100% / var(--glance-scale, 1));
+  height: calc(100% / var(--glance-scale, 1));
+  max-width: none;
+}
+
 @media (max-width: 760px) {
   .glance {
     position: absolute;
     overflow: auto;
     height: auto;
     min-height: 100%;
+  }
+
+  .glance[data-fit-scale] {
+    height: calc(100% / var(--glance-scale, 1));
+    min-height: 0;
+    overflow: auto;
   }
 
   .headline,
@@ -1036,5 +1055,13 @@
   .level-board {
     display: flex;
     flex-direction: column;
+  }
+
+  .glance[data-fit-scale] .headline,
+  .glance[data-fit-scale] .glance-body,
+  .glance[data-fit-scale] .levels-wrap,
+  .glance[data-fit-scale] .pulse,
+  .glance[data-fit-scale] .level-board {
+    display: grid;
   }
 }
