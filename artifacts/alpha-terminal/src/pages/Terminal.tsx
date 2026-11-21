@@ -931,6 +931,26 @@ export default function TerminalPage() {
   const pulseDashRef = useRef<MarketPulseDashboardHandle>(null);
   const sidebarRef = useRef<SidebarHandle>(null);
   useSchwabSessionReconciliation(sidebarRef);
+
+  /**
+   * Phone search Enter. Stock screens already follow the symbol, so they stay.
+   * Portfolio, watchlist, insights, and the rest open that stock's page.
+   */
+  const commitMobileTicker = useCallback(() => {
+    const page = sidebarRef.current?.getActivePage() ?? null;
+    if (page === "Calendar") return;
+    if (page != null) {
+      sidebarRef.current?.clearActivePage();
+      setSidebarOpen(false);
+    }
+    const onStockScreen =
+      activeBottom === "markets" || (activeBottom === "ai" && aiSubTab === "strategist");
+    if (onStockScreen) return;
+    const chrome = useAtChromeStore.getState();
+    chrome.leaveActiveTrader();
+    chrome.requestOptionsSubView("chain");
+    setActiveBottom("markets");
+  }, [activeBottom, aiSubTab]);
   const { pulseData, isLoading: pulseLoading, isStreaming: pulseStreaming } = useMarketPulseStore();
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
@@ -1656,7 +1676,7 @@ export default function TerminalPage() {
           }}
         />
       ) : showMobileEdgeSearch ? (
-        <MobileEdgeSearch onOpenChange={setMobileSearchOpen} />
+        <MobileEdgeSearch onOpenChange={setMobileSearchOpen} onCommitted={commitMobileTicker} />
       ) : null}
       <InAppBrowser />
       <AtOrderDefaultsSheet

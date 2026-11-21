@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useTerminalStore } from "@/lib/store";
 import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { ChevronLeft, ChevronRight, X, ExternalLink, Loader2 } from "lucide-react";
@@ -167,6 +167,27 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 function dateKey(y: number, m: number, d: number): string {
   return `${y}-${(m + 1).toString().padStart(2, "0")}-${d.toString().padStart(2, "0")}`;
+}
+
+function tickerKey(raw: string): string {
+  return raw.replace(/^\$/, "").trim().toUpperCase();
+}
+
+/** Soonest earnings on or after today for this ticker, otherwise the most recent past print. */
+function earningsForTicker(events: CalendarEvent[], ticker: string, today: string): CalendarEvent | null {
+  const want = tickerKey(ticker);
+  if (!want) return null;
+  let upcoming: CalendarEvent | null = null;
+  let past: CalendarEvent | null = null;
+  for (const ev of events) {
+    if (ev.type !== "earnings" || tickerKey(ev.ticker ?? "") !== want) continue;
+    if (ev.date >= today) {
+      if (!upcoming || ev.date < upcoming.date) upcoming = ev;
+    } else if (!past || ev.date > past.date) {
+      past = ev;
+    }
+  }
+  return upcoming ?? past;
 }
 
 function refMonthKey(eventDate: string): string {
@@ -338,6 +359,7 @@ async function fetchFomcData(): Promise<FomcMeetingData[]> {
 }
 
 export function MarketCalendar({ onClose }: Props) {
+  const symbol = useTerminalStore((s) => s.symbol);
   const setSymbol = useTerminalStore((s) => s.setSymbol);
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -436,6 +458,31 @@ export function MarketCalendar({ onClose }: Props) {
   }, [month, year]);
 
   const todayKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const seenSymbolRef = useRef<string | null>(null);
+  const pendingTickerRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const next = tickerKey(symbol);
+    if (seenSymbolRef.current == null) {
+      seenSymbolRef.current = next;
+      return;
+    }
+    if (seenSymbolRef.current !== next) {
+      seenSymbolRef.current = next;
+      pendingTickerRef.current = next;
+    }
+    const target = pendingTickerRef.current;
+    if (!target) return;
+    const hit = earningsForTicker(allEvents, target, todayKey);
+    if (!hit) return;
+    pendingTickerRef.current = null;
+    const [y, m] = hit.date.split("-").map(Number);
+    if (!y || !m) return;
+    setYear(y);
+    setMonth(m - 1);
+    setSelectedDate(hit.date);
+    setSelectedEvent(hit);
+  }, [symbol, allEvents, todayKey]);
 
   const selectedEvents = selectedDate ? (eventMap[selectedDate] || []) : [];
 

@@ -16,10 +16,11 @@ import { useBottomInputDock } from "@/hooks/useVisualViewportKeyboardInset";
 /**
  * Phone ticker search.
  *
- * A tap opens the keyboard with a short ticker card pinned above it. The page
- * underneath stays visible because choosing a symbol only changes the ticker
- * on the current screen. Press and hold to jiggle the magnifier, drag it, then
- * tap the screen to lock that spot. A swipe still scrolls the page underneath.
+ * A tap opens the keyboard with a short ticker card pinned above it. Enter
+ * (or a result tap) saves the ticker. A stock screen keeps showing that
+ * screen with the new symbol; any other phone screen opens that stock's page.
+ * Press and hold to jiggle the magnifier, drag it, then tap the screen to lock
+ * that spot. A swipe still scrolls the page underneath.
  * No recent list. Desktop keeps the header search field.
  */
 
@@ -52,6 +53,8 @@ type TickerHit = { symbol: string; name: string };
 
 type MobileEdgeSearchProps = {
   onOpenChange?: (open: boolean) => void;
+  /** After the ticker is saved. The phone shell decides whether to stay or open that stock. */
+  onCommitted?: () => void;
 };
 
 function normalizeHits(raw: unknown): TickerHit[] {
@@ -225,7 +228,7 @@ function scrollUnder(clientX: number, clientY: number, dx: number, dy: number, s
   return moved;
 }
 
-export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
+export function MobileEdgeSearch({ onOpenChange, onCommitted }: MobileEdgeSearchProps) {
   const setSymbol = useTerminalStore((s) => s.setSymbol);
   const haptic = useUICustomizationStore((s) => s.hapticFeedback);
   const [open, setOpen] = useState(false);
@@ -246,7 +249,9 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
   const flingRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
   const onOpenChangeRef = useRef(onOpenChange);
+  const onCommittedRef = useRef(onCommitted);
   onOpenChangeRef.current = onOpenChange;
+  onCommittedRef.current = onCommitted;
   anchorRef.current = anchor;
 
   const { dockBottomPx, remeasure } = useBottomInputDock(open, focused, 72, 0);
@@ -526,6 +531,7 @@ export function MobileEdgeSearch({ onOpenChange }: MobileEdgeSearchProps) {
     const next = symbol.trim().toUpperCase();
     if (!next) return;
     setSymbol(next);
+    onCommittedRef.current?.();
     inputRef.current?.blur();
     setOpen(false);
   };
