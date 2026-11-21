@@ -10,7 +10,6 @@ import {
   ChevronRight,
   ChevronDown,
   AlertCircle,
-  Search,
   XCircle,
   AlertTriangle,
   Settings,
@@ -46,9 +45,7 @@ const C = {
 
 const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`;
 
-export type PortfolioSubTab = "positions" | "orders" | "balance" | "journal";
-type SubTab = PortfolioSubTab;
-type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
+type SubTab = "positions" | "balance" | "journal";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
 type ColumnKey =
   | "mark" | "last" | "cost" | "qty" | "mktVal" | "plOpen" | "plPct" | "plDay" | "maint"
@@ -314,31 +311,6 @@ declare global {
   }
 }
 
-interface Order {
-  orderId: number;
-  orderType: string;
-  session: string;
-  duration: string;
-  status: string;
-  filledQuantity: number;
-  remainingQuantity: number;
-  price: number | null;
-  complexStrategy: string;
-  enteredTime: string;
-  closeTime: string | null;
-  legs: {
-    instruction: string;
-    quantity: number;
-    symbol: string;
-    underlyingSymbol: string;
-    assetType: string;
-    putCall: string | null;
-    description: string;
-  }[];
-  fills: { legId: number; price: number; quantity: number; time: string }[];
-  tag: string | null;
-}
-
 interface SymbolGroup {
   underlying: string;
   description: string;
@@ -372,15 +344,6 @@ function plColor(n: number): string {
   if (n > 0) return C.green;
   if (n < 0) return C.red;
   return C.textDim;
-}
-function timeAgo(dateStr: string): string {
-  const ms = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }
 const COMPANY_NAMES: Record<string, string> = {
   AAPL: "Apple Inc.", MSFT: "Microsoft Corp.", GOOGL: "Alphabet Inc.", GOOG: "Alphabet Inc.",
@@ -442,15 +405,6 @@ function parseOptionSymbolDetails(sym: string): { putCall: "CALL" | "PUT"; strik
   const strike = parseInt(strikeRaw) / 1000;
   const expiration = `${dateStr.slice(2, 4)}/${dateStr.slice(4, 6)}/${dateStr.slice(0, 2)}`;
   return { putCall: pc === "C" ? "CALL" : "PUT", strike, expiration };
-}
-
-function statusColor(status: string): string {
-  switch (status) {
-    case "FILLED": return C.green;
-    case "CANCELED": case "REJECTED": case "EXPIRED": return C.red;
-    case "WORKING": case "PENDING_ACTIVATION": return C.gold;
-    default: return C.textDim;
-  }
 }
 
 const CP = "8px 16px";
@@ -897,103 +851,7 @@ function PositionTableRow({
   );
 }
 
-function OrderRow({ order, onCancel }: { order: Order; onCancel?: (orderId: number) => void }) {
-  const [expanded, setExpanded] = useState(false);
-  const primaryLeg = order.legs[0];
-  const isMultiLeg = order.legs.length > 1;
-  const displaySymbol = primaryLeg
-    ? (primaryLeg.assetType === "OPTION" || primaryLeg.assetType === "INDEX_OPTION" || primaryLeg.assetType === "FUTURE_OPTION") ? formatOptionSymbol(primaryLeg.symbol) : primaryLeg.symbol
-    : "—";
-  const isBuy = primaryLeg?.instruction?.includes("BUY");
-  const isOpen = order.status === "WORKING" || order.status === "PENDING_ACTIVATION";
-
-  return (
-    <div style={{ borderBottom: `1px solid ${C.border}` }}>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", background: "transparent", border: "none", cursor: "pointer", fontFamily: f }}
-        onMouseEnter={e => (e.currentTarget.style.background = "#ffffff04")}
-        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-      >
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, flex: 1, gap: 2 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: isBuy ? C.green : C.red, textTransform: "uppercase", letterSpacing: 0.3 }}>
-              {primaryLeg?.instruction?.replace(/_/g, " ") ?? "—"}
-            </span>
-            {isMultiLeg && <span style={{ fontSize: 16, color: C.textDim }}>+{order.legs.length - 1} leg{order.legs.length > 2 ? "s" : ""}</span>}
-          </div>
-          <span style={{ fontSize: 16, color: C.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
-            {displaySymbol}
-          </span>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
-          <span style={{ fontSize: 16, fontWeight: 500, color: statusColor(order.status), textTransform: "uppercase", letterSpacing: 0.3 }}>{order.status}</span>
-          <span style={{ fontSize: 16, color: C.dim }}>{timeAgo(order.enteredTime)}</span>
-        </div>
-        {isOpen && onCancel && (
-          <button onClick={e => { e.stopPropagation(); onCancel(order.orderId); }} style={{ marginLeft: 2, padding: 2, background: "transparent", border: "none", cursor: "pointer", color: C.red }}>
-            <XCircle style={{ width: 13, height: 13 }} />
-          </button>
-        )}
-        {expanded ? <ChevronDown style={{ color: C.dim, width: 11, height: 11, flexShrink: 0 }} /> : <ChevronRight style={{ color: C.dim, width: 11, height: 11, flexShrink: 0 }} />}
-      </button>
-
-      {expanded && (
-        <div style={{ padding: "6px 10px 8px 20px", borderTop: `1px solid ${C.border}`, background: C.bg }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "4px 12px" }}>
-            {[
-              ["Type", order.orderType.replace(/_/g, " ")],
-              ["Price", order.price != null ? fmtCurrency(order.price) : "MKT"],
-              ["Filled", `${order.filledQuantity} / ${order.filledQuantity + order.remainingQuantity}`],
-              ["Duration", order.duration],
-              ["Session", order.session],
-              ...(order.complexStrategy !== "NONE" ? [["Strategy", order.complexStrategy.replace(/_/g, " ")]] : []),
-            ].map(([label, value]) => (
-              <div key={label}>
-                <div style={{ fontSize: 16, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-                <div style={{ fontSize: 16, color: C.text }}>{value}</div>
-              </div>
-            ))}
-          </div>
-          {order.legs.length > 1 && (
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 16, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Legs</div>
-              {order.legs.map((leg, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 16, fontWeight: 600, color: leg.instruction?.includes("BUY") ? C.green : C.red }}>{leg.instruction?.replace(/_/g, " ")}</span>
-                  <span style={{ fontSize: 16, color: C.textDim }}>{leg.quantity}× {(leg.assetType === "OPTION" || leg.assetType === "INDEX_OPTION" || leg.assetType === "FUTURE_OPTION") ? formatOptionSymbol(leg.symbol) : leg.symbol}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {order.fills.length > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 16, color: C.dim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>Fills</div>
-              {order.fills.map((fill, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 6, marginBottom: 1 }}>
-                  <span style={{ fontSize: 16, color: C.textDim, fontVariantNumeric: "tabular-nums" }}>{fill.quantity}× @ {fmtCurrency(fill.price)}</span>
-                  <span style={{ fontSize: 16, color: C.dim }}>{timeAgo(fill.time)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const ORDER_FILTERS: { value: OrderFilter; label: string }[] = [
-  { value: "ALL", label: "All" },
-  { value: "WORKING", label: "Open" },
-  { value: "FILLED", label: "Filled" },
-  { value: "CANCELED", label: "Canceled" },
-  { value: "REJECTED", label: "Rejected" },
-];
-
 interface PortfolioViewProps {
-  subTab?: SubTab;
-  onSubTabChange?: (tab: SubTab) => void;
   onNavigateToSymbol?: (sym: string) => void;
   onTrade?: (
     symbol: string,
@@ -1209,32 +1067,18 @@ function ColumnSettingsPanel({
   );
 }
 
-export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
+export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, setSymbol: s.setSymbol })));
   const wsAccount = usePortfolioStreamStore((s) => s.account);
-  const wsOrders = usePortfolioStreamStore((s) => s.orders);
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
-  const [subTabInternal, setSubTabInternal] = useState<SubTab>("positions");
-  const subTab = subTabProp ?? subTabInternal;
-  const setSubTab = useCallback(
-    (tab: SubTab) => {
-      if (subTabProp === undefined) setSubTabInternal(tab);
-      onSubTabChange?.(tab);
-    },
-    [onSubTabChange, subTabProp],
-  );
-  useEffect(() => {
-    if (subTabProp !== undefined) setSubTabInternal(subTabProp);
-  }, [subTabProp]);
+  const [subTab, setSubTab] = useState<SubTab>("positions");
   const [journalPeriod, setJournalPeriod] = useState<JournalPeriod>("ytd");
   const [journalAccount, setJournalAccount] = useState("all_live");
   const accountsFingerprint = usePortfolioStreamStore((s) => s.accountsFingerprint);
   const pickerAccountCount = useSchwabAccountStore((s) => s.accounts.length);
   const viewSelection = useSchwabAccountStore((s) => s.viewSelection);
-  const ordersHash = useSchwabAccountStore((s) => s.ordersAccountHash());
-  const tradingHash = useSchwabAccountStore((s) => s.tradingAccountHash());
   const hideBalances = useSchwabAccountStore((s) => s.hideBalances);
   const multiAccount = pickerAccountCount > 1;
 
@@ -1247,16 +1091,9 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
     const a = usePortfolioStreamStore.getState().account;
     return isPortfolioAccountPayload(a) ? a : null;
   }, [accountsFingerprint, viewSelection]);
-  const [orders, setOrders] = useState<Order[]>(() => usePortfolioStreamStore.getState().orders as Order[]);
   const [loading, setLoading] = useState(() => !usePortfolioStreamStore.getState().account);
-  const [ordersLoading, setOrdersLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-  const [orderFilter, setOrderFilter] = useState<OrderFilter>("ALL");
-  const [orderSearch, setOrderSearch] = useState("");
-  const [cancellingId, setCancellingId] = useState<number | null>(null);
-  const accountHash = tradingHash ?? ordersHash;
-  const [ordersError, setOrdersError] = useState(false);
   const wsSubSentRef = useRef(false);
   const [upcomingEarnings, setUpcomingEarnings] = useState<Map<string, { date: string; time: string }>>(new Map());
 
@@ -1354,15 +1191,6 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
   }, [wsAccount, wsLastUpdate, accountsFingerprint]);
 
   useEffect(() => {
-    if (multiAccount) return;
-    if (wsOrders && wsOrders.length > 0) {
-      setOrders(wsOrders as Order[]);
-      setOrdersLoading(false);
-      setOrdersError(false);
-    }
-  }, [wsOrders, multiAccount]);
-
-  useEffect(() => {
     if (!accessToken) return;
     const sendSubscribe = () => {
       const ws = window.__alphaWs;
@@ -1404,41 +1232,7 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
     }
   }, [viewSelection]);
 
-  const fetchOrders = useCallback(async () => {
-    const hash = useSchwabAccountStore.getState().ordersAccountHash();
-    if (!hash) {
-      setOrders([]);
-      return;
-    }
-    setOrdersLoading(true);
-    setOrdersError(false);
-    try {
-      const res = await fetchWithAuth(
-        `/api/portfolio/orders?days=30&accountHash=${encodeURIComponent(hash)}`,
-      );
-      if (!res.ok) throw new Error();
-      setOrders(await res.json());
-    } catch {
-      setOrdersError(true);
-    } finally {
-      setOrdersLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!accessToken || !ordersHash) return;
-    fetchOrders();
-  }, [accessToken, ordersHash, fetchOrders]);
-
   const handleSelectSymbol = useCallback((sym: string) => { setSymbol(sym); onNavigateToSymbol?.(sym); }, [setSymbol, onNavigateToSymbol]);
-
-  const handleCancelOrder = useCallback(async (orderId: number) => {
-    if (!accountHash) return;
-    setCancellingId(orderId);
-    try { await fetchWithAuth("/api/portfolio/cancel-order", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accountHash, orderId: String(orderId) }) }); fetchOrders(); }
-    catch {} finally { setCancellingId(null); }
-  }, [accountHash, fetchOrders]);
-
 
   const streamPricesAll = useTerminalStore(s => s.streamPrices);
 
@@ -1575,13 +1369,6 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
     const bal = account.balances;
     return bal.equity > 0 && bal.maintenanceRequirement > 0 && bal.equity < bal.maintenanceRequirement;
   }, [account]);
-
-  const filteredOrders = useMemo(() => {
-    let f2 = orders;
-    if (orderFilter !== "ALL") f2 = f2.filter(o => o.status === orderFilter);
-    if (orderSearch.trim()) { const q = orderSearch.trim().toUpperCase(); f2 = f2.filter(o => o.legs.some(l => l.symbol.toUpperCase().includes(q) || l.underlyingSymbol?.toUpperCase().includes(q))); }
-    return f2;
-  }, [orders, orderFilter, orderSearch]);
 
   const hasEqSelected = useMemo(() => [...selectedKeys].some(k => k.endsWith(":EQ")), [selectedKeys]);
   const hasOptSelected = useMemo(() => [...selectedKeys].some(k => !k.endsWith(":EQ")), [selectedKeys]);
@@ -1928,7 +1715,7 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
         )}
 
         <div style={{ display: "flex", borderTop: `1px solid ${C.borderHi}` }}>
-          {(["positions", "orders", "balance", "journal"] as SubTab[]).map(tab => (
+          {(["positions", "balance", "journal"] as SubTab[]).map(tab => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
@@ -2103,57 +1890,6 @@ export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateTo
               </div>
             )}
           </>
-        )}
-
-        {subTab === "orders" && (
-          <div>
-            <div style={{ padding: "6px 10px", display: "flex", flexDirection: "column", gap: 6, borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ display: "flex" }}>
-                {ORDER_FILTERS.map(fil => (
-                  <button
-                    key={fil.value}
-                    onClick={() => setOrderFilter(fil.value)}
-                    style={{
-                      padding: "4px 10px", fontSize: 16, fontWeight: 500, letterSpacing: 0.5, fontFamily: f,
-                      textTransform: "uppercase", cursor: "pointer", color: orderFilter === fil.value ? C.gold : C.dim,
-                      background: "transparent", border: "none",
-                      borderBottom: orderFilter === fil.value ? `1px solid ${C.gold}` : "1px solid transparent",
-                    }}
-                  >
-                    {fil.label}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", border: `1px solid ${C.border}` }}>
-                <Search style={{ width: 13, height: 13, marginLeft: 8, color: C.dim, flexShrink: 0 }} />
-                <input type="text" value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="Search orders..." style={{ flex: 1, padding: "5px 7px", fontSize: 16, fontFamily: f, background: "transparent", border: "none", outline: "none", color: C.text }} />
-                {orderSearch && <button onClick={() => setOrderSearch("")} style={{ paddingRight: 6, background: "transparent", border: "none", cursor: "pointer", color: C.dim }}><XCircle style={{ width: 12, height: 12 }} /></button>}
-              </div>
-            </div>
-            {ordersLoading && orders.length === 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <Loader2 className="animate-spin" style={{ width: 14, height: 14, color: C.gold }} />
-                <div style={{ fontSize: 16, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>Loading orders</div>
-              </div>
-            ) : ordersError ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 0", gap: 8 }}>
-                <div style={{ fontSize: 16, color: `${C.red}cc` }}>Failed to load orders</div>
-                <button onClick={fetchOrders} style={{ fontSize: 16, color: C.gold, background: "transparent", border: "none", cursor: "pointer", letterSpacing: 1, fontFamily: f, textTransform: "uppercase" }}>RETRY</button>
-              </div>
-            ) : filteredOrders.length === 0 ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "48px 0" }}>
-                <div style={{ fontSize: 16, color: C.textDim }}>{orderFilter === "ALL" && !orderSearch ? "No recent orders" : "No matching orders"}</div>
-              </div>
-            ) : (
-              <>
-                <div style={{ padding: "5px 10px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${C.border}`, background: C.surface }}>
-                  <span style={{ fontSize: 16, fontWeight: 500, color: C.dim, letterSpacing: 0.8, textTransform: "uppercase" }}>{orderFilter === "ALL" ? "All" : orderFilter} Orders</span>
-                  <span style={{ fontSize: 16, color: C.dim }}>{filteredOrders.length}</span>
-                </div>
-                {filteredOrders.map(order => <OrderRow key={order.orderId} order={order} onCancel={handleCancelOrder} />)}
-              </>
-            )}
-          </div>
         )}
 
         {subTab === "balance" && bal && (

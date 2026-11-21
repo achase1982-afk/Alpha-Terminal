@@ -7,7 +7,7 @@ import {
   ListOrdered,
 } from "lucide-react";
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights" | "orders";
 type MobileBottomSlot = "watchlist" | "orders" | "activeTrader" | "portfolio" | "insights";
 
 const TAB_DEFS: Record<MobileBottomSlot, { label: string; icon: (cls: string) => React.ReactNode }> = {

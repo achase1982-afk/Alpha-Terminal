@@ -46,7 +46,6 @@ import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
 import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
 import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { BottomNav } from "@/components/BottomNav";
-import type { PortfolioSubTab } from "@/components/PortfolioView";
 import { MobileEdgeSearch } from "@/components/MobileEdgeSearch";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
 import StrategistStatusBar from "@/components/StrategistStatusBar";
@@ -127,6 +126,17 @@ function PortfolioView(props: ComponentProps<typeof import("@/components/Portfol
       fallback={<LazyViewFallback />}
       loader={() => import("@/components/PortfolioView").then((m) => ({ default: m.PortfolioView }))}
       render={(C, key) => <C key={key} {...props} />}
+    />
+  );
+}
+function OrdersView() {
+  return (
+    <LazyRouteView
+      viewName="Orders"
+      freshImportOnRetry
+      fallback={<LazyViewFallback />}
+      loader={() => import("@/components/orders/OrdersView").then((m) => ({ default: m.OrdersView }))}
+      render={(C, key) => <C key={key} />}
     />
   );
 }
@@ -214,7 +224,7 @@ function SearchOverlay(props: ComponentProps<typeof import("@/components/SearchO
 }
 
 
-type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "dashboard" | "insights";
+type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "dashboard" | "insights" | "orders";
 type ContextTab = MarketDataTab;
 
 function normalizeOptionDirection(
@@ -484,7 +494,6 @@ export default function TerminalPage() {
   const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
-  const [portfolioSubTab, setPortfolioSubTab] = useState<PortfolioSubTab>("positions");
   const [activeBottom, setActiveBottom] = useState<BottomTab>(() => {
     const fx = import.meta.env.DEV ? getAtFixtureOverride() : null;
     if (fx?.enabled) return "markets";
@@ -496,7 +505,7 @@ export default function TerminalPage() {
         : "insights";
     try {
       const saved = sessionStorage.getItem("alpha_session_tab") as BottomTab | null;
-      const valid: BottomTab[] = ["portfolio", "markets", "ai", "watchlist", "dashboard", "insights"];
+      const valid: BottomTab[] = ["portfolio", "orders", "markets", "ai", "watchlist", "dashboard", "insights"];
       return saved && valid.includes(saved) ? saved : fallback;
     } catch { return fallback; }
   });
@@ -976,6 +985,7 @@ export default function TerminalPage() {
   const mobileTabUsesInnerScroll =
     marketsMobileShellLock ||
     (activeBottom === "portfolio" && !isWide) ||
+    (activeBottom === "orders" && !isWide) ||
     (activeBottom === "insights" && !isWide) ||
     (activeBottom === "ai" && !isWide);
 
@@ -1110,7 +1120,7 @@ export default function TerminalPage() {
         return main.querySelector(".tab-inner-scroll");
       }
     }
-    if (activeBottom === "ai" || activeBottom === "portfolio" || activeBottom === "insights") {
+    if (activeBottom === "ai" || activeBottom === "portfolio" || activeBottom === "orders" || activeBottom === "insights") {
       return main.querySelector(":scope > .tab-inner-scroll");
     }
     return null;
@@ -1431,7 +1441,13 @@ export default function TerminalPage() {
 
             {activeBottom === "portfolio" && (
               <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-                <PortfolioView subTab={portfolioSubTab} onSubTabChange={setPortfolioSubTab} onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+                <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              </div>
+            )}
+
+            {activeBottom === "orders" && (
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <OrdersView />
               </div>
             )}
 
@@ -1496,13 +1512,16 @@ export default function TerminalPage() {
                 </div>
               </>
             ) : (
-              <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-w-0 app-content ${activeBottom === "dashboard" ? "relative overflow-hidden" : "pb-4 overflow-y-auto"}`} style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}>
+              <main ref={scrollRef} onScroll={handleScroll} className={`flex-1 min-w-0 app-content ${activeBottom === "dashboard" ? "relative overflow-hidden" : "pb-4 overflow-y-auto"}`} style={activeBottom === "portfolio" || activeBottom === "orders" ? { overscrollBehaviorY: "none" } : undefined}>
                 {activeBottom === "dashboard" && <DesktopGlance />}
                 {activeBottom === "ai" && (
                   <AiIntelligenceTab subTab={aiSubTab} onSubTabChange={setAiSubTab} pulseDashRef={pulseDashRef} subscribeEquitySymbols={subscribeEquitySymbols} onNavigateToMarkets={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); }} onSendToOrder={handleSendToOrder} onStrategistSendToOrder={handleStrategistSendToOrder} onReopenValidatedOrder={reopenValidatedOrder} strategistDeepLinkJobId={strategistDeepLinkJobId} onStrategistDeepLinkHandled={() => setStrategistDeepLinkJobId(null)} />
                 )}
                 {activeBottom === "portfolio" && (
-                  <PortfolioView subTab={portfolioSubTab} onSubTabChange={setPortfolioSubTab} onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+                  <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+                )}
+                {activeBottom === "orders" && (
+                  <OrdersView />
                 )}
                 {activeBottom === "insights" && (
                   <InsightsView subscribeEquitySymbols={subscribeEquitySymbols} />
@@ -1527,7 +1546,7 @@ export default function TerminalPage() {
                 ? "overflow-hidden"
                 : "overflow-y-auto"
             }`}
-            style={activeBottom === "portfolio" ? { overscrollBehaviorY: "none" } : undefined}
+            style={activeBottom === "portfolio" || activeBottom === "orders" ? { overscrollBehaviorY: "none" } : undefined}
           >
             {activeBottom === "dashboard" && <DesktopGlance />}
             {activeBottom === "markets" && (
@@ -1592,7 +1611,13 @@ export default function TerminalPage() {
 
             {activeBottom === "portfolio" && (
               <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
-                <PortfolioView subTab={portfolioSubTab} onSubTabChange={setPortfolioSubTab} onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+                <PortfolioView onNavigateToSymbol={() => setActiveBottom("markets")} onTrade={openOrderForSymbol} onRoll={(sym) => { useTerminalStore.getState().setSymbol(sym); setActiveBottom("markets"); setContextTab("options"); }} />
+              </div>
+            )}
+
+            {activeBottom === "orders" && (
+              <div className="tab-inner-scroll flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <OrdersView />
               </div>
             )}
 
@@ -1651,17 +1676,7 @@ export default function TerminalPage() {
 
       {!isWide && (
         <BottomNav
-          activeTab={
-            atOptionsChrome
-              ? "activeTrader"
-              : activeBottom === "dashboard"
-                ? "insights"
-                : activeBottom === "portfolio" && portfolioSubTab === "orders"
-                  ? "orders"
-                  : activeBottom === "portfolio"
-                    ? "portfolio"
-                    : activeBottom
-          }
+          activeTab={atOptionsChrome ? "activeTrader" : activeBottom === "dashboard" ? "insights" : activeBottom}
           onTabChange={(tab) => {
           sidebarRef.current?.clearActivePage();
           setSidebarOpen(false);
@@ -1678,14 +1693,7 @@ export default function TerminalPage() {
             const chrome = useAtChromeStore.getState();
             chrome.leaveActiveTrader();
             chrome.requestOptionsSubView("chain");
-            setActiveBottom("portfolio");
-            setPortfolioSubTab("orders");
-          } else if (tab === "portfolio") {
-            const chrome = useAtChromeStore.getState();
-            chrome.leaveActiveTrader();
-            chrome.requestOptionsSubView("chain");
-            setActiveBottom("portfolio");
-            setPortfolioSubTab("positions");
+            setActiveBottom("orders");
           } else {
             const chrome = useAtChromeStore.getState();
             chrome.leaveActiveTrader();
