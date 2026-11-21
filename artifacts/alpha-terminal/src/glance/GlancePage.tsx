@@ -494,8 +494,6 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
       </div>
 
       <section className="level-board" aria-label="Levels">
-        <LevelLine name="Call wall" tone="call" price={formatWall(callOi)} distance={pointsFromSpot(callOi, spot)} />
-        <LevelLine name="Put wall" tone="put" price={formatWall(putOi)} distance={pointsFromSpot(putOi, spot)} />
         <LevelLine
           name="Gamma flip"
           tone="flip"
