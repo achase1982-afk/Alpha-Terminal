@@ -44,7 +44,6 @@ import { parseSchwabOptionSymbol } from "@workspace/order-ticket-math";
 import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { useChainDraftSessionStore } from "@/lib/orders/chainDraftSessionStore";
 import { noteAtEntry } from "@/lib/active-trader/atInstrumentMode";
-import { MarketSessionClock } from "@/components/MarketSessionClock";
 import { BottomNav } from "@/components/BottomNav";
 import { MobileEdgeSearch } from "@/components/MobileEdgeSearch";
 import PushNotificationBanner from "@/components/PushNotificationBanner";
@@ -1276,7 +1275,6 @@ export default function TerminalPage() {
               compact={isCompactHeader}
             />
           )}
-          <MarketSessionClock compact={isWide && isCompactHeader} />
           <div
             className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
             title={streamLight === "live" ? "Live data" : streamLight === "connecting" ? "Connecting..." : "Offline"}
