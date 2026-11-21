@@ -35,9 +35,9 @@ function dayPlLine(acct: SchwabAccountSummary, hidden: boolean) {
   const pct = prev > 0 ? (day / prev) * 100 : 0;
   const color = day >= 0 ? C.green : C.red;
   const sign = day >= 0 ? "+" : "";
-  if (hidden) return <span style={{ fontSize: 12, color: C.dim }}>••••</span>;
+  if (hidden) return <span style={{ fontSize: 16, color: C.dim }}>••••</span>;
   return (
-    <span style={{ fontSize: 12, color }}>
+    <span style={{ fontSize: 16, color }}>
       {sign}
       {day.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })} (
       {pct >= 0 ? "+" : ""}
@@ -75,13 +75,13 @@ export function SchwabAccountPickerSheet() {
       <SheetContent
         side="bottom"
         className="rounded-t-2xl border-zinc-800 p-0 max-h-[85vh] overflow-hidden"
-        style={{ background: C.bg }}
+        style={{ background: C.bg, fontSize: 16 }}
       >
         <SheetHeader className="px-4 pt-4 pb-2 border-b border-zinc-800 flex flex-row items-center justify-between space-y-0">
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="text-sm font-medium"
+            className="text-base font-medium"
             style={{ color: C.gold }}
           >
             Cancel
@@ -109,12 +109,12 @@ export function SchwabAccountPickerSheet() {
               className="w-full flex items-center justify-between py-3 px-2 border-b border-zinc-800/80 text-left"
             >
               <div>
-                <div className="text-[15px] font-medium text-white">All Accounts</div>
+                <div className="text-base font-medium text-white">All Accounts</div>
                 <div className="mt-0.5">{dayPlLine(allAgg, hideBalances)}</div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="text-right">
-                  <div className="text-[15px] font-semibold text-white tabular-nums">
+                  <div className="text-base font-semibold text-white tabular-nums">
                     {fmtCurrency(allAgg.balances.liquidationValue, hideBalances)}
                   </div>
                 </div>
@@ -141,12 +141,12 @@ export function SchwabAccountPickerSheet() {
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-[15px] font-medium text-white">{acct.accountNumber}</span>
+                    <span className="text-base font-medium text-white">{acct.accountNumber}</span>
                     {isDefault && (
-                      <span className="text-[10px] uppercase tracking-wide text-zinc-300">Default</span>
+                      <span className="text-base uppercase tracking-wide text-zinc-300">Default</span>
                     )}
                   </div>
-                  <div className="text-[12px] text-zinc-500 mt-0.5">
+                  <div className="text-base text-zinc-500 mt-0.5">
                     {isPaperSchwabAccount(acct)
                       ? `${brokerLabel(acct)} · Paper · ${formatSchwabAccountType(acct.type)}`
                       : `${brokerLabel(acct)} · ${formatSchwabAccountType(acct.type)}`}
@@ -155,7 +155,7 @@ export function SchwabAccountPickerSheet() {
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-2">
                   <div className="text-right">
-                    <div className="text-[15px] font-semibold text-white tabular-nums">
+                    <div className="text-base font-semibold text-white tabular-nums">
                       {fmtCurrency(acct.balances.liquidationValue, hideBalances)}
                     </div>
                   </div>
@@ -186,7 +186,7 @@ export function SchwabAccountPickerSheet() {
             );
           })}
 
-          <p className="text-[11px] text-zinc-600 text-center mt-4 px-2">
+          <p className="text-base text-zinc-600 text-center mt-4 px-2">
             Star an account to set the default for orders and the Orders tab when viewing All Accounts.
           </p>
         </div>

@@ -96,14 +96,14 @@ export function JournalScreen(props: {
     ?? (accountId === "paper_sandbox" ? "Paper Sandbox" : accountId === "all_live" ? "All Live" : "Account");
 
   return (
-    <div ref={rootRef} data-journal-root="" style={{ color: C.text, fontFamily: "inherit" }}>
+    <div ref={rootRef} data-journal-root="" style={{ color: C.text, fontFamily: "inherit", fontSize: 16 }}>
       {props.exampleBanner && (
-        <div style={{ background: "#FFB800", color: "#1a1400", textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
+        <div style={{ background: "#FFB800", color: "#1a1400", textAlign: "center", fontSize: 16, fontWeight: 800, letterSpacing: 0.6, padding: "6px 10px" }}>
           EXAMPLE DATA — NOT ACCOUNT FIGURES
         </div>
       )}
       {props.payload?.paper && (
-        <div style={{ margin: "8px 12px 0", padding: "8px 10px", background: "#083344", color: C.paper, fontSize: 12, letterSpacing: 0.4 }}>
+        <div style={{ margin: "8px 12px 0", padding: "8px 10px", background: "#083344", color: C.paper, fontSize: 16, letterSpacing: 0.4 }}>
           PAPER SANDBOX · Simulated fills
         </div>
       )}
@@ -137,7 +137,7 @@ export function JournalScreen(props: {
             </button>
           ))}
         </div>
-        {props.syncNote && <div style={{ marginTop: 6, color: C.dim, fontSize: 12 }}>{props.syncNote}</div>}
+        {props.syncNote && <div style={{ marginTop: 6, color: C.dim, fontSize: 16 }}>{props.syncNote}</div>}
       </div>
 
       {props.loading && !props.payload && <div style={{ padding: 16, color: C.muted }}>Loading journal…</div>}
@@ -177,7 +177,7 @@ export function JournalScreen(props: {
       )}
       {infoOpen && props.payload && (
         <Sheet title="S&P 500 comparison" onClose={() => setInfoOpen(false)}>
-          <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.45, margin: "8px 12px 16px" }}>{props.payload.comparison.footnote}</p>
+          <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.45, margin: "8px 12px 16px" }}>{props.payload.comparison.footnote}</p>
         </Sheet>
       )}
     </div>
@@ -200,13 +200,13 @@ function AccountInsights(props: { payload: InsightsPayload; onStrategy: (key: st
     <div style={{ padding: "12px 12px 28px" }}>
       <div data-journal-headline="" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-end" }}>
         <div>
-          <div style={{ fontSize: 12, letterSpacing: 1, color: payload.headline ? signColor(payload.headline.netPnl) : C.muted }}>{payload.headline?.label ?? "FLAT"}</div>
+          <div style={{ fontSize: 16, letterSpacing: 1, color: payload.headline ? signColor(payload.headline.netPnl) : C.muted }}>{payload.headline?.label ?? "FLAT"}</div>
           <div style={{ fontSize: 34, fontWeight: 650, letterSpacing: -0.8, color: payload.headline ? signColor(payload.headline.netPnl) : C.text }}>{payload.headline ? money(payload.headline.netPnl) : "—"}</div>
-          <div style={{ color: C.muted, fontSize: 13 }}>Net after fees · {payload.headline?.closedTrades ?? 0} closed trades</div>
+          <div style={{ color: C.muted, fontSize: 16 }}>Net after fees · {payload.headline?.closedTrades ?? 0} closed trades</div>
         </div>
         <Spark points={payload.account?.curve ?? []} />
       </div>
-      <button type="button" data-journal-benchmark="" onClick={props.onInfo} style={{ marginTop: 8, background: "transparent", border: "none", color: C.muted, fontSize: 13, textAlign: "left", padding: 0, minHeight: 44 }}>
+      <button type="button" data-journal-benchmark="" onClick={props.onInfo} style={{ marginTop: 8, background: "transparent", border: "none", color: C.muted, fontSize: 16, textAlign: "left", padding: 0, minHeight: 44 }}>
         <BenchmarkLine payload={payload} />
       </button>
       {payload.empty && <div data-journal-empty="" style={{ marginTop: 16, color: C.muted }}>{payload.emptyMessage}</div>}
@@ -228,14 +228,14 @@ function AccountInsights(props: { payload: InsightsPayload; onStrategy: (key: st
               <span>{row.label}{row.trades < 10 ? <span style={{ color: C.dim }}> n={row.trades}</span> : null}</span>
               <span style={{ color: signColor(row.netPnl) }}>{money(row.netPnl)} ›</span>
             </div>
-            <div style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>{row.trades} trades · exp {row.expectancy == null ? "—" : money(row.expectancy)}</div>
+            <div style={{ color: C.dim, fontSize: 16, marginTop: 4 }}>{row.trades} trades · exp {row.expectancy == null ? "—" : money(row.expectancy)}</div>
             <div style={{ marginTop: 6, height: 3, background: "#27272a" }}>
               <div style={{ width: `${Math.min(100, (Math.abs(row.netPnl) / maxAbs) * 100)}%`, height: 3, background: signColor(row.netPnl) }} />
             </div>
           </button>
         ))}
       </div>
-      {payload.takeaway && <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.45 }}>{payload.takeaway}</p>}
+      {payload.takeaway && <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.45 }}>{payload.takeaway}</p>}
     </div>
   );
 }
@@ -274,8 +274,8 @@ function MetricStrip(props: { metrics: InsightSlice["metrics"] }) {
 function Cell(props: { label: string; value: string; color?: string }) {
   return (
     <div style={{ minWidth: 0 }}>
-      <div style={{ fontSize: 10, letterSpacing: 0.4, color: C.dim }}>{props.label}</div>
-      <div style={{ fontSize: 13, color: props.color ?? C.text, fontVariantNumeric: "tabular-nums" }}>{props.value}</div>
+      <div style={{ fontSize: 16, letterSpacing: 0.4, color: C.dim }}>{props.label}</div>
+      <div style={{ fontSize: 16, color: props.color ?? C.text, fontVariantNumeric: "tabular-nums" }}>{props.value}</div>
     </div>
   );
 }
@@ -285,7 +285,7 @@ function AssetSplit(props: { rows: InsightsPayload["assetClasses"] }) {
   return (
     <div style={{ marginTop: 14 }}>
       {props.rows.map((row) => (
-        <div key={row.key} style={{ display: "flex", justifyContent: "space-between", color: C.muted, fontSize: 13, marginBottom: 4 }}>
+        <div key={row.key} style={{ display: "flex", justifyContent: "space-between", color: C.muted, fontSize: 16, marginBottom: 4 }}>
           <span>{row.label}</span>
           <span>{row.trades} · exp {row.expectancy == null ? "—" : money(row.expectancy)}</span>
         </div>
@@ -309,9 +309,9 @@ function Drilldown(props: { payload: InsightsPayload; strategy: string; onTrades
     <div data-journal-drill="" style={{ padding: "12px 12px 28px" }}>
       <div data-journal-headline="" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
         <div>
-          <div style={{ fontSize: 12, letterSpacing: 1, color: signColor(slice.metrics.netPnl) }}>{slice.metrics.netPnl > 0 ? "IN THE BLACK" : slice.metrics.netPnl < 0 ? "IN THE RED" : "FLAT"}</div>
+          <div style={{ fontSize: 16, letterSpacing: 1, color: signColor(slice.metrics.netPnl) }}>{slice.metrics.netPnl > 0 ? "IN THE BLACK" : slice.metrics.netPnl < 0 ? "IN THE RED" : "FLAT"}</div>
           <div style={{ fontSize: 34, fontWeight: 650, color: signColor(slice.metrics.netPnl) }}>{money(slice.metrics.netPnl)}</div>
-          <div style={{ color: C.muted, fontSize: 13 }}>Net after fees · {slice.metrics.closedTrades} closed trades</div>
+          <div style={{ color: C.muted, fontSize: 16 }}>Net after fees · {slice.metrics.closedTrades} closed trades</div>
         </div>
         <Spark points={slice.curve ?? []} />
       </div>
@@ -322,22 +322,22 @@ function Drilldown(props: { payload: InsightsPayload; strategy: string; onTrades
         ))}
       </div>
       {tab === "hold" && hold && (
-        <div style={{ color: C.muted, fontSize: 13, marginTop: 8 }}>Avg Positive Hold: {holdPhrase(hold.avgPositiveMin)} · Avg Negative Hold: {holdPhrase(hold.avgNegativeMin)}</div>
+        <div style={{ color: C.muted, fontSize: 16, marginTop: 8 }}>Avg Positive Hold: {holdPhrase(hold.avgPositiveMin)} · Avg Negative Hold: {holdPhrase(hold.avgNegativeMin)}</div>
       )}
       <div style={{ marginTop: 8 }}>
         {(cuts ?? []).filter((cut) => cut.trades > 0).map((cut) => (
-          <div key={cut.key} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
+          <div key={cut.key} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 16 }}>
             <span>{cut.label} · {cut.trades}</span>
             <span style={{ color: signColor(cut.netPnl) }}>{money(cut.netPnl)}</span>
           </div>
         ))}
         {(cuts ?? []).every((cut) => cut.trades === 0) && <div style={{ color: C.muted, marginTop: 8 }}>No closed trades in this period.</div>}
       </div>
-      {slice.recordedLine && <p style={{ color: C.muted, fontSize: 13 }}>{slice.recordedLine}</p>}
-      <p style={{ color: C.muted, fontSize: 14, lineHeight: 1.45 }}>{drillSummary(props.strategy, slice)}</p>
+      {slice.recordedLine && <p style={{ color: C.muted, fontSize: 16 }}>{slice.recordedLine}</p>}
+      <p style={{ color: C.muted, fontSize: 16, lineHeight: 1.45 }}>{drillSummary(props.strategy, slice)}</p>
       <div style={{ marginTop: 8 }}>
         {slice.closedTrades.map((trade) => (
-          <div key={trade.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
+          <div key={trade.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 16 }}>
             <span>{trade.label}<div style={{ color: C.dim }}>{trade.detail}</div></span>
             <span style={{ color: signColor(trade.netPnl) }}>{money(trade.netPnl)}</span>
           </div>
@@ -409,11 +409,11 @@ function TradeCard(props: { row: PositionView; open: boolean; onToggle: () => vo
   return (
     <button type="button" onClick={props.onToggle} style={{ width: "100%", textAlign: "left", background: "transparent", color: C.text, border: "none", borderTop: `1px solid ${C.border}`, padding: "12px 0", minHeight: 44, cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span>{row.label}<div style={{ color: C.dim, fontSize: 12 }}>{row.strategy} · {row.statusLabel}</div></span>
+        <span>{row.label}<div style={{ color: C.dim, fontSize: 16 }}>{row.strategy} · {row.statusLabel}</div></span>
         <span style={{ color: signColor(row.netPnl) }}>{row.netPnl == null ? "—" : money(row.netPnl)}</span>
       </div>
       {props.open && (
-        <div style={{ marginTop: 8, color: C.muted, fontSize: 13 }}>
+        <div style={{ marginTop: 8, color: C.muted, fontSize: 16 }}>
           <div>{row.detail}</div>
           <div>Fees {unsignedMoney(row.fees ?? null)}</div>
           <div style={{ color: row.excursion?.record === "full" ? C.muted : C.dim }}>{row.excursion?.label ?? "Not recorded"}</div>
@@ -509,7 +509,7 @@ function CsvSheet(props: {
           }}
         />
       </label>
-      {note && <div style={{ color: C.muted, fontSize: 13, padding: "8px 12px" }}>{note}</div>}
+      {note && <div style={{ color: C.muted, fontSize: 16, padding: "8px 12px" }}>{note}</div>}
     </Sheet>
   );
 }
@@ -525,7 +525,7 @@ const pill: CSSProperties = {
   background: "transparent",
   color: C.text,
   cursor: "pointer",
-  fontSize: 13,
+  fontSize: 16,
 };
 
 const sheetRow: CSSProperties = {

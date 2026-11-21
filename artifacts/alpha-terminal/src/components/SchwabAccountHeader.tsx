@@ -38,7 +38,7 @@ export function SchwabAccountHeader({ compact = false }: SchwabAccountHeaderProp
       >
         <span
           style={{
-            fontSize: compact ? 13 : 15,
+            fontSize: 16,
             fontWeight: 600,
             color: C.text,
             letterSpacing: -0.2,
