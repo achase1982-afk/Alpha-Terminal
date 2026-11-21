@@ -53,9 +53,16 @@
    the width is pre-expanded by 1/scale so the scaled result fills the box. */
 @media (max-width: 899px) {
   .ipad-cockpit[data-fit-scale] {
+    /* inset: 0 pins all four edges, which ignores a larger width.
+       Release the far edges so the pre-zoom box can be 1/scale of the viewport. */
+    top: 0;
+    left: 0;
+    right: auto;
+    bottom: auto;
     zoom: var(--cockpit-scale, 1);
-    width: calc(100% / var(--cockpit-scale, 1));
-    height: calc(100% / var(--cockpit-scale, 1));
+    width: calc(100vw / var(--cockpit-scale, 1));
+    height: calc(100dvh / var(--cockpit-scale, 1));
+    max-width: none;
   }
 }
 

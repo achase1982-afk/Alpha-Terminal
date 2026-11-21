@@ -38,21 +38,27 @@ interface Toast {
   text: string;
 }
 
-const FIT_REFERENCE_WIDTH_PX = 768;
+/** Width the cockpit is laid out at before it is scaled into the mobile shell. */
+const FIT_REFERENCE_WIDTH_PX = 900;
 const FIT_REFERENCE_HEIGHT_PX = 706;
 
 function useFitScale(): number {
   const [scale, setScale] = useState(1);
   useEffect(() => {
     const update = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const vv = window.visualViewport;
+      const w = vv?.width ?? window.innerWidth;
+      const h = vv?.height ?? window.innerHeight;
       const next = Math.min(1, w / FIT_REFERENCE_WIDTH_PX, h / FIT_REFERENCE_HEIGHT_PX);
       setScale(Number.isFinite(next) && next > 0 ? next : 1);
     };
     update();
     window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    window.visualViewport?.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.visualViewport?.removeEventListener("resize", update);
+    };
   }, []);
   return scale;
 }
