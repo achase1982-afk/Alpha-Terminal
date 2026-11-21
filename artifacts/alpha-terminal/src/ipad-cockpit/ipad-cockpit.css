@@ -48,6 +48,17 @@
   box-sizing: border-box;
 }
 
+/* Narrow split-screen slices: scale the whole cockpit down proportionally.
+   Uses zoom so the existing layout, order, and sizing are preserved;
+   the width is pre-expanded by 1/scale so the scaled result fills the box. */
+@media (max-width: 899px) {
+  .ipad-cockpit[data-fit-scale] {
+    zoom: var(--cockpit-scale, 1);
+    width: calc(100% / var(--cockpit-scale, 1));
+    height: calc(100% / var(--cockpit-scale, 1));
+  }
+}
+
 .ipad-cockpit button {
   font-family: inherit;
   font-variant-numeric: inherit;
