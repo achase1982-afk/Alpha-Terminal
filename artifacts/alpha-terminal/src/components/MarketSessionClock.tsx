@@ -161,22 +161,22 @@ export function MarketSessionClock({ compact = false }: { compact?: boolean }) {
   }
 
   return (
-    <div className="flex items-center gap-1 min-w-0 ml-auto">
+    <div className="terminal-session-clock flex items-center gap-1 min-w-0 max-w-[42%] sm:max-w-none shrink ml-auto overflow-hidden">
       <span
-        className="text-[13px] font-light whitespace-nowrap"
+        className="text-[13px] font-light truncate"
         style={{ color: info.color, fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.04em" }}
       >
         {info.label}
       </span>
-      <span className="text-[#3a3a3c] text-[9px]">|</span>
+      <span className="text-[#3a3a3c] text-[9px] shrink-0 hidden sm:inline">|</span>
       <span
-        className="text-[11px] font-light text-[#a1a1aa] whitespace-nowrap"
+        className="text-[11px] font-light text-[#a1a1aa] truncate hidden sm:inline"
         style={{ fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.04em" }}
       >
         {info.countdownLabel}
       </span>
       <span
-        className="text-[14px] font-light tabular-nums whitespace-nowrap text-white"
+        className="text-[14px] font-light tabular-nums truncate text-white shrink-0"
         style={{ fontFamily: "Inter, system-ui, sans-serif", letterSpacing: "0.03em" }}
       >
         {info.countdown}
