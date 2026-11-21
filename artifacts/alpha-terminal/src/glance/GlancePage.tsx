@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link } from "wouter";
 import { useQuote } from "@/hooks/useQuote";
 import { useSpotQuoteTickColor } from "@/lib/active-trader/atSpotDirection";
@@ -212,6 +212,31 @@ function PulseQuote({ symbol, quote }: { symbol: string; quote: ReturnType<typeo
   );
 }
 
+/** Ladder (440) plus a right pane wide enough for the two nowrap headline lines. */
+const GLANCE_FIT_WIDTH_PX = 1520;
+
+function useGlanceFitScale() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const target = ref.current?.parentElement;
+    const update = () => {
+      const w = target?.clientWidth || window.innerWidth;
+      const next = Math.min(1, w / GLANCE_FIT_WIDTH_PX);
+      setScale(Number.isFinite(next) && next > 0 ? next : 1);
+    };
+    update();
+    const observer = target ? new ResizeObserver(update) : null;
+    if (target) observer?.observe(target);
+    window.addEventListener("resize", update);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+  return { ref, scale };
+}
+
 export default function GlancePage({ embedded = false }: { embedded?: boolean }) {
   const live = useGlanceLive();
   const spxQuote = useQuote("$SPX");
@@ -246,6 +271,7 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
   const [panel, setPanel] = useState<"settings" | "details" | null>(null);
   const [held, setHeld] = useState<TrendReading | null>(null);
   const [lastPnf, setLastPnf] = useState<PnfResult | null>(null);
+  const fit = useGlanceFitScale();
 
   useEffect(() => {
     if (embedded) return;
@@ -356,7 +382,14 @@ export default function GlancePage({ embedded = false }: { embedded?: boolean })
     : live.traceBars.map((bar) => ({ t: bar.t, c: bar.c }));
 
   return (
-    <div className={embedded ? "glance glance-embedded" : "glance"} data-testid="spx-glance" data-mode={mode}>
+    <div
+      ref={fit.ref}
+      className={embedded ? "glance glance-embedded" : "glance"}
+      data-testid="spx-glance"
+      data-mode={mode}
+      data-fit-scale=""
+      style={{ "--glance-scale": fit.scale } as CSSProperties}
+    >
       <header className="cmd">
         <div className="cmd-id">
           {embedded ? null : (
