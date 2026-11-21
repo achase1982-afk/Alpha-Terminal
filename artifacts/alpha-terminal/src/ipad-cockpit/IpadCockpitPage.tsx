@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Blotter } from "./Blotter";
 import { CommandStrip } from "./CommandStrip";
 import { formatEtClock } from "./clock";
@@ -38,6 +38,25 @@ interface Toast {
   text: string;
 }
 
+const FIT_REFERENCE_WIDTH_PX = 768;
+const FIT_REFERENCE_HEIGHT_PX = 706;
+
+function useFitScale(): number {
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const update = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const next = Math.min(1, w / FIT_REFERENCE_WIDTH_PX, h / FIT_REFERENCE_HEIGHT_PX);
+      setScale(Number.isFinite(next) && next > 0 ? next : 1);
+    };
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+  return scale;
+}
+
 function priceOf(book: (typeof SCENARIOS)["bear"]["book"], leg: { strike: number; right: "C" | "P"; side: "BUY" | "SELL" }) {
   const quote = book.get(leg.strike);
   return quote ? quotePrice(quote, leg) : 0.05;
@@ -57,6 +76,7 @@ function orderSummary(legs: readonly IpadStagedLeg[], qty: number, limit: number
 }
 
 export default function IpadCockpitPage() {
+  const fitScale = useFitScale();
   const [scenarioId, setScenarioId] = useState<IpadScenarioId>("bear");
   const scenario = SCENARIOS[scenarioId];
   const [expiryIdx, setExpiryIdx] = useState(0);
@@ -206,7 +226,13 @@ export default function IpadCockpitPage() {
   }
 
   return (
-    <div className="ipad-cockpit" data-testid="ipad-cockpit" data-scenario={scenarioId}>
+    <div
+      className="ipad-cockpit"
+      data-testid="ipad-cockpit"
+      data-scenario={scenarioId}
+      data-fit-scale=""
+      style={{ "--cockpit-scale": fitScale } as CSSProperties}
+    >
       <HeaderBar
         scenario={scenario}
         expiry={expiry}
