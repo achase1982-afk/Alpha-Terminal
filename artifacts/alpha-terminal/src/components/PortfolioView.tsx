@@ -46,7 +46,8 @@ const C = {
 
 const f = `'Inter','SF Pro Text',-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif`;
 
-type SubTab = "positions" | "orders" | "balance" | "journal";
+export type PortfolioSubTab = "positions" | "orders" | "balance" | "journal";
+type SubTab = PortfolioSubTab;
 type OrderFilter = "ALL" | "WORKING" | "FILLED" | "CANCELED" | "REJECTED";
 type MetricKey = "plOpen" | "buyingPower" | "margin" | "availableFunds" | "cashBalance" | "posEquity";
 type ColumnKey =
@@ -991,6 +992,8 @@ const ORDER_FILTERS: { value: OrderFilter; label: string }[] = [
 ];
 
 interface PortfolioViewProps {
+  subTab?: SubTab;
+  onSubTabChange?: (tab: SubTab) => void;
   onNavigateToSymbol?: (sym: string) => void;
   onTrade?: (
     symbol: string,
@@ -1206,14 +1209,25 @@ function ColumnSettingsPanel({
   );
 }
 
-export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
+export function PortfolioView({ subTab: subTabProp, onSubTabChange, onNavigateToSymbol, onTrade, onRoll }: PortfolioViewProps) {
   const { accessToken, setSymbol } = useTerminalStore(useShallow((s) => ({ accessToken: s.accessToken, setSymbol: s.setSymbol })));
   const wsAccount = usePortfolioStreamStore((s) => s.account);
   const wsOrders = usePortfolioStreamStore((s) => s.orders);
   const wsLastUpdate = usePortfolioStreamStore((s) => s.lastUpdate);
   const portfolioStatus = usePortfolioStreamStore((s) => s.portfolioStatus);
 
-  const [subTab, setSubTab] = useState<SubTab>("positions");
+  const [subTabInternal, setSubTabInternal] = useState<SubTab>("positions");
+  const subTab = subTabProp ?? subTabInternal;
+  const setSubTab = useCallback(
+    (tab: SubTab) => {
+      if (subTabProp === undefined) setSubTabInternal(tab);
+      onSubTabChange?.(tab);
+    },
+    [onSubTabChange, subTabProp],
+  );
+  useEffect(() => {
+    if (subTabProp !== undefined) setSubTabInternal(subTabProp);
+  }, [subTabProp]);
   const [journalPeriod, setJournalPeriod] = useState<JournalPeriod>("ytd");
   const [journalAccount, setJournalAccount] = useState("all_live");
   const accountsFingerprint = usePortfolioStreamStore((s) => s.accountsFingerprint);
