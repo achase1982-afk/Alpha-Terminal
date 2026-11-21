@@ -1,50 +1,51 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
-  BrainCircuit,
-  Activity,
   Briefcase,
   ChartCandlestick,
+  ClipboardList,
   LineChart,
   ListOrdered,
 } from "lucide-react";
 
 type BottomTab = "scanner" | "markets" | "ai" | "portfolio" | "watchlist" | "activeTrader" | "insights";
+type MobileBottomSlot = "watchlist" | "orders" | "activeTrader" | "portfolio" | "insights";
 
-const TAB_DEFS: Record<BottomTab, { label: string; icon: (cls: string) => React.ReactNode }> = {
-  scanner:      { label: "SCANNER",   icon: (c) => <BrainCircuit className={c} /> },
-  markets:      { label: "MARKETS",   icon: (c) => <Activity className={c} /> },
-  ai:           { label: "AI",        icon: (c) => <BrainCircuit className={c} /> },
+const TAB_DEFS: Record<MobileBottomSlot, { label: string; icon: (cls: string) => React.ReactNode }> = {
   portfolio:    { label: "PORTFOLIO", icon: (c) => <Briefcase className={c} /> },
   watchlist:    { label: "WATCHLIST", icon: (c) => <ListOrdered className={c} /> },
+  orders:       { label: "ORDERS",    icon: (c) => <ClipboardList className={c} /> },
   activeTrader: { label: "TRADER",    icon: (c) => <ChartCandlestick className={c} /> },
   insights:     { label: "INSIGHTS",  icon: (c) => <LineChart className={c} /> },
 };
 
 /** Mobile bottom bar slots — AI hub lives in the hamburger menu instead. */
-const MOBILE_BOTTOM_SLOTS: BottomTab[] = ["watchlist", "markets", "activeTrader", "portfolio", "insights"];
-const DEFAULT_ORDER: BottomTab[] = MOBILE_BOTTOM_SLOTS;
-const STORAGE_KEY = "alphaTerminalBottomNavOrder:v4";
+const MOBILE_BOTTOM_SLOTS: MobileBottomSlot[] = ["watchlist", "orders", "activeTrader", "portfolio", "insights"];
+const DEFAULT_ORDER: MobileBottomSlot[] = MOBILE_BOTTOM_SLOTS;
+const STORAGE_KEY = "alphaTerminalBottomNavOrder:v6";
 const LEGACY_STORAGE_KEYS = [
+  "alphaTerminalBottomNavOrder:v5",
+  "alphaTerminalBottomNavOrder:v4",
   "alphaTerminalBottomNavOrder:v3",
   "alphaTerminalBottomNavOrder:v2",
 ] as const;
 const LONG_PRESS_MS = 450;
 const TAP_SLOP_PX = 18;
 
-function migrateTabId(item: string): BottomTab | null {
-  const mapped = item === "ai" ? "portfolio" : item;
-  if (typeof mapped !== "string" || !MOBILE_BOTTOM_SLOTS.includes(mapped as BottomTab)) return null;
-  return mapped as BottomTab;
+function migrateTabId(item: string): MobileBottomSlot | null {
+  const mapped =
+    item === "ai" ? "portfolio" : item === "markets" ? "orders" : item;
+  if (typeof mapped !== "string" || !MOBILE_BOTTOM_SLOTS.includes(mapped as MobileBottomSlot)) return null;
+  return mapped as MobileBottomSlot;
 }
 
-function loadOrder(): BottomTab[] {
+function loadOrder(): MobileBottomSlot[] {
   try {
     for (const key of [STORAGE_KEY, ...LEGACY_STORAGE_KEYS]) {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) continue;
-      const unique: BottomTab[] = [];
+      const unique: MobileBottomSlot[] = [];
       for (const item of parsed) {
         const tab = migrateTabId(item);
         if (!tab || unique.includes(tab)) continue;
@@ -75,21 +76,21 @@ function reorder<T>(arr: T[], from: number, to: number): T[] {
 }
 
 interface BottomNavProps {
-  activeTab: BottomTab;
-  onTabChange: (tab: BottomTab) => void;
+  activeTab: BottomTab | MobileBottomSlot;
+  onTabChange: (tab: MobileBottomSlot) => void;
 }
 
 export function BottomNav({
   activeTab,
   onTabChange,
 }: BottomNavProps) {
-  const [order, setOrder] = useState<BottomTab[]>(loadOrder);
+  const [order, setOrder] = useState<MobileBottomSlot[]>(loadOrder);
   const [jiggling, setJiggling] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [dragTabId, setDragTabId] = useState<BottomTab | null>(null);
+  const [dragTabId, setDragTabId] = useState<MobileBottomSlot | null>(null);
   const [dragX, setDragX] = useState(0);
   const [dragOriginX, setDragOriginX] = useState(0);
-  const [previewOrder, setPreviewOrder] = useState<BottomTab[]>([]);
+  const [previewOrder, setPreviewOrder] = useState<MobileBottomSlot[]>([]);
 
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchStartX = useRef(0);
@@ -104,7 +105,7 @@ export function BottomNav({
   const blockClicksUntil = useRef(0);
   const scrolling = useRef(false);
 
-  const saveOrder = useCallback((newOrder: BottomTab[]) => {
+  const saveOrder = useCallback((newOrder: MobileBottomSlot[]) => {
     setOrder(newOrder);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newOrder));
   }, []);
