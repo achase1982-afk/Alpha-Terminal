@@ -31,6 +31,12 @@ export const AtLegBuildTray = memo(function AtLegBuildTray({ legs, qtyByKey, onR
         return (
           <div
             key={`${key}|${leg.side}`}
+            data-at-leg
+            data-at-leg-strike={leg.contract.strike}
+            data-at-leg-type={leg.type}
+            data-at-leg-side={leg.side}
+            data-at-leg-expiry={leg.contract.expiration ?? leg.expiration}
+            data-at-leg-qty={qty}
             className="flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-md border"
             style={{ borderColor: `${tint}55`, background: "rgba(255,255,255,0.04)" }}
           >
