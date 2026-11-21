@@ -13,7 +13,7 @@
   inset: 0;
   z-index: 30;
   display: grid;
-  grid-template-rows: auto minmax(280px, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   align-content: stretch;
   gap: 4px;
   padding: 0 12px;
@@ -270,17 +270,20 @@
   min-height: 0;
   max-height: 100%;
   overflow: hidden;
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
 }
 
 .glance-at-col {
   width: 440px;
   max-width: 100%;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 8px;
   justify-self: start;
   background: var(--glance-bg-deep);
   border: 1px solid var(--glance-border);
@@ -289,7 +292,8 @@
 }
 
 .glance-at-col > .glance-ladder {
-  flex: none;
+  flex: 1 1 auto;
+  min-height: 0;
   height: auto;
   width: 440px;
   max-width: 100%;
@@ -361,13 +365,6 @@
   overflow: auto;
 }
 
-/* 16 strike rows: the old 12-row window plus four cells. */
-.glance-at-col > .glance-ladder .glance-ladder-scroll {
-  flex: none;
-  height: 544px;
-  min-height: 544px;
-}
-
 .desk-trace {
   display: none;
 }
@@ -379,6 +376,37 @@
 
 .levels-wrap > .levels {
   grid-column: 2;
+}
+
+.level-board {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: 8px 0 4px;
+}
+
+.level-line {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.level-line-name {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.level-line-px {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.level-line-dist {
+  color: var(--glance-text-soft);
+  font-size: 20px;
 }
 
 .wall-name {
@@ -1001,7 +1029,8 @@
   .headline,
   .glance-body,
   .levels-wrap,
-  .pulse {
+  .pulse,
+  .level-board {
     display: flex;
     flex-direction: column;
   }
