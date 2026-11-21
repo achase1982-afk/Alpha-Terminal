@@ -958,7 +958,7 @@ function ColumnSettingsPanel({
       <div
         style={{
           position: "fixed", top: headerBottom, left: 0, right: 0, bottom: 0, zIndex: 50,
-          background: "#111", fontFamily: f, display: "flex", flexDirection: "column",
+          background: C.bg, fontFamily: f, display: "flex", flexDirection: "column",
           overflow: "hidden",
         }}
         onClick={e => e.stopPropagation()}
@@ -987,7 +987,7 @@ function ColumnSettingsPanel({
                 style={{
                   display: "flex", alignItems: "center", padding: "0 16px", height: ITEM_H,
                   borderBottom: `1px solid ${C.border}`,
-                  background: isActive ? "#1e1e1e" : "transparent",
+                  background: isActive ? C.surface : "transparent",
                   transform: isActive ? "scale(1.02)" : "scale(1)",
                   boxShadow: isActive ? "0 4px 20px rgba(0,0,0,0.6)" : "none",
                   zIndex: isActive ? 10 : 0,
@@ -1627,7 +1627,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
           onClick={() => setShowSettings(false)}
         >
           <div
-            style={{ margin: "48px 8px 0", background: "#1a1a1a", border: `1px solid ${C.borderHi}`, width: 220, padding: 0, fontFamily: f }}
+            style={{ margin: "48px 8px 0", background: C.surface, border: `1px solid ${C.borderHi}`, width: 220, padding: 0, fontFamily: f }}
             onClick={e => e.stopPropagation()}
           >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: `1px solid ${C.border}` }}>
