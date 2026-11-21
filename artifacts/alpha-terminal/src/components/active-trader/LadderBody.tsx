@@ -112,6 +112,8 @@ interface LadderBodyProps {
   }) => void;
   chainQuoteTs?: number;
   expiryLabel: string;
+  /** Glance only: wall rows keep the color bar and use the same strike type as the rest. */
+  plainWallStrike?: boolean;
 }
 
 export type AtTradeContext =
@@ -602,8 +604,10 @@ function strikeRailTypography(
   spotRow: boolean,
   callWallRow: boolean,
   putWallRow: boolean,
+  plainWall = false,
 ): { fontSize: number; fontWeight: number; color: string; letterSpacing: string } {
-  const wallEmphasis = !spotRow && (callWallRow || putWallRow);
+  const wallBar = !spotRow && (callWallRow || putWallRow);
+  const wallEmphasis = !plainWall && wallBar;
   const emphasized = spotRow || wallEmphasis;
   const fontSize = spotRow
     ? strikeRailFontSize(strike, true)
@@ -613,7 +617,7 @@ function strikeRailTypography(
   return {
     fontSize,
     fontWeight: emphasized ? strikeRailFontWeight(true) : strikeRailFontWeight(false),
-    color: emphasized ? AT_SPOT_PILL_TEXT : WHITE,
+    color: spotRow || wallBar ? AT_SPOT_PILL_TEXT : WHITE,
     letterSpacing: emphasized ? "-0.02em" : STRIKE_RAIL_LETTER_SPACING,
   };
 }
@@ -678,6 +682,7 @@ type LadderRowViewProps = {
   chainQuoteTs: number;
   clockMinute: number;
   expiryLabel: string;
+  plainWallStrike: boolean;
 };
 
 /** One strike. Every prop is a primitive or a stable reference, so quotes and taps elsewhere skip it. */
@@ -700,6 +705,7 @@ const LadderRowView = memo(function LadderRowView({
   chainQuoteTs,
   clockMinute,
   expiryLabel,
+  plainWallStrike,
 }: LadderRowViewProps) {
   renderProbe("row");
   const rowStyle: CSSProperties = {
@@ -714,7 +720,7 @@ const LadderRowView = memo(function LadderRowView({
   };
 
   const strikeBg = strikeColumnBackground(spotRow, gammaFlipRow, callWallRow, putWallRow);
-  const strikeType = strikeRailTypography(row.strike, spotRow, callWallRow, putWallRow);
+  const strikeType = strikeRailTypography(row.strike, spotRow, callWallRow, putWallRow, plainWallStrike);
 
   return (
     <div
@@ -806,7 +812,7 @@ const LadderRowView = memo(function LadderRowView({
             lines={["GAMMA", "FLIP"]}
           />
         ) : null}
-        {callWallRow && !gammaFlipRow ? (
+        {callWallRow && !gammaFlipRow && !plainWallStrike ? (
           <StrikeSideTag
             marker="call-wall"
             color={GOLD}
@@ -814,7 +820,7 @@ const LadderRowView = memo(function LadderRowView({
             nudge={putWallRow ? -8 : 0}
           />
         ) : null}
-        {putWallRow && !gammaFlipRow ? (
+        {putWallRow && !gammaFlipRow && !plainWallStrike ? (
           <StrikeSideTag
             marker="put-wall"
             color={PUT_WALL}
@@ -1111,6 +1117,7 @@ export const LadderBody = memo(function LadderBody(props: LadderBodyProps) {
             chainQuoteTs={props.chainQuoteTs ?? 0}
             clockMinute={clockMinute}
             expiryLabel={props.expiryLabel}
+            plainWallStrike={props.plainWallStrike === true}
           />
         );
       })}

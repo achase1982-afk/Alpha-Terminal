@@ -256,6 +256,7 @@ export function GlanceLadder({
           rowByStrike={rowByStrike}
           rowHeight={AT_LADDER_ROW_H}
           expiryLabel={today}
+          plainWallStrike
         />
       </div>
     </section>
