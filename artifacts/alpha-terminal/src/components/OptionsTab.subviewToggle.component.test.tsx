@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { OptionsTab } from "./OptionsTab";
 
 vi.mock("@/lib/active-trader/atGlanceFeature", () => ({
@@ -177,6 +177,9 @@ describe("OptionsTab subview toggle", () => {
 
   it("centers bid, ask, and volume numbers in each chain cell", async () => {
     render(<OptionsTab />);
+
+    const expirations = await screen.findAllByRole("button", { expanded: false });
+    fireEvent.click(expirations[0]!);
 
     const prices = await waitFor(() => {
       const nodes = document.querySelectorAll("[data-ui-audit='chain-bid-cell']");
