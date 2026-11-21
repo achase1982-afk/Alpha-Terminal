@@ -7,7 +7,6 @@ import { AtSymbolHeader } from "@/components/active-trader/AtSymbolHeader";
 import { useAtChromeStore } from "@/lib/active-trader/atChromeStore";
 import { atGlanceTopEnabled } from "@/lib/active-trader/atGlanceFeature";
 import { TradingChart } from "@/components/TradingChart";
-import { MacroBar } from "@/components/MacroBar";
 import { MarketDataTabs, type MarketDataTab } from "@/components/MarketDataTabs";
 import { useTerminalStore, loadWatchlistsFromServer } from "@/lib/store";
 import { useUICustomizationStore } from "@/lib/ui-customization-store";
@@ -481,7 +480,6 @@ export default function TerminalPage() {
   const [historyTimedOut, setHistoryTimedOut] = useState(false);
   const [isScrolledRaw, setIsScrolledRaw] = useState(false);
   const headerMode = useUICustomizationStore((s) => s.headerMode);
-  const showMiniCards = useUICustomizationStore((s) => s.showMiniCards);
   const showMobileEdgeSearch = useUICustomizationStore((s) => s.showMobileEdgeSearch);
   const isCompact = headerMode === "collapsed";
   const isScrolled = isCompact ? true : headerMode === "expanded" ? false : isScrolledRaw;
@@ -1373,7 +1371,6 @@ export default function TerminalPage() {
 
             {activeBottom === "markets" && (
               <div className="flex flex-1 min-h-0 flex-col">
-                {showMiniCards && !isCompact && <MacroBar />}
                 <div ref={stickyWrapRef} className="sticky top-0 z-40 bg-background shrink-0">
                   {atOptionsChrome && !atGlanceChrome ? (
                     <AtSymbolHeader compact={false} />
