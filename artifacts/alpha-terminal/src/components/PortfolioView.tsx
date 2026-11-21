@@ -26,9 +26,11 @@ import { useSchwabAccountStore } from "@/lib/schwab-account-store";
 import { resolvePortfolioDisplayAccount } from "@/lib/portfolioDisplayAccount";
 import { useShallow } from "zustand/react/shallow";
 
+/** Matches app shell `bg-background` / `--background` (9% gray), not legacy jet black. */
 const C = {
-  bg: "#0c0c0c",
-  card: "#18181b",
+  bg: "hsl(var(--background))",
+  surface: "hsl(var(--secondary))",
+  card: "hsl(var(--secondary))",
   border: "#27272a",
   borderHi: "#3f3f46",
   text: "#e4e4e7",
@@ -512,7 +514,7 @@ function OptionRow({
   const markColor = tickDir === "up" ? C.green : tickDir === "down" ? C.red : C.text;
 
   const rowBg = "transparent";
-  const stickyBg = "#000";
+  const stickyBg = C.bg;
 
   const cellStyle = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 16, fontWeight: bold ? 500 : undefined, color,
@@ -593,7 +595,7 @@ function SpreadSummaryRow({
   const spreadMaint = options.reduce((s, o) => s + o.maintenanceRequirement, 0);
 
   const rowBg = "transparent";
-  const stickyBg = "#000";
+  const stickyBg = C.bg;
 
   const cellStyle = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 16, fontWeight: bold ? 500 : undefined, color,
@@ -683,7 +685,7 @@ function PositionTableRow({
   const streamRegularLast = streamQuote?.regularLast ?? streamQuote?.last ?? null;
 
   const rowBg = "transparent";
-  const stickyBg = "#000";
+  const stickyBg = C.bg;
 
   const dataCellStyle = (color: string, bold?: boolean): React.CSSProperties => ({
     fontSize: 16, fontWeight: bold ? 500 : undefined, color,
@@ -763,7 +765,7 @@ function PositionTableRow({
   if (!hasOptions) {
     return (
       <tr>
-        <td className="pf-sticky-col" style={{ background: "#000", padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
+        <td className="pf-sticky-col" style={{ background: C.bg, padding: "6px 8px 6px 10px", minWidth: SYM_COL_W }}>
           <div style={{ display: "flex", alignItems: "center" }}>
             <div onClick={e => { e.stopPropagation(); toggleKey(eqKey); }} style={{ width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, cursor: "pointer" }}>
               <div style={{ width: 15, height: 15, border: `1.5px solid ${eqSelected ? C.gold : C.dim}`, borderRadius: 3, background: eqSelected ? `${C.gold}22` : "transparent", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.12s" }}>
@@ -811,7 +813,7 @@ function PositionTableRow({
         <>
           {eq && (() => {
             const subBg = "transparent";
-            const subStickyBg = "#000";
+            const subStickyBg = C.bg;
             const subCell = (color: string, bold?: boolean): React.CSSProperties => ({ fontSize: 16, fontWeight: bold ? 500 : undefined, color, textAlign: "center", fontVariantNumeric: "tabular-nums", padding: CP, background: subBg, whiteSpace: "nowrap" });
             return (
               <tr>
@@ -1565,25 +1567,25 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
   }, [accountsFingerprint, viewSelection]);
 
   if (!accessToken) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f }}>
+    <div className="bg-background min-h-full flex-1" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: f, background: C.bg }}>
       <ConnectBrokerPrompt label="Connect Brokerage To View Portfolio" fontSize={16} />
     </div>
   );
   if (portfolioStatus.status === "no_token" && !account) return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, fontFamily: f }}>
+    <div className="bg-background min-h-full flex-1" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, fontFamily: f, background: C.bg }}>
       <div style={{ fontSize: 16, color: C.gold, letterSpacing: 1, textTransform: "uppercase" }}>SCHWAB SESSION EXPIRED</div>
       <div style={{ fontSize: 16, color: C.textDim, maxWidth: 320, textAlign: "center", lineHeight: 1.5 }}>Your Schwab session has expired. Reconnect to resume live portfolio updates.</div>
       <ReconnectSchwabButton />
     </div>
   );
   if (loading && !account) return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
+    <div className="bg-background min-h-full flex-1" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f, background: C.bg }}>
       <Loader2 className="animate-spin" style={{ width: 16, height: 16, color: C.gold }} />
       <div style={{ fontSize: 16, color: C.textDim, letterSpacing: 1, textTransform: "uppercase" }}>LOADING PORTFOLIO</div>
     </div>
   );
   if (error && !account) return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f }}>
+    <div className="bg-background min-h-full flex-1" style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: f, background: C.bg }}>
       <div style={{ fontSize: 16, color: `${C.red}cc` }}>{error}</div>
       <button onClick={() => fetchAccount()} style={{ fontSize: 16, color: C.gold, background: "transparent", border: "none", cursor: "pointer", fontFamily: f, textTransform: "uppercase" }}>RETRY</button>
     </div>
@@ -1613,7 +1615,12 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
     .map(k => metricValues[k]);
 
   return (
-    <div ref={portfolioRootRef} data-pf-root style={{ fontFamily: f, fontSize: 16, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16 }}>
+    <div
+      ref={portfolioRootRef}
+      data-pf-root
+      className="bg-background min-h-full flex-1"
+      style={{ fontFamily: f, fontSize: 16, position: "relative", width: "100%", minWidth: 0, paddingBottom: 16, background: C.bg }}
+    >
       {showSettings && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 50, background: "#000000cc", display: "flex", alignItems: "flex-start", justifyContent: "flex-end" }}
@@ -1772,7 +1779,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
               <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "max-content", minWidth: "100%" }}>
                 <thead>
                   <tr>
-                    <th className="pf-sticky-col" style={{ background: "#0e0e0e", padding: "6px 8px 6px 12px", borderBottom: `1px solid ${C.borderHi}`, minWidth: SYM_COL_W, textAlign: "left" }}>
+                    <th className="pf-sticky-col" style={{ background: C.surface, padding: "6px 8px 6px 12px", borderBottom: `1px solid ${C.borderHi}`, minWidth: SYM_COL_W, textAlign: "left" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <button
                           onClick={() => cycleSort("symbol")}
@@ -1793,7 +1800,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                       if (!col) return null;
                       const isActive = sortKey === key;
                       return (
-                        <th key={key} style={{ padding: 0, background: "#0e0e0e", borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", textAlign: "center", fontWeight: 600 }}>
+                        <th key={key} style={{ padding: 0, background: C.surface, borderBottom: `1px solid ${C.borderHi}`, whiteSpace: "nowrap", textAlign: "center", fontWeight: 600 }}>
                           <button
                             onClick={() => cycleSort(key)}
                             style={{ padding: "6px 8px", background: "transparent", border: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 3, width: "100%", fontFamily: "inherit" }}
@@ -1823,7 +1830,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                 {symbolGroups.length > 0 && (
                   <tfoot>
                     <tr>
-                      <td className="pf-sticky-col" style={{ background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, padding: "8px 8px 8px 12px", minWidth: SYM_COL_W }}>
+                      <td className="pf-sticky-col" style={{ background: C.surface, borderTop: `2px solid ${C.borderHi}`, padding: "8px 8px 8px 12px", minWidth: SYM_COL_W }}>
                         <span style={{ fontSize: 16, fontWeight: 500, color: C.textMuted, whiteSpace: "nowrap" }}>Totals</span>
                       </td>
                       {(() => {
@@ -1832,7 +1839,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
                         const footStyle = (color: string, bold?: boolean): React.CSSProperties => ({
                           fontSize: 16, fontWeight: bold ? 600 : 500, color,
                           textAlign: "center", fontVariantNumeric: "tabular-nums",
-                          padding: CP, background: "#0e0e0e", borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap",
+                          padding: CP, background: C.surface, borderTop: `2px solid ${C.borderHi}`, whiteSpace: "nowrap",
                         });
                         const getFootVal = (col: ColumnKey): CellVal => {
                           switch (col) {
@@ -1867,7 +1874,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
             </div>
 
             {symbolGroups.length > 0 && (
-              <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0", background: "#000" }}>
+              <div style={{ borderTop: `1px solid ${C.border}`, padding: "4px 0", background: C.bg }}>
                 {[
                   { label: "P/L Day:", value: `${fmtCurrency(dayPL)} (${dayReturnPct >= 0 ? "+" : ""}${dayReturnPct.toFixed(1)}%)`, color: plColor(dayPL) },
                   { label: "P/L Open:", value: fmtCurrency(totalUnrealized), color: plColor(totalUnrealized) },
@@ -1887,7 +1894,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
 
         {subTab === "balance" && bal && (
           <div>
-            <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
+            <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: C.surface }}>
               <span style={{ fontSize: 16, fontWeight: 500, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Account Summary</span>
             </div>
             {[
@@ -1912,7 +1919,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
             ))}
             {account && (
               <>
-                <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: "#0e0e0e" }}>
+                <div style={{ padding: "7px 10px", borderBottom: `1px solid ${C.borderHi}`, background: C.surface }}>
                   <span style={{ fontSize: 16, fontWeight: 500, color: C.dim, letterSpacing: 1, textTransform: "uppercase" }}>Risk & Market Values</span>
                 </div>
                 {[
@@ -1949,7 +1956,7 @@ export function PortfolioView({ onNavigateToSymbol, onTrade, onRoll }: Portfolio
       {selectedKeys.size > 0 && (
         <div style={{
           position: "sticky", bottom: 0, left: 0, right: 0,
-          background: "#141414", borderTop: `1px solid ${C.borderHi}`,
+          background: C.surface, borderTop: `1px solid ${C.borderHi}`,
           padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, zIndex: 20,
         }}>
           <button
