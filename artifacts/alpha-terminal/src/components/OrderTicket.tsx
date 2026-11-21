@@ -37,6 +37,7 @@ import {
 } from "@/lib/active-trader/atSummaryFormat";
 import { atOrderSendAllowed } from "@/lib/active-trader/atOrderSend";
 import { deriveTicketOptionInstruction } from "@/lib/orders/deriveTicketOptionInstruction";
+import { TERMINAL_MOBILE_SHELL_MAX_PX } from "@/lib/layout/breakpoints";
 import {
   AtMobileGlanceOrderSheet,
   AT_MOBILE_PEEK_MAX_PX,
@@ -1874,7 +1875,7 @@ export function OrderTicket({
       setAtMobileSheet(false);
       return;
     }
-    const mq = window.matchMedia("(max-width: 767px)");
+    const mq = window.matchMedia(`(max-width: ${TERMINAL_MOBILE_SHELL_MAX_PX}px)`);
     const apply = () => setAtMobileSheet(mq.matches);
     apply();
     mq.addEventListener("change", apply);

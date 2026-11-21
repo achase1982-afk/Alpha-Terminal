@@ -64,7 +64,8 @@ import {
   Clock,
   Search,
 } from "lucide-react";
-import { useIsTablet, useIsDesktop } from "@/hooks/useMediaQuery";
+import { useTerminalLayout } from "@/hooks/useTerminalLayout";
+import { TERMINAL_MOBILE_SHELL_MAX_PX } from "@/lib/layout/breakpoints";
 import { useShallow } from "zustand/react/shallow";
 import { getAtFixtureOverride } from "@/lib/active-trader/atFixtureBridge";
 import { getChainOrderFixtureOverride } from "@/lib/dev-only/chainOrderFixtureBridge";
@@ -369,16 +370,22 @@ function DesktopTopNav({
   onOpenSearch,
   strategistRunningCount,
   strategistUnviewedCount,
+  compact,
 }: {
   activeTab: BottomTab;
   onTabChange: (tab: BottomTab) => void;
   onOpenSearch: () => void;
   strategistRunningCount: number;
   strategistUnviewedCount: number;
+  compact?: boolean;
 }) {
   return (
-    <div className="flex flex-1 items-center gap-1 min-w-0">
-      <nav className="flex items-center gap-1 ml-6" aria-label="Primary">
+    <div className="desktop-top-nav flex flex-1 items-center gap-1 min-w-0 overflow-hidden">
+      <nav
+        className="flex flex-1 min-w-0 items-center gap-0.5 ml-3 lg:ml-6 overflow-x-auto overscroll-x-contain"
+        style={{ scrollbarWidth: "thin" }}
+        aria-label="Primary"
+      >
         {DESKTOP_NAV_TABS.map((tab) => {
           const isActive = activeTab === tab.id;
           const showAiDot = tab.id === "ai" && (strategistRunningCount > 0 || strategistUnviewedCount > 0);
@@ -386,7 +393,9 @@ function DesktopTopNav({
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className="relative px-4 py-1.5 rounded-md font-mono text-xs font-bold tracking-wider transition-colors"
+              className={`relative shrink-0 rounded-md font-mono text-xs font-bold tracking-wider transition-colors ${
+                compact ? "px-2 py-1.5" : "px-3 lg:px-4 py-1.5"
+              }`}
               style={{
                 color: isActive ? "#FFB800" : "#a1a1aa",
                 background: isActive ? "rgba(255,184,0,0.08)" : "transparent",
@@ -409,12 +418,12 @@ function DesktopTopNav({
       </nav>
       <button
         onClick={onOpenSearch}
-        className="ml-auto mr-4 flex w-56 xl:w-72 items-center gap-2 rounded-md border border-zinc-700/70 bg-zinc-900/80 px-3 py-1.5 text-left transition-colors hover:border-zinc-500"
+        className="ml-1 lg:ml-auto mr-2 lg:mr-4 flex min-w-0 max-w-[7.5rem] sm:max-w-[9rem] lg:max-w-[11rem] xl:max-w-[18rem] flex-1 lg:flex-none lg:w-48 xl:w-72 items-center gap-2 rounded-md border border-zinc-700/70 bg-zinc-900/80 px-2 lg:px-3 py-1.5 text-left transition-colors hover:border-zinc-500 shrink"
         aria-label="Search symbols"
       >
         <Search className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-        <span className="flex-1 truncate font-mono text-xs text-zinc-500">Search symbols…</span>
-        <kbd className="shrink-0 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
+        <span className="flex-1 min-w-0 truncate font-mono text-xs text-zinc-500">Search symbols…</span>
+        <kbd className="hidden xl:inline shrink-0 rounded border border-zinc-700 bg-zinc-800 px-1.5 py-0.5 font-mono text-[10px] text-zinc-400">
           {isMacLike ? "⌘K" : "Ctrl K"}
         </kbd>
       </button>
@@ -481,7 +490,8 @@ export default function TerminalPage() {
     if (fx?.enabled) return "markets";
     // Desktop lands on the customizable dashboard; phone opens Insights.
     const fallback: BottomTab =
-      typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches
+      typeof window !== "undefined" &&
+      window.matchMedia(`(min-width: ${TERMINAL_MOBILE_SHELL_MAX_PX + 1}px)`).matches
         ? "dashboard"
         : "insights";
     try {
@@ -935,14 +945,13 @@ export default function TerminalPage() {
   const { refresh } = useAutoRefreshToken();
   useViewportShell();
   useUIThemeSync();
-  const isWide = useIsTablet();
+  const { isWide, isThreePanel, isCompactHeader } = useTerminalLayout();
   const symbolSearchOpen = isWide ? searchOpen : mobileSearchOpen;
 
   useEffect(() => {
     if (isWide || !showMobileEdgeSearch) setMobileSearchOpen(false);
     if (!isWide) setSearchOpen(false);
   }, [isWide, showMobileEdgeSearch]);
-  const isThreePanel = useIsDesktop();
   const marketsMobileShellLock = activeBottom === "markets" && !isWide;
   const mobileTabUsesInnerScroll =
     marketsMobileShellLock ||
@@ -1196,7 +1205,7 @@ export default function TerminalPage() {
         id="terminal-header"
         className="shrink-0 z-[105] safe-top border-b border-card-border bg-card"
       >
-        <div className="relative flex items-center h-12 px-4 bg-card">
+        <div className="terminal-header-row relative flex items-center h-12 min-w-0 w-full px-2 sm:px-4 bg-card gap-1">
           <button
             onClick={() => setSidebarOpen(true)}
             className="mr-2 p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-card-border transition-colors"
@@ -1234,9 +1243,10 @@ export default function TerminalPage() {
               onOpenSearch={() => setSearchOpen(true)}
               strategistRunningCount={strategistRunningCount}
               strategistUnviewedCount={strategistUnviewedCount}
+              compact={isCompactHeader}
             />
           )}
-          <MarketSessionClock />
+          <MarketSessionClock compact={isWide && isCompactHeader} />
           <div
             className="ml-3 w-2.5 h-2.5 rounded-full shrink-0"
             title={streamLight === "live" ? "Live data" : streamLight === "connecting" ? "Connecting..." : "Offline"}

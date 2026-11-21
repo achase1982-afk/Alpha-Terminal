@@ -1,17 +1,18 @@
 import * as React from "react"
+import { TERMINAL_MOBILE_SHELL_MAX_PX } from "@/lib/layout/breakpoints"
 
-const MOBILE_BREAKPOINT = 768
-
+/** Matches terminal mobile shell (same gate as `useTerminalLayout().isMobileShell`). */
 export function useIsMobile() {
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
 
   React.useEffect(() => {
-    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const query = `(max-width: ${TERMINAL_MOBILE_SHELL_MAX_PX}px)`
+    const mql = window.matchMedia(query)
     const onChange = () => {
-      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+      setIsMobile(window.innerWidth <= TERMINAL_MOBILE_SHELL_MAX_PX)
     }
     mql.addEventListener("change", onChange)
-    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    setIsMobile(window.innerWidth <= TERMINAL_MOBILE_SHELL_MAX_PX)
     return () => mql.removeEventListener("change", onChange)
   }, [])
 

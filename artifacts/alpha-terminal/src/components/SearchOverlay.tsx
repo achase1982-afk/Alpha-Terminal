@@ -5,6 +5,7 @@ import { fetchWithAuth } from "@/lib/fetchWithAuth";
 import { Search, FileText, PlusCircle, MinusCircle } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { terminalLayoutMedia } from "@/lib/layout/breakpoints";
 import { useSearchInputDock } from "@/hooks/useVisualViewportKeyboardInset";
 
 function WatchlistIcon({ isInWatchlist, flash }: { isInWatchlist: boolean; flash: boolean }) {
@@ -264,7 +265,7 @@ export function SearchOverlay({ isOpen, onClose, onSelectSymbol }: SearchOverlay
   const scrollRef = useRef<HTMLDivElement>(null);
   const [dockHeightPx, setDockHeightPx] = useState(72);
   const exactInput = inputVal.trim().toUpperCase();
-  const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const narrowMobile = useMediaQuery(terminalLayoutMedia.mobileShell);
   const mobileSearchDockActive = narrowMobile && isOpen;
   const { dockBottomPx, scrollPaddingBottomPx, remeasure } = useSearchInputDock(
     mobileSearchDockActive,

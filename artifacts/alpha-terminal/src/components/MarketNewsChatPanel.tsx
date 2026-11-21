@@ -22,6 +22,7 @@ import ReactMarkdown from "react-markdown";
 import { AssistantListenButton, cancelAssistantSpeech } from "@/components/AssistantListenButton";
 import { useChatComposerDock } from "@/hooks/useVisualViewportKeyboardInset";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { terminalLayoutMedia } from "@/lib/layout/breakpoints";
 import {
   AI_MODEL_IDS,
   DEFAULT_AI_MODEL_ID,
@@ -195,7 +196,7 @@ export function MarketNewsChatPanel({
   const composerFormRef = useRef<HTMLFormElement>(null);
   const [composerHeightPx, setComposerHeightPx] = useState(72);
 
-  const narrowMobile = useMediaQuery("(max-width: 767px)");
+  const narrowMobile = useMediaQuery(terminalLayoutMedia.mobileShell);
   const mobileComposerDockActive = narrowMobile && !hideMobileComposerDock;
   const { dockStyle, scrollPaddingBottomPx, remeasure } = useChatComposerDock(
     mobileComposerDockActive,
